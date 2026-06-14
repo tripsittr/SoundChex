@@ -1,68 +1,58 @@
 <x-guest-layout>
-    <x-authentication-card>
-        <x-slot name="logo">
-            <x-authentication-card-logo />
-        </x-slot>
+    <div class="mx-auto mt-16 w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h1 class="text-xl font-semibold text-gray-900">Sign in</h1>
+        <p class="mt-1 text-sm text-gray-600">Use your account to continue.</p>
 
-        <x-validation-errors class="mb-4" />
-
-        @session('status')
-        <div class="mb-4 font-medium text-sm text-green-600">
-            {{ $value }}
-        </div>
-        @endsession
-
-        <form method="POST" action="{{ route('login') }}">
+        <form method="POST" action="{{ route('login') }}" class="mt-6 space-y-4">
             @csrf
 
             <div>
-                <x-label for="email" value="{{ __('Email') }}" />
-                <x-input id="email" class="block mt-1 w-full" type="email" name="email" :value="old('email')" required
-                    autofocus autocomplete="username" />
+                <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+                <input id="email" name="email" type="email" required autofocus value="{{ old('email') }}"
+                    class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500" />
+                @error('email')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                @enderror
             </div>
 
-            <div class="mt-4">
-                <x-label for="password" value="{{ __('Password') }}" />
-                <x-input id="password" class="block mt-1 w-full" type="password" name="password" required
-                    autocomplete="current-password" />
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                <input id="password" name="password" type="password" required
+                    class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500" />
             </div>
 
-            <div class="block mt-4">
-                <label for="remember_me" class="flex items-center">
-                    <x-checkbox id="remember_me" name="remember" />
-                    <span class="ms-2 text-sm text-gray-600">{{ __('Remember me') }}</span>
-                </label>
-            </div>
+            <label class="flex items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" name="remember"
+                    class="rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                Remember me
+            </label>
 
-            <div class="flex items-center justify-end mt-4">
-                @if (Route::has('password.request'))
-                <a class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                    href="{{ route('password.request') }}">
-                    {{ __('Forgot your password?') }}
-                </a>
-                @endif
-
-                <x-button class="ms-4">
-                    {{ __('Log in') }}
-                </x-button>
-            </div>
+            <button type="submit"
+                class="w-full rounded-lg bg-amber-500 px-4 py-2 font-medium text-white hover:bg-amber-600">
+                Log in
+            </button>
         </form>
 
-        @if (app()->isLocal() && config('app.dev_login_autofill.enabled'))
-        <script>
-            (() => {
-                    const emailInput = document.getElementById('email');
-                    const passwordInput = document.getElementById('password');
+        <p class="mt-4 text-sm text-gray-600">
+            Need an account?
+            <a href="{{ route('register') }}" class="font-medium text-amber-600 hover:text-amber-700">Register</a>
+        </p>
+    </div>
 
-                    if (emailInput && !emailInput.value) {
-                        emailInput.value = @json(config('app.dev_login_autofill.email'));
-                    }
+    @if (app()->isLocal() && config('app.dev_login_autofill.enabled'))
+    <script>
+        (() => {
+                const emailInput = document.getElementById('email');
+                const passwordInput = document.getElementById('password');
 
-                    if (passwordInput && !passwordInput.value) {
-                        passwordInput.value = @json(config('app.dev_login_autofill.password'));
-                    }
-                })();
-        </script>
-        @endif
-    </x-authentication-card>
+                if (emailInput && !emailInput.value) {
+                    emailInput.value = @json(config('app.dev_login_autofill.email'));
+                }
+
+                if (passwordInput && !passwordInput.value) {
+                    passwordInput.value = @json(config('app.dev_login_autofill.password'));
+                }
+            })();
+    </script>
+    @endif
 </x-guest-layout>
