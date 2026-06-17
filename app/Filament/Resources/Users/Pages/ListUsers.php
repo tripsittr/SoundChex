@@ -33,7 +33,10 @@ class ListUsers extends ListRecords
                         ->maxLength(255),
                     Select::make('role')
                         ->required()
-                        ->options(config('organization_roles.assignable', [])),
+                        ->options(config('organization_roles.assignable', []))
+                        // Constrain server-side too: a crafted request must not
+                        // be able to invite with a protected role (e.g. super_admin).
+                        ->in(array_keys(config('organization_roles.assignable', []))),
                 ])
                 ->action(function (array $data): void {
                     $tenant = Filament::getTenant();

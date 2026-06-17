@@ -101,9 +101,11 @@ class AuthController extends Controller
             $organization = $invite->organization;
             $user->organizations()->syncWithoutDetaching([$organization->getKey()]);
 
+            $role = $this->safeOrganizationRole($invite->role);
+
             setPermissionsTeamId($organization->getKey());
-            Role::findOrCreate($invite->role, 'web');
-            $user->assignRole($invite->role);
+            Role::findOrCreate($role, 'web');
+            $user->assignRole($role);
             setPermissionsTeamId(null);
 
             $invite->forceFill([
@@ -116,7 +118,9 @@ class AuthController extends Controller
 
             $user->organizations()->syncWithoutDetaching([$organization->getKey()]);
 
-            $defaultRole = (string) config('organization_roles.default_self_signup_role', 'organization_admin');
+            $defaultRole = $this->safeOrganizationRole(
+                (string) config('organization_roles.default_self_signup_role', 'admin')
+            );
             setPermissionsTeamId($organization->getKey());
             Role::findOrCreate($defaultRole, 'web');
             $user->assignRole($defaultRole);
@@ -127,6 +131,19 @@ class AuthController extends Controller
         $request->session()->regenerate();
 
         return redirect()->route('dashboard');
+    }
+
+    /**
+     * Resolve a requested organization role to one that is safe to grant within
+     * a tenant. Protected platform roles (e.g. super_admin) and unknown roles
+     * are never assignable here — they fall back to the default signup role.
+     */
+    protected function safeOrganizationRole(?string $requested): string
+    {
+        $assignable = array_keys(config('organization_roles.assignable', []));
+        $fallback = (string) config('organization_roles.default_self_signup_role', 'admin');
+
+        return in_array($requested, $assignable, true) ? $requested : $fallback;
     }
 
     public function logout(Request $request): RedirectResponse

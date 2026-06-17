@@ -9,14 +9,23 @@ use Spatie\Permission\Models\Role;
 class DefaultMusicOrgRolesSeeder extends Seeder
 {
     /**
-     * Seed starter role templates and baseline permissions.
+     * User-type groups that describe an entity (team/org) rather than a
+     * person's role, and therefore should not become assignable roles.
+     */
+    protected array $excludedGroups = [
+        'Team Types',
+        'Agencies & Businesses (Org Type)',
+    ];
+
+    /**
+     * Seed role templates that mirror the user-type taxonomy.
      */
     public function run(): void
     {
         // Null team id creates global role templates that can be copied per organization.
         setPermissionsTeamId(null);
 
-        $permissionsForOrganizationAdmin = [
+        $adminPermissions = [
             'Create:User',
             'Update:User',
             'Delete:User',
@@ -27,31 +36,39 @@ class DefaultMusicOrgRolesSeeder extends Seeder
             'Update:Role',
         ];
 
-        foreach ($permissionsForOrganizationAdmin as $permissionName) {
+        foreach ($adminPermissions as $permissionName) {
             Permission::findOrCreate($permissionName, 'web');
         }
 
-        $roleTemplates = [
-            'organization_admin',
-            'artist',
-            'label_rep',
-            'manager',
-            'social_media_manager',
-            'booking_agent',
-            'tour_manager',
-            'publicist',
-            'producer',
-            'sound_engineer',
-            'videographer',
-            'merch_manager',
-            'a_and_r',
-        ];
-
-        foreach ($roleTemplates as $roleName) {
+        foreach ($this->roleNames() as $roleName) {
             Role::findOrCreate($roleName, 'web');
         }
 
-        Role::findByName('organization_admin', 'web')
-            ->syncPermissions($permissionsForOrganizationAdmin);
+        // Administrative roles get the elevated user/role management permissions.
+        // (super_admin is handled by Shield's gate interception and needs no explicit grant.)
+        Role::findByName('admin', 'web')->syncPermissions($adminPermissions);
+    }
+
+    /**
+     * Build the list of role names from the user-type config, excluding
+     * entity-type groups so only person roles (plus admin/super_admin) remain.
+     *
+     * @return array<int, string>
+     */
+    protected function roleNames(): array
+    {
+        $names = [];
+
+        foreach (config('user_types.options', []) as $group => $types) {
+            if (in_array($group, $this->excludedGroups, true)) {
+                continue;
+            }
+
+            foreach (array_keys($types) as $key) {
+                $names[$key] = $key;
+            }
+        }
+
+        return array_values($names);
     }
 }
