@@ -25,3 +25,10 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Docs / markdown — ignore all except README and app-rendered content
+*.md
+*.MD
+!README.md
+!resources/markdown/
+!resources/markdown/**
