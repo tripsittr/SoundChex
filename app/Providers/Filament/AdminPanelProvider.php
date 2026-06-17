@@ -7,6 +7,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -57,6 +58,11 @@ class AdminPanelProvider extends PanelProvider
                 AccountWidget::class,
                 // FilamentInfoWidget::class,
             ])
+            ->navigationGroups([
+                NavigationGroup::make('Users & Permissions'),
+                NavigationGroup::make('Artists'),
+                NavigationGroup::make('Settings'),
+            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
@@ -69,7 +75,8 @@ class AdminPanelProvider extends PanelProvider
                 DispatchServingFilamentEvent::class,
             ])
             ->plugins([
-                FilamentShieldPlugin::make(),
+                FilamentShieldPlugin::make()
+                    ->navigationGroup('Users & Permissions'),
             ])
             ->authMiddleware([
                 Authenticate::class,
