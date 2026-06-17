@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Organization;
 use App\Models\OrganizationInvite;
 use App\Models\User;
+use Filament\Facades\Filament;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -34,7 +35,7 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard'));
+        return redirect()->intended($this->dashboardUrlFor(Auth::user()));
     }
 
     public function showRegister(Request $request, ?string $token = null): View
@@ -130,7 +131,21 @@ class AuthController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect()->route('dashboard');
+        return redirect($this->dashboardUrlFor($user, $organization));
+    }
+
+    /**
+     * Build the post-auth landing URL: the customer panel dashboard scoped to
+     * the user's organization. Falls back to the panel root (which lets
+     * Filament resolve/select a tenant) when no specific organization applies.
+     */
+    protected function dashboardUrlFor(User $user, ?Organization $tenant = null): string
+    {
+        $panel = Filament::getPanel('customer');
+
+        $tenant ??= $user->organizations()->first();
+
+        return $panel->getUrl($tenant) ?? $panel->getUrl();
     }
 
     /**

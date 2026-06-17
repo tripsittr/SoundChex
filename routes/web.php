@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -23,7 +25,11 @@ Route::post('/logout', [AuthController::class, 'logout'])
 Route::middleware([
     'auth',
 ])->group(function () {
+    // Send users into the Filament customer panel (their tenant dashboard).
     Route::get('/dashboard', function () {
-        return view('dashboard');
+        $panel = Filament::getPanel('customer');
+        $tenant = Auth::user()?->organizations()->first();
+
+        return redirect($panel->getUrl($tenant) ?? $panel->getUrl());
     })->name('dashboard');
 });
