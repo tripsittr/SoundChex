@@ -4,13 +4,17 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Filament\Models\Contracts\HasDefaultTenant;
+use Filament\Models\Contracts\HasTenants;
+use Filament\Panel;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
-class User extends Authenticatable
+class User extends Authenticatable implements HasTenants, HasDefaultTenant
 {
     use HasApiTokens;
 
@@ -27,7 +31,9 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name',
+        'type',
         'email',
+        'profile_photo_path',
         'password',
         'email_verified_at',
     ];
@@ -53,5 +59,31 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function organizations()
+    {
+        return $this->belongsToMany(Organization::class, 'organization_user', 'user_id', 'organization_id');
+    }
+
+    public function canAccessTenant(Model $tenant): bool
+    {
+        if (! $tenant instanceof Organization) {
+            return false;
+        }
+
+        return $this->organizations()
+            ->whereKey($tenant->getKey())
+            ->exists();
+    }
+
+    public function getTenants(Panel $panel): array | \Illuminate\Support\Collection
+    {
+        return $this->organizations()->get();
+    }
+
+    public function getDefaultTenant(Panel $panel): ?Model
+    {
+        return $this->organizations()->first();
     }
 }

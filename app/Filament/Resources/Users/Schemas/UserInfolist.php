@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Users\Schemas;
 
+use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Schema;
 
@@ -11,16 +12,24 @@ class UserInfolist
     {
         return $schema
             ->components([
+                ImageEntry::make('profile_photo_path')
+                    ->label('Profile photo')
+                    ->disk('public')
+                    ->circular(),
                 TextEntry::make('name'),
                 TextEntry::make('email')
                     ->label('Email address'),
+                TextEntry::make('type')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => str((string) $state)->replace('_', ' ')->title())
+                    ->placeholder('-'),
+                TextEntry::make('organizations.name')
+                    ->label('Organizations')
+                    ->badge()
+                    ->separator(', ')
+                    ->placeholder('-'),
                 TextEntry::make('email_verified_at')
                     ->dateTime()
-                    ->placeholder('-'),
-                TextEntry::make('current_team_id')
-                    ->numeric()
-                    ->placeholder('-'),
-                TextEntry::make('profile_photo_path')
                     ->placeholder('-'),
                 TextEntry::make('created_at')
                     ->dateTime()

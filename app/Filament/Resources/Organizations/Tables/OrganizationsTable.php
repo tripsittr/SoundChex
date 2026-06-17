@@ -1,55 +1,59 @@
 <?php
 
-namespace App\Filament\Resources\Users\Tables;
+namespace App\Filament\Resources\Organizations\Tables;
 
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
-class UsersTable
+class OrganizationsTable
 {
     public static function configure(Table $table): Table
     {
         return $table
             ->columns([
-                ImageColumn::make('profile_photo_path')
-                    ->label('Photo')
-                    ->disk('public')
-                    ->circular()
-                    ->defaultImageUrl(fn ($record): string => 'https://ui-avatars.com/api/?name='.urlencode((string) $record->name).'&color=7F9CF5&background=EBF4FF'),
+                ImageColumn::make('logo')
+                    ->label('Logo')
+                    ->circular(),
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable()
                     ->weight('medium'),
-                TextColumn::make('email')
-                    ->label('Email')
-                    ->searchable()
-                    ->copyable(),
                 TextColumn::make('type')
                     ->label('Type')
                     ->badge()
-                    ->formatStateUsing(fn (?string $state): string => str((string) $state)->replace('_', ' ')->title())
+                    ->searchable()
                     ->toggleable(),
-                TextColumn::make('organizations.name')
-                    ->label('Organizations')
-                    ->badge()
-                    ->separator(', ')
+                TextColumn::make('website')
+                    ->label('Website')
+                    ->searchable()
+                    ->url(fn ($record): ?string => $record->website)
+                    ->openUrlInNewTab()
                     ->toggleable(),
-                IconColumn::make('email_verified_at')
-                    ->label('Verified')
-                    ->boolean()
-                    ->getStateUsing(fn ($record) => filled($record->email_verified_at)),
+                TextColumn::make('email')
+                    ->label('Email address')
+                    ->searchable()
+                    ->toggleable(),
+                TextColumn::make('phone')
+                    ->searchable(),
+                TextColumn::make('city')
+                    ->searchable(),
+                TextColumn::make('state')
+                    ->searchable(),
+                TextColumn::make('zip')
+                    ->searchable(),
+                TextColumn::make('country')
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('created_at')
-                    ->label('Joined')
-                    ->since()
-                    ->sortable(),
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('updated_at')
-                    ->label('Updated')
                     ->dateTime()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -59,7 +63,8 @@ class UsersTable
                 //
             ])
             ->recordActions([
-                ViewAction::make(),
+                ViewAction::make()
+                    ->slideOver(),
                 EditAction::make(),
             ])
             ->toolbarActions([

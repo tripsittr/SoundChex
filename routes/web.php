@@ -12,6 +12,7 @@ Route::middleware('guest')->group(function (): void {
     Route::post('/login', [AuthController::class, 'login']);
 
     Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+    Route::get('/register/invite/{token}', [AuthController::class, 'showRegister'])->name('register.invite');
     Route::post('/register', [AuthController::class, 'register']);
 });
 

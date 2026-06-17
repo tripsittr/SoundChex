@@ -42,7 +42,7 @@ return [
     |
     */
 
-    'tenant_model' => null,
+    'tenant_model' => App\Models\Organization::class,
 
     /*
     |--------------------------------------------------------------------------

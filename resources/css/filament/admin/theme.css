@@ -1,0 +1,16 @@
+.fi-sidebar-item-btn {
+    border-top: 3px solid #d75a5a00;
+    margin-bottom: 0.75rem;
+}
+
+.fi-sidebar-item-btn:hover {
+    border-top: 3px solid #d75a5a;
+}
+
+.fi-sidebar-item.fi-active>.fi-sidebar-item-btn {
+    border-top: 3px solid #d75a5a;
+}
+
+.fi-ta-ctn {
+    border-top: 4px solid #d75a5a;
+}
