@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Services\Subtitles\SubtitleConverter;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -47,6 +49,56 @@ class Subtitle extends Model
     public function mediaItem(): BelongsTo
     {
         return $this->belongsTo(MediaItem::class);
+    }
+
+    public function cues(): HasMany
+    {
+        return $this->hasMany(SubtitleCue::class);
+    }
+
+    /**
+     * Indexes this track's dialogue so it can be searched.
+     *
+     * Called from every import path rather than duplicated in each: embedded
+     * extraction, sidecar import and OpenSubtitles download all end up here,
+     * so a track can never be playable but unsearchable.
+     *
+     * Replaces rather than appends — re-importing a track must not double its
+     * cues.
+     *
+     * @return int Cues indexed.
+     */
+    public function indexCues(): int
+    {
+        $path = $this->absolutePath();
+
+        if ($path === null) {
+            return 0;
+        }
+
+        $parsed = app(SubtitleConverter::class)->parseCues((string) file_get_contents($path));
+
+        $this->cues()->delete();
+
+        if ($parsed === []) {
+            return 0;
+        }
+
+        // Chunked: a feature film is roughly 1,500 cues, and SQLite has a hard
+        // limit on variables per statement.
+        foreach (array_chunk($parsed, 200) as $chunk) {
+            SubtitleCue::insert(array_map(fn (array $cue): array => [
+                'subtitle_id' => $this->id,
+                'media_item_id' => $this->media_item_id,
+                'start_seconds' => $cue['start'],
+                'end_seconds' => $cue['end'],
+                'text' => $cue['text'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ], $chunk));
+        }
+
+        return count($parsed);
     }
 
     public function absolutePath(): ?string

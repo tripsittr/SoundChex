@@ -129,6 +129,10 @@ class SubtitleImporter
                 ],
             );
 
+            // Dialogue is indexed as the track lands, so a playable track is
+            // never an unsearchable one.
+            $subtitle->indexCues();
+
             $imported[] = $subtitle;
         }
 
@@ -179,7 +183,7 @@ class SubtitleImporter
             $relative = $this->storagePathFor($item, 'sidecar-' . md5(basename($file)), $language);
             Storage::put($relative, $vtt);
 
-            $imported[] = Subtitle::updateOrCreate(
+            $sidecar = Subtitle::updateOrCreate(
                 [
                     'media_item_id' => $item->id,
                     'language' => $language,
@@ -194,6 +198,10 @@ class SubtitleImporter
                     'cue_count' => $this->converter->countCues($vtt),
                 ],
             );
+
+            $sidecar->indexCues();
+
+            $imported[] = $sidecar;
         }
 
         $this->assignDefault($item);

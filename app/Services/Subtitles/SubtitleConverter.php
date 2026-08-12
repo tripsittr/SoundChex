@@ -96,6 +96,104 @@ class SubtitleConverter
     }
 
     /**
+     * Parses WebVTT into individual cues.
+     *
+     * countCues() only ever counted the timing lines. Search needs the text
+     * and the position, so this returns both — the same pass, keeping what was
+     * previously discarded.
+     *
+     * @return array<int, array{start: float, end: float|null, text: string}>
+     */
+    public function parseCues(string $vtt): array
+    {
+        $vtt = str_replace(["\r\n", "\r"], "\n", $vtt);
+
+        $cues = [];
+        $current = null;
+
+        foreach (explode("\n", $vtt) as $line) {
+            $trimmed = trim($line);
+
+            if (preg_match('/^(\S+)\s+-->\s+(\S+)/', $trimmed, $match)) {
+                // A new timing line closes the previous cue.
+                if ($current !== null) {
+                    $this->pushCue($cues, $current);
+                }
+
+                $current = [
+                    'start' => $this->timestampToSeconds($match[1]),
+                    'end' => $this->timestampToSeconds($match[2]),
+                    'lines' => [],
+                ];
+
+                continue;
+            }
+
+            if ($current === null) {
+                continue;
+            }
+
+            if ($trimmed === '') {
+                $this->pushCue($cues, $current);
+                $current = null;
+
+                continue;
+            }
+
+            $current['lines'][] = $trimmed;
+        }
+
+        if ($current !== null) {
+            $this->pushCue($cues, $current);
+        }
+
+        return $cues;
+    }
+
+    /**
+     * @param array<int, array{start: float, end: float|null, text: string}> $cues
+     * @param array{start: float, end: float|null, lines: array<int, string>} $cue
+     */
+    private function pushCue(array &$cues, array $cue): void
+    {
+        // Cues wrap across lines for display; as a searchable phrase they are
+        // one sentence, so they are joined rather than stored per line.
+        $text = trim(implode(' ', $cue['lines']));
+
+        // Tags are for rendering, not for matching — "<i>Hello</i>" should be
+        // found by searching "Hello".
+        $text = trim(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+        if ($text === '') {
+            return;
+        }
+
+        $cues[] = [
+            'start' => $cue['start'],
+            'end' => $cue['end'],
+            'text' => $text,
+        ];
+    }
+
+    /**
+     * "01:22.271" or "00:01:22.271" to seconds.
+     */
+    public function timestampToSeconds(string $timestamp): float
+    {
+        $parts = explode(':', trim(str_replace(',', '.', $timestamp)));
+
+        if (count($parts) === 3) {
+            return ((int) $parts[0] * 3600) + ((int) $parts[1] * 60) + (float) $parts[2];
+        }
+
+        if (count($parts) === 2) {
+            return ((int) $parts[0] * 60) + (float) $parts[1];
+        }
+
+        return (float) ($parts[0] ?? 0);
+    }
+
+    /**
      * SRT writes 00:00:01,500; WebVTT wants 00:00:01.500.
      *
      * Also expands the MM:SS.mmm form some tools emit, which WebVTT permits

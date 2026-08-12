@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
+use App\Services\SearchService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -261,9 +262,14 @@ class MediaCenterController extends Controller
         $term = trim((string) $request->query('q', ''));
 
         return view('media.search', [
-            'counts'  => $this->browser->counts(),
-            'term'    => $term,
-            'results' => $term === '' ? collect() : $this->browser->search($term),
+            'counts' => $this->browser->counts(),
+            'term' => $term,
+            // Everything, not just titles: dialogue from subtitles and text
+            // from inside books are the whole point of a library that holds
+            // the film, the book and the soundtrack at once.
+            'search' => $term === ''
+                ? ['query' => '', 'total' => 0, 'groups' => []]
+                : app(SearchService::class)->search($term),
         ]);
     }
 

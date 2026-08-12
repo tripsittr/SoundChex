@@ -169,7 +169,7 @@ class OpenSubtitles
 
         Storage::put($relative, $vtt);
 
-        return Subtitle::updateOrCreate(
+        $subtitle = Subtitle::updateOrCreate(
             [
                 'media_item_id' => $item->id,
                 'language' => $language,
@@ -184,6 +184,10 @@ class OpenSubtitles
                 'cue_count' => $cues,
             ],
         );
+
+        $subtitle->indexCues();
+
+        return $subtitle;
     }
 
     /**

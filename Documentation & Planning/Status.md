@@ -43,6 +43,10 @@ extraction; full-text search across every page.
 **Profiles** — per-person history, resume points, highlights and watchlist,
 with a kids mode that caps ratings across browse, search and direct links.
 
+**Search** — one query across titles, metadata, cast, dialogue and the text
+inside books. A dialogue hit jumps to the moment it is spoken; a book hit opens
+at the page.
+
 **Admin** — resources for every media type, duplicate review, metadata and
 library settings, profile management, dashboard widgets. Themed to match the
 media center, sharing one palette defined in `resources/css/tokens.css`.
@@ -53,15 +57,11 @@ media center, sharing one palette defined in `resources/css/tokens.css`.
 
 Roughly in the order they're worth doing.
 
-### Unified cross-media search
+### Cross-media links
 
-One search across titles, subtitle dialogue and book text. The indexing already
-exists — 1,346 pages of book text and subtitle cues in WebVTT — so this is
-mostly query and interface work.
-
-Also: cross-media links, so a novel points at its film adaptation and
-soundtrack. No commercial service can offer this; they don't hold all the
-rights. We do.
+A novel pointing at its film adaptation and soundtrack. Deferred from
+`UnifiedSearch.md` until the library holds a book and its adaptation together —
+a matching rule written against one film verifies nothing.
 
 ### HLS adaptive streaming
 

@@ -57,10 +57,15 @@ class ContentGate
             return $query;
         }
 
-        return $query->where(function (Builder $outer) use ($allowed): void {
+        // Qualified with the table name: this gate is applied to queries that
+        // join media_tags and media_availability, where a bare `type` is
+        // ambiguous and SQLite refuses the query outright.
+        $table = $query->getModel()->getTable();
+
+        return $query->where(function (Builder $outer) use ($allowed, $table): void {
             // Movies: keep anything unrated or at/below the cap.
-            $outer->where(function (Builder $q) use ($allowed): void {
-                $q->where('type', '!=', MediaItemType::Movie->value)
+            $outer->where(function (Builder $q) use ($allowed, $table): void {
+                $q->where($table . '.type', '!=', MediaItemType::Movie->value)
                     ->orWhereHas('movieMetadata', fn (Builder $meta) => $meta
                         ->whereNull('mpaa_rating')
                         ->orWhereIn('mpaa_rating', $allowed))
@@ -68,8 +73,8 @@ class ContentGate
             });
 
             // Shows, same rule against their own certification column.
-            $outer->where(function (Builder $q) use ($allowed): void {
-                $q->where('type', '!=', MediaItemType::Show->value)
+            $outer->where(function (Builder $q) use ($allowed, $table): void {
+                $q->where($table . '.type', '!=', MediaItemType::Show->value)
                     ->orWhereHas('showMetadata', fn (Builder $meta) => $meta
                         ->whereNull('content_rating')
                         ->orWhereIn('content_rating', $allowed))
