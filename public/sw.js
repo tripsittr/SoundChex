@@ -55,9 +55,27 @@ self.addEventListener('fetch', (event) => {
 
     // Navigations: network-first, falling back to the offline page. Never
     // serve a cached shell, which would show a stale or wrongly-authed view.
+    //
+    // The downloads screen is the exception. It lists what is stored on this
+    // device and is needed precisely when there is no connection, so its shell
+    // is cached and served when the network is gone. It contains no library
+    // data — the list is read from IndexedDB — so a stale copy is harmless.
     if (request.mode === 'navigate') {
+        const isDownloadsPage = url.pathname === '/app/downloads';
+
         event.respondWith(
-            fetch(request).catch(() => caches.match(OFFLINE_URL)),
+            fetch(request)
+                .then((response) => {
+                    if (isDownloadsPage && response.ok) {
+                        const copy = response.clone();
+                        caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy));
+                    }
+
+                    return response;
+                })
+                .catch(() => (isDownloadsPage
+                    ? caches.match(request).then((hit) => hit ?? caches.match(OFFLINE_URL))
+                    : caches.match(OFFLINE_URL))),
         );
 
         return;

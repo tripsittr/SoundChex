@@ -153,3 +153,105 @@ export async function useLocalSource(element, id) {
 
     return () => URL.revokeObjectURL(url);
 }
+
+/**
+ * Downloads a whole album in one action.
+ *
+ * An album is a dozen taps otherwise. Tracks are fetched one at a time rather
+ * than in parallel: a phone on cellular handles a single stream far better,
+ * and sequential progress is the honest thing to show.
+ */
+export function setupBatchDownload() {
+    const button = document.getElementById('download-album');
+
+    if (!button || !window.indexedDB) return;
+
+    let tracks;
+
+    try {
+        tracks = JSON.parse(button.dataset.tracks ?? '[]');
+    } catch {
+        return;
+    }
+
+    if (tracks.length === 0) return;
+
+    const label = button.querySelector('[data-download-label]');
+    const status = document.getElementById('download-status');
+
+    let controller = null;
+
+    button.addEventListener('click', async () => {
+        if (controller) {
+            controller.abort();
+
+            return;
+        }
+
+        const totalBytes = tracks.reduce((sum, t) => sum + (t.size ?? 0), 0);
+        const space = await checkSpace(totalBytes);
+
+        if (space.known && !space.fits) {
+            const proceed = window.confirm(
+                `This album is ${formatBytes(totalBytes)}, and this device has about `
+                + `${formatBytes(space.free)} free.\n\nTry anyway?`,
+            );
+
+            if (!proceed) return;
+        }
+
+        controller = new AbortController();
+        button.dataset.state = 'downloading';
+
+        let done = 0;
+        let skipped = 0;
+
+        for (const track of tracks) {
+            if (controller.signal.aborted) break;
+
+            // Already-downloaded tracks are counted rather than re-fetched, so
+            // resuming an interrupted album doesn't start from scratch.
+            // eslint-disable-next-line no-await-in-loop
+            if (await isDownloaded(track.id)) {
+                skipped++;
+                done++;
+                continue;
+            }
+
+            if (label) {
+                label.textContent = `Downloading ${done + 1} of ${tracks.length} — tap to cancel`;
+            }
+
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                await download({
+                    id: track.id,
+                    url: track.url,
+                    meta: { title: track.title, type: 'music', url: track.url },
+                    signal: controller.signal,
+                });
+
+                done++;
+            } catch (error) {
+                if (error.name === 'AbortError') break;
+
+                // One bad track shouldn't abandon the album.
+                done++;
+            }
+        }
+
+        const cancelled = controller.signal.aborted;
+        controller = null;
+        button.dataset.state = 'idle';
+
+        if (label) label.textContent = 'Download album';
+
+        if (status) {
+            status.textContent = cancelled
+                ? `Stopped after ${done} of ${tracks.length}.`
+                : `Album saved to this device${skipped > 0 ? ` (${skipped} already had)` : ''}.`;
+            status.dataset.tone = cancelled ? 'muted' : 'good';
+            status.classList.remove('hidden');
+        }
+    });
+}

@@ -70,11 +70,12 @@ tunnel. Needs a rendition ladder, segment storage, playlist generation and
 player integration. Roughly doubles disk per title. **The largest remaining
 item by some margin.**
 
-### Offline playback
+### HTTPS to the phone
 
-Downloads are built and stored (`OfflineDownloads.md`), but the player and
-reader do not yet read from the local blob — a downloaded file still streams
-from the server. Wiring that is the remaining piece.
+**Blocking all offline features.** A phone reaches this server over a plain
+LAN IP, which browsers treat as an insecure context: no service worker, no
+add-to-home-screen, no durable storage. Downloads are built and wired but inert
+until this is done. See `MobileAndOffline.md` and `RemoteAccess.md`.
 
 ### Remaining metadata sources
 

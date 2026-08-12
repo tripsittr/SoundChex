@@ -344,6 +344,37 @@
                             @endif
                         </button>
 
+                        {{-- One action for a whole album; twelve taps
+                             otherwise. Only when there is more than one
+                             track, or it duplicates the button above. --}}
+                        @if ($item->type === \App\Enums\MediaItemType::Music)
+                            @php
+                                $album = $item->albumQueue()
+                                    ->filter(fn ($track) => $track->hasReadableFile())
+                                    ->values();
+                            @endphp
+
+                            @if ($album->count() > 1)
+                                <button type="button"
+                                        id="download-album"
+                                        data-state="idle"
+                                        data-tracks="{{ json_encode($album->map(fn ($track) => [
+                                            'id' => $track->id,
+                                            'title' => $track->title,
+                                            'size' => $track->playbackSize() ?? 0,
+                                            'url' => route('media.stream', $track),
+                                        ])) }}"
+                                        class="download-btn mt-2">
+                                    <svg class="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                              d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                                    </svg>
+                                    <span data-download-label>Download album</span>
+                                    <span class="ml-auto text-xs text-ink-500">{{ $album->count() }} tracks</span>
+                                </button>
+                            @endif
+                        @endif
+
                         <p id="download-status" class="download-status hidden"></p>
                     @endif
 

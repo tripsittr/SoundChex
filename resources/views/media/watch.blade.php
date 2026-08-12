@@ -257,6 +257,14 @@
          positioned above the controls and styled to taste. --}}
     <div id="watch-captions" class="watch-captions" aria-live="polite"></div>
 
+    {{-- Shown only when playback is coming from a downloaded copy. --}}
+    <span id="watch-offline-badge" class="offline-badge absolute left-4 top-20 z-30 hidden">
+        <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+        Playing from this device
+    </span>
+
     {{-- Buffering indicator --}}
     <div id="watch-spinner" class="pointer-events-none absolute inset-0 hidden items-center justify-center">
         <div class="size-12 animate-spin rounded-full border-4 border-white/20 border-t-white"></div>

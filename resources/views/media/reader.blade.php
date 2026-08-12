@@ -944,6 +944,7 @@
         /* Last on purpose. This block is emitted after Tailwind's stylesheet,
            so the `display` values set above beat .hidden at equal specificity
            — without this the popover and sidebar could never be dismissed. */
+        .offline-badge.hidden,
         .reader-popover.hidden,
         .reader-notes.hidden,
         .reader-note-editor.hidden,
@@ -1043,7 +1044,11 @@
                 </button>
             @endif
 
-            <span id="reader-percent" class="ml-auto text-xs tabular-nums" style="color: var(--reader-muted)">
+            <span id="reader-offline-badge" class="offline-badge ml-auto hidden">
+                Offline copy
+            </span>
+
+            <span id="reader-percent" class="ml-2 text-xs tabular-nums" style="color: var(--reader-muted)">
                 {{ $progress?->percent ? $progress->percent . '%' : '' }}
             </span>
         </footer>
@@ -1233,6 +1238,7 @@
 
         <div id="reader"
              class="size-full"
+             data-item-id="{{ $item->id }}"
              data-format="{{ $format }}"
              data-file-url="{{ route('media.read.file', $item) }}"
              data-progress-url="{{ route('media.read.progress', $item) }}"

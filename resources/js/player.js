@@ -23,6 +23,14 @@ export default class MediaPlayer {
         this.repeat = 'off'; // off | all | one
         this.shuffle = false;
 
+        // A live blob URL holds its whole file in memory, so exactly one is
+        // kept and it is revoked before the next track loads.
+        this.localSourceUrl = null;
+
+        // Incremented per load, so a slow IndexedDB lookup can tell it has
+        // been superseded by a track the listener has since skipped to.
+        this.loadToken = 0;
+
         // Order before shuffling, so turning it off restores the real order
         // rather than leaving the queue permanently scrambled.
         this.originalQueue = [];
@@ -105,6 +113,10 @@ export default class MediaPlayer {
     load(item) {
         if (!item) return;
 
+        // The previous track's blob URL pins its whole file in memory, which
+        // for a film is gigabytes. Released before the next one is created.
+        this.releaseLocalSource();
+
         this.el.src = item.src;
 
         // Resume where playback stopped, unless it was effectively finished.
@@ -119,6 +131,62 @@ export default class MediaPlayer {
 
         this.emit('trackchange', item);
         this.updateMediaSession(item);
+
+        // Swapped in after playback starts rather than awaited before it: the
+        // lookup is fast but not instant, and blocking every track on an
+        // IndexedDB read would add a stutter for the common case of a file
+        // that was never downloaded.
+        this.preferLocalSource(item);
+    }
+
+    /**
+     * Plays from the downloaded copy when there is one.
+     *
+     * Same player either way — an offline track shouldn't need a separate
+     * mode. Falls back silently to the network source already loaded.
+     */
+    async preferLocalSource(item) {
+        if (!item?.id || !window.indexedDB) return;
+
+        const token = ++this.loadToken;
+
+        let url = null;
+
+        try {
+            const { localUrl } = await import('./downloads.js');
+            url = await localUrl(item.id);
+        } catch {
+            return;
+        }
+
+        // The listener may have skipped tracks while that resolved.
+        if (!url || token !== this.loadToken) {
+            if (url) URL.revokeObjectURL(url);
+
+            return;
+        }
+
+        const position = this.el.currentTime;
+        const wasPlaying = !this.el.paused;
+
+        this.localSourceUrl = url;
+        this.el.src = url;
+
+        this.el.addEventListener('loadedmetadata', () => {
+            // Changing src resets position, and playback may already have
+            // started from the network.
+            if (position > 0) this.el.currentTime = position;
+            if (wasPlaying) this.el.play().catch(() => {});
+        }, { once: true });
+
+        this.emit('localsource', item);
+    }
+
+    releaseLocalSource() {
+        if (!this.localSourceUrl) return;
+
+        URL.revokeObjectURL(this.localSourceUrl);
+        this.localSourceUrl = null;
     }
 
     /* -------------------------------------------------------- transport */

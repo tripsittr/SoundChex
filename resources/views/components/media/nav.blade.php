@@ -200,20 +200,56 @@
         </div>
     </nav>
 
-    {{-- Mobile type switcher: the desktop links don't fit, so they become a
-         scrollable pill row under the bar. --}}
-    <ul class="flex gap-2 overflow-x-auto px-4 pb-2 md:hidden [&::-webkit-scrollbar]:hidden">
-        @foreach ($links as $link)
-            @php $nav = $resolve($link); @endphp
-
-            <li>
-                <a href="{{ $nav['href'] }}"
-                   @if($nav['active']) aria-current="page" @endif
-                   class="block whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition
-                          {{ $nav['active'] ? 'bg-ink-100 text-base-900' : 'bg-base-700/80 text-ink-300' }}">
-                    {{ $link['label'] }}
-                </a>
-            </li>
-        @endforeach
-    </ul>
 </header>
+
+{{-- Mobile navigation lives at the bottom, within thumb reach. A scrolling
+     pill row at the top of a phone screen is the furthest point from where a
+     hand actually is, which is why every streaming app puts it down here. --}}
+<nav class="mobile-tabs md:hidden" aria-label="Sections">
+    @foreach ($links as $link)
+        @php $nav = $resolve($link); @endphp
+
+        <a href="{{ $nav['href'] }}"
+           @if($nav['active']) aria-current="page" @endif
+           class="mobile-tab {{ $nav['active'] ? 'is-active' : '' }}">
+            <span class="mobile-tab-icon" aria-hidden="true">
+                @switch($link['type'])
+                    @case('watch')
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <rect x="2" y="4" width="20" height="15" rx="2" />
+                            <path d="M10 9l5 2.5-5 2.5z" fill="currentColor" stroke="none" />
+                        </svg>
+                        @break
+                    @case('music')
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path d="M9 18V5l10-2v13" />
+                            <circle cx="6.5" cy="18" r="2.5" />
+                            <circle cx="16.5" cy="16" r="2.5" />
+                        </svg>
+                        @break
+                    @case('book')
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path d="M4 5a2 2 0 012-2h13v18H6a2 2 0 01-2-2z" />
+                            <path d="M8 3v18" />
+                        </svg>
+                        @break
+                    @default
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z" />
+                        </svg>
+                @endswitch
+            </span>
+            <span class="mobile-tab-label">{{ $link['label'] }}</span>
+        </a>
+    @endforeach
+
+    <a href="{{ route('media.search') }}" class="mobile-tab {{ request()->routeIs('media.search') ? 'is-active' : '' }}">
+        <span class="mobile-tab-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20l-3.5-3.5" stroke-linecap="round" />
+            </svg>
+        </span>
+        <span class="mobile-tab-label">Search</span>
+    </a>
+</nav>

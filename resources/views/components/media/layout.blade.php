@@ -2,7 +2,10 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="bg-base-900">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {{-- viewport-fit=cover is what makes env(safe-area-inset-*) report real
+         values. Without it a notched phone in standalone mode letterboxes the
+         app instead of letting it style around the notch. --}}
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="theme-color" content="#08080b">
 

@@ -27,6 +27,11 @@ if (root) {
     player.queue = [{ id: root.dataset.itemId, title: root.dataset.title }];
     player.index = 0;
 
+    // A downloaded film plays from the device. The <video> element already
+    // has its network src, so this swaps in the local copy if there is one and
+    // otherwise leaves it alone.
+    preferDownloadedVideo(video, root.dataset.itemId);
+
     const captions = setupCaptions(video, root);
 
     setupCaptionSearch(root, captions);
@@ -407,4 +412,40 @@ function setupCaptionAppearance(captions) {
     bind('watch-caption-bg', 'background');
     bind('watch-caption-font', 'font');
     bind('watch-caption-position', 'position', Number);
+}
+
+/**
+ * Swaps a downloaded copy in for the network stream.
+ *
+ * Position and play state are preserved, since this resolves after playback
+ * may already have begun. The blob URL is revoked when the page unloads — a
+ * live URL pins a multi-gigabyte file in memory.
+ */
+async function preferDownloadedVideo(video, itemId) {
+    if (!video || !itemId || !window.indexedDB) return;
+
+    let url = null;
+
+    try {
+        const { localUrl } = await import('./downloads.js');
+        url = await localUrl(itemId);
+    } catch {
+        return;
+    }
+
+    if (!url) return;
+
+    const position = video.currentTime;
+    const wasPlaying = !video.paused;
+
+    video.src = url;
+
+    video.addEventListener('loadedmetadata', () => {
+        if (position > 0) video.currentTime = position;
+        if (wasPlaying) video.play().catch(() => {});
+    }, { once: true });
+
+    document.getElementById('watch-offline-badge')?.classList.remove('hidden');
+
+    window.addEventListener('pagehide', () => URL.revokeObjectURL(url), { once: true });
 }

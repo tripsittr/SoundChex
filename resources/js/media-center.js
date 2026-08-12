@@ -1,4 +1,4 @@
-import { setupDownloadButton } from './download-button.js';
+import { setupBatchDownload, setupDownloadButton } from './download-button.js';
 import Alpine from 'alpinejs';
 
 /**
@@ -96,3 +96,4 @@ if ('serviceWorker' in navigator) {
 
 // Offline downloads on the detail page. No-ops where there is no button.
 setupDownloadButton();
+setupBatchDownload();

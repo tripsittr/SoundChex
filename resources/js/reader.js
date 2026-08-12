@@ -126,6 +126,11 @@ if (el) {
     const mount = readers[config.format];
 
     const start = async () => {
+        // A downloaded book opens from the device. Resolved before the
+        // renderer mounts, because epub.js and pdf.js both take the URL once
+        // and never re-read it.
+        config.fileUrl = await resolveLocalFile(el.dataset.itemId, config.fileUrl);
+
         await context.annotations?.load();
 
         // Wired before the book renders: the renderer registers selection and
@@ -150,6 +155,32 @@ if (el) {
 
     setupChrome(context);
     setupChromeReveal();
+}
+
+/**
+ * The downloaded copy's blob URL, or the network URL unchanged.
+ *
+ * Unlike audio and video this cannot be swapped in later: the book renderers
+ * read the URL once at construction, so the choice has to be made first.
+ */
+async function resolveLocalFile(itemId, fallback) {
+    if (!itemId || !window.indexedDB) return fallback;
+
+    try {
+        const { localUrl } = await import('./downloads.js');
+        const url = await localUrl(itemId);
+
+        if (!url) return fallback;
+
+        // Revoked on unload; a live URL holds the whole file in memory.
+        window.addEventListener('pagehide', () => URL.revokeObjectURL(url), { once: true });
+
+        document.getElementById('reader-offline-badge')?.classList.remove('hidden');
+
+        return url;
+    } catch {
+        return fallback;
+    }
 }
 
 /* ------------------------------------------------------------------ EPUB */
