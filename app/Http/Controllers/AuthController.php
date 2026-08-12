@@ -2,16 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Organization;
-use App\Models\OrganizationInvite;
 use App\Models\User;
-use Filament\Facades\Filament;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Spatie\Permission\Models\Role;
 use Illuminate\View\View;
+use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
@@ -27,7 +24,7 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        if (! Auth::attempt($credentials, (bool) $request->boolean('remember'))) {
+        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             return back()->withErrors([
                 'email' => 'The provided credentials are incorrect.',
             ])->onlyInput('email');
@@ -35,62 +32,27 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended($this->dashboardUrlFor(Auth::user()));
+        return redirect()->intended(route('media.home'));
     }
 
-    public function showRegister(Request $request, ?string $token = null): View
+    public function showRegister(): View
     {
-        $inviteToken = $token ?? $request->query('invite');
-        $invite = null;
-
-        if ($inviteToken) {
-            $invite = OrganizationInvite::query()
-                ->where('token', $inviteToken)
-                ->whereNull('accepted_at')
-                ->where(function ($query) {
-                    $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-                })
-                ->first();
-        }
-
         return view('auth.register', [
-            'invite' => $invite,
-            'inviteToken' => $inviteToken,
+            'isFirstAccount' => $this->isFirstAccount(),
         ]);
     }
 
     public function register(Request $request): RedirectResponse
     {
-        $inviteToken = $request->input('invite_token');
-        $invite = null;
+        // Self-hosted: the person who sets the server up gets the keys, and
+        // everyone after them is a library member until promoted.
+        $isFirstAccount = $this->isFirstAccount();
 
-        if ($inviteToken) {
-            $invite = OrganizationInvite::query()
-                ->where('token', $inviteToken)
-                ->whereNull('accepted_at')
-                ->where(function ($query) {
-                    $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-                })
-                ->first();
-        }
-
-        $rules = [
+        $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
-        ];
-
-        if (! $invite) {
-            $rules['organization_name'] = ['required', 'string', 'max:255'];
-        }
-
-        $data = $request->validate($rules);
-
-        if ($invite && strtolower($data['email']) !== strtolower($invite->email)) {
-            return back()->withErrors([
-                'email' => 'This invite is only valid for '.$invite->email.'.',
-            ])->withInput();
-        }
+        ]);
 
         $user = User::create([
             'name' => $data['name'],
@@ -98,67 +60,15 @@ class AuthController extends Controller
             'password' => Hash::make($data['password']),
         ]);
 
-        if ($invite) {
-            $organization = $invite->organization;
-            $user->organizations()->syncWithoutDetaching([$organization->getKey()]);
+        $role = $isFirstAccount ? 'owner' : 'member';
 
-            $role = $this->safeOrganizationRole($invite->role);
-
-            setPermissionsTeamId($organization->getKey());
-            Role::findOrCreate($role, 'web');
-            $user->assignRole($role);
-            setPermissionsTeamId(null);
-
-            $invite->forceFill([
-                'accepted_at' => now(),
-            ])->save();
-        } else {
-            $organization = Organization::create([
-                'name' => $data['organization_name'],
-            ]);
-
-            $user->organizations()->syncWithoutDetaching([$organization->getKey()]);
-
-            $defaultRole = $this->safeOrganizationRole(
-                (string) config('organization_roles.default_self_signup_role', 'admin')
-            );
-            setPermissionsTeamId($organization->getKey());
-            Role::findOrCreate($defaultRole, 'web');
-            $user->assignRole($defaultRole);
-            setPermissionsTeamId(null);
-        }
+        Role::findOrCreate($role, 'web');
+        $user->assignRole($role);
 
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect($this->dashboardUrlFor($user, $organization));
-    }
-
-    /**
-     * Build the post-auth landing URL: the customer panel dashboard scoped to
-     * the user's organization. Falls back to the panel root (which lets
-     * Filament resolve/select a tenant) when no specific organization applies.
-     */
-    protected function dashboardUrlFor(User $user, ?Organization $tenant = null): string
-    {
-        $panel = Filament::getPanel('customer');
-
-        $tenant ??= $user->organizations()->first();
-
-        return $panel->getUrl($tenant) ?? $panel->getUrl();
-    }
-
-    /**
-     * Resolve a requested organization role to one that is safe to grant within
-     * a tenant. Protected platform roles (e.g. super_admin) and unknown roles
-     * are never assignable here — they fall back to the default signup role.
-     */
-    protected function safeOrganizationRole(?string $requested): string
-    {
-        $assignable = array_keys(config('organization_roles.assignable', []));
-        $fallback = (string) config('organization_roles.default_self_signup_role', 'admin');
-
-        return in_array($requested, $assignable, true) ? $requested : $fallback;
+        return redirect()->route('media.home');
     }
 
     public function logout(Request $request): RedirectResponse
@@ -169,5 +79,14 @@ class AuthController extends Controller
         $request->session()->regenerateToken();
 
         return redirect('/');
+    }
+
+    /**
+     * Whether nobody has registered yet — the very first account on a freshly
+     * installed server.
+     */
+    private function isFirstAccount(): bool
+    {
+        return User::query()->doesntExist();
     }
 }
