@@ -35,12 +35,12 @@ class UserPolicy
 
     public function update(User $user, User $record): bool
     {
-        return $user->can('Update:User') && $this->sharesOrganization($user, $record);
+        return $user->can('Update:User');
     }
 
     public function delete(User $user, User $record): bool
     {
-        return $user->can('Delete:User') && $this->sharesOrganization($user, $record);
+        return $user->can('Delete:User');
     }
 
     public function deleteAny(User $user): bool
@@ -50,7 +50,7 @@ class UserPolicy
 
     public function restore(User $user, User $record): bool
     {
-        return $user->can('Restore:User') && $this->sharesOrganization($user, $record);
+        return $user->can('Restore:User');
     }
 
     public function forceDelete(User $user, User $record): bool
@@ -78,20 +78,4 @@ class UserPolicy
         return false;
     }
 
-    protected function sharesOrganization(User $user, User $record): bool
-    {
-        if ($user->is($record)) {
-            return true;
-        }
-
-        $organizationIds = $user->organizations()->pluck('organizations.id');
-
-        if ($organizationIds->isEmpty()) {
-            return false;
-        }
-
-        return $record->organizations()
-            ->whereIn('organizations.id', $organizationIds)
-            ->exists();
-    }
 }

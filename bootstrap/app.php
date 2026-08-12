@@ -13,7 +13,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Behind a tunnel or reverse proxy, the app sees the proxy's address
+        // and a plain-HTTP scheme unless it trusts the forwarded headers.
+        // Without this, generated URLs come out as http:// and rate limiting
+        // would throttle every remote visitor as one shared IP.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

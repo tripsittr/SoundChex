@@ -1,73 +1,27 @@
 <?php
 
+/*
+|--------------------------------------------------------------------------
+| User Types
+|--------------------------------------------------------------------------
+|
+| The catalog uses a flat three-role model. `owner` and `admin` manage the
+| library; `member` browses and contributes to it.
+|
+| `super_admin` is a server-level role, kept for the account that installed
+| SoundChex. Everyday administration is `owner` and `admin`.
+|
+*/
+
 return [
     'options' => [
-        'Team Types' => [
-            'artist' => 'Artist',
-            'band' => 'Band',
-            'organization' => 'Organization',
-        ],
         'Administration' => [
-            'admin' => 'Admin',
             'super_admin' => 'Super Admin',
         ],
-        'Artists' => [
-            'solo_artist' => 'Solo Artist',
-            'band_member' => 'Band Member',
-        ],
-        'Record Label' => [
-            'label_owner' => 'Label Owner',
-            'label_admin' => 'Label Admin',
-            'a_and_r_representative' => 'A&R Representative',
-            'artist_manager_label_side' => 'Artist Manager (Label Side)',
-            'label_marketing_manager' => 'Marketing Manager',
-            'label_social_media_manager' => 'Social Media Manager',
-            'distribution_coordinator' => 'Distribution Coordinator',
-            'rights_publishing_coordinator' => 'Rights & Publishing Coordinator',
-            'finance_royalty_manager' => 'Finance / Royalty Manager',
-            'legal_contracts_manager' => 'Legal / Contracts Manager',
-        ],
-        'Recording Studio' => [
-            'studio_owner' => 'Studio Owner',
-            'studio_admin' => 'Studio Admin',
-            'studio_manager' => 'Studio Manager',
-            'producer' => 'Producer',
-            'recording_engineer' => 'Recording Engineer',
-            'mixing_engineer' => 'Mixing Engineer',
-            'mastering_engineer' => 'Mastering Engineer',
-            'assistant_engineer' => 'Assistant Engineer',
-            'session_musician' => 'Session Musician',
-            'booking_coordinator' => 'Booking Coordinator',
-        ],
-        'Venue' => [
-            'venue_owner' => 'Venue Owner',
-            'venue_admin' => 'Venue Admin',
-            'venue_manager' => 'Venue Manager',
-            'talent_buyer_booker' => 'Talent Buyer / Booker',
-            'event_coordinator' => 'Event Coordinator',
-            'promoter' => 'Promoter',
-            'stage_manager' => 'Stage Manager',
-            'foh_engineer' => 'Front of House (FOH) Engineer',
-            'monitor_engineer' => 'Monitor Engineer',
-            'lighting_technician' => 'Lighting Technician',
-        ],
-        'Management Agency' => [
-            'agency_owner' => 'Agency Owner',
-            'agency_admin' => 'Agency Admin',
-            'artist_manager' => 'Artist Manager',
-            'tour_manager' => 'Tour Manager',
-            'booking_agent' => 'Booking Agent',
-            'publicist' => 'Publicist',
-            'brand_partnerships_manager' => 'Brand Partnerships Manager',
-            'content_social_manager' => 'Content / Social Media Manager',
-            'business_manager' => 'Finance / Business Manager',
-            'legal_contracts_coordinator' => 'Legal / Contracts Coordinator',
-        ],
-        'Agencies & Businesses (Org Type)' => [
-            'record_label' => 'Record Label',
-            'recording_studio' => 'Recording Studio',
-            'venue' => 'Venue',
-            'management_agency' => 'Management Agency',
+        'Members' => [
+            'owner' => 'Owner',
+            'admin' => 'Admin',
+            'member' => 'Member',
         ],
     ],
 ];

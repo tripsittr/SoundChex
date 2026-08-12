@@ -4,17 +4,16 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
-use Filament\Models\Contracts\HasDefaultTenant;
-use Filament\Models\Contracts\HasTenants;
+use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 
-class User extends Authenticatable implements HasTenants, HasDefaultTenant
+class User extends Authenticatable implements FilamentUser
 {
     use HasApiTokens;
 
@@ -61,29 +60,25 @@ class User extends Authenticatable implements HasTenants, HasDefaultTenant
         ];
     }
 
-    public function organizations()
+    /** Catalog entries this user added. */
+    public function mediaItems(): HasMany
     {
-        return $this->belongsToMany(Organization::class, 'organization_user', 'user_id', 'organization_id');
+        return $this->hasMany(MediaItem::class);
     }
 
-    public function canAccessTenant(Model $tenant): bool
+    /** This user's play/watch history. */
+    public function plays(): HasMany
     {
-        if (! $tenant instanceof Organization) {
-            return false;
-        }
-
-        return $this->organizations()
-            ->whereKey($tenant->getKey())
-            ->exists();
+        return $this->hasMany(MediaPlay::class);
     }
 
-    public function getTenants(Panel $panel): array | \Illuminate\Support\Collection
+    /**
+     * Whether this account may reach the management panel.
+     *
+     * Members browse the library; owners and admins run the server.
+     */
+    public function canAccessPanel(Panel $panel): bool
     {
-        return $this->organizations()->get();
-    }
-
-    public function getDefaultTenant(Panel $panel): ?Model
-    {
-        return $this->organizations()->first();
+        return $this->hasAnyRole(['super_admin', 'owner', 'admin']);
     }
 }

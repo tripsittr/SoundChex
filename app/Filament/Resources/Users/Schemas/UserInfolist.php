@@ -23,11 +23,6 @@ class UserInfolist
                     ->badge()
                     ->formatStateUsing(fn (?string $state): string => str((string) $state)->replace('_', ' ')->title())
                     ->placeholder('-'),
-                TextEntry::make('organizations.name')
-                    ->label('Organizations')
-                    ->badge()
-                    ->separator(', ')
-                    ->placeholder('-'),
                 TextEntry::make('email_verified_at')
                     ->dateTime()
                     ->placeholder('-'),

@@ -2,10 +2,8 @@
 
 namespace App\Filament\Resources\Users\Schemas;
 
-use Filament\Facades\Filament;
-use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
@@ -22,13 +20,10 @@ class UserForm
             ])
             ->components([
                 Section::make('Profile')
-                    ->columnSpan([
-                        'default' => 1,
-                        'lg' => 1,
-                    ])
+                    ->columnSpan(['default' => 1, 'lg' => 1])
                     ->schema([
                         FileUpload::make('profile_photo_path')
-                            ->label('Profile photo')
+                            ->label('Photo')
                             ->disk('public')
                             ->directory('profile-photos')
                             ->image()
@@ -36,78 +31,45 @@ class UserForm
                             ->circleCropper()
                             ->avatar()
                             ->maxSize(2048),
+
                         Select::make('type')
-                            ->label('User type')
+                            ->label('Role')
                             ->options(config('user_types.options', []))
                             ->searchable()
                             ->preload()
                             ->native(false)
-                            ->helperText('Choose the closest user/team category for this account.'),
-                        Placeholder::make('membership_hint')
-                            ->label('Team memberships')
-                            ->content('Users can belong to one or many organizations. Use the selector in the Account section.'),
+                            ->helperText('Owners and admins manage the library; members browse it.'),
                     ]),
+
                 Section::make('Account')
-                    ->columnSpan([
-                        'default' => 1,
-                        'lg' => 2,
-                    ])
-                    ->columns([
-                        'default' => 1,
-                        'md' => 2,
-                    ])
+                    ->columnSpan(['default' => 1, 'lg' => 2])
+                    ->columns(['default' => 1, 'md' => 2])
                     ->schema([
                         TextInput::make('name')
                             ->required()
                             ->maxLength(255),
+
                         TextInput::make('email')
                             ->label('Email address')
                             ->email()
                             ->required()
                             ->maxLength(255)
                             ->unique(ignoreRecord: true),
-                        Select::make('organizations')
-                            ->label('Organizations / Teams')
-                            ->relationship(
-                                'organizations',
-                                'name',
-                                modifyQueryUsing: function ($query) {
-                                    if (! Filament::hasTenancy()) {
-                                        return;
-                                    }
 
-                                    $tenant = Filament::getTenant();
-
-                                    if (! $tenant) {
-                                        return;
-                                    }
-
-                                    $query->whereKey($tenant->getKey());
-                                },
-                            )
-                            ->multiple()
-                            ->preload()
-                            ->searchable()
-                            ->columnSpanFull()
-                            ->helperText('In customer panel this is scoped to the current organization. In admin you can attach multiple teams.'),
                         DateTimePicker::make('email_verified_at')
-                            ->label('Email verified at')
-                            ->seconds(false),
-                    ]),
-                Section::make('Security')
-                    ->columnSpanFull()
-                    ->columns([
-                        'default' => 1,
-                        'md' => 2,
-                    ])
-                    ->schema([
+                            ->label('Email verified')
+                            ->seconds(false)
+                            ->helperText('Leave empty to mark this account unverified.'),
+
                         TextInput::make('password')
                             ->password()
                             ->revealable()
-                            ->helperText('Leave blank when editing to keep the current password.')
+                            ->minLength(8)
                             ->required(fn (string $operation): bool => $operation === 'create')
+                            // Without this an empty field would blank the stored
+                            // password on every edit.
                             ->dehydrated(fn (?string $state): bool => filled($state))
-                            ->minLength(8),
+                            ->helperText('Leave blank to keep the current password.'),
                     ]),
             ]);
     }
