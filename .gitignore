@@ -36,6 +36,10 @@ Thumbs.db
 !CLAUDE.md
 !resources/markdown/
 !resources/markdown/**
+# Plans are the record of what was built and why. Versioning them is the
+# whole point — a plan marked DONE_ is history, not scratch.
+!Documentation & Planning/
+!Documentation & Planning/**
 
 # ---------------------------------------------------------------------------
 # Media — never commit the library

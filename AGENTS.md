@@ -156,10 +156,14 @@ display: none }` at the **end** of the block, after every rule it must beat.
 
 ### Before starting
 
-1. Read the relevant existing code first. This codebase has accumulated
-   non-obvious decisions; most "obvious" improvements were already tried.
-2. For anything touching more than ~3 files, plan it and say what you'll do.
-3. If a requirement is ambiguous in a way that changes the work, ask. If it
+1. **Check `Documentation & Planning/` for the active plan.** One at a time —
+   see [Plans](#plans). Never assume project state from this file or from
+   memory; read the plans and the code.
+2. Read the relevant existing code. This codebase has accumulated non-obvious
+   decisions; most "obvious" improvements were already tried.
+3. For anything touching more than ~3 files, write or update a plan document
+   first, and say what you'll do.
+4. If a requirement is ambiguous in a way that changes the work, ask. If it
    doesn't, pick the sensible default and say which.
 
 ### While building
@@ -210,27 +214,49 @@ Commit or push **only when asked**. Branch first if on `main`.
 
 ---
 
-## Known state
+## Plans
 
-Current as of the last update to this file. Correct it when it drifts.
+**`Documentation & Planning/` is the record of what is built, in progress, and
+intended.** Do not track project state in this file — it drifts within days and
+then quietly misleads. Read the plans instead.
 
-**Working:** library scan/organize/dedupe · metadata enrichment (TMDB, Open
-Library, MusicBrainz, AcoustID, iTunes, Spotify) · transcoding · OCR with word
-boxes · subtitles (embedded, sidecar, OpenSubtitles) · book asset and outline
-extraction · in-book search · reader with highlights and notes · profiles with
-kids mode · metadata version history
+### One plan at a time
 
-**Not built:** HLS adaptive streaming · unified cross-media search · offline
-downloads · admin panel theming · 14 planned metadata sources (Discogs,
-Last.fm, Genius, Deezer, OMDb, Trakt, TVMaze, TVDB, Google Books, LibraryThing,
-Fanart.tv)
+Work on **exactly one plan until it is complete**. Not two in parallel, not a
+little of the next one while waiting. A half-finished feature is worse than an
+unstarted one: it looks done, gets built on, and its gaps surface later as
+bugs. Kids mode filtered nothing for a while precisely because it was left
+half-built while other work started.
 
-**Notes:**
+If something urgent interrupts, finish or explicitly park the current plan —
+say so plainly — before opening another.
 
-- Avatars live on the public disk and are gitignored — they're host-local, not
-  part of the repo.
-- No TV shows in the library yet, so that path is largely unexercised.
-- The test suite is minimal (4 files, mostly scaffolding).
+### Naming
+
+| Prefix | Meaning |
+|---|---|
+| *(none)* | Proposed or in progress |
+| `DONE_` | Built, tested, and verified working |
+
+Rename the file to `DONE_<name>.md` **only** when all three are true:
+
+1. Every item in the plan is built.
+2. It has been exercised against real data, not just linted.
+3. Nothing in it is known-broken or knowingly deferred. Partial delivery keeps
+   the original name, with the remaining work written down inside it.
+
+A plan that turns out to be wrong gets corrected, not silently abandoned.
+
+### Working a plan
+
+1. Read it fully before starting. Check it against the code — plans drift too.
+2. Note decisions and discovered constraints **in the plan** as you go, so the
+   reasoning survives the session.
+3. When complete: verify, rename to `DONE_`, and commit that rename with the
+   work it describes.
+
+Plans are versioned. They are the project's memory of why things are the way
+they are.
 
 ---
 

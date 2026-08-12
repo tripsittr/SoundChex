@@ -7,6 +7,9 @@ This file exists only to point there, so the two can't drift apart.
 
 ## The short version
 
+- **Start at `Documentation & Planning/Status.md`**, then the active plan. One
+  plan at a time, finished before the next. A plan is renamed `DONE_` only when
+  built, tested and verified.
 - **Never commit media.** The library is the user's own films, music and books.
 - **This code moves and deletes real files.** Verify before destroying.
 - **Verify, don't assume.** Every claim in a summary must be backed by
