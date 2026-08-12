@@ -1,0 +1,174 @@
+@import 'tailwindcss';
+
+@source '../views/media';
+@source '../views/components/media';
+
+/*
+|--------------------------------------------------------------------------
+| Media Center Theme
+|--------------------------------------------------------------------------
+|
+| The customer-facing catalog at /app. Deliberately dark and cinematic:
+| artwork is the content, so the chrome stays out of its way.
+|
+*/
+
+@theme {
+    --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+
+    /* Near-black, slightly blue — pure #000 makes artwork edges disappear. */
+    --color-base-900: #08080b;
+    --color-base-800: #0f0f14;
+    --color-base-700: #16161d;
+    --color-base-600: #1f1f28;
+    --color-base-500: #2a2a35;
+
+    --color-ink-100: #f4f4f5;
+    --color-ink-300: #b8b8c0;
+    --color-ink-500: #8a8a96;
+
+    --color-accent: #e11d3a;
+    --color-accent-hot: #ff2a4a;
+
+    --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+    html {
+        scrollbar-color: var(--color-base-500) transparent;
+    }
+
+    body {
+        background-color: var(--color-base-900);
+        color: var(--color-ink-100);
+        -webkit-font-smoothing: antialiased;
+    }
+
+    /* Artwork is the interface — never let a broken image show alt sprawl. */
+    img {
+        object-fit: cover;
+    }
+}
+
+@layer components {
+    /* Horizontal rail. Scroll snapping makes flick-scrolling land cleanly
+       on a card instead of stopping mid-poster. */
+    .rail {
+        display: grid;
+        grid-auto-flow: column;
+        /* A fixed track width, not `1fr`: fractional columns stretch to fill
+           the row, so a rail holding two items would render two enormous
+           posters instead of two normal ones. */
+        grid-auto-columns: 9rem;
+        justify-content: start;
+        gap: 0.75rem;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        scroll-padding-left: 1rem;
+        scrollbar-width: none;
+        padding-block: 0.25rem;
+    }
+
+    .rail::-webkit-scrollbar {
+        display: none;
+    }
+
+    .rail > * {
+        scroll-snap-align: start;
+    }
+
+    @media (min-width: 640px) {
+        .rail {
+            grid-auto-columns: 11rem;
+            gap: 1rem;
+        }
+    }
+
+    /* Poster tile. Hover lift is desktop-only — on touch it would fire on tap
+       and leave the card stuck in a hovered state. */
+    .poster {
+        position: relative;
+        display: block;
+        overflow: hidden;
+        border-radius: 0.5rem;
+        background-color: var(--color-base-700);
+        transition: transform 0.28s var(--ease-out-soft),
+                    box-shadow 0.28s var(--ease-out-soft);
+    }
+
+    @media (hover: hover) and (min-width: 768px) {
+        .poster:hover {
+            transform: scale(1.06);
+            box-shadow: 0 1.25rem 2.5rem -0.5rem rgb(0 0 0 / 0.75);
+            z-index: 10;
+        }
+    }
+
+    .poster:focus-visible {
+        outline: 2px solid var(--color-accent-hot);
+        outline-offset: 3px;
+    }
+
+    /* Gradient scrim so title text stays legible over bright artwork. */
+    .scrim {
+        background-image: linear-gradient(
+            to top,
+            rgb(8 8 11 / 0.95) 0%,
+            rgb(8 8 11 / 0.6) 35%,
+            transparent 75%
+        );
+    }
+
+    .hero-fade-bottom {
+        background-image: linear-gradient(
+            to top,
+            var(--color-base-900) 0%,
+            rgb(8 8 11 / 0.55) 45%,
+            transparent 100%
+        );
+    }
+
+    .hero-fade-left {
+        background-image: linear-gradient(
+            to right,
+            rgb(8 8 11 / 0.92) 0%,
+            rgb(8 8 11 / 0.55) 45%,
+            transparent 100%
+        );
+    }
+
+    /* Placeholder artwork for items with no cover — a flat grey box reads as
+       broken, so give it depth and a type glyph instead. */
+    .art-placeholder {
+        background-image:
+            radial-gradient(circle at 30% 20%, var(--color-base-500), transparent 60%),
+            linear-gradient(145deg, var(--color-base-600), var(--color-base-800));
+    }
+}
+
+@layer utilities {
+    .text-shadow-hero {
+        text-shadow: 0 2px 12px rgb(0 0 0 / 0.85);
+    }
+
+    /* Fixed-ratio art boxes keep rails from reflowing as images load. */
+    .aspect-poster {
+        aspect-ratio: 2 / 3;
+    }
+
+    .aspect-square-art {
+        aspect-ratio: 1 / 1;
+    }
+
+    .aspect-backdrop {
+        aspect-ratio: 16 / 9;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .poster,
+    .poster:hover {
+        transition: none;
+        transform: none;
+    }
+}
