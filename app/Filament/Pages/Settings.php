@@ -11,7 +11,7 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Illuminate\Support\Facades\Cache;
+use App\Services\SettingsService;
 use UnitEnum;
 
 class Settings extends Page
@@ -63,7 +63,14 @@ class Settings extends Page
     {
         $state = $this->form->getState();
 
-        Cache::forever(static::settingsKey(), $state);
+        // Persisted to the settings table rather than the cache: these were
+        // previously held in Cache::forever, which `optimize:clear` wipes —
+        // silently reverting every preference to its default.
+        $settings = app(SettingsService::class);
+
+        foreach ($state as $key => $value) {
+            $settings->set(static::settingPrefix() . $key, $value);
+        }
 
         Notification::make()
             ->title('Settings saved')
@@ -85,15 +92,32 @@ class Settings extends Page
      */
     public static function getStoredSettings(): array
     {
-        return Cache::get(static::settingsKey(), [
+        $settings = app(SettingsService::class);
+
+        $defaults = [
             'app_name' => config('app.name'),
             'allow_registration' => true,
             'require_email_verification' => false,
-        ]);
+        ];
+
+        $stored = [];
+
+        foreach ($defaults as $key => $default) {
+            $value = $settings->get(static::settingPrefix() . $key);
+
+            // A stored `false` is a real choice, so only a genuinely absent
+            // value falls back to the default.
+            $stored[$key] = $value === null
+                ? $default
+                : (is_bool($default) ? filter_var($value, FILTER_VALIDATE_BOOLEAN) : $value);
+        }
+
+        return $stored;
     }
 
-    protected static function settingsKey(): string
+    /** Namespaces these keys so they can't collide with API keys. */
+    protected static function settingPrefix(): string
     {
-        return 'app.settings';
+        return 'app_';
     }
 }
