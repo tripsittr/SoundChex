@@ -238,6 +238,10 @@ say so plainly — before opening another.
 | *(none)* | Proposed or in progress |
 | `DONE_` | Built, tested, and verified working |
 
+Reference documents — `Status.md`, `UsersAndProfiles.md`, `RemoteAccess.md` —
+describe how something works rather than proposing work, so they are never
+prefixed. They are corrected when they drift, not completed.
+
 Rename the file to `DONE_<name>.md` **only** when all three are true:
 
 1. Every item in the plan is built.

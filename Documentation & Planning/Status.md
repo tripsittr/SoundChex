@@ -5,6 +5,13 @@ What exists, what doesn't, and what's next. This is the file to read first.
 Plans in this folder are named for what they cover; a `DONE_` prefix means
 built, tested and verified. See `AGENTS.md` for the workflow.
 
+Some files here are **reference**, not plans — they describe how something
+works rather than proposing work. Those are never prefixed:
+
+- `Status.md` — this file
+- `UsersAndProfiles.md` — the account and profile model
+- `RemoteAccess.md` — reaching the server from outside the house
+
 ---
 
 ## Built
