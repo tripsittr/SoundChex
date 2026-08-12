@@ -1,0 +1,475 @@
+<?php
+
+namespace App\Services;
+
+use App\Enums\MediaItemType;
+use App\Models\MediaItem;
+use Illuminate\Support\Facades\Storage;
+
+/**
+ * Moves catalogued files into an organized Artist/Album/## Track tree.
+ *
+ * This is the only part of the app that relocates a user's files, so it errs
+ * heavily toward doing nothing: an item with no resolved artist or album is
+ * left exactly where it is rather than filed under "Unknown".
+ */
+class LibraryOrganizer
+{
+    /**
+     * Whether an item is ready to be filed.
+     *
+     * Enrichment has to have produced a real artist and album first — moving a
+     * file before then would scatter the library under placeholder folders and
+     * then need moving again.
+     */
+    public function canOrganize(MediaItem $item): bool
+    {
+        if (! $item->hasReadableFile()) {
+            return false;
+        }
+
+        // Renaming acts on resolved metadata, so a wrong match doesn't just
+        // mislabel a row — it refiles the user's file under the wrong author.
+        // Anything reached by loosening the match stays where it is.
+        if (! $this->isConfidentEnoughToMove($item)) {
+            return false;
+        }
+
+        // Each type needs whatever its folder structure is built from. Without
+        // that, the file would land under a placeholder and need moving again.
+        return match ($item->type) {
+            // Album is optional: plenty of tracks are singles that never
+            // appeared on one, and holding them in the inbox forever would
+            // mean they never got filed at all.
+            MediaItemType::Music => filled($item->musicMetadata?->artist),
+
+            // A film only needs a year to be filed unambiguously.
+            MediaItemType::Movie => filled($item->movieMetadata?->release_year),
+
+            MediaItemType::Show => filled($item->title),
+
+            MediaItemType::Book => filled($item->bookMetadata?->author),
+        };
+    }
+
+    /**
+     * Whether this item's metadata is trustworthy enough to rename its file.
+     *
+     * Music is exempt: its artist and album come from the file's own embedded
+     * tags, which are authoritative about the file regardless of what any
+     * online source thinks. Everything else is filed from an API match, so it
+     * has to have matched exactly.
+     */
+    private function isConfidentEnoughToMove(MediaItem $item): bool
+    {
+        if ($item->type === MediaItemType::Music) {
+            return true;
+        }
+
+        return $item->match_confidence?->allowsFileMove() ?? false;
+    }
+
+    /**
+     * Whether this item is already sitting at its own target path.
+     *
+     * `organize()` returns null both for "already filed" and for "tried and
+     * failed", which are opposite outcomes. Callers that report failures need
+     * to tell them apart, so the benign case is answerable on its own.
+     */
+    public function isAlreadyFiled(MediaItem $item): bool
+    {
+        $source = $item->absoluteFilePath();
+        $target = $this->targetPath($item);
+
+        if ($source === null || $target === null) {
+            return false;
+        }
+
+        $absoluteTarget = Storage::path($target);
+
+        if ($source === $absoluteTarget) {
+            return true;
+        }
+
+        // A distinct recording that already took a suffix because its ideal
+        // name was occupied is settled. Without this it asks to be moved on
+        // every run, gets suffixed again, and never stops being "pending".
+        return dirname($source) === dirname($absoluteTarget)
+            && $this->isSuffixedForm($source, $absoluteTarget)
+            && file_exists($absoluteTarget);
+    }
+
+    /**
+     * Whether $source is the "Name (2).ext" form of $target's "Name.ext".
+     */
+    private function isSuffixedForm(string $source, string $target): bool
+    {
+        $base = pathinfo($target, PATHINFO_FILENAME);
+        $extension = pathinfo($target, PATHINFO_EXTENSION);
+        $actual = pathinfo($source, PATHINFO_FILENAME);
+
+        return strcasecmp(pathinfo($source, PATHINFO_EXTENSION), $extension) === 0
+            && preg_match('/^' . preg_quote($base, '/') . ' \(\d+\)$/', $actual) === 1;
+    }
+
+    /**
+     * Files an item into the library tree.
+     *
+     * @return string|null The new relative path, or null when nothing moved.
+     */
+    public function organize(MediaItem $item, bool $dryRun = false): ?string
+    {
+        if (! $this->canOrganize($item)) {
+            return null;
+        }
+
+        $source = $item->absoluteFilePath();
+        $target = $this->targetPath($item);
+
+        if ($source === null || $target === null) {
+            return null;
+        }
+
+        $absoluteTarget = Storage::path($target);
+
+        // Already filed — nothing to do.
+        if ($source === $absoluteTarget) {
+            return null;
+        }
+
+        if ($dryRun) {
+            return $target;
+        }
+
+        $directory = dirname($absoluteTarget);
+
+        if (! is_dir($directory) && ! mkdir($directory, 0775, true) && ! is_dir($directory)) {
+            return null;
+        }
+
+        // A file already sitting at the target may be this exact recording,
+        // catalogued twice. Suffixing it would keep a byte-identical copy
+        // forever and re-offer it for filing on every run, so an identical
+        // file is treated as "already filed here" instead.
+        if ($this->isSameFile($source, $absoluteTarget)) {
+            return $this->adoptExisting($item, $source, $absoluteTarget);
+        }
+
+        // Never overwrite: a same-named file with different content really is a
+        // different recording, so it gets a suffix rather than clobbering what's
+        // already filed.
+        $absoluteTarget = $this->uniquePath($absoluteTarget);
+
+        if (! @rename($source, $absoluteTarget)) {
+            // rename() fails across filesystems (an external drive, say), so
+            // fall back to copy-then-delete.
+            if (! @copy($source, $absoluteTarget)) {
+                return null;
+            }
+
+            // Verify the copy landed before removing the original — a partial
+            // copy plus an eager delete would lose the file outright.
+            if (filesize($absoluteTarget) !== filesize($source)) {
+                @unlink($absoluteTarget);
+
+                return null;
+            }
+
+            @unlink($source);
+        }
+
+        $relative = $this->toRelative($absoluteTarget);
+
+        $item->file_path = $relative;
+        $item->saveQuietly();
+
+        $this->pruneEmptyParents(dirname($source));
+
+        return $relative;
+    }
+
+    /**
+     * Builds the destination path for an item.
+     *
+     *   Music   library/Music/Artist/Album/## Track.ext
+     *   Movies  library/Movies/Title (Year)/Title (Year).ext
+     *   TV      library/TV/Show/Season 01/Show - S01E02.ext
+     *   Books   library/Books/Author/Title.ext
+     */
+    public function targetPath(MediaItem $item): ?string
+    {
+        $source = $item->absoluteFilePath();
+
+        if ($source === null) {
+            return null;
+        }
+
+        $extension = strtolower(pathinfo($source, PATHINFO_EXTENSION));
+        $segments = $this->segmentsFor($item, $extension);
+
+        if ($segments === null) {
+            return null;
+        }
+
+        $typeFolder = config('library.type_folders.' . $item->type->value)
+            ?? ucfirst($item->type->value);
+
+        return implode('/', [
+            trim((string) config('library.library_root', 'media/library'), '/'),
+            $typeFolder,
+            ...$segments,
+        ]);
+    }
+
+    /**
+     * The per-type folder and filename parts, or null when the item lacks the
+     * metadata its structure depends on.
+     *
+     * @return array<int, string>|null
+     */
+    private function segmentsFor(MediaItem $item, string $extension): ?array
+    {
+        $title = $this->segment($item->title) ?? 'Untitled';
+        $suffix = $extension !== '' ? '.' . $extension : '';
+
+        return match ($item->type) {
+            MediaItemType::Music => $this->musicSegments($item, $title, $suffix),
+            MediaItemType::Movie => $this->movieSegments($item, $title, $suffix),
+            MediaItemType::Show  => [$title, $title . $suffix],
+            MediaItemType::Book  => $this->bookSegments($item, $title, $suffix),
+        };
+    }
+
+    /**
+     * @return array<int, string>|null
+     */
+    private function musicSegments(MediaItem $item, string $title, string $suffix): ?array
+    {
+        $meta = $item->musicMetadata;
+
+        $artist = $this->segment($meta?->artist);
+
+        if ($artist === null) {
+            return null;
+        }
+
+        // Tracks with no album are singles; grouping them under one folder per
+        // artist keeps them filed rather than stranded in the inbox.
+        $album = $this->segment($meta?->album) ?? 'Singles';
+
+        // A zero-padded track number keeps an album in playing order when the
+        // folder is browsed or copied to a device.
+        $track = $meta?->track_number
+            ? str_pad((string) $meta->track_number, 2, '0', STR_PAD_LEFT) . ' '
+            : '';
+
+        return [$artist, $album, $track . $title . $suffix];
+    }
+
+    /**
+     * @return array<int, string>|null
+     */
+    private function movieSegments(MediaItem $item, string $title, string $suffix): ?array
+    {
+        $year = $item->movieMetadata?->release_year;
+
+        if (blank($year)) {
+            return null;
+        }
+
+        // "Title (Year)" is the convention Plex, Jellyfin, and Emby all expect,
+        // so the same tree stays readable by other tools.
+        $folder = $this->segment($item->title . ' (' . $year . ')') ?? $title;
+
+        return [$folder, $folder . $suffix];
+    }
+
+    /**
+     * @return array<int, string>|null
+     */
+    private function bookSegments(MediaItem $item, string $title, string $suffix): ?array
+    {
+        $author = $this->segment($item->bookMetadata?->author);
+
+        if ($author === null) {
+            return null;
+        }
+
+        return [$author, $title . $suffix];
+    }
+
+    /**
+     * Makes a metadata value safe as a single path segment.
+     *
+     * Separators and reserved characters would create stray nesting or fail
+     * outright on some filesystems; a leading dot would hide the folder.
+     */
+    private function segment(?string $value): ?string
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        $clean = preg_replace('/[\/\\\\:*?"<>|]+/', '-', $value) ?? '';
+        $clean = trim(preg_replace('/\s+/', ' ', $clean) ?? '');
+        $clean = ltrim($clean, '.');
+        // Trailing dots and spaces are invalid on Windows and confuse rsync.
+        $clean = rtrim($clean, ". \t");
+
+        if ($clean === '') {
+            return null;
+        }
+
+        // 120 keeps the full path clear of the 255-byte limit most
+        // filesystems impose per component.
+        return mb_substr($clean, 0, 120);
+    }
+
+    private function expandPath(string $path): string
+    {
+        if (str_starts_with($path, '~/')) {
+            return rtrim((string) getenv('HOME'), '/') . substr($path, 1);
+        }
+
+        return $path;
+    }
+
+    /**
+     * Appends a counter until the path is free.
+     */
+    /**
+     * Whether two paths hold byte-identical content.
+     *
+     * This decides whether a file gets deleted, so a size match alone isn't
+     * enough — two different recordings can share a byte count. The hash only
+     * runs when the sizes already agree, which keeps it off the common path.
+     */
+    private function isSameFile(string $a, string $b): bool
+    {
+        if (! is_file($a) || ! is_file($b)) {
+            return false;
+        }
+
+        $sizeA = @filesize($a);
+        $sizeB = @filesize($b);
+
+        if ($sizeA === false || $sizeB === false || $sizeA !== $sizeB) {
+            return false;
+        }
+
+        $hashA = @hash_file('xxh128', $a);
+        $hashB = @hash_file('xxh128', $b);
+
+        return $hashA !== false && $hashA === $hashB;
+    }
+
+    /**
+     * Points an item at the copy already filed at its target and drops the
+     * redundant one.
+     *
+     * Reached only when the two files are byte-identical, so nothing unique is
+     * lost — the item ends up describing the file that was already there.
+     */
+    private function adoptExisting(MediaItem $item, string $source, string $absoluteTarget): string
+    {
+        $relative = $this->toRelative($absoluteTarget);
+
+        $item->file_path = $relative;
+        $item->saveQuietly();
+
+        @unlink($source);
+
+        $this->pruneEmptyParents(dirname($source));
+
+        return $relative;
+    }
+
+    private function uniquePath(string $path): string
+    {
+        if (! file_exists($path)) {
+            return $path;
+        }
+
+        $directory = dirname($path);
+        $extension = pathinfo($path, PATHINFO_EXTENSION);
+        $base = pathinfo($path, PATHINFO_FILENAME);
+
+        for ($i = 2; $i < 1000; $i++) {
+            $candidate = "{$directory}/{$base} ({$i}).{$extension}";
+
+            if (! file_exists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return $path;
+    }
+
+    /**
+     * Converts an absolute path back to one relative to the storage disk, so
+     * the stored value keeps working through Storage::.
+     */
+    private function toRelative(string $absolute): string
+    {
+        $root = realpath(Storage::path(''));
+        $real = realpath($absolute) ?: $absolute;
+
+        if ($root !== false && str_starts_with($real, $root . DIRECTORY_SEPARATOR)) {
+            return ltrim(substr($real, strlen($root)), DIRECTORY_SEPARATOR);
+        }
+
+        return $real;
+    }
+
+    /**
+     * Removes directories left empty by the move.
+     *
+     * Walks up only while directories are genuinely empty, and stops at the
+     * user's home or the storage root so it can never climb somewhere it
+     * shouldn't.
+     */
+    private function pruneEmptyParents(string $directory, int $maxDepth = 3): void
+    {
+        $stopAt = array_filter([
+            realpath(Storage::path('')),
+            realpath((string) getenv('HOME')),
+            realpath(base_path()),
+            // A watch folder must survive being emptied, or the next scheduled
+            // scan has nothing left to watch.
+            ...array_map(
+                fn (string $folder) => realpath($this->expandPath($folder)) ?: null,
+                (array) config('library.watch_folders', []),
+            ),
+        ]);
+
+        for ($depth = 0; $depth < $maxDepth; $depth++) {
+            $real = realpath($directory);
+
+            if ($real === false || in_array($real, $stopAt, true)) {
+                return;
+            }
+
+            $entries = @scandir($real);
+
+            if ($entries === false) {
+                return;
+            }
+
+            // Ignore . and .. plus macOS's .DS_Store, which would otherwise
+            // keep an obviously-empty folder alive forever.
+            $meaningful = array_values(array_diff($entries, ['.', '..', '.DS_Store']));
+
+            if ($meaningful !== []) {
+                return;
+            }
+
+            @unlink($real . '/.DS_Store');
+
+            if (! @rmdir($real)) {
+                return;
+            }
+
+            $directory = dirname($real);
+        }
+    }
+}
