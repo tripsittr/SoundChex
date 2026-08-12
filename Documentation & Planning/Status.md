@@ -44,7 +44,8 @@ extraction; full-text search across every page.
 with a kids mode that caps ratings across browse, search and direct links.
 
 **Admin** — resources for every media type, duplicate review, metadata and
-library settings, profile management, dashboard widgets.
+library settings, profile management, dashboard widgets. Themed to match the
+media center, sharing one palette defined in `resources/css/tokens.css`.
 
 ---
 
@@ -61,11 +62,6 @@ mostly query and interface work.
 Also: cross-media links, so a novel points at its film adaptation and
 soundtrack. No commercial service can offer this; they don't hold all the
 rights. We do.
-
-### Admin panel theming
-
-The panel is stock Filament while the media center is dark and cinematic. They
-read as two different products.
 
 ### HLS adaptive streaming
 

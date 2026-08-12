@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './tokens.css';
 
 @source '../views/media';
 @source '../views/components/media';
@@ -16,21 +17,22 @@
 @theme {
     --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
 
-    /* Near-black, slightly blue — pure #000 makes artwork edges disappear. */
-    --color-base-900: #08080b;
-    --color-base-800: #0f0f14;
-    --color-base-700: #16161d;
-    --color-base-600: #1f1f28;
-    --color-base-500: #2a2a35;
+    /* Defined once in tokens.css so the admin panel shares them. Repeating
+       the palette here is how the two surfaces drifted apart. */
+    --color-base-900: var(--sc-base-900);
+    --color-base-800: var(--sc-base-800);
+    --color-base-700: var(--sc-base-700);
+    --color-base-600: var(--sc-base-600);
+    --color-base-500: var(--sc-base-500);
 
-    --color-ink-100: #f4f4f5;
-    --color-ink-300: #b8b8c0;
-    --color-ink-500: #8a8a96;
+    --color-ink-100: var(--sc-ink-100);
+    --color-ink-300: var(--sc-ink-300);
+    --color-ink-500: var(--sc-ink-500);
 
-    --color-accent: #e11d3a;
-    --color-accent-hot: #ff2a4a;
+    --color-accent: var(--sc-accent);
+    --color-accent-hot: var(--sc-accent-hot);
 
-    --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-soft: var(--sc-ease-out-soft);
 }
 
 @layer base {

@@ -13,6 +13,7 @@ use Filament\Navigation\NavigationItem;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\Enums\ThemeMode;
 use Filament\Support\Colors\Color;
 use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
@@ -51,10 +52,18 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::STYLES_AFTER,
                 fn (): string => (string) app(Vite::class)('resources/css/filament/admin/theme.css'),
             )
+            // The media center's accent, so buttons, links, focus rings and
+            // active states inherit it rather than being patched one selector
+            // at a time. The panel previously used a blue that appeared
+            // nowhere else in the product.
             ->colors([
-                'primary' => '#5A98D7',
-                'secondary' => Color::Blue,
+                'primary' => Color::hex('#e11d3a'),
+                'gray' => Color::Zinc,
             ])
+            // Dark by default, matching the app. Light stays available and
+            // legible — the panel is where long tables live, and reading one
+            // in a bright room is a real use.
+            ->defaultThemeMode(ThemeMode::Dark)
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
