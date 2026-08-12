@@ -15,7 +15,7 @@ class AuthFlowTest extends TestCase
         $this->get('/login')->assertOk();
     }
 
-    public function test_user_can_register_and_is_redirected_to_dashboard(): void
+    public function test_user_can_register_and_lands_in_the_media_center(): void
     {
         $response = $this->post('/register', [
             'name' => 'New User',
@@ -25,7 +25,10 @@ class AuthFlowTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect('/dashboard');
+
+        // The media center, not an admin dashboard: signing in should put
+        // someone in front of their library.
+        $response->assertRedirect(route('media.home'));
     }
 
     public function test_user_can_login_and_logout(): void
@@ -40,7 +43,7 @@ class AuthFlowTest extends TestCase
         ]);
 
         $this->assertAuthenticatedAs($user);
-        $loginResponse->assertRedirect('/dashboard');
+        $loginResponse->assertRedirect(route('media.home'));
 
         $logoutResponse = $this->post('/logout');
 

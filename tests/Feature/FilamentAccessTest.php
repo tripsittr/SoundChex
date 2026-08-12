@@ -20,12 +20,19 @@ class FilamentAccessTest extends TestCase
         $this->get('/dashboard')->assertRedirect('/login');
     }
 
-    public function test_authenticated_user_can_view_dashboard(): void
+    public function test_authenticated_user_is_sent_to_the_media_center(): void
     {
         $user = User::factory()->create();
 
+        // /dashboard is a legacy entry point kept so old links and Laravel's
+        // own defaults still land somewhere sensible.
         $this->actingAs($user)
             ->get('/dashboard')
-            ->assertOk();
+            ->assertRedirect(route('media.home'));
+    }
+
+    public function test_media_center_requires_authentication(): void
+    {
+        $this->get('/app')->assertRedirect('/login');
     }
 }
