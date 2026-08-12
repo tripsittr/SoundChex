@@ -1,0 +1,522 @@
+<?php
+
+namespace App\Models;
+
+use App\Enums\DuplicateStatus;
+use App\Enums\MatchConfidence;
+use App\Enums\MediaItemType;
+use App\Enums\ProcessingStatus;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Services\CurrentProfile;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+
+class MediaItem extends Model
+{
+    protected $fillable = [
+        'user_id',
+        'type',
+        'title',
+        'external_id',
+        'external_source',
+        'cover_image_url',
+        'file_path',
+        'converted_path',
+        'transcode_status',
+        'transcode_percent',
+        'processing_status',
+        'match_confidence',
+        'matched_by',
+        'source_service',
+        'intro_start_seconds',
+        'intro_end_seconds',
+        'credits_start_seconds',
+        'user_rating',
+        'owned',
+        'wishlist',
+        'notes',
+    ];
+
+    protected $casts = [
+        'type' => MediaItemType::class,
+        'processing_status' => ProcessingStatus::class,
+        'match_confidence' => MatchConfidence::class,
+        'duplicate_status' => DuplicateStatus::class,
+        'duplicate_detected_at' => 'datetime',
+        'owned' => 'boolean',
+        'wishlist' => 'boolean',
+    ];
+
+    /**
+     * The earlier-catalogued item this one duplicates.
+     *
+     * Deliberately absent from $fillable: duplicate state is decided by the
+     * detector after comparing bytes, never by a form submission.
+     */
+    public function duplicateOf(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'duplicate_of_id');
+    }
+
+    public function duplicates(): HasMany
+    {
+        return $this->hasMany(self::class, 'duplicate_of_id');
+    }
+
+    public function subtitles(): HasMany
+    {
+        return $this->hasMany(Subtitle::class);
+    }
+
+    public function pageTexts(): HasMany
+    {
+        return $this->hasMany(PageText::class);
+    }
+
+    /** Illustrations extracted from a book file. */
+    public function bookAssets(): HasMany
+    {
+        return $this->hasMany(BookAsset::class);
+    }
+
+    /** The publisher's chapter outline. */
+    public function bookChapters(): HasMany
+    {
+        return $this->hasMany(BookChapter::class)->orderBy('sort_order');
+    }
+
+    /** Past states of this item's metadata, newest first. */
+    public function metadataVersions(): HasMany
+    {
+        return $this->hasMany(MetadataVersion::class)->latest('id');
+    }
+
+    /**
+     * Admin edit URL for this item.
+     *
+     * Each type has its own Filament resource, so the slug has to follow the
+     * type — a hardcoded one sent every film and book to the music resource,
+     * which then 404s on an id it doesn't own.
+     */
+    public function adminEditUrl(): string
+    {
+        $slug = match ($this->type) {
+            MediaItemType::Music => 'music',
+            MediaItemType::Movie => 'movies',
+            MediaItemType::Show => 'shows',
+            MediaItemType::Book => 'books',
+        };
+
+        return url("/admin/{$slug}/{$this->id}/edit");
+    }
+
+    /** Flagged, and still awaiting a decision. */
+    public function isPendingDuplicate(): bool
+    {
+        return $this->duplicate_status === DuplicateStatus::Pending;
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function tags(): HasMany
+    {
+        return $this->hasMany(MediaTag::class);
+    }
+
+    public function plays(): HasMany
+    {
+        return $this->hasMany(MediaPlay::class);
+    }
+
+    /** Every user's place in this book. */
+    public function readingProgress(): HasMany
+    {
+        return $this->hasMany(ReadingProgress::class);
+    }
+
+    /** Where this title can be streamed, rented, or bought right now. */
+    public function availability(): HasMany
+    {
+        return $this->hasMany(MediaAvailability::class);
+    }
+
+    /**
+     * The service this copy came from, resolved against the provider config.
+     *
+     * @return array{slug: string, name: string, color: string}|null
+     */
+    public function sourceService(): ?array
+    {
+        if (blank($this->source_service)) {
+            return null;
+        }
+
+        $service = config("providers.services.{$this->source_service}");
+
+        if ($service === null) {
+            return null;
+        }
+
+        return [
+            'slug' => $this->source_service,
+            'name' => $service['name'],
+            'color' => $service['color'],
+        ];
+    }
+
+    /**
+     * The signed-in user's place in this book, if they've opened it.
+     */
+    public function progressFor(?int $userId = null): ?ReadingProgress
+    {
+        $profileId = app(CurrentProfile::class)->id();
+
+        if ($profileId !== null && $userId === null) {
+            return $this->readingProgress()
+                ->where('profile_id', $profileId)
+                ->first();
+        }
+
+        $userId ??= Auth::id();
+
+        if ($userId === null) {
+            return null;
+        }
+
+        return $this->readingProgress()
+            ->where('user_id', $userId)
+            ->first();
+    }
+
+    public function people(): BelongsToMany
+    {
+        return $this->belongsToMany(Person::class, 'media_item_person')
+            ->withPivot(['role', 'character', 'sort_order'])
+            ->orderByPivot('sort_order');
+    }
+
+    public function collections(): BelongsToMany
+    {
+        return $this->belongsToMany(Collection::class, 'collection_media_item')
+            ->withPivot('sort_order');
+    }
+
+    public function musicMetadata(): HasOne
+    {
+        return $this->hasOne(MusicMetadata::class);
+    }
+
+    public function movieMetadata(): HasOne
+    {
+        return $this->hasOne(MovieMetadata::class);
+    }
+
+    public function showMetadata(): HasOne
+    {
+        return $this->hasOne(ShowMetadata::class);
+    }
+
+    public function bookMetadata(): HasOne
+    {
+        return $this->hasOne(BookMetadata::class);
+    }
+
+    /** Convenience accessor to get the correct type-specific metadata. */
+    public function metadata(): HasOne
+    {
+        return match($this->type) {
+            MediaItemType::Music => $this->musicMetadata(),
+            MediaItemType::Movie => $this->movieMetadata(),
+            MediaItemType::Show  => $this->showMetadata(),
+            MediaItemType::Book  => $this->bookMetadata(),
+        };
+    }
+
+    /**
+     * The line shown beneath a title in the media center — artist for music,
+     * director for a movie, author for a book, and so on. Keeps per-type
+     * branching out of the views.
+     */
+    public function subtitle(): ?string
+    {
+        return match ($this->type) {
+            MediaItemType::Music => $this->musicMetadata?->artist,
+            MediaItemType::Movie => $this->movieMetadata?->director,
+            MediaItemType::Show  => $this->showMetadata?->creator ?? $this->showMetadata?->network,
+            MediaItemType::Book  => $this->bookMetadata?->author,
+        };
+    }
+
+    /** The release year, wherever it lives for this type. */
+    public function year(): ?int
+    {
+        return match ($this->type) {
+            MediaItemType::Music => $this->musicMetadata?->release_year,
+            MediaItemType::Movie => $this->movieMetadata?->release_year,
+            MediaItemType::Show  => $this->showMetadata?->first_air_year,
+            MediaItemType::Book  => $this->bookMetadata?->publish_year,
+        };
+    }
+
+    /**
+     * Music is shown as square album art; everything else uses a 2:3 poster.
+     */
+    public function artworkAspect(): string
+    {
+        return $this->type === MediaItemType::Music
+            ? 'aspect-square-art'
+            : 'aspect-poster';
+    }
+
+    /**
+     * The URL to render for this item's artwork.
+     *
+     * `cover_image_url` holds one of two things: a full URL for artwork hosted
+     * elsewhere (TMDB, Open Library, iTunes), or a path relative to the public
+     * disk for art we extracted ourselves. Relative paths are resolved against
+     * the *current* request host, so the same library works on localhost, a
+     * LAN IP, and a tunnel without rewriting a single row.
+     *
+     * Storing an absolute URL for local art would bake one hostname into the
+     * database and break every other way of reaching the server.
+     */
+    public function coverUrl(): ?string
+    {
+        $value = $this->cover_image_url;
+
+        if (blank($value)) {
+            return null;
+        }
+
+        if (str_starts_with($value, 'http://') || str_starts_with($value, 'https://')) {
+            return $value;
+        }
+
+        // Path segments may contain spaces and commas from artist/album names.
+        $encoded = implode('/', array_map('rawurlencode', explode('/', ltrim($value, '/'))));
+
+        return url('storage/' . $encoded);
+    }
+
+    /**
+     * Absolute path to the item's file on disk, or null if there isn't one.
+     *
+     * Two kinds of path are stored. Uploads land on the storage disk and are
+     * kept relative to it; the folder importer registers files where they
+     * already live and stores an absolute path, so a large collection isn't
+     * duplicated. Everything that touches the file resolves it through here.
+     */
+    public function absoluteFilePath(): ?string
+    {
+        if (blank($this->file_path)) {
+            return null;
+        }
+
+        if (str_starts_with($this->file_path, DIRECTORY_SEPARATOR)) {
+            return is_readable($this->file_path) ? $this->file_path : null;
+        }
+
+        $path = Storage::path($this->file_path);
+
+        return is_readable($path) ? $path : null;
+    }
+
+    /** Whether the underlying file is present and readable. */
+    public function hasReadableFile(): bool
+    {
+        return $this->absoluteFilePath() !== null;
+    }
+
+    /**
+     * Whether this item can be watched in the browser.
+     *
+     * Container support is the browser's decision, not ours, but MKV and AVI
+     * effectively never play — so they're offered as a download instead of a
+     * player that shows a black rectangle.
+     */
+    public function isPlayableVideo(): bool
+    {
+        if (! in_array($this->type, [MediaItemType::Movie, MediaItemType::Show], true)) {
+            return false;
+        }
+
+        // A converted copy exists precisely because the original wasn't
+        // playable, so its presence settles the question.
+        if ($this->hasConvertedCopy()) {
+            return true;
+        }
+
+        $extension = strtolower(pathinfo((string) $this->file_path, PATHINFO_EXTENSION));
+
+        return in_array($extension, ['mp4', 'm4v', 'webm', 'mov', 'ogv'], true);
+    }
+
+    /** Whether a browser-playable conversion has been produced and still exists. */
+    public function hasConvertedCopy(): bool
+    {
+        return filled($this->converted_path)
+            && file_exists(Storage::path($this->converted_path));
+    }
+
+    /**
+     * The file playback should actually stream.
+     *
+     * Prefers the converted copy when there is one; the original stays the
+     * file offered for download, since it's the better quality.
+     */
+    public function playbackPath(): ?string
+    {
+        if ($this->hasConvertedCopy()) {
+            return Storage::path($this->converted_path);
+        }
+
+        return $this->absoluteFilePath();
+    }
+
+    /**
+     * Skip windows the player offers a button for.
+     *
+     * Only whole, sensible ranges are returned — a marker pair that's missing
+     * an end, or ends before it starts, would produce a button that skips
+     * backwards or nowhere.
+     *
+     * @return array<string, array{start: int, end: int|null, label: string}>
+     */
+    public function skipMarkers(): array
+    {
+        $markers = [];
+
+        $introStart = $this->intro_start_seconds;
+        $introEnd = $this->intro_end_seconds;
+
+        if ($introEnd !== null && $introEnd > ($introStart ?? 0)) {
+            $markers['intro'] = [
+                'start' => $introStart ?? 0,
+                'end' => $introEnd,
+                'label' => 'Skip Intro',
+            ];
+        }
+
+        if ($this->credits_start_seconds !== null) {
+            $markers['credits'] = [
+                'start' => $this->credits_start_seconds,
+                // No end: credits run to the file's end, so the button seeks
+                // there rather than to a fixed timestamp.
+                'end' => null,
+                'label' => 'Skip Credits',
+            ];
+        }
+
+        return $markers;
+    }
+
+    /**
+     * The shape the front-end player expects for one queue entry.
+     *
+     * Built here rather than in Blade so every play button — poster, row,
+     * detail page — sends an identical payload.
+     *
+     * @return array<string, mixed>
+     */
+    public function playerPayload(): array
+    {
+        return [
+            'id' => $this->id,
+            'title' => $this->title,
+            'subtitle' => $this->subtitle(),
+            'album' => $this->musicMetadata?->album,
+            'artwork' => $this->coverUrl(),
+            'src' => route('media.stream', $this),
+            'url' => route('media.show', $this),
+            'type' => $this->type->value,
+            // Anything effectively finished starts over rather than resuming
+            // three seconds from the end.
+            'resumeAt' => $this->resumePosition(),
+        ];
+    }
+
+    /**
+     * The album this track belongs to, in playing order.
+     *
+     * Pressing play on one track should continue through the record rather
+     * than stopping after it. A track with no album queues just itself.
+     *
+     * @return \Illuminate\Support\Collection<int, MediaItem>
+     */
+    public function albumQueue(): \Illuminate\Support\Collection
+    {
+        $meta = $this->musicMetadata;
+
+        if ($this->type !== MediaItemType::Music || blank($meta?->album)) {
+            return collect([$this]);
+        }
+
+        return static::query()
+            ->where('type', MediaItemType::Music)
+            ->whereNotNull('file_path')
+            ->whereHas('musicMetadata', fn ($query) => $query
+                ->where('album', $meta->album)
+                // Same album title by a different artist is a different record.
+                ->when(filled($meta->artist), fn ($q) => $q->where('artist', $meta->artist)))
+            ->with('musicMetadata')
+            ->get()
+            // Sorted in PHP because track_number lives on the joined table and
+            // is frequently null for singles.
+            //
+            // Bulk-download tools often write a playlist position into the
+            // track tag, so values run into the hundreds. Those still order an
+            // album correctly relative to each other, but anything above a
+            // plausible disc length is treated as unreliable and falls back to
+            // title so the queue never looks arbitrary.
+            // `sortBy` with an array of closures treats them as key/direction
+            // pairs rather than successive comparators, so an explicit
+            // comparison is the only way to get numeric ordering here.
+            ->sort(function (MediaItem $a, MediaItem $b): int {
+                // Untracked singles sort after everything numbered.
+                $left = $a->musicMetadata?->track_number ?? PHP_INT_MAX;
+                $right = $b->musicMetadata?->track_number ?? PHP_INT_MAX;
+
+                return $left === $right
+                    ? strcmp((string) $a->title, (string) $b->title)
+                    : $left <=> $right;
+            })
+            ->values();
+    }
+
+    /**
+     * Seconds to resume from, or null to start at the beginning.
+     */
+    public function resumePosition(): ?int
+    {
+        $profileId = app(CurrentProfile::class)->id();
+
+        $play = $this->plays()
+            // Scoped to the profile, not the account: two people sharing a
+            // login must not resume into each other's film.
+            ->when($profileId, fn ($query) => $query->where('profile_id', $profileId))
+            ->when(! $profileId, fn ($query) => $query->where('user_id', Auth::id()))
+            ->where('completed', false)
+            ->latest('id')
+            ->first();
+
+        return $play?->position_seconds ?: null;
+    }
+
+    /** Fallback glyph when an item has no artwork. */
+    public function typeGlyph(): string
+    {
+        return match ($this->type) {
+            MediaItemType::Music => '♪',
+            MediaItemType::Movie => '▶',
+            MediaItemType::Show  => '📺',
+            MediaItemType::Book  => '📖',
+        };
+    }
+}
