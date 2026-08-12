@@ -274,6 +274,19 @@ class MediaCenterController extends Controller
     }
 
     /**
+     * The offline downloads screen.
+     *
+     * Only the shell: what is stored lives in the browser's IndexedDB, and the
+     * server has no way to know what any given device holds.
+     */
+    public function downloads(): View
+    {
+        return view('media.downloads', [
+            'counts' => $this->browser->counts(),
+        ]);
+    }
+
+    /**
      * Logs a play event.
      *
      * Browsers issue range requests while seeking, which would otherwise log a

@@ -65,6 +65,10 @@ Route::middleware(['auth'])->group(function (): void {
             Route::get('/', [MediaCenterController::class, 'home'])->name('home');
             Route::get('/search', [MediaCenterController::class, 'search'])->name('search');
 
+            // What this device is holding offline. The list itself lives in
+            // the browser, so this only renders the shell.
+            Route::get('/downloads', [MediaCenterController::class, 'downloads'])->name('downloads');
+
             // Movies and shows browse as one section, split by a sub-nav.
             // Declared before the {type} wildcard so "watch" isn't captured
             // as a media type.

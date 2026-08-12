@@ -167,6 +167,11 @@
                     @endif
 
                     <div class="border-t border-base-600 py-1">
+                        <a href="{{ route('media.downloads') }}" role="menuitem"
+                           class="block px-3 py-2 text-sm text-ink-300 transition hover:bg-base-700 hover:text-ink-100">
+                            Downloads
+                        </a>
+
                         <a href="{{ route('profiles.index') }}" role="menuitem"
                            class="block px-3 py-2 text-sm text-ink-300 transition hover:bg-base-700 hover:text-ink-100">
                             Manage profiles

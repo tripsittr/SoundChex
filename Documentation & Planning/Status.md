@@ -70,10 +70,11 @@ tunnel. Needs a rendition ladder, segment storage, playlist generation and
 player integration. Roughly doubles disk per title. **The largest remaining
 item by some margin.**
 
-### Offline downloads
+### Offline playback
 
-Download for offline playback and reading. No DRM constraints here, since the
-files are the user's own.
+Downloads are built and stored (`OfflineDownloads.md`), but the player and
+reader do not yet read from the local blob — a downloaded file still streams
+from the server. Wiring that is the remaining piece.
 
 ### Remaining metadata sources
 

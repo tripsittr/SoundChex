@@ -314,6 +314,39 @@
                         </button>
                     @endif
 
+                    {{-- Offline. Only for something with a file to take:
+                         a wishlist entry has nothing to download. --}}
+                    @if ($item->hasReadableFile())
+                        @php $downloadSize = $item->playbackSize(); @endphp
+
+                        <button type="button"
+                                id="download-toggle"
+                                data-state="idle"
+                                data-item-id="{{ $item->id }}"
+                                data-title="{{ $item->title }}"
+                                data-type="{{ $item->type->value }}"
+                                data-size="{{ $downloadSize ?? 0 }}"
+                                data-url="{{ $item->type === \App\Enums\MediaItemType::Book
+                                    ? route('media.read.file', $item)
+                                    : route('media.stream', $item) }}"
+                                class="download-btn mt-3">
+                            <svg class="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                      d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                            </svg>
+                            <span data-download-label>Download for offline</span>
+                            @if ($downloadSize)
+                                <span class="ml-auto text-xs text-ink-500">
+                                    {{ $downloadSize >= 1073741824
+                                        ? round($downloadSize / 1073741824, 1) . ' GB'
+                                        : round($downloadSize / 1048576) . ' MB' }}
+                                </span>
+                            @endif
+                        </button>
+
+                        <p id="download-status" class="download-status hidden"></p>
+                    @endif
+
                     @unless (app(\App\Services\CurrentProfile::class)->isKids())
                     <a href="{{ $item->adminEditUrl() }}"
                        class="mt-3 inline-flex w-full items-center justify-center rounded-md border border-base-500 px-4 py-2 text-sm font-medium text-ink-300 transition hover:border-ink-500 hover:text-ink-100">

@@ -174,3 +174,49 @@
         transform: none;
     }
 }
+
+/* ------------------------------------------------------------- downloads */
+
+/* State lives on data-state rather than swapped classes, so the button reads
+   as one control changing rather than several controls replacing each other. */
+.download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    border-radius: 0.375rem;
+    border: 1px solid var(--color-base-500);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-ink-300);
+    background: transparent;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.download-btn:hover {
+    border-color: var(--color-ink-500);
+    color: var(--color-ink-100);
+}
+
+.download-btn[data-state='downloading'] {
+    border-color: var(--color-accent);
+    color: var(--color-ink-100);
+}
+
+.download-btn[data-state='stored'] {
+    border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    color: var(--color-ink-100);
+}
+
+.download-status {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--color-ink-500);
+}
+
+.download-status[data-tone='good'] { color: #6ee7b7; }
+.download-status[data-tone='bad'] { color: #fca5a5; }

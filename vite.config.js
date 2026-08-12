@@ -11,6 +11,7 @@ export default defineConfig({
                 'resources/css/media-center.css',
                 'resources/js/app.js',
                 'resources/js/media-center.js',
+                'resources/js/downloads-page.js',
                 'resources/js/reader.js',
                 'resources/js/now-playing.js',
                 'resources/js/watch.js',

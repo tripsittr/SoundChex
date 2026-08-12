@@ -77,6 +77,36 @@ class MediaItem extends Model
         return $this->hasMany(PageText::class);
     }
 
+    /**
+     * Size in bytes of the file that would actually be played or read.
+     *
+     * Prefers the converted copy, since that is what streaming serves — the
+     * original may be an MKV several times larger that no browser decodes.
+     * Used to warn before a download that won't fit.
+     */
+    public function playbackSize(): ?int
+    {
+        $path = $this->playbackPath();
+
+        if ($path === null) {
+            return null;
+        }
+
+        $absolute = Storage::path($path);
+
+        if (! is_file($absolute)) {
+            $absolute = $this->absoluteFilePath();
+        }
+
+        if ($absolute === null || ! is_file($absolute)) {
+            return null;
+        }
+
+        $size = @filesize($absolute);
+
+        return $size === false ? null : $size;
+    }
+
     /** Illustrations extracted from a book file. */
     public function bookAssets(): HasMany
     {
