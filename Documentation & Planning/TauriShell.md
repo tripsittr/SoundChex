@@ -54,7 +54,7 @@ runner; GitHub Actions covers all three free for public repositories.
 
 | Target | Needs | Output |
 | --- | --- | --- |
-| macOS | This machine | `.app` (verified working) |
+| macOS | This machine | `.app` + `.dmg` (both verified) |
 | Windows | Windows machine or CI | `.msi`, `.exe` (NSIS) |
 | Linux | Linux machine or CI | `.deb`, `.rpm`, `.AppImage` |
 | iOS | Mac + Xcode + paid Apple account | `.ipa` |
@@ -64,19 +64,21 @@ Mobile targets need initialising first — `tauri ios init`, `tauri android
 init` — which generates `src-tauri/gen/`. That directory is gitignored; it is
 regenerated, not authored.
 
-### The DMG target is disabled
+### The DMG needs macOS Automation permission
 
-`bundle.targets` omits `dmg`. Tauri's DMG script drives **Finder through
-AppleScript** to arrange the window, which fails with `AppleEvent timed out
-(-1712)` unless the calling terminal holds macOS Automation permission.
+Tauri's DMG script drives **Finder through AppleScript** to arrange the window.
+Without Automation access for the calling terminal it fails with `AppleEvent
+timed out (-1712)`.
 
-This is an environment permission, not a project defect — the `.app` builds and
-runs regardless. To produce a DMG, grant your terminal Automation access under
-System Settings → Privacy & Security, add `"dmg"` back to `bundle.targets`, and
-run the build from that terminal. A stale mounted image also breaks the script;
-`hdiutil detach` any leftover `/dev/diskN` first.
+Granting that permission (System Settings → Privacy & Security → Automation)
+is all it needs — the target is enabled and builds cleanly.
 
-For household use the `.app` is enough — a DMG is packaging for strangers.
+Two things that break it if it starts failing again:
+
+- **A stale mounted image.** `hdiutil info` will list a leftover `/dev/diskN`;
+  `hdiutil detach <disk> -force` clears it.
+- **Running from a terminal that has not been granted Automation access.** The
+  permission is per-application, so a different terminal needs its own grant.
 
 ## Signing
 
@@ -90,8 +92,12 @@ Unsigned builds work; they warn once.
 
 ## Verified
 
-- Release build compiles clean; the binary is 2.8 MB and the `.app` 3.0 MB.
+- Release build compiles clean; the binary is 2.8 MB, the `.app` 3.0 MB and
+  the `.dmg` 1.6 MB.
 - The app launches and stays running.
+- The DMG passes `hdiutil verify` (valid checksum), contains `SoundChex.app`
+  and the `/Applications` drop-link, and the app **launches from the mounted
+  image** — checked rather than assumed from the file existing.
 - The webview genuinely renders and issues network requests — confirmed by
   pointing the window at a local probe server and observing the GET in its
   access log, rather than inferring it from the process staying alive.
