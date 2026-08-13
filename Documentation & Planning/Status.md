@@ -58,7 +58,15 @@ catalogued, identified and filed by the existing pipeline.
 
 **Admin** — resources for every media type, duplicate review, metadata and
 library settings, profile management, dashboard widgets. Themed to match the
-media center, sharing one palette defined in `resources/css/tokens.css`.
+media center, sharing one palette defined in `resources/css/tokens.css`. Every
+screen, the dashboard included, is gated on the current profile's permissions.
+
+**Tests** — 124 PHP, 25 Vitest, 17 Playwright, all green. Every guard was
+verified by breaking it on purpose and confirming a test fails. Writing them
+found five silent bugs: profile permissions blocked at the panel door, music
+still stopping on navigation, episode codes stripped as file extensions, an
+ungated admin dashboard leaking titles above a profile's rating, and a missing
+IndexedDB record read as a hit. See `DONE_TestCoverage.md`.
 
 ---
 

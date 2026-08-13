@@ -89,38 +89,55 @@ What actually broke, in a real browser:
 
 ## Status
 
-In progress. Three layers exist and run:
+Complete. Three layers run green:
 
 | Layer | Command | Count |
 | --- | --- | --- |
-| PHP | `php artisan test` | 71 |
+| PHP | `php artisan test` | 124 |
 | Vitest | `npm test` | 25 |
-| Playwright | `npm run test:e2e` | 4 |
+| Playwright | `npm run test:e2e` | 17 |
 
-**Covered:** `LibraryOrganizer` (paths for all four types, the confidence gate,
-never overwriting a different recording), `DuplicateDetector` (weighted toward
-refusals — the only code that deletes a user's file), `ContentGate` and profile
-permissions (asserted by direct URL, never by whether a link renders),
-`SearchService` (the rating cap leaking through dialogue), `EpisodeParser`
-(data-provided, including `Blade Runner 2049`), reader reflow, byte formatting,
-caption preferences, and playback across navigation.
+**Covered:** `LibraryOrganizer`, `DuplicateDetector`, `ContentGate` and profile
+permissions, `SearchService`, `LibraryScanner`, `LibraryCsv`, `EpisodeParser`,
+`MediaTranscoder`, `OcrService`, reader reflow, byte formatting, caption
+preferences, playback across navigation, admin access by direct URL, reader
+annotations across a reload, and offline playback with the network cut.
 
-**Each guard was verified by sabotage** — break it on purpose, confirm a test
-goes red, restore. Done for the confidence gate, the delete re-verification,
-the rating cap, profile permissions, the dialogue gate and SPA navigation.
+**Every guard was verified by sabotage** — break it, confirm a test goes red,
+restore. Done for the confidence gate, the delete re-verification, the rating
+cap, profile permissions, the dialogue gate, SPA navigation, the settle window,
+extension stripping, the OCR language validation, CSV re-import dedup, the
+dashboard gate, annotation persistence and offline playback.
 
-**Two bugs found by writing the tests**, both silent until then:
+### Five bugs found by writing the tests
 
-- `canAccessPanel()` still gated on `hasAnyRole()`, so a profile holding a
-  granted permission was refused at the panel door — per-profile permissions
-  were unusable for the case they exist for.
-- Music still stopped on every navigation. See `PersistentPlayback.md`.
+Each was silent, and each is fixed and covered:
 
-**Still uncovered:** `LibraryScanner`, `LibraryCsv`, `MediaTranscoder`,
-`OcrService`, `MetadataHistory`, `WatchProviders`, and the Playwright cases for
-highlights surviving a reload, offline playback, and a member profile refused
-in the admin panel. Not renamed `DONE_` until those are closed or explicitly
-dropped.
+1. **`canAccessPanel()` gated on `hasAnyRole()`** — a profile holding a granted
+   permission was refused at the panel door, making per-profile permissions
+   unusable for their own purpose.
+2. **Music still stopped on every navigation.** Livewire only binds click
+   interception when a Livewire component is present, and the media center is
+   plain Blade. See `PersistentPlayback.md`.
+3. **Episode codes were stripped as file extensions.** The scanner passes a
+   basename, and `pathinfo()` then ate `.S01E01` off a dotted release name, so
+   those files were catalogued as films.
+4. **The admin dashboard was ungated.** A profile capped at PG could open
+   `/admin` and read library counts, storage totals and a Recently Added table
+   listing titles above its rating.
+5. **A missing IndexedDB record read as a hit.** `result?.result ?? result`
+   fell through to the IDBRequest object, so `localUrl()` threw instead of
+   returning null for anything not downloaded.
+
+### Deliberately not covered
+
+- `MetadataHistory` and `WatchProviders` — thin wrappers over data the
+  metadata sources own; there is no refusal or destructive path in either.
+- The PDF rect-merging helper is module-private and needs a real canvas and
+  viewport. Reshaping it to fit a unit test would change the code to suit the
+  test.
+- Driving text selection in epub.js. That tests the browser's selection API,
+  not this project.
 
 ### Isolation
 
