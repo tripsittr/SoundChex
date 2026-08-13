@@ -79,10 +79,15 @@ class User extends Authenticatable implements FilamentUser
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        // An uploader reaches the panel, but every resource and page inside it
-        // refuses them individually — see Filament\Concerns\RestrictsToAdmins.
-        // Panel access alone is not permission to do anything.
-        return $this->hasAnyRole(['super_admin', 'owner', 'admin', 'uploader']);
+        // The household shares one login, so the account cannot decide who may
+        // reach the panel — everyone signing in is the same account. Every
+        // resource and page inside refuses individually based on the current
+        // profile's permissions; see Filament\Concerns\RestrictsToAdmins.
+        //
+        // Gating here on a role instead left a member holding a granted
+        // permission blocked at the door, which made profile permissions
+        // unusable for the case they exist for.
+        return true;
     }
 
     /**
