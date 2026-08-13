@@ -46,13 +46,34 @@ class EpisodeParser
     ];
 
     /**
+     * Strips a real file extension, and only a real one.
+     *
+     * `pathinfo()` treats everything after the last dot as an extension, so
+     * `The.Bear.S01E01` — a dotted release name with the extension already
+     * removed — lost `.S01E01` and stopped looking like an episode at all.
+     * The scanner passes exactly that: a basename, not a filename. Every such
+     * file was being catalogued as a film.
+     */
+    private function withoutExtension(string $filename): string
+    {
+        // Never strip a trailing episode code. `Show.S01.E02` ends in `.E02`,
+        // which is indistinguishable from an extension by shape alone — and
+        // removing it turns the one thing being looked for into a file suffix.
+        if (preg_match('/[\s._-](?:E\d{1,3}|S\d{1,2}E\d{1,3})$/i', $filename)) {
+            return $filename;
+        }
+
+        return (string) preg_replace('/\.[A-Za-z0-9]{2,4}$/', '', $filename, 1);
+    }
+
+    /**
      * Pulls season, episode and series name out of a filename.
      *
      * @return array{series: string, season: int, episode: int}|null
      */
     public function parse(string $filename): ?array
     {
-        $name = pathinfo($filename, PATHINFO_FILENAME);
+        $name = $this->withoutExtension($filename);
 
         // A file covering two episodes has no single correct destination, so
         // it is not an episode as far as filing is concerned.

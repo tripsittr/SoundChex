@@ -34,6 +34,15 @@ class EpisodeParserTest extends TestCase
             'lowercase dotted' => ['Show.s01.e02.mkv', 'Show', 1, 2],
             'quality suffix' => ['Chernobyl S01E05 1080p x265.mkv', 'Chernobyl', 1, 5],
             'three digit episode' => ['Show S01E123.mkv', 'Show', 1, 123],
+
+            // The scanner passes a *basename*, so these arrive with the
+            // extension already stripped. pathinfo() used to eat the episode
+            // code off a dotted name, and every such file was catalogued as a
+            // film — the shape most TV releases actually use.
+            'dotted, no extension' => ['The.Bear.S01E01', 'The Bear', 1, 1],
+            'dotted with extension' => ['The.Bear.S01E01.mkv', 'The Bear', 1, 1],
+            'split code, no extension' => ['Show.S01.E02', 'Show', 1, 2],
+            'split code with extension' => ['Show.S01.E02.mkv', 'Show', 1, 2],
         ];
     }
 
