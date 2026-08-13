@@ -3,9 +3,17 @@ import {
     download,
     formatBytes,
     isDownloaded,
+    list,
     localUrl,
     remove,
 } from './downloads.js';
+
+// Exposed for the browser tests, which drive the real download path — fetch,
+// stream, IndexedDB — rather than clicking through four button states. There
+// is no other way in: the bundle has no importable module path at runtime.
+// Read-only surface, and the same object the UI uses, so a test cannot pass
+// against a parallel implementation.
+window.soundchexDownloads = { checkSpace, download, isDownloaded, list, localUrl, remove };
 
 /**
  * The download control on a detail page.

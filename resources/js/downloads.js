@@ -54,7 +54,14 @@ async function transaction(store, mode, fn) {
         const tx = db.transaction(store, mode);
         const result = fn(tx.objectStore(store));
 
-        tx.oncomplete = () => resolve(result?.result ?? result);
+        // `result` is an IDBRequest for get/getAll, and undefined for delete.
+        // Unwrapping with `result?.result ?? result` looked equivalent but
+        // returned the *request object* whenever the lookup found nothing —
+        // truthy, so callers treated a missing record as a hit and
+        // URL.createObjectURL() threw on it.
+        tx.oncomplete = () => resolve(
+            result instanceof IDBRequest ? result.result : result,
+        );
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error);
     });
@@ -197,7 +204,10 @@ export async function download({ id, url, meta = {}, onProgress, signal }) {
 export async function localUrl(id) {
     const blob = await transaction(BLOB_STORE, 'readonly', (store) => store.get(String(id)));
 
-    return blob ? URL.createObjectURL(blob) : null;
+    // Type-checked rather than merely truthy, matching isDownloaded(): a
+    // record that is not a Blob cannot become an object URL, and passing one
+    // to createObjectURL throws rather than returning null.
+    return blob instanceof Blob ? URL.createObjectURL(blob) : null;
 }
 
 /**
