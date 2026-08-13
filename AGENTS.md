@@ -92,9 +92,21 @@ Attached records: `MediaTag`, `Person`, `Subtitle`, `PageText`, `BookAsset`,
 ### Profiles
 
 A household shares one account but not one taste. `Profile` carries history,
-resume points, highlights and watchlist. **Profiles are not a security
-boundary** — no password, switching is a convenience, exactly as commercial
-services treat it. Permissions live on `User`; the admin panel enforces its own.
+resume points, highlights, watchlist — **and capability**.
+
+Permissions live on the profile, not the account. The household shares one
+login, so an account-level permission would give everyone identical rights. The
+first profile on an account is the owner: it short-circuits every check, so a
+household can never end up with nobody able to administer it. Every other
+profile starts with nothing and is granted what the owner chooses.
+
+Because switching profiles is otherwise one click, **a profile holding elevated
+permissions must have a PIN** — without it a member could pick the owner's
+profile from a menu and inherit its rights, and the permission would be a label
+rather than a boundary. PINs are hashed and attempts are throttled.
+
+`Profile::can()` is the only place capability is decided. Two subjects exist
+(account and profile) and a check that reads the wrong one fails open.
 
 Resolve the viewer through `CurrentProfile`, never `Auth::id()` directly, so
 per-person scoping stays in one place. Rows written before profiles existed
@@ -166,11 +178,78 @@ display: none }` at the **end** of the block, after every rule it must beat.
 4. If a requirement is ambiguous in a way that changes the work, ask. If it
    doesn't, pick the sensible default and say which.
 
+### Testing
+
+**Write tests for everything you build.** Not as a final pass — alongside the
+work, so a guard you add today still holds a month from now. Every bug found in
+this project so far was caught by hand; a test is the difference between
+noticing a regression and shipping one.
+
+Three layers, each for a different class of bug. Use the one that fits what you
+wrote, and more than one when the work spans layers.
+
+#### PHP feature and unit tests — `php artisan test`
+
+The default. Required, not optional, for:
+
+- **Anything that moves or deletes a file.** `LibraryOrganizer` and
+  `DuplicateDetector` act on irreplaceable data. Test the refusals as hard as
+  the successes: that a wrong-confidence match does *not* move, that a diverged
+  file is *not* deleted, that an existing file is never overwritten.
+- **Anything that decides access.** `ContentGate`, profile permissions, panel
+  gates. Test by **direct URL**, not by whether a link renders — Filament and
+  Laravel routes resolve whether or not anything links to them, so a test that
+  only checks navigation proves nothing.
+- **Parsers and converters.** `EpisodeParser`, `SubtitleConverter`, OCR
+  parsing, text reflow. These have known-tricky inputs; cover both directions —
+  what must parse *and* what must be refused. `Blade Runner 2049` is not season
+  20 episode 49.
+- **Anything with a fallback.** Test the fallback path, not just the happy one.
+  A silent fallback that never runs correctly is invisible until it matters.
+
+#### Vitest — `npm run test`
+
+Pure JavaScript logic with no DOM: paragraph reflow, rectangle merging,
+timestamp conversion, byte formatting, quota arithmetic. Fast, so there is no
+excuse for leaving an algorithm uncovered.
+
+#### Playwright — `npm run test:e2e`
+
+Integration behaviour a unit test cannot see, and where most real bugs have
+lived:
+
+- Does audio survive a navigation?
+- Does a highlight persist across a reload?
+- Does a downloaded file play with the network off?
+- Is a member profile actually refused in the admin panel?
+
+Reach for this whenever the work spans a page load, a swapped DOM, or browser
+storage.
+
+### Tests must never touch the real library
+
+Non-negotiable. The database is `:memory:` and the filesystem is faked with
+`Storage::fake()`. A test that moves a real file, or writes into
+`storage/app/private`, is worse than no test — it can destroy the thing it was
+written to protect. Never point a test at a real media path, and never rely on
+a file already existing on the machine.
+
+Network is faked too. TMDB, OpenSubtitles and Open Library are stubbed with
+`Http::fake()`; a suite that fails when the wifi drops is not a suite.
+
+### The check that matters
+
+**Break the guard on purpose and confirm a test fails.** Remove the confidence
+check, or the byte re-verification, and run the suite. If it still passes, the
+test is decorative — it asserts the code ran, not that it protected anything.
+Put the guard back afterwards.
+
 ### While building
 
 1. **Small, verifiable steps.** Build, run it, then continue.
 2. **Lint as you go** — `php -l` on PHP, `node --check` on JS.
-3. **Test the actual path**, including failure modes and edge cases.
+3. **Write the tests with the code**, at the layer that fits it (see Testing
+   above). Cover the refusals, not only the successes.
 4. **Clean up test data.** Never leave probe rows, files or profiles behind.
 
 ### Before committing
