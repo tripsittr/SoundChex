@@ -43,6 +43,11 @@ extraction; full-text search across every page.
 **Profiles** — per-person history, resume points, highlights and watchlist,
 with a kids mode that caps ratings across browse, search and direct links.
 
+**Remote access** — reachable over Tailscale at
+`https://macbookair.tail7e590c.ts.net` with a real certificate, from any device
+on the tailnet. This is what makes the offline features work: a secure context
+is required for service workers, add-to-home-screen and durable storage.
+
 **Search** — one query across titles, metadata, cast, dialogue and the text
 inside books. A dialogue hit jumps to the moment it is spoken; a book hit opens
 at the page.
@@ -69,13 +74,6 @@ Currently one fixed-bitrate MP4, which buffers or fails on cellular and over a
 tunnel. Needs a rendition ladder, segment storage, playlist generation and
 player integration. Roughly doubles disk per title. **The largest remaining
 item by some margin.**
-
-### HTTPS to the phone
-
-**Blocking all offline features.** A phone reaches this server over a plain
-LAN IP, which browsers treat as an insecure context: no service worker, no
-add-to-home-screen, no durable storage. Downloads are built and wired but inert
-until this is done. See `MobileAndOffline.md` and `RemoteAccess.md`.
 
 ### Remaining metadata sources
 

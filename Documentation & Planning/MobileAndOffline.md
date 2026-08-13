@@ -119,9 +119,14 @@ largest), tests 9/9.
 
 ## Still to verify — needs a phone
 
-Nothing below can be exercised from the server:
+Step 1 is **done**: Tailscale serves the app at
+`https://macbookair.tail7e590c.ts.net` with a valid certificate, and `APP_URL`
+matches. Verified from the server: HTTPS 200, cert valid, login works, assets
+resolve to that origin.
 
-1. Reach the library over HTTPS (see `RemoteAccess.md`), then set `APP_URL`.
+The rest needs a real device:
+
+1. ~~Reach the library over HTTPS, set `APP_URL`.~~ Done.
 2. Add to home screen; confirm the service worker registers.
 3. Download a track, enable airplane mode, play it — the badge should appear.
 4. Download a book, go offline, read it including resume position.

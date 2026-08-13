@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Keeps the app listening on 127.0.0.1:8000 so `tailscale serve` always has
+  something to proxy to, including after a reboot.
+
+  Install:
+    cp "Documentation & Planning/com.soundchex.serve.plist" ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.soundchex.serve.plist
+
+  Stop:
+    launchctl unload ~/Library/LaunchAgents/com.soundchex.serve.plist
+
+  Bound to 127.0.0.1 deliberately: Tailscale is the only thing that should
+  reach it, so the port is not exposed to the local network.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.soundchex.serve</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Herd's PHP, not Homebrew's: there is no /opt/homebrew/bin/php on
+             this machine, and launchd fails silently on a missing binary. -->
+        <string>/Users/tripsittr/Library/Application Support/Herd/bin/php84</string>
+        <string>/Users/tripsittr/Documents/GitHub/SoundChex/artisan</string>
+        <string>serve</string>
+        <string>--host=127.0.0.1</string>
+        <string>--port=8000</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/tripsittr/Documents/GitHub/SoundChex</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/tripsittr/Documents/GitHub/SoundChex/storage/logs/serve.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/tripsittr/Documents/GitHub/SoundChex/storage/logs/serve.log</string>
+</dict>
+</plist>

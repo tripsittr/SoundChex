@@ -150,3 +150,50 @@ Worth doing yourself:
 - Use a real password on every account; this is now internet-facing
 - Keep `APP_DEBUG=false` in production — debug pages leak file paths and config
 - Prefer Cloudflare Access or Tailscale if you don't want a public login page
+
+---
+
+## This install (Tailscale)
+
+Configured and working. Reachable from any device signed into the same
+tailnet, at home or on cellular:
+
+```
+https://macbookair.tail7e590c.ts.net
+```
+
+Real certificate via MagicDNS, so it is a genuine secure context — which is
+what makes service workers, add-to-home-screen and durable download storage
+work at all.
+
+### Why it does not proxy to port 80
+
+Herd's nginx matches sites by hostname and returns **404** for anything it does
+not recognise, so pointing `tailscale serve` at port 80 serves nothing. The app
+is served directly instead, and Tailscale proxies to it:
+
+```bash
+php artisan serve --host=127.0.0.1 --port=8000
+sudo tailscale serve --bg 8000
+```
+
+`trustProxies(at: '*')` is already set in `bootstrap/app.php`, so Laravel sees
+the forwarded HTTPS scheme rather than generating `http://` URLs behind the
+proxy.
+
+### Keeping it running
+
+`php artisan serve` is single-threaded and dies with its terminal. Fine while
+testing; for something that survives a reboot, run it under launchd — see
+`com.soundchex.serve.plist` in this folder.
+
+`tailscale serve --bg` persists on its own and comes back after a restart.
+
+### APP_URL
+
+Set to the Tailscale hostname. It has to match the origin pages are actually
+served from: Laravel builds asset and route URLs from it, and a mismatch
+registers the service worker against a scope the pages do not live in.
+
+Switching back to local-only development means setting it back to
+`https://soundchex.test`.
