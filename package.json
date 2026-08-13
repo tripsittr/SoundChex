@@ -6,7 +6,8 @@
         "build": "vite build",
         "dev": "vite",
         "test": "vitest run",
-        "test:watch": "vitest"
+        "test:watch": "vitest",
+        "test:e2e": "bash tests/e2e/bootstrap.sh && playwright test"
     },
     "devDependencies": {
         "@playwright/test": "^1.62.1",
