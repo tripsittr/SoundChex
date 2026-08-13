@@ -30,7 +30,7 @@ is worth adding around something that already runs."
 | Path | Platforms | Cost | Effort | Store needed |
 | --- | --- | --- | --- | --- |
 | **1. PWA (already built)** | Phone, desktop, some TV | **$0** | **Done** | No |
-| **2. Tauri** | Win/macOS/Linux desktop | $0 unsigned | 1–2 days | No |
+| **2. Tauri v2** | Desktop **+ Android + iOS** | $0 unsigned | 1–2 days desktop | No (except iOS) |
 | **3. Electron** | Win/macOS/Linux desktop | $0 unsigned | 1 day | No |
 | **4. Capacitor + sideload** | Android (+iOS, painfully) | $0 Android | 2–4 days | No (Android) |
 | **5. TWA via Bubblewrap** | Android | $0 | ~half a day | No, if sideloaded |
@@ -41,6 +41,12 @@ is worth adding around something that already runs."
 **Recommendation: 1 → 5 → 2 → 6.** The PWA is done; Bubblewrap turns it into a
 real sideloadable Android app in an afternoon; Tauri gives a proper desktop app
 for a weekend; TV is the only place needing genuine new work.
+
+**Tauri v2 alone covers everything here except TV** — desktop, Android and iOS
+from one codebase — so it is the single best answer if you would rather learn
+one toolchain than three. It is not listed first only because Bubblewrap gets
+a working Android app in a fraction of the setup, and iOS remains gated by
+Apple no matter which of these you choose.
 
 ---
 
@@ -68,27 +74,61 @@ Add to Home Screen on any phone, Install on desktop Chrome/Edge.
 
 ---
 
-## 2. Tauri — desktop, the good option
+## 2. Tauri v2 — desktop *and* mobile from one codebase
 
-A Rust shell around the system webview, pointed at the Tailscale URL.
+A Rust shell around each platform's native webview, pointed at the Tailscale
+URL. **Since v2 (stable, Oct 2024) this targets Android and iOS too**, not just
+desktop — `tauri android init` and `tauri ios init` alongside the desktop
+build. So this one option covers everything on this page except TV.
+
+Rust is already installed on this machine, so the desktop path starts today.
 
 **Pros**
 
+- **Five platforms, one codebase**: Windows, macOS, Linux, Android, iOS.
 - Tiny: ~10 MB installers, versus ~150 MB for Electron.
-- Genuinely free and open source; no account of any kind.
+- Genuinely free and open source; no account of any kind to build.
 - Real OS integration — tray icon, media keys, native notifications.
-- Can be distributed as a plain download from GitHub Releases.
+- Distributed as a plain download from GitHub Releases, or a sideloaded APK.
+- Unlimited storage on Android, escaping the iOS 1 GB browser cap on that side.
 
-**Cons**
+**Cons — and these are platform rules, not Tauri's doing**
 
-- **Unsigned binaries warn on first launch.** Windows SmartScreen shows
-  "unrecognised app"; macOS requires right-click → Open. Not blocking, but it
-  looks alarming to anyone but you.
-- Rust toolchain to install, though almost no Rust to write for a wrapper.
+- **Unsigned desktop binaries warn on first launch.** Windows SmartScreen says
+  "unrecognised app"; macOS needs right-click → Open. One-time and not
+  blocking, but alarming to anyone but you.
+- **iOS still needs a Mac, Xcode, and hits the same 7-day expiry** on a free
+  provisioning profile. Tauri changes *what you write*, not what Apple
+  permits — the app stops launching after a week either way. There is no Xcode
+  on this machine today.
+- **Android needs the SDK and NDK installed** (neither is here yet) — a large
+  download and the fiddliest part of the setup.
 - Linux uses WebKitGTK, which lags on codec support.
+- Mobile targets are much younger than the desktop ones; expect rougher edges
+  and thinner documentation than the desktop path.
 
 **Cost to remove the warnings:** ~$100–300/yr for an Authenticode certificate,
 $99/yr for Apple notarisation. **Not worth it for household use.**
+
+### So why is Bubblewrap still listed first for Android?
+
+Because for *this* project they produce nearly the same result, and one is
+much cheaper to get to:
+
+|  | Tauri v2 Android | Bubblewrap TWA |
+| --- | --- | --- |
+| Setup | Rust + Android SDK + NDK | Android SDK only |
+| Time to first APK | A day or so | An afternoon |
+| Result | Native shell, unlimited storage | Chrome full-screen, browser limits |
+| Maintenance | Rebuild to ship shell changes | None — loads the live site |
+
+Tauri is the better *app*. Bubblewrap is the better *first step*, and nothing
+is wasted if you later replace it — both just load the same web UI.
+
+**Pick Tauri for Android instead if** browser storage limits start biting, or
+you want lock-screen controls and native downloads. That is the same reason
+Capacitor is listed below, and if you go that route Tauri largely replaces it:
+one toolchain instead of two.
 
 ---
 
@@ -129,6 +169,10 @@ Wraps the web app in a native container with plugin access to real APIs.
 
 **Verdict:** worth it for Android if PWA storage becomes limiting. For iOS,
 accept the PWA unless you'll pay Apple.
+
+**Tauri v2 does the same job** and also builds your desktop apps, so prefer it
+unless you specifically want Capacitor's much larger plugin ecosystem. Two
+toolchains for one outcome is not worth it here.
 
 ---
 
@@ -245,7 +289,9 @@ A Python add-on talking to the existing endpoints.
    improves the thing most people will actually use.
 2. **Bubblewrap TWA** — a real Android app for an afternoon.
 3. **Tauri desktop** — a weekend, and the desktop experience stops being a
-   browser tab.
+   browser tab. Rust is already installed here.
+   Its Android target then becomes a natural upgrade from the TWA, reusing
+   the same toolchain, if browser storage limits ever bite.
 4. **Android TV** — only when TV playback genuinely matters, budgeting for the
    D-pad redesign rather than the packaging.
 5. **Reconsider the Jellyfin API** if the answer to "which platforms" ever
