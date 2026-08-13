@@ -25,6 +25,7 @@ class LibraryScanner
     public function __construct(
         private DuplicateDetector $duplicates,
         private LibrarySettings $settings,
+        private EpisodeParser $episodes,
     ) {}
 
     /**
@@ -95,10 +96,24 @@ class LibraryScanner
                     continue;
                 }
 
-                $title = $this->cleanTitle(
-                    $file->getBasename('.' . $file->getExtension()),
-                    $type,
-                );
+                $basename = $file->getBasename('.' . $file->getExtension());
+
+                // Extension cannot separate a film from an episode — both are
+                // .mkv — so the filename decides. A recognised SxxEyy makes
+                // this a show rather than the movie it was classified as.
+                $parsed = $type === MediaItemType::Movie
+                    ? $this->episodes->parse($basename)
+                    : null;
+
+                if ($parsed !== null) {
+                    $type = MediaItemType::Show;
+                }
+
+                $title = $parsed !== null
+                    // The episode's own title is filled by enrichment; until
+                    // then the code identifies it unambiguously.
+                    ? sprintf('%s S%02dE%02d', $parsed['series'], $parsed['season'], $parsed['episode'])
+                    : $this->cleanTitle($basename, $type);
 
                 // A filename that carries no readable title — a temp-upload
                 // hash, say — would only send noise to the metadata sources.
@@ -112,17 +127,29 @@ class LibraryScanner
                 $seed = [];
 
                 if ($type === MediaItemType::Book) {
-                    $author = $this->authorHintFrom(
-                        $file->getBasename('.' . $file->getExtension()),
-                    );
+                    $author = $this->authorHintFrom($basename);
 
                     if ($author !== null) {
                         $seed['author'] = $author;
                     }
                 }
 
+                // Numbering comes from the filename and is authoritative about
+                // which episode this file is — an online lookup can correct the
+                // title but not which file you are holding.
+                if ($parsed !== null) {
+                    $seed['season_number'] = $parsed['season'];
+                    $seed['episode_number'] = $parsed['episode'];
+                }
+
                 if (! $dryRun) {
                     $item = $this->catalog($path, $title, $type, $userId, $seed);
+
+                    // Episodes hang off one series row, so a show is a single
+                    // entry with children rather than ten unrelated items.
+                    if ($parsed !== null) {
+                        $this->attachToSeries($item, $parsed['series'], $userId);
+                    }
 
                     // Checked before enrichment is queued: an identical copy
                     // doesn't need identifying a second time, and under the
@@ -161,6 +188,46 @@ class LibraryScanner
         }
 
         return $result;
+    }
+
+    /**
+     * Links an episode to its series, creating the series if it is new.
+     *
+     * The series row has no file: it exists so a show is one entry with
+     * children rather than ten unrelated items scattered through the library.
+     * Matching is on title within this account, which is what a second episode
+     * of the same show arriving later needs to find.
+     *
+     * Failure here is not fatal — an unattached episode still plays and still
+     * files correctly, so it must not abort the scan.
+     */
+    private function attachToSeries(MediaItem $episode, string $seriesTitle, ?int $userId): void
+    {
+        try {
+            $series = MediaItem::firstOrCreate(
+                [
+                    'type' => MediaItemType::Show,
+                    'title' => $seriesTitle,
+                    'parent_id' => null,
+                    // A series is a grouping, not a file. Distinguishing it
+                    // from an episode that has yet to be filed.
+                    'file_path' => null,
+                ],
+                [
+                    'user_id' => $userId,
+                    'processing_status' => ProcessingStatus::Pending,
+                    'owned' => true,
+                ],
+            );
+
+            if ($series->wasRecentlyCreated) {
+                $series->metadata()->create([]);
+            }
+
+            $episode->forceFill(['parent_id' => $series->id])->saveQuietly();
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     /**

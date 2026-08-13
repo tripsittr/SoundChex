@@ -19,6 +19,7 @@ class MediaItem extends Model
 {
     protected $fillable = [
         'user_id',
+        'parent_id',
         'type',
         'title',
         'external_id',
@@ -105,6 +106,35 @@ class MediaItem extends Model
         $size = @filesize($absolute);
 
         return $size === false ? null : $size;
+    }
+
+    /**
+     * The series an episode belongs to.
+     *
+     * Null on everything else. An episode is a MediaItem in its own right — it
+     * has a file, a playback position and its own subtitles — so this links
+     * the two rather than flattening a show into one row.
+     */
+    public function series(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    /** Episodes of this series, in broadcast order. */
+    public function episodes(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id')
+            ->join('show_metadata', 'show_metadata.media_item_id', '=', 'media_items.id')
+            ->orderBy('show_metadata.season_number')
+            ->orderBy('show_metadata.episode_number')
+            ->select('media_items.*');
+    }
+
+    /** Whether this row is an episode rather than a series or a film. */
+    public function isEpisode(): bool
+    {
+        return $this->type === MediaItemType::Show
+            && $this->showMetadata?->episode_number !== null;
     }
 
     /** Illustrations extracted from a book file. */

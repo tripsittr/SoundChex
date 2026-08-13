@@ -62,13 +62,6 @@ media center, sharing one palette defined in `resources/css/tokens.css`.
 
 Roughly in the order they're worth doing.
 
-### TV filing
-
-Episodes have nowhere to go. A show files as `TV/Show/Show.mkv` with no season
-or episode level, so every episode collides and becomes `Show (2).mkv`,
-`Show (3).mkv`. `show_metadata` has no per-episode fields. See `TvFiling.md` —
-it blocks uploads of any series.
-
 ### Uploads for non-admins
 
 Adding a file today means admin access, which also grants user management,

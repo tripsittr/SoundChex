@@ -77,7 +77,34 @@ never surfaced.
 - Episodes group under one series rather than ten unrelated rows.
 - Existing movies, music and books file exactly as before.
 
-## Status
+## Outcome
 
-Not started. Blocks `Uploads.md` — uploading a season before this lands
-produces a folder of colliding filenames.
+Built and verified against real files and real TMDB data.
+
+Episodes file as `TV/The Bear/Season 01/The Bear - S01E02 - Hands.mkv`. Ten
+episodes of a season now produce ten distinct paths where previously they
+produced `Show.mkv` through `Show (10).mkv`.
+
+**Extension cannot separate a film from an episode** — both are `.mkv` — so
+the filename decides, and `EpisodeParser` promotes a video from movie to show
+when it recognises numbering. That makes false positives dangerous, so the
+parser is covered by 15 tests in both directions. The traps it has to survive:
+`Blade Runner 2049` is not season 20 episode 49, and `1920x1080` is not
+season 1920.
+
+Numbering comes from the filename and is treated as authoritative — the file
+itself says which episode it is. TMDB only supplies the title, which is why an
+episode is filed at `Exact` confidence: nothing was guessed.
+
+Verified: five files scanned produced four episodes under one series row and
+left the film alone; all four filed into correct season folders with **zero
+collisions**; an episode stripped of its numbering correctly refuses to file,
+matching how a film behaves without a year; TMDB resolved *The Bear* to Hulu
+and S01E02 to its real title, "Hands". Tests 24/24.
+
+## Deferred
+
+Specials (season 0) and multi-episode files (`S01E01-E02`) are recognised and
+deliberately left in the inbox rather than filed wrongly. Anime absolute
+numbering is untouched — a separate convention, worth doing only if the library
+gains anime.

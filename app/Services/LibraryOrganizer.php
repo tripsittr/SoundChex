@@ -46,7 +46,10 @@ class LibraryOrganizer
             // A film only needs a year to be filed unambiguously.
             MediaItemType::Movie => filled($item->movieMetadata?->release_year),
 
-            MediaItemType::Show => filled($item->title),
+            // An episode needs its numbering, the same way a film needs its
+            // year. A series row has no file of its own to move.
+            MediaItemType::Show => filled($item->showMetadata?->season_number)
+                && filled($item->showMetadata?->episode_number),
 
             MediaItemType::Book => filled($item->bookMetadata?->author),
         };
@@ -235,7 +238,7 @@ class LibraryOrganizer
         return match ($item->type) {
             MediaItemType::Music => $this->musicSegments($item, $title, $suffix),
             MediaItemType::Movie => $this->movieSegments($item, $title, $suffix),
-            MediaItemType::Show  => [$title, $title . $suffix],
+            MediaItemType::Show  => $this->showSegments($item, $title, $suffix),
             MediaItemType::Book  => $this->bookSegments($item, $title, $suffix),
         };
     }
@@ -282,6 +285,60 @@ class LibraryOrganizer
         $folder = $this->segment($item->title . ' (' . $year . ')') ?? $title;
 
         return [$folder, $folder . $suffix];
+    }
+
+    /**
+     * Episodes file into season folders; a series row has no file of its own.
+     *
+     * Without a season and episode number every episode of a show resolved to
+     * the same path and collided, so the second became "Show (2).mkv" —
+     * numbered by import order rather than by episode. A file that cannot be
+     * placed stays in the inbox, matching how a film behaves without a year.
+     *
+     * "Show - S01E02" is what Plex, Jellyfin and Emby all expect, so the tree
+     * stays readable by other tools.
+     *
+     * @return array<int, string>|null
+     */
+    private function showSegments(MediaItem $item, string $title, string $suffix): ?array
+    {
+        $meta = $item->showMetadata;
+
+        $season = $meta?->season_number;
+        $episode = $meta?->episode_number;
+
+        if ($season === null || $episode === null) {
+            return null;
+        }
+
+        // The series name comes from the parent when there is one: an episode
+        // title is "Brat", and filing that as a folder would scatter a series
+        // across one folder per episode.
+        $series = $this->segment($item->series?->title ?? $item->title);
+
+        if ($series === null) {
+            return null;
+        }
+
+        // Zero-padded so a file browser sorts S01E02 before S01E10. Unpadded
+        // numbers sort lexically and interleave the season.
+        $code = sprintf('S%02dE%02d', $season, $episode);
+
+        $name = $series . ' - ' . $code;
+
+        // The episode title is appended when known, since "S01E02" alone tells
+        // you nothing when browsing the folder directly.
+        $episodeTitle = $this->segment($meta?->episode_title);
+
+        if ($episodeTitle !== null && $episodeTitle !== $series) {
+            $name .= ' - ' . $episodeTitle;
+        }
+
+        return [
+            $series,
+            sprintf('Season %02d', $season),
+            $name . $suffix,
+        ];
     }
 
     /**

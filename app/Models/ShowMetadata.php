@@ -20,6 +20,10 @@ class ShowMetadata extends Model
         'episode_count',
         'status',
         'language',
+        'season_number',
+        'episode_number',
+        'episode_title',
+        'episode_air_date',
     ];
 
     public function mediaItem(): BelongsTo
