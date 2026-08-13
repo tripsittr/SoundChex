@@ -112,3 +112,7 @@ Thumbs.db
 # Playwright output
 /test-results
 /playwright-report
+
+# Tauri build output
+/src-tauri/target
+/src-tauri/gen
