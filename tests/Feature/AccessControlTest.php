@@ -106,6 +106,42 @@ class AccessControlTest extends TestCase
         $this->get('/admin/settings')->assertForbidden();
     }
 
+    public function test_the_dashboard_is_gated_like_every_other_panel_screen(): void
+    {
+        // Panel entry is open by design — the household shares one login — so
+        // the dashboard was the one admin surface a capped profile could
+        // open. Its widgets reported library counts, storage totals and a
+        // Recently Added table listing titles above that profile's rating.
+        $this->actingAs($this->user);
+        app(CurrentProfile::class)->switchTo($this->member->id);
+
+        $this->get('/admin')->assertForbidden();
+    }
+
+    public function test_dashboard_widgets_refuse_independently_of_the_page(): void
+    {
+        // Widgets render outside the page that hosts them, so each repeats the
+        // gate rather than trusting it.
+        $this->actingAs($this->user);
+        app(CurrentProfile::class)->switchTo($this->member->id);
+
+        foreach ([
+            \App\Filament\Widgets\LibraryOverview::class,
+            \App\Filament\Widgets\RecentActivity::class,
+            \App\Filament\Widgets\GenreSplit::class,
+        ] as $widget) {
+            $this->assertFalse($widget::canView(), $widget . ' should refuse a capped profile');
+        }
+    }
+
+    public function test_the_owner_still_reaches_the_dashboard(): void
+    {
+        $this->actingAs($this->user);
+        app(CurrentProfile::class)->switchTo($this->owner->id);
+
+        $this->get('/admin')->assertOk();
+    }
+
     /* ------------------------------------------------------------- PIN --- */
 
     public function test_a_profile_without_a_pin_switches_freely(): void

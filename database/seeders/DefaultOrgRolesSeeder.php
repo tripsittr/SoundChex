@@ -23,6 +23,11 @@ class DefaultOrgRolesSeeder extends Seeder
             'View:Role',
             'Create:Role',
             'Update:Role',
+
+            // The dashboard is gated like every other panel screen, so the
+            // roles that run the server need it explicitly. Without this an
+            // admin reaches the panel and lands on a 403.
+            'View:Dashboard',
         ];
 
         foreach ($adminPermissions as $permissionName) {

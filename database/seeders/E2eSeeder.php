@@ -51,6 +51,72 @@ class E2eSeeder extends Seeder
 
         $this->film($user, 'Family Film', 'G');
         $this->film($user, 'Grown Up Film', 'R');
+
+        $this->book($user, 'Test Book');
+    }
+
+    /**
+     * A minimal but structurally valid EPUB.
+     *
+     * Built as a zip in code rather than committed as a fixture, because a
+     * committed .epub is a media file and those never enter this repository.
+     */
+    private function book(User $user, string $title): MediaItem
+    {
+        $relative = 'media/library/Books/Synthetic Author/' . $title . '.epub';
+        $absolute = Storage::disk('local')->path($relative);
+
+        @mkdir(dirname($absolute), 0755, true);
+
+        $zip = new \ZipArchive();
+
+        if ($zip->open($absolute, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === true) {
+            // Uncompressed and first, as the format requires.
+            $zip->addFromString('mimetype', 'application/epub+zip');
+            $zip->setCompressionName('mimetype', \ZipArchive::CM_STORE);
+
+            $zip->addFromString('META-INF/container.xml', <<<'XML'
+                <?xml version="1.0"?>
+                <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+                </container>
+                XML);
+
+            $zip->addFromString('OEBPS/content.opf', <<<'XML'
+                <?xml version="1.0"?>
+                <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:identifier id="id">synthetic-book</dc:identifier>
+                    <dc:title>Test Book</dc:title>
+                    <dc:creator>Synthetic Author</dc:creator>
+                    <dc:language>en</dc:language>
+                  </metadata>
+                  <manifest><item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/></manifest>
+                  <spine><itemref idref="c1"/></spine>
+                </package>
+                XML);
+
+            $zip->addFromString('OEBPS/chapter1.xhtml', <<<'XML'
+                <?xml version="1.0" encoding="utf-8"?>
+                <html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter One</title></head>
+                <body><h1>Chapter One</h1><p>The yellow wallpaper stretches on forever.</p></body></html>
+                XML);
+
+            $zip->close();
+        }
+
+        $item = MediaItem::create([
+            'user_id' => $user->id,
+            'type' => MediaItemType::Book,
+            'title' => $title,
+            'file_path' => $relative,
+            'match_confidence' => MatchConfidence::Exact,
+            'owned' => true,
+        ]);
+
+        $item->bookMetadata()->create(['author' => 'Synthetic Author']);
+
+        return $item;
     }
 
     private function track(User $user, string $title, string $artist): MediaItem

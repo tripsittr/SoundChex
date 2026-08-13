@@ -16,6 +16,17 @@ use Illuminate\Support\Number;
  */
 class LibraryOverview extends StatsOverviewWidget
 {
+
+    /**
+     * Widgets are renderable independently of the page that hosts them, so
+     * this repeats the dashboard's gate rather than relying on it. Without it
+     * a capped profile saw library counts, storage totals and titles above
+     * its rating.
+     */
+    public static function canView(): bool
+    {
+        return \App\Filament\Pages\Dashboard::canAccess();
+    }
     protected static ?int $sort = -2;
 
     protected ?string $pollingInterval = null;

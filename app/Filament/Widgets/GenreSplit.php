@@ -15,6 +15,17 @@ use Filament\Widgets\ChartWidget;
  */
 class GenreSplit extends ChartWidget
 {
+
+    /**
+     * Widgets are renderable independently of the page that hosts them, so
+     * this repeats the dashboard's gate rather than relying on it. Without it
+     * a capped profile saw library counts, storage totals and titles above
+     * its rating.
+     */
+    public static function canView(): bool
+    {
+        return \App\Filament\Pages\Dashboard::canAccess();
+    }
     protected ?string $heading = 'Genre split';
 
     protected static ?int $sort = 0;
