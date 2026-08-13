@@ -104,10 +104,37 @@ every view, so a link added later is covered automatically. The reader, watch
 player and admin are excluded: each owns the viewport and mounts a renderer
 against the document.
 
+## Verified in a browser — and it was still broken
+
+The Playwright suite (`tests/e2e/playback.spec.js`) now covers this, and
+writing it found that music *still* stopped on every link. Two causes, both
+invisible without a real browser:
+
+1. **Nothing acted on `wire:navigate`.** Livewire only binds its click
+   interception when the page contains a Livewire component, and the media
+   center is plain Blade. Every click fell through to a full page load.
+   `Livewire.navigate()` worked when called directly, so `navigate.js` now
+   handles the click itself.
+2. **`now-playing.js` captured the bar at module scope.** A swap replaces the
+   body, so those references pointed at the previous page's detached nodes —
+   the bar rendered but never updated. Binding is now per-document, handlers
+   read through a shared reference, and the bar repaints from player state on
+   arrival rather than waiting for an event that already fired.
+
+Delegated `document` listeners are guarded to attach once, with the marker on
+`window` rather than `body` — `body` does not survive a swap, so a marker there
+would reset and defeat the guard.
+
+Covered by tests: audio continues across an in-app navigation; the bar survives
+with its title intact; the player object is not rebuilt; and — pinned
+deliberately — a full page load *does* stop playback, because downloads and the
+reader are excluded from SPA navigation on purpose.
+
+Verified by removing the click interception: three tests fail, and the
+excluded-path test correctly stays green.
+
 ## Still to verify — needs a browser
 
-- Play a track, navigate Home → Music → a detail page: audio continues with no
-  gap.
 - Back and forward preserve playback.
 - Download button, search and watchlist still work *after* navigating.
 - The reader and watch pages still load normally.
