@@ -9,9 +9,25 @@ import MediaPlayer, { formatTime } from './player.js';
  * page without knowing anything about the player.
  */
 
-const bar = document.getElementById('now-playing');
+/**
+ * Binds the bar in the *current* document.
+ *
+ * Deliberately not a module-scope constant. An SPA swap replaces the whole
+ * body, and a reference captured once would keep pointing at the detached
+ * element from the previous page — the bar would render but never update.
+ */
+function bindNowPlaying() {
+    const bar = document.getElementById('now-playing');
 
-if (bar) {
+    if (!bar) return;
+
+    // Nothing below may close over `bar` or `ui` directly. This function runs
+    // again on every swap — and twice on first load, since livewire:navigated
+    // also fires there — so a captured reference would be the *previous*
+    // page's detached element while the live bar sat unwritten. Handlers read
+    // through `current` instead, which each run replaces.
+    const current = (window.soundchexBar ??= {});
+
     // Reused across navigations rather than recreated.
     //
     // Livewire swaps the whole body, which re-executes this module — and the
@@ -49,48 +65,56 @@ if (bar) {
         link: document.getElementById('np-link'),
     };
 
+    // This run's live nodes, visible to the handlers bound on the first run.
+    current.bar = bar;
+    current.ui = ui;
+
     const ICON_PLAY = 'M8 5v14l11-7z';
     const ICON_PAUSE = 'M6 5h4v14H6zM14 5h4v14h-4z';
 
     /* ------------------------------------------------------------ wiring */
 
     player.on('trackchange', (item) => {
-        bar.classList.remove('translate-y-full');
+        current.bar.classList.remove('translate-y-full');
 
-        ui.title.textContent = item.title ?? '';
-        ui.subtitle.textContent = item.subtitle ?? '';
+        current.ui.title.textContent = item.title ?? '';
+        current.ui.subtitle.textContent = item.subtitle ?? '';
 
         if (item.artwork) {
-            ui.artwork.src = item.artwork;
-            ui.artwork.classList.remove('hidden');
+            current.ui.artwork.src = item.artwork;
+            current.ui.artwork.classList.remove('hidden');
         } else {
-            ui.artwork.classList.add('hidden');
+            current.ui.artwork.classList.add('hidden');
         }
 
-        if (ui.link && item.url) ui.link.href = item.url;
+        if (current.ui.link && item.url) current.ui.link.href = item.url;
     });
 
     player.on('playstate', (playing) => {
-        ui.toggleIcon.setAttribute('d', playing ? ICON_PAUSE : ICON_PLAY);
-        ui.toggle.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+        current.ui.toggleIcon.setAttribute('d', playing ? ICON_PAUSE : ICON_PLAY);
+        current.ui.toggle.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     });
 
-    player.on('time', ({ current, duration }) => {
-        const fraction = duration ? (current / duration) * 100 : 0;
+    // The payload field is renamed on the way in: an unrenamed `current` would
+    // shadow the shared reference and write the time into itself.
+    player.on('time', ({ current: at, duration }) => {
+        const fraction = duration ? (at / duration) * 100 : 0;
 
-        ui.played.style.width = `${fraction}%`;
-        ui.current.textContent = formatTime(current);
-        ui.duration.textContent = formatTime(duration);
+        current.ui.played.style.width = `${fraction}%`;
+        current.ui.current.textContent = formatTime(at);
+        current.ui.duration.textContent = formatTime(duration);
     });
 
     player.on('modechange', () => {
-        ui.shuffle.classList.toggle('text-accent', player.shuffle);
-        ui.repeat.classList.toggle('text-accent', player.repeat !== 'off');
+        current.ui.shuffle.classList.toggle('text-accent', player.shuffle);
+        current.ui.repeat.classList.toggle('text-accent', player.repeat !== 'off');
         // A small badge is the clearest way to distinguish repeat-one from
         // repeat-all without a second icon.
-        ui.repeat.dataset.mode = player.repeat;
+        current.ui.repeat.dataset.mode = player.repeat;
     });
 
+    // Bound to this run's nodes, which is correct: these elements are replaced
+    // by the swap, and the incoming ones come through here on the next run.
     ui.toggle.addEventListener('click', () => player.toggle());
     ui.prev.addEventListener('click', () => player.previous());
     ui.next.addEventListener('click', () => player.next());
@@ -109,7 +133,44 @@ if (bar) {
 
     ui.volume.value = String(Math.round(player.el.volume * 100));
 
+    // The bar starts hidden and is filled in by the trackchange handler. After
+    // a swap — and on the second run of the first load — that event has
+    // already fired, so the incoming markup would stay blank and hidden while
+    // audio kept playing. Repainting from the player's own state fixes that
+    // without waiting for the next event.
+    const playing = player.queue[player.index];
+
+    if (playing) {
+        bar.classList.remove('translate-y-full');
+
+        ui.title.textContent = playing.title ?? '';
+        ui.subtitle.textContent = playing.subtitle ?? '';
+
+        if (playing.artwork) {
+            ui.artwork.src = playing.artwork;
+            ui.artwork.classList.remove('hidden');
+        }
+
+        if (ui.link && playing.url) ui.link.href = playing.url;
+
+        ui.toggleIcon.setAttribute('d', player.el.paused ? ICON_PLAY : ICON_PAUSE);
+        ui.current.textContent = formatTime(player.el.currentTime);
+        ui.duration.textContent = formatTime(player.el.duration);
+    }
+
     /* ------------------------------------------------------- play buttons */
+
+    // These two are delegated on `document`, which survives an SPA swap — so
+    // unlike the bindings above they must be attached exactly once. Re-adding
+    // them per navigation would stack handlers and fire one click N times.
+    //
+    // The flag lives on `window` for the same reason the player does: body and
+    // its dataset are replaced by the swap, so a marker there would reset and
+    // defeat the guard. They close over the singleton player, so binding once
+    // stays correct.
+    if (window.soundchexDelegated) return;
+
+    window.soundchexDelegated = true;
 
     // Delegated so buttons rendered after load (or inside rails) still work.
     document.addEventListener('click', (event) => {
@@ -148,3 +209,9 @@ if (bar) {
         if (event.code === 'ArrowLeft' && event.shiftKey) player.seek(player.el.currentTime - 10);
     });
 }
+
+// Re-bound after every swap, because the incoming markup carries a fresh bar
+// while the player object itself survives on `window`.
+document.addEventListener('livewire:navigated', () => bindNowPlaying());
+
+bindNowPlaying();

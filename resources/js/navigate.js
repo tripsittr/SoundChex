@@ -40,6 +40,33 @@ function enableNavigation(root = document) {
     });
 }
 
+/**
+ * Drives the navigation itself.
+ *
+ * Tagging links with wire:navigate is not enough here. Livewire only binds its
+ * own click interception when the page contains a Livewire component, and the
+ * media center is plain Blade — so every click fell through to a full page
+ * load, which is what stopped the music. Livewire.navigate() works fine when
+ * called directly; only the listener was missing.
+ *
+ * Capture phase, so this runs before any handler that might stop propagation.
+ */
+document.addEventListener('click', (event) => {
+    // Let the browser handle anything the user asked to open differently:
+    // new tab, new window, download, or a right-click.
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+    const link = event.target.closest('a[href]');
+
+    if (!link || !link.hasAttribute('wire:navigate')) return;
+    if (!shouldNavigate(link)) return;
+    if (typeof window.Livewire?.navigate !== 'function') return;
+
+    event.preventDefault();
+    window.Livewire.navigate(link.href);
+}, true);
+
 // Runs on first load and again after every swap, because the incoming markup
 // is new and has never been through this.
 document.addEventListener('livewire:navigated', () => enableNavigation());
