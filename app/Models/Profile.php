@@ -6,7 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Permission;
 
 /**
  * One person's view of the library.
@@ -35,10 +37,12 @@ class Profile extends Model
 
     protected $fillable = [
         'user_id',
+        'pin_hash',
         'name',
         'color',
         'avatar_path',
         'is_kids',
+        'is_owner',
         'max_rating',
         'is_default',
         'sort_order',
@@ -46,7 +50,9 @@ class Profile extends Model
     ];
 
     protected $casts = [
+        'pin_locked_until' => 'datetime',
         'is_kids' => 'boolean',
+        'is_owner' => 'boolean',
         'is_default' => 'boolean',
         'last_used_at' => 'datetime',
     ];
@@ -76,6 +82,104 @@ class Profile extends Model
         return $this->belongsToMany(MediaItem::class, 'watchlist_items')
             ->withTimestamps()
             ->orderByPivot('created_at', 'desc');
+    }
+
+    /**
+     * Permissions granted to this person specifically.
+     *
+     * Separate from the account's own, which act as a ceiling — see can().
+     */
+    public function permissions(): BelongsToMany
+    {
+        return $this->belongsToMany(Permission::class, 'profile_permissions');
+    }
+
+    /**
+     * Whether this person may do something.
+     *
+     * The household shares one login, so the account cannot be the boundary —
+     * everyone signing in would otherwise hold every right the owner needs.
+     * Capability lives here instead, and this is the only place that decides
+     * it. A permission check that fails open is worse than none, and with a
+     * shared account there is nothing behind it to catch a mistake.
+     *
+     * The owner short-circuits: they created the household and must not be
+     * able to lock themselves out of it.
+     */
+    public function can(string $permission): bool
+    {
+        if ($this->isOwner()) {
+            return true;
+        }
+
+        return $this->permissions()
+            ->where('name', $permission)
+            ->exists();
+    }
+
+    /**
+     * The household owner.
+     *
+     * The account's first profile, which cannot be demoted — a household with
+     * nobody able to grant permissions would need database surgery to fix.
+     */
+    public function isOwner(): bool
+    {
+        return $this->is_owner === true;
+    }
+
+    /**
+     * Whether entering this profile requires a PIN.
+     *
+     * Only profiles that can do something extra are worth protecting. Asking
+     * a child for a PIN to watch cartoons is friction with no purpose.
+     */
+    public function requiresPin(): bool
+    {
+        return filled($this->pin_hash);
+    }
+
+    public function pinIsLocked(): bool
+    {
+        return $this->pin_locked_until !== null
+            && $this->pin_locked_until->isFuture();
+    }
+
+    /**
+     * Checks a PIN, counting failures.
+     *
+     * A four-digit code is trivially brute-forced by someone holding the
+     * phone, so attempts are capped and the profile locks briefly.
+     */
+    public function verifyPin(string $pin): bool
+    {
+        if ($this->pinIsLocked() || ! $this->requiresPin()) {
+            return false;
+        }
+
+        if (! Hash::check($pin, $this->pin_hash)) {
+            $attempts = $this->pin_attempts + 1;
+
+            $this->forceFill([
+                'pin_attempts' => $attempts,
+                'pin_locked_until' => $attempts >= 5 ? now()->addMinutes(15) : null,
+            ])->saveQuietly();
+
+            return false;
+        }
+
+        $this->forceFill(['pin_attempts' => 0, 'pin_locked_until' => null])->saveQuietly();
+
+        return true;
+    }
+
+    public function setPin(?string $pin): void
+    {
+        $this->forceFill([
+            'pin_hash' => filled($pin) ? Hash::make($pin) : null,
+            'pin_attempts' => 0,
+            'pin_locked_until' => null,
+        ])->saveQuietly();
     }
 
     /** First letter, shown when there's no photo. */

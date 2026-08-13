@@ -32,11 +32,28 @@ class ProfileController extends Controller
     {
         $data = $request->validate([
             'profile_id' => ['required', 'integer'],
+            'pin' => ['nullable', 'string', 'max:6'],
         ]);
 
+        $target = Profile::where('user_id', Auth::id())->find($data['profile_id']);
+
+        // Prompt rather than refuse: the first attempt carries no PIN because
+        // the picker does not know one is needed until it asks.
+        $pin = $data['pin'] ?? null;
+
+        if ($target?->requiresPin() && blank($pin)) {
+            return back()->with('pin_for', $target->id);
+        }
+
         // Fails closed: a profile on another account is simply not switched to.
-        if (! $profiles->switchTo((int) $data['profile_id'])) {
-            return back()->withErrors(['profile_id' => 'That profile is not available.']);
+        if (! $profiles->switchTo((int) $data['profile_id'], $pin)) {
+            return back()
+                ->with('pin_for', $target?->requiresPin() ? $target->id : null)
+                ->withErrors([
+                    'pin' => $target?->pinIsLocked()
+                        ? 'Too many attempts. Try again in a few minutes.'
+                        : 'That PIN is not right.',
+                ]);
         }
 
         return redirect()->route('media.home');

@@ -10,6 +10,7 @@ use BackedEnum;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -86,6 +87,37 @@ class ProfileResource extends Resource
                         ->required(),
                 ])
                 ->columns(2),
+
+            Section::make('Permissions')
+                ->description('What this person may do in the admin panel. The household shares one login, so this is where capability is decided — an account cannot be the boundary when everyone signs in with it.')
+                ->schema([
+                    Toggle::make('is_owner')
+                        ->label('Household owner')
+                        ->helperText('Full rights, always. There is no way to remove the last owner — a household with nobody able to grant permissions would need fixing in the database.')
+                        ->disabled(fn (?Profile $record): bool => $record?->isOwner() ?? false)
+                        ->live(),
+
+                    CheckboxList::make('permissions')
+                        ->relationship('permissions', 'name')
+                        ->searchable()
+                        ->bulkToggleable()
+                        ->columns(2)
+                        ->helperText('Nothing is granted by default.')
+                        ->hidden(fn (Get $get): bool => (bool) $get('is_owner')),
+
+                    TextInput::make('pin')
+                        ->label('PIN')
+                        ->password()
+                        ->revealable()
+                        ->numeric()
+                        ->minLength(4)
+                        ->maxLength(6)
+                        ->dehydrated(false)
+                        ->helperText('Required to switch into this profile. Anyone on the account can otherwise pick it from the menu and inherit whatever it can do — set one on any profile with permissions.')
+                        ->placeholder(fn (?Profile $record): string => $record?->requiresPin() ? 'Set — type to replace' : 'Not set')
+                        ->afterStateUpdated(fn (?string $state, ?Profile $record) => filled($state) && $record?->setPin($state)),
+                ])
+                ->columns(1),
 
             Section::make('Restrictions')
                 ->description('Profiles are a convenience, not a login. The admin panel enforces its own permissions — these settings shape what the media center shows.')

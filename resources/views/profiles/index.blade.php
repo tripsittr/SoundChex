@@ -11,6 +11,20 @@
                     @csrf
                     <input type="hidden" name="profile_id" value="{{ $profile->id }}">
 
+                    {{-- Shown only for the profile that just asked for one, so
+                         the picker stays one tap for everyone else. --}}
+                    @if (session('pin_for') === $profile->id)
+                        <div class="profile-pin">
+                            <label for="pin-{{ $profile->id }}" class="auth-label">PIN</label>
+                            <input id="pin-{{ $profile->id }}" name="pin" type="password"
+                                   inputmode="numeric" autocomplete="off" maxlength="6"
+                                   autofocus class="auth-field text-center tracking-[0.4em]">
+                            @error('pin')
+                                <p class="auth-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    @endif
+
                     <button type="submit" class="profile-tile group">
                         <span class="profile-avatar" style="background: {{ $profile->color }}">
                             @if ($profile->hasAvatar())
@@ -168,6 +182,12 @@
            stylesheet, so `peer-checked:ring-2` had no base ring to build on
            and `ring-offset-color` isn't a real property at all — it was
            silently dropped, leaving the chosen colour unmarked. */
+        .profile-pin {
+            width: 8rem;
+            margin-bottom: 0.75rem;
+            text-align: left;
+        }
+
         .profile-swatch {
             display: block;
             width: 1.75rem;

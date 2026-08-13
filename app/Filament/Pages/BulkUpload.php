@@ -11,7 +11,6 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use Illuminate\Support\Facades\Auth;
 use UnitEnum;
 
 /**
@@ -45,14 +44,7 @@ class BulkUpload extends Page
      */
     public ?array $data = [];
 
-    /**
-     * Anyone who can reach the panel at all. This is the one page an uploader
-     * is here for.
-     */
-    public static function canAccess(): bool
-    {
-        return Auth::check();
-    }
+    use \App\Filament\Concerns\RestrictsToAdmins;
 
     public function form(Schema $schema): Schema
     {

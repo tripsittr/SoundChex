@@ -62,10 +62,15 @@ class CurrentProfile
     /**
      * Switches profile for this session.
      *
-     * Returns false when the profile isn't on the signed-in account, so a
-     * guessed id can't reach another household's history.
+     * A PIN is required where one is set. The household shares a login, so
+     * without this a member could simply pick the owner's profile from the
+     * menu and inherit every right it holds — the permission would be a label
+     * rather than a boundary.
+     *
+     * Returns false when the profile is not on this account, when a PIN is
+     * required and wrong, or when too many attempts have locked it.
      */
-    public function switchTo(int $profileId): bool
+    public function switchTo(int $profileId, ?string $pin = null): bool
     {
         $user = Auth::user();
 
@@ -76,6 +81,10 @@ class CurrentProfile
         $profile = Profile::where('user_id', $user->id)->find($profileId);
 
         if ($profile === null) {
+            return false;
+        }
+
+        if ($profile->requiresPin() && ! $profile->verifyPin((string) $pin)) {
             return false;
         }
 
