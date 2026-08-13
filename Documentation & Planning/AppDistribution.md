@@ -1,10 +1,19 @@
 # App distribution paths
 
-Options for getting SoundChex onto phones, desktops and TVs **without app
-stores** — no developer accounts, no review queues, no annual fees.
+Getting SoundChex onto the four targets that matter here — **Windows, Linux,
+iOS and TV** — preferring sideloading over app stores.
 
-Written 13 August 2026. Prices are what they cost at that date; the free tiers
-are the ones that matter here, and those change rarely.
+Written 13 August 2026. Prices are what they cost at that date.
+
+**Two decisions already made**, which shape everything below:
+
+- **Apple's $99/yr developer account is acceptable.** This removes the single
+  biggest obstacle in a store-free setup: free provisioning expires every 7
+  days, so an unpaid iOS app stops launching weekly. Paying extends signing to
+  a year and makes **Apple TV** a real option on the same account.
+- **Tauri v2 is the chosen starting point**, covering **macOS, Windows, Linux,
+  iOS and Android** from one codebase — every target here except TV. TV is
+  handled separately because no TV platform shares a runtime with it.
 
 ## The starting position
 
@@ -27,282 +36,225 @@ is worth adding around something that already runs."
 
 ## Summary
 
-| Path | Platforms | Cost | Effort | Store needed |
+Ordered by value for these four targets.
+
+| # | Path | Covers | Cost | Effort |
 | --- | --- | --- | --- | --- |
-| **1. PWA (already built)** | Phone, desktop, some TV | **$0** | **Done** | No |
-| **2. Tauri v2** | Desktop **+ Android + iOS** | $0 unsigned | 1–2 days desktop | No (except iOS) |
-| **3. Electron** | Win/macOS/Linux desktop | $0 unsigned | 1 day | No |
-| **4. Capacitor + sideload** | Android (+iOS, painfully) | $0 Android | 2–4 days | No (Android) |
-| **5. TWA via Bubblewrap** | Android | $0 | ~half a day | No, if sideloaded |
-| **6. Android TV / Fire TV** | TV | $0 | 3–5 days | No (sideload) |
-| **7. Jellyfin-compatible API** | Everything, via other apps | $0 | Weeks | No |
-| **8. Kodi add-on** | TV, desktop, Pi | $0 | 1–2 weeks | No |
+| **1** | **PWA (built)** | iOS, Windows, Linux, Tizen/webOS | $0 | Done |
+| **2** | **Tauri v2** | macOS, Windows, Linux, **iOS**, Android | $0 + Apple fee | 2–3 days |
+| **3** | **Android TV / Fire TV** | TV | $0 | 3–5 days |
+| **4** | **Tizen / webOS** | Samsung / LG TVs | $0 | 2–4 days each |
+| **5** | **Apple TV (tvOS)** | TV | Covered by Apple fee | 1–2 weeks |
+| **6** | **Jellyfin-compatible API** | Every TV at once, via others' apps | $0 | Weeks |
 
-**Recommendation: 1 → 5 → 2 → 6.** The PWA is done; Bubblewrap turns it into a
-real sideloadable Android app in an afternoon; Tauri gives a proper desktop app
-for a weekend; TV is the only place needing genuine new work.
+**Suggested order: 1 → 2 → 3, then decide on TV.**
 
-**Tauri v2 alone covers everything here except TV** — desktop, Android and iOS
-from one codebase — so it is the single best answer if you would rather learn
-one toolchain than three. It is not listed first only because Bubblewrap gets
-a working Android app in a fraction of the setup, and iOS remains gated by
-Apple no matter which of these you choose.
+The uncomfortable truth about TV: **there is no single path that covers Android
+TV, Apple TV and Samsung/LG.** They share no runtime, no language and no
+store-free install method. Options 3–5 are three separate projects; option 6 is
+one project that reaches all of them by pretending to be Jellyfin. If all three
+TV platforms genuinely matter, **read option 6 first** — it is the only answer
+that does not triple the work.
 
 ---
 
-## 1. PWA — already built
+## 1. PWA — already built, and it covers three of the four
 
-Add to Home Screen on any phone, Install on desktop Chrome/Edge.
+Add to Home Screen on iOS; Install from Chrome/Edge on Windows and Linux.
+Samsung and LG TVs render web apps natively, so the browser is a real entry
+point there too.
 
 **Pros**
 
-- Zero cost, zero new code, no store, no signing.
-- One codebase; a server deploy updates every "app" at once.
+- Zero cost, zero new code, no store, no signing, nothing to maintain.
+- One deploy updates every platform at once.
 - Downloads and background audio already work.
+- The transcode pipeline already normalises to browser-safe codecs (H.264/AAC),
+  which is exactly what constrained TV webviews need.
 
 **Cons**
 
-- **iOS is the weak spot.** Safari caps storage at roughly 1 GB and evicts
-  aggressively; `navigator.storage.persist()` is granted far more readily to an
-  installed app than a tab, which is the practical reason to recommend
-  add-to-home-screen. Install is Safari-only — Chrome on iOS cannot do it.
-- No app icon in a TV launcher.
-- Users have to type a URL once.
+- **iOS storage is capped at roughly 1 GB** and evicted aggressively.
+  `navigator.storage.persist()` is granted far more readily to an installed app
+  than a tab — the practical reason to add to home screen. This cap is the main
+  argument for option 2.
+- Install on iOS is Safari-only; Chrome on iOS cannot do it.
+- No launcher icon on a TV.
 
-**Worth doing anyway:** an `apple-touch-startup-image`, and a short
-"add to home screen" hint on first mobile visit.
+**Worth doing regardless:** `apple-touch-startup-image`, and a one-time
+"add to home screen" hint on first iOS visit. Hours of work, and it improves
+the path most people will actually use.
 
 ---
 
-## 2. Tauri v2 — desktop *and* mobile from one codebase
+## 2. Tauri v2 — every non-TV platform from one codebase
 
 A Rust shell around each platform's native webview, pointed at the Tailscale
-URL. **Since v2 (stable, Oct 2024) this targets Android and iOS too**, not just
-desktop — `tauri android init` and `tauri ios init` alongside the desktop
-build. So this one option covers everything on this page except TV.
+URL. v2 (stable since Oct 2024) targets iOS and Android as well as all three
+desktops. **Rust is already installed on this machine.**
 
-Rust is already installed on this machine, so the desktop path starts today.
+This is the best single investment on the page — it is the chosen starting
+point.
 
 **Pros**
 
-- **Five platforms, one codebase**: Windows, macOS, Linux, Android, iOS.
+- **macOS, Windows, Linux, iOS and Android from one codebase.**
+- **Escapes the iOS 1 GB cap** — a native shell gets real storage, real
+  background audio, and lock-screen controls.
+- With the paid Apple account, **signing lasts a year**, so the app stays
+  installed instead of dying weekly.
 - Tiny: ~10 MB installers, versus ~150 MB for Electron.
-- Genuinely free and open source; no account of any kind to build.
-- Real OS integration — tray icon, media keys, native notifications.
-- Distributed as a plain download from GitHub Releases, or a sideloaded APK.
-- Unlimited storage on Android, escaping the iOS 1 GB browser cap on that side.
-
-**Cons — and these are platform rules, not Tauri's doing**
-
-- **Unsigned desktop binaries warn on first launch.** Windows SmartScreen says
-  "unrecognised app"; macOS needs right-click → Open. One-time and not
-  blocking, but alarming to anyone but you.
-- **iOS still needs a Mac, Xcode, and hits the same 7-day expiry** on a free
-  provisioning profile. Tauri changes *what you write*, not what Apple
-  permits — the app stops launching after a week either way. There is no Xcode
-  on this machine today.
-- **Android needs the SDK and NDK installed** (neither is here yet) — a large
-  download and the fiddliest part of the setup.
-- Linux uses WebKitGTK, which lags on codec support.
-- Mobile targets are much younger than the desktop ones; expect rougher edges
-  and thinner documentation than the desktop path.
-
-**Cost to remove the warnings:** ~$100–300/yr for an Authenticode certificate,
-$99/yr for Apple notarisation. **Not worth it for household use.**
-
-### So why is Bubblewrap still listed first for Android?
-
-Because for *this* project they produce nearly the same result, and one is
-much cheaper to get to:
-
-|  | Tauri v2 Android | Bubblewrap TWA |
-| --- | --- | --- |
-| Setup | Rust + Android SDK + NDK | Android SDK only |
-| Time to first APK | A day or so | An afternoon |
-| Result | Native shell, unlimited storage | Chrome full-screen, browser limits |
-| Maintenance | Rebuild to ship shell changes | None — loads the live site |
-
-Tauri is the better *app*. Bubblewrap is the better *first step*, and nothing
-is wasted if you later replace it — both just load the same web UI.
-
-**Pick Tauri for Android instead if** browser storage limits start biting, or
-you want lock-screen controls and native downloads. That is the same reason
-Capacitor is listed below, and if you go that route Tauri largely replaces it:
-one toolchain instead of two.
-
----
-
-## 3. Electron — desktop, the fast option
-
-**Pros**
-
-- Fastest possible path: a working wrapper is genuinely ~30 lines.
-- Chromium bundled, so playback behaves identically everywhere.
+- Distributed as a plain download from GitHub Releases. No store.
 
 **Cons**
 
-- ~150 MB per install, ~200 MB RAM idle.
-- Same signing warnings as Tauri, with none of the size advantage.
+- **iOS builds require a Mac with Xcode** — you have the Mac, Xcode is a large
+  install but free.
+- **Unsigned Windows binaries warn once** — SmartScreen "unrecognised app".
+  One-time, dismissable, and ~$100–300/yr to remove. Not worth it for household
+  use; just click through.
+- Linux uses WebKitGTK, which lags on codec support. The existing transcode
+  pipeline already mitigates this.
+- Mobile targets are younger than desktop ones — rougher edges, thinner docs.
 
-**Verdict:** only if the Tauri toolchain fights back. Otherwise Tauri wins on
-every axis that matters here.
-
----
-
-## 4. Capacitor — phone, real native shell
-
-Wraps the web app in a native container with plugin access to real APIs.
-
-**Pros**
-
-- **Unlimited storage** on Android, bypassing the iOS 1 GB cap entirely.
-- Real background audio, lock-screen controls, native download manager.
-- Reuses the existing frontend as-is.
-
-**Cons**
-
-- **iOS still requires a Mac and Xcode**, and free provisioning profiles
-  **expire every 7 days** — the app stops launching until re-signed. A paid
-  account ($99/yr) extends this to a year. There is no free path to a
-  permanently-installed iOS app.
-- Android is genuinely fine: build an APK, sideload, done.
-
-**Verdict:** worth it for Android if PWA storage becomes limiting. For iOS,
-accept the PWA unless you'll pay Apple.
-
-**Tauri v2 does the same job** and also builds your desktop apps, so prefer it
-unless you specifically want Capacitor's much larger plugin ecosystem. Two
-toolchains for one outcome is not worth it here.
+**Build once per OS:** Tauri cross-compiles poorly, so Windows binaries want a
+Windows machine (or CI) and Linux wants Linux. macOS and iOS build here. GitHub
+Actions runners cover all three desktops free for public repositories, which is
+the usual way to avoid keeping three machines.
 
 ---
 
-## 5. TWA via Bubblewrap — best Android effort-to-result
+## 3. Android TV / Fire TV — the most tractable TV
 
-A Trusted Web Activity is a thin Android app that renders the PWA full-screen
-in Chrome, with no browser UI at all. Google's `bubblewrap` CLI generates it.
-
-```
-npx @bubblewrap/cli init --manifest https://<host>/manifest.webmanifest
-npx @bubblewrap/cli build
-```
+Sideloading is officially supported: `adb install`, or the Downloader app on
+Fire TV. No store, no account, no fee.
 
 **Pros**
 
-- **Half a day**, mostly waiting on Android SDK downloads.
-- Real launcher icon, real app switcher entry, no address bar.
-- Free, self-signed, sideloadable as an APK.
-- Nothing to maintain — it loads the live site.
+- Free, and the normal way people load these devices.
+- Fire TV Sticks are cheap enough to buy one purely to test on.
+- A web-based shell is a viable starting point.
 
 **Cons**
 
-- Needs `assetlinks.json` served at `/.well-known/` to hide the URL bar, which
-  means the Tailscale hostname is baked into the APK.
-- Android only.
-- Still Chrome underneath, so it inherits any browser storage limits.
-
-**This is the highest-value next step after the PWA.**
+- **A remote is not a touchscreen.** D-pad focus management is a genuine
+  redesign — every control needs a visible focus state and a sensible traversal
+  order. **This is the actual work; the packaging is trivial by comparison.**
+- Fire TV hardware is memory-constrained; a heavy web view struggles.
+- Leanback launcher integration needs a little native code.
 
 ---
 
-## 6. TV — the only genuinely new work
+## 4. Samsung Tizen / LG webOS
 
-### Android TV / Fire TV (recommended)
-
-Sideloading is officially supported: `adb install`, or Downloader by AFTVnews
-on Fire TV. No store, no account.
+Both run **web apps natively**, which suits this project better than any other
+TV platform — it is closer to "host the existing frontend" than to writing an
+app.
 
 **Pros**
 
-- Free. Fire TV Sticks are cheap and this is the normal way people load them.
-- A Capacitor or TWA build is a starting point.
+- No native language to learn; both are HTML/JS platforms.
+- Free SDKs (Tizen Studio, webOS CLI) and free developer modes.
+- The existing responsive UI and browser-safe codecs are already most of the way
+  there.
 
 **Cons**
 
-- **A remote is not a touchscreen.** D-pad focus management is a real
-  redesign — every control needs a focus state and a sane traversal order.
-  This is the actual work, not the packaging.
-- Fire TV devices are memory-constrained; a heavy web view struggles.
-- Leanback launcher integration needs native code.
+- **Developer mode expires every 50–60 days** and must be re-enabled by hand on
+  the TV itself. This is the real cost — it never stops needing attention.
+- Two separate SDKs, two packaging formats, two sets of quirks.
+- Old TVs ship old webviews; expect missing APIs and to check IndexedDB support
+  specifically, since downloads depend on it.
+- Same D-pad focus redesign as option 3.
 
-### Apple TV
-
-**Skip.** Sideloading requires Xcode and the same 7-day expiry, on a device you
-cannot easily plug into a Mac. There is no practical free path.
-
-### Samsung/LG (Tizen/webOS)
-
-Both run web apps natively and both have free developer modes — but developer
-mode **expires every 50–60 days** and must be re-enabled, and the toolchains are
-poorly documented. Only worth it if that TV is the main screen.
+**Verdict:** reasonable if a Samsung or LG set is your main screen. The
+recurring re-enable is what makes it tiring rather than hard.
 
 ---
 
-## 7. Jellyfin-compatible API — the clever option
+## 5. Apple TV (tvOS)
 
-Implement enough of Jellyfin's HTTP API that existing Jellyfin clients — of
-which there are dozens, on every platform including Apple TV, Roku and every
-smart TV — talk to SoundChex.
+Now viable given the paid account, where it was not before.
 
 **Pros**
 
-- **One server-side effort covers every platform at once**, including the ones
-  above that have no good free path.
-- Clients are already written, tested and installed from official stores by
-  their own developers.
-- No app to build, sign, sideload or maintain.
+- Same $99/yr account as iOS, so no additional cost.
+- Signing lasts a year rather than 7 days.
 
 **Cons**
 
-- **Weeks of work**, and the API is large and only partly documented.
-- Jellyfin's data model is not this one; books and the per-profile permission
-  model have no clean equivalent, so some features simply would not map.
+- **tvOS has no web view for app content.** There is no wrapping a website —
+  this means a real native app in Swift, or TVML, and it is the only target
+  here that cannot reuse the existing frontend at all.
+- **1–2 weeks minimum**, and a separate UI to maintain forever.
+- Sideloading needs the device paired to Xcode.
+
+**Verdict:** the most expensive target by far, in effort rather than money.
+Do it only if Apple TV is a primary screen — otherwise option 6 reaches it for
+a fraction of the work.
+
+---
+
+## 6. Jellyfin-compatible API — the one path that covers every TV
+
+Implement enough of Jellyfin's HTTP API that existing Jellyfin clients talk to
+SoundChex. Those clients already exist, tested and maintained, on **Android TV,
+Fire TV, Apple TV, Roku, Samsung and LG** — every TV target on this page.
+
+**Pros**
+
+- **One server-side effort reaches every TV platform at once**, including tvOS,
+  where it replaces 1–2 weeks of Swift with no client code at all.
+- Someone else wrote, tested and maintains the clients, including all the D-pad
+  focus work that dominates options 3–5.
+- Nothing to sideload, sign, or re-enable every 60 days.
+- It is server code — the part of this project that is already well tested.
+
+**Cons**
+
+- **Weeks of work.** The API is large and only partly documented.
+- **The data models do not line up.** Books have no Jellyfin equivalent, and
+  the per-profile permission and rating-cap model would need mapping onto
+  Jellyfin's users — the rating cap especially, since a leak there is a real
+  failure and the client is not yours to fix.
 - Client behaviour varies, and debugging someone else's client is unpleasant.
 - Any client update can break assumptions.
 
-**Verdict:** genuinely the best answer for "every TV platform" — but it is a
-project in itself, not a packaging step. Worth reconsidering if TV becomes the
-primary way the library gets used.
+**Verdict:** the strongest option if all three TV platforms genuinely matter.
+Compare honestly: options 3+4+5 total roughly 3–5 weeks across three separate
+codebases, each needing its own focus redesign and its own re-signing ritual.
+This is a few weeks in one codebase, in the language this project is already
+written and tested in. **The catch is that books and per-profile permissions
+likely do not survive the translation** — so it is a media-playback answer, not
+a whole-app answer.
 
 ---
 
-## 8. Kodi add-on
+## Recommended plan
 
-A Python add-on talking to the existing endpoints.
-
-**Pros**
-
-- Kodi runs on everything — TV boxes, Fire TV, a Pi, desktop.
-- Add-ons install from a zip; no store involved.
-- Python, and the API surface needed is small.
-
-**Cons**
-
-- Requires Kodi installed and configured first.
-- Kodi's UI conventions, not this project's.
-- Its Python API is idiosyncratic and its docs are thin.
-
----
-
-## Suggested order
-
-1. **Polish the PWA** — iOS install hint, startup images. Hours, and it
-   improves the thing most people will actually use.
-2. **Bubblewrap TWA** — a real Android app for an afternoon.
-3. **Tauri desktop** — a weekend, and the desktop experience stops being a
-   browser tab. Rust is already installed here.
-   Its Android target then becomes a natural upgrade from the TWA, reusing
-   the same toolchain, if browser storage limits ever bite.
-4. **Android TV** — only when TV playback genuinely matters, budgeting for the
-   D-pad redesign rather than the packaging.
-5. **Reconsider the Jellyfin API** if the answer to "which platforms" ever
-   becomes "all of them."
+1. **Polish the PWA** (hours) — iOS install hint and startup images. Improves
+   the path most-used today and costs almost nothing.
+2. **Tauri v2** (2–3 days) — macOS, Windows, Linux, iOS and Android in one go,
+   escaping the iOS storage cap. Rust is already here; Xcode is the only new
+   install for the Apple targets.
+3. **Buy the Apple account** when starting step 2, not before — the year of
+   signing starts ticking from purchase.
+4. **Then decide TV deliberately**, because this is where the money in effort
+   goes:
+   - *Only Android TV / Fire TV matters* → option 3, 3–5 days.
+   - *All three TV platforms matter* → option 6, and skip 3–5 entirely.
+   - *Apple TV is the main screen* → option 5, accepting it is the most
+     expensive thing on this page.
 
 ## What to avoid
 
-- **Anything requiring an Apple developer account** unless you decide to pay;
-  the 7-day expiry makes free iOS sideloading unusable in practice.
-- **Code-signing certificates** for household use. The warnings are ugly but
-  one-time, and the money is better spent on a Fire TV Stick.
+- **Code-signing certificates for Windows.** The warning is one click, and the
+  money is better spent on a Fire TV Stick to test against.
+- **Electron**, now that macOS is not a target — it is ~150 MB and ~200 MB RAM
+  to do what Tauri does in ~10 MB, with the same signing warnings.
+- **Capacitor**, which overlaps Tauri v2 almost entirely. Two toolchains for
+  one outcome.
 - **Rewriting the frontend natively** (React Native, Flutter). It would
-  duplicate a working, tested UI to solve a distribution problem, and then
-  there would be two frontends to keep in step.
+  duplicate a working, tested UI to solve a distribution problem, and leave two
+  frontends to keep in step.
+- **Starting three TV projects at once.** Pick one platform or pick option 6.
