@@ -197,3 +197,34 @@ registers the service worker against a scope the pages do not live in.
 
 Switching back to local-only development means setting it back to
 `https://soundchex.test`.
+
+### Making it public without a client install (Funnel)
+
+Tailscale requires the app on every device, which is right for a household and
+awkward for anything else. **Funnel** serves the same URL to the open internet
+with the same certificate, and needs nothing installed on the visitor's device:
+
+```bash
+sudo tailscale funnel --bg 8000     # public
+sudo tailscale funnel --bg off      # back to tailnet-only
+tailscale funnel status
+```
+
+There is no middle ground here: anything that removes the per-device install
+necessarily makes the server publicly reachable. That is the definition, not a
+limitation of the tool.
+
+**Close registration before enabling it.** The login page is then the only
+thing between the internet and the library:
+
+- Sign-up is gated by `EnsureRegistrationIsOpen`, driven by the
+  "Allow public registration" setting. It defaults to **closed** — a server
+  that might be public should not accept sign-ups because nobody has opened
+  the settings page yet.
+- Login and registration are both rate-limited per IP and per account.
+- Household members are added from `/admin/users`.
+
+The stronger option is Cloudflare Tunnel with Cloudflare Access, which
+authenticates against Google or GitHub *before* a request reaches this machine.
+It needs a free Cloudflare account and is worth it if the library is ever
+exposed for long periods.

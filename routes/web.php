@@ -8,6 +8,7 @@ use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\SubtitleController;
 use App\Http\Controllers\WatchController;
 use App\Http\Controllers\WatchlistController;
+use App\Http\Middleware\EnsureRegistrationIsOpen;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -22,9 +23,14 @@ Route::middleware('guest')->group(function (): void {
     Route::post('/login', [AuthController::class, 'login'])
         ->middleware('throttle:login');
 
-    Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
-    Route::post('/register', [AuthController::class, 'register'])
-        ->middleware('throttle:register');
+    // Sign-up is gated by a setting rather than always available: this server
+    // can be made publicly reachable, and open registration would then let
+    // anyone who found the URL into the library.
+    Route::middleware(EnsureRegistrationIsOpen::class)->group(function (): void {
+        Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+        Route::post('/register', [AuthController::class, 'register'])
+            ->middleware('throttle:register');
+    });
 });
 
 Route::post('/logout', [AuthController::class, 'logout'])

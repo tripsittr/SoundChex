@@ -36,7 +36,9 @@
             <button type="submit" class="auth-submit">Sign in</button>
         </form>
 
-        @if (Route::has('register'))
+        {{-- Hidden when sign-up is closed: the route 404s, so offering it
+             would send someone to a dead end. --}}
+        @if (\App\Http\Middleware\EnsureRegistrationIsOpen::isOpen())
             <p class="mt-6 text-center text-sm text-ink-500">
                 Don't have an account?
                 <a href="{{ route('register') }}" class="auth-link font-medium">Create one</a>
