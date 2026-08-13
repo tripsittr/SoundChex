@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Profiles;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Filament\Resources\Profiles\Pages\ListProfiles;
 use App\Models\Profile;
 use BackedEnum;
@@ -33,6 +35,8 @@ use UnitEnum;
  */
 class ProfileResource extends Resource
 {
+    use RestrictsToAdmins;
+
     protected static ?string $model = Profile::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;

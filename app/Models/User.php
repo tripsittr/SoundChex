@@ -79,6 +79,20 @@ class User extends Authenticatable implements FilamentUser
      */
     public function canAccessPanel(Panel $panel): bool
     {
+        // An uploader reaches the panel, but every resource and page inside it
+        // refuses them individually — see Filament\Concerns\RestrictsToAdmins.
+        // Panel access alone is not permission to do anything.
+        return $this->hasAnyRole(['super_admin', 'owner', 'admin', 'uploader']);
+    }
+
+    /**
+     * Whether this account may curate the library rather than only add to it.
+     *
+     * The distinction that matters: an uploader adds files, an admin edits
+     * metadata, changes settings and deletes things.
+     */
+    public function isLibraryAdmin(): bool
+    {
         return $this->hasAnyRole(['super_admin', 'owner', 'admin']);
     }
 }

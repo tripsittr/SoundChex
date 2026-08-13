@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
@@ -16,6 +18,8 @@ use UnitEnum;
 
 class Settings extends Page
 {
+    use RestrictsToAdmins;
+
     protected string $view = 'filament.pages.settings';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCog6Tooth;

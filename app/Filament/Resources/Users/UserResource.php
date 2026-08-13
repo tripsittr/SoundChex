@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Users;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Filament\Resources\Users\Pages\CreateUser;
 use App\Filament\Resources\Users\Pages\EditUser;
 use App\Filament\Resources\Users\Pages\ListUsers;
@@ -19,6 +21,8 @@ use UnitEnum;
 
 class UserResource extends Resource
 {
+    use RestrictsToAdmins;
+
     protected static ?string $model = User::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;

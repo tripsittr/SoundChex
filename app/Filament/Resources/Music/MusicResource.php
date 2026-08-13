@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Music;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Enums\MediaItemType;
 use App\Filament\Resources\Music\Pages\CreateMusic;
 use App\Filament\Resources\Music\Pages\EditMusic;
@@ -19,6 +21,8 @@ use UnitEnum;
 
 class MusicResource extends Resource
 {
+    use RestrictsToAdmins;
+
     protected static ?string $model = MediaItem::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedMusicalNote;

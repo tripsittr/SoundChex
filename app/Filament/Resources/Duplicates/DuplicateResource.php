@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Duplicates;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Enums\DuplicateStatus;
 use App\Filament\Resources\Duplicates\Pages\ListDuplicates;
 use App\Models\MediaItem;
@@ -21,6 +23,8 @@ use UnitEnum;
  */
 class DuplicateResource extends Resource
 {
+    use RestrictsToAdmins;
+
     protected static ?string $model = MediaItem::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentDuplicate;

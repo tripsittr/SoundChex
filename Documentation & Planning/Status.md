@@ -52,6 +52,10 @@ is required for service workers, add-to-home-screen and durable storage.
 inside books. A dialogue hit jumps to the moment it is spoken; a book hit opens
 at the page.
 
+**Uploads** — an `uploader` role that reaches only the upload page, so adding
+files does not require admin rights. Bulk upload lands in the inbox and is
+catalogued, identified and filed by the existing pipeline.
+
 **Admin** — resources for every media type, duplicate review, metadata and
 library settings, profile management, dashboard widgets. Themed to match the
 media center, sharing one palette defined in `resources/css/tokens.css`.
@@ -61,11 +65,6 @@ media center, sharing one palette defined in `resources/css/tokens.css`.
 ## Not built
 
 Roughly in the order they're worth doing.
-
-### Uploads for non-admins
-
-Adding a file today means admin access, which also grants user management,
-settings and every delete action. See `Uploads.md`.
 
 ### Cross-media links
 

@@ -22,6 +22,10 @@ return [
             'owner' => 'Owner',
             'admin' => 'Admin',
             'member' => 'Member',
+            // Reaches the admin panel but sees only the upload page. Exists so
+            // adding a file does not require handing over user management,
+            // settings and every delete action.
+            'uploader' => 'Uploader',
         ],
     ],
 ];

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Books;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Enums\MediaItemType;
 use App\Filament\Resources\Books\Pages\CreateBook;
 use App\Filament\Resources\Books\Pages\EditBook;
@@ -19,6 +21,8 @@ use UnitEnum;
 
 class BookResource extends Resource
 {
+    use RestrictsToAdmins;
+
     use IsMediaTypeResource;
 
     protected static ?string $model = MediaItem::class;

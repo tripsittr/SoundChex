@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Shows;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Enums\MediaItemType;
 use App\Filament\Resources\Concerns\IsMediaTypeResource;
 use App\Filament\Resources\Shows\Pages\CreateShow;
@@ -19,6 +21,8 @@ use UnitEnum;
 
 class ShowResource extends Resource
 {
+    use RestrictsToAdmins;
+
     use IsMediaTypeResource;
 
     protected static ?string $model = MediaItem::class;

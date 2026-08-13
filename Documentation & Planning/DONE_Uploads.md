@@ -76,8 +76,33 @@ permission.
   rather than filed twice.
 - An admin still sees everything.
 
-## Status
+## Outcome
 
-Not started. **`TvFiling.md` should land first** — uploading a season today
-produces `Show.mkv`, `Show (2).mkv`, `Show (3).mkv`, because TV has no season
-or episode structure.
+Built and verified. `DONE_TvFiling.md` landed first, so uploading a season now
+files correctly rather than producing colliding filenames.
+
+An `uploader` role reaches the panel and sees exactly one page. **Every other
+resource refuses by URL**, which was the part worth getting right: before this,
+any panel user reached everything — user management, the metadata API keys,
+every delete action — because only the panel gate existed and the media
+resources had no permissions at all.
+
+Verified as an uploader: `/admin/bulk-upload` returns 200 and all eleven other
+resources return **403 by direct URL**, not merely absent from the menu. The
+only navigation link rendered is the upload page. An admin still reaches
+everything.
+
+Uploads land in the inbox and go through the same scanner as a file dropped
+there by hand — one path, not two. An upload that bypassed it would skip
+duplicate detection and land where the organizer never looks. Confirmed by
+re-uploading a track already in the library: catalogued and correctly flagged
+as a duplicate rather than filed twice.
+
+Accepted extensions come from `config/library.php`, so the form cannot accept
+something the scanner would silently ignore, and the size limit is read from
+PHP's own so the two cannot disagree.
+
+## Deferred
+
+Resumable uploads. A 2 GB film over a home connection is a single long request;
+worth revisiting if that proves fragile in practice.

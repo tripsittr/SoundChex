@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Jobs\DetectDuplicatesJob;
 use App\Services\LibrarySettings;
 use App\Services\OcrService;
@@ -26,6 +28,8 @@ use UnitEnum;
  */
 class LibrarySettingsPage extends Page
 {
+    use RestrictsToAdmins;
+
     protected string $view = 'filament.pages.library-settings';
 
     protected static ?string $slug = 'library-settings';

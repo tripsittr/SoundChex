@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Services\SettingsService;
 use BackedEnum;
 use Filament\Forms\Components\TextInput;
@@ -14,6 +16,8 @@ use UnitEnum;
 
 class MetadataSettings extends Page
 {
+    use RestrictsToAdmins;
+
     protected string $view = 'filament.pages.metadata-settings';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedAdjustmentsHorizontal;

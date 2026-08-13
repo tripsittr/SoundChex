@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Collections;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Filament\Resources\Collections\Pages\CreateCollection;
 use App\Filament\Resources\Collections\Pages\EditCollection;
 use App\Filament\Resources\Collections\Pages\ListCollections;
@@ -22,6 +24,8 @@ use UnitEnum;
  */
 class CollectionResource extends Resource
 {
+    use RestrictsToAdmins;
+
     protected static ?string $model = Collection::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
