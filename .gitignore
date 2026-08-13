@@ -108,3 +108,7 @@ Thumbs.db
 *.sqlite-*
 *.db
 .env.e2e
+
+# Playwright output
+/test-results
+/playwright-report
