@@ -125,7 +125,11 @@ class LibraryCsv
      */
     public function import(string $path, ?int $userId, ?callable $onProgress = null): array
     {
-        $handle = fopen($path, 'rb');
+        // Silenced because the failure is handled on the next line. A missing
+        // or unreadable upload is an ordinary outcome here, not an exception,
+        // and the raw warning would surface as a stack trace instead of the
+        // message below.
+        $handle = @fopen($path, 'rb');
 
         if ($handle === false) {
             return ['imported' => 0, 'skipped' => 0, 'errors' => ['Could not read the file.']];
