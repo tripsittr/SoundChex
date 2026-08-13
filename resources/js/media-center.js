@@ -95,5 +95,19 @@ if ('serviceWorker' in navigator) {
 }
 
 // Offline downloads on the detail page. No-ops where there is no button.
-setupDownloadButton();
-setupBatchDownload();
+/**
+ * Re-bound after every SPA navigation.
+ *
+ * These attach to elements inside the swapped region, so binding once at parse
+ * time would leave the buttons dead on every page after the first. The event
+ * fires on initial load too, so one handler covers both cases.
+ */
+function bindPageScripts() {
+    setupDownloadButton();
+    setupBatchDownload();
+}
+
+document.addEventListener('livewire:navigated', bindPageScripts);
+
+// Covers the window before Livewire boots on a cold load.
+bindPageScripts();

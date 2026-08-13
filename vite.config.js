@@ -14,6 +14,7 @@ export default defineConfig({
                 'resources/js/downloads-page.js',
                 'resources/js/reader.js',
                 'resources/js/now-playing.js',
+                'resources/js/navigate.js',
                 'resources/js/watch.js',
                 // Referenced from Blade via Vite::asset() rather than imported
                 // by any JS/CSS entry, so they must be declared explicitly.

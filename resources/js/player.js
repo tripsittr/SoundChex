@@ -274,6 +274,18 @@ export default class MediaPlayer {
         window.addEventListener('pagehide', () => this.reportProgress(true));
     }
 
+    /**
+     * Drops every UI listener.
+     *
+     * The player object outlives the page it was created on, so the bar
+     * re-binds to fresh markup after each navigation. Without clearing first
+     * the handlers accumulate — five navigations, five handlers, four of them
+     * writing to elements that no longer exist.
+     */
+    resetListeners() {
+        this.listeners = {};
+    }
+
     on(event, handler) {
         (this.listeners[event] ??= []).push(handler);
 

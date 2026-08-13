@@ -11,9 +11,12 @@ use App\Http\Controllers\WatchlistController;
 use App\Http\Middleware\EnsureRegistrationIsOpen;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+// The front door. Laravel's welcome page advertised the framework and told a
+// visitor nothing — on a publicly reachable URL, root should be the library
+// for anyone signed in and the login screen for everyone else.
+Route::get('/', fn () => redirect()->route(
+    auth()->check() ? 'media.home' : 'login',
+));
 
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');

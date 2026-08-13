@@ -19,6 +19,14 @@ export function setupDownloadButton() {
 
     if (!button || !window.indexedDB) return;
 
+    // Marked on the element rather than tracked in a module variable: this
+    // runs on first load and again after every SPA navigation, and the second
+    // call would otherwise add a second click handler to the same button —
+    // one tap, two downloads.
+    if (button.dataset.bound === 'true') return;
+
+    button.dataset.bound = 'true';
+
     const id = button.dataset.itemId;
     const url = button.dataset.url;
     const title = button.dataset.title ?? '';
@@ -165,6 +173,10 @@ export function setupBatchDownload() {
     const button = document.getElementById('download-album');
 
     if (!button || !window.indexedDB) return;
+
+    if (button.dataset.bound === 'true') return;
+
+    button.dataset.bound = 'true';
 
     let tracks;
 

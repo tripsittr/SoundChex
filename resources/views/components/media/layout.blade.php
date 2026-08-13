@@ -29,7 +29,14 @@
         'resources/css/media-center.css',
         'resources/js/media-center.js',
         'resources/js/now-playing.js',
+        'resources/js/navigate.js',
     ])
+
+    {{-- Livewire's navigation layer only — no Livewire components. It swaps
+         the page instead of reloading it, which is the one way an <audio>
+         element can survive a link click. Already installed for Filament, so
+         this costs no new dependency. --}}
+    @livewireStyles
 </head>
 <body class="min-h-screen bg-base-900 text-ink-100 antialiased">
 
@@ -46,6 +53,11 @@
         {{ $slot }}
     </main>
 
+    {{-- Deliberately not wrapped in @persist. The <audio> element is created
+         in JavaScript rather than markup, so there is nothing in the DOM for
+         @persist to carry — what survives is the player object on `window`,
+         and this bar is only the UI reflecting its state. Re-rendered each
+         navigation and re-bound to the same player. --}}
     <x-media.now-playing />
 
     <footer class="border-t border-base-600/60 px-4 py-8 text-sm text-ink-500 sm:px-8">
@@ -67,5 +79,6 @@
         </div>
     </footer>
 
+    @livewireScripts
 </body>
 </html>

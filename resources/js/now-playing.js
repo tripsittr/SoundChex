@@ -12,11 +12,24 @@ import MediaPlayer, { formatTime } from './player.js';
 const bar = document.getElementById('now-playing');
 
 if (bar) {
-    const player = new MediaPlayer({
+    // Reused across navigations rather than recreated.
+    //
+    // Livewire swaps the whole body, which re-executes this module — and the
+    // <audio> element lives on this object, created in JS rather than markup,
+    // so @persist cannot protect it. A new MediaPlayer here would mean a new
+    // <audio>, and playback would stop on every link exactly as it did before.
+    //
+    // The object survives because `window` does. Only the DOM bindings below
+    // are re-attached to the incoming markup.
+    const player = window.soundchexPlayer ?? new MediaPlayer({
         progressUrlFor: (item) => bar.dataset.progressTemplate.replace('__ID__', item.id),
     });
 
     window.soundchexPlayer = player;
+
+    // The handlers below write into this page's elements, which are replaced
+    // on every navigation. Clearing first keeps exactly one live set.
+    player.resetListeners();
 
     const ui = {
         artwork: document.getElementById('np-artwork'),
