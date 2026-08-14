@@ -41,6 +41,55 @@ function enableNavigation(root = document) {
 }
 
 /**
+ * Warms a page before it is asked for.
+ *
+ * Over Tailscale Funnel every request goes out to a public relay and back, so
+ * a cold navigation costs ~290ms while a warm one costs ~35ms. The connection
+ * is not slow; establishing it is.
+ *
+ * touchstart fires roughly 100ms before the click that follows it, and a
+ * pointer usually rests on a link longer than that before pressing. Fetching
+ * on that signal means the response is often already in the HTTP cache by the
+ * time the navigation actually runs.
+ *
+ * Kept cheap deliberately: same-page duplicates are skipped, and a plain fetch
+ * is used rather than a speculation-rules API that Safari does not implement.
+ */
+const prefetched = new Set();
+
+function prefetch(link) {
+    if (!link || !shouldNavigate(link)) return;
+
+    const url = link.href;
+
+    if (prefetched.has(url) || url === window.location.href) return;
+
+    prefetched.add(url);
+
+    // Low priority so a prefetch never competes with the page the user is
+    // actually looking at — artwork and audio matter more than a guess.
+    fetch(url, {
+        credentials: 'same-origin',
+        priority: 'low',
+        headers: { 'X-Prefetch': '1' },
+    }).catch(() => {
+        // A failed guess is not worth reporting. Forget it so a real click
+        // retries rather than trusting a cache entry that never arrived.
+        prefetched.delete(url);
+    });
+}
+
+// Both events, because phones and desktops signal intent differently: a finger
+// touches before it taps, a pointer hovers before it clicks.
+document.addEventListener('touchstart', (event) => {
+    prefetch(event.target.closest?.('a[href]'));
+}, { passive: true, capture: true });
+
+document.addEventListener('mouseover', (event) => {
+    prefetch(event.target.closest?.('a[href]'));
+}, { passive: true, capture: true });
+
+/**
  * Drives the navigation itself.
  *
  * Tagging links with wire:navigate is not enough here. Livewire only binds its

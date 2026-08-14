@@ -48,6 +48,9 @@
     ],
     "category": "Entertainment",
     "shortDescription": "Your media library",
-    "longDescription": "A client for a self-hosted SoundChex library."
+    "longDescription": "A client for a self-hosted SoundChex library.",
+    "iOS": {
+      "developmentTeam": "7GSWB72PH6"
+    }
   }
 }

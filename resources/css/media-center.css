@@ -221,6 +221,19 @@
 .download-status[data-tone='good'] { color: #6ee7b7; }
 .download-status[data-tone='bad'] { color: #fca5a5; }
 
+/* --------------------------------------------------------- safe areas */
+
+/* The fixed header sits under the status bar on a notched phone, so the clock
+   overlaps the logo. Only the inner nav is padded: the header keeps its
+   background running to the very top edge, so the inset reads as deliberate
+   rather than as a gap above the bar.
+
+   max() rather than a bare env(): the inset is 0 on a device without a notch
+   and on desktop, where the existing padding should stand. */
+.media-header-nav {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
 /* ---------------------------------------------------------- mobile tabs */
 
 /* Bottom navigation on phones, sitting above the home indicator. Fixed rather
@@ -278,10 +291,30 @@
 
 .mobile-tab { position: relative; }
 
-/* The tab bar covers the foot of the page, so content clears it. The
-   now-playing bar sits above the tabs for the same reason. */
+/* The tab bar covers the foot of the page, so content clears it.
+   The now-playing bar has to clear the tab bar as well: both were pinned to
+   bottom: 0 at the same z-index, so the player covered the tabs entirely and
+   there was no way to navigate while something was playing. */
 @media (max-width: 767px) {
     body { padding-bottom: calc(3.25rem + env(safe-area-inset-bottom)); }
+
+    /* Lifted by exactly the tab bar's height plus the home indicator. The
+       tab bar carries its own safe-area padding, so that inset is counted
+       here too or the player would sit on top of the indicator. */
+    #now-playing {
+        bottom: calc(3.25rem + env(safe-area-inset-bottom));
+    }
+
+    /* With the player showing, content must clear both bars. */
+    body:has(#now-playing:not(.translate-y-full)) {
+        padding-bottom: calc(3.25rem + 4.5rem + env(safe-area-inset-bottom));
+    }
+}
+
+/* On desktop there is no tab bar, so the player keeps the bottom edge and
+   only needs to clear the home indicator on a tablet. */
+@media (min-width: 768px) {
+    #now-playing { padding-bottom: env(safe-area-inset-bottom); }
 }
 
 /* Playing from a downloaded copy rather than the network. Worth saying: a

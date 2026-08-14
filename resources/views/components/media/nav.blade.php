@@ -55,7 +55,11 @@
         :class="scrolled ? 'bg-base-900/95 backdrop-blur-md shadow-lg shadow-black/40' : 'bg-gradient-to-b from-base-900/90 to-transparent'"
         class="fixed inset-x-0 top-0 z-40 transition-colors duration-300">
 
-    <nav class="flex items-center gap-3 px-4 py-3 sm:gap-6 sm:px-8" aria-label="Primary">
+    {{-- The header is fixed to the top, so on a notched phone it sits under
+         the status bar and the clock overlaps the logo. Padding the nav rather
+         than the header keeps the blurred background running to the top edge,
+         which is what makes the inset look deliberate instead of like a gap. --}}
+    <nav class="media-header-nav flex items-center gap-3 px-4 py-3 sm:gap-6 sm:px-8" aria-label="Primary">
 
         <a href="{{ route('media.home') }}" class="shrink-0">
             {{-- The light-on-dark variant: its waveform is white, which is
