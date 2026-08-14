@@ -372,3 +372,42 @@
         overflow-y: auto;
     }
 }
+
+/* -------------------------------------------------------- upload progress */
+
+/* Global upload indicator. Fixed to the bottom so it does not shift the page,
+   and above the now-playing bar so the two never overlap. */
+.sc-upload-progress {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 60;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--color-base-800) 96%, transparent);
+    border-top: 1px solid var(--color-base-600);
+    backdrop-filter: blur(12px);
+}
+
+.sc-upload-progress__track {
+    height: 3px;
+    border-radius: 999px;
+    background: var(--color-base-600);
+    overflow: hidden;
+}
+
+.sc-upload-progress__fill {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: var(--color-accent);
+    transition: width 0.2s ease;
+}
+
+.sc-upload-progress__label {
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--color-ink-300);
+}
+
+.sc-upload-progress[data-state='error'] .sc-upload-progress__fill { background: #f43f5e; }
+.sc-upload-progress[data-state='error'] .sc-upload-progress__label { color: #fda4af; }

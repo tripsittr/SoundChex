@@ -17,6 +17,8 @@ export default defineConfig({
                 'resources/js/now-playing-sheet.js',
                 'resources/js/playlists.js',
                 'resources/js/playlist-reorder.js',
+                'resources/js/upload-progress.js',
+                'resources/css/upload-progress.css',
                 'resources/js/navigate.js',
                 'resources/js/watch.js',
                 // Referenced from Blade via Vite::asset() rather than imported

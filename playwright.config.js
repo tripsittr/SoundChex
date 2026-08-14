@@ -18,7 +18,25 @@ export default defineConfig({
         trace: 'retain-on-failure',
     },
     projects: [
-        { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
+        {
+            name: 'desktop',
+            use: { ...devices['Desktop Chrome'] },
+            // Upload tests add undecodable fixture files to the shared library,
+            // and a playback test that picks one up fails with a media error
+            // that looks like a player bug. Running them last, then tearing
+            // down, keeps that contained.
+            testIgnore: /upload\.spec\.js/,
+        },
+        {
+            name: 'uploads',
+            use: { ...devices['Desktop Chrome'] },
+            testMatch: /upload\.spec\.js/,
+            teardown: 'reseed',
+        },
+        {
+            name: 'reseed',
+            testMatch: /reseed\.teardown\.js/,
+        },
         { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: /mobile\.spec\.js/ },
     ],
     webServer: {

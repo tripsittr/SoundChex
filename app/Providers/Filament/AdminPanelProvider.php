@@ -52,6 +52,17 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::STYLES_AFTER,
                 fn (): string => (string) app(Vite::class)('resources/css/filament/admin/theme.css'),
             )
+            // The upload indicator. Registered here as well as in the media
+            // center because uploading happens *in the panel* — the two share
+            // no bundle, so leaving it out would mean no progress shown on the
+            // one page where files are actually sent.
+            ->renderHook(
+                PanelsRenderHook::SCRIPTS_AFTER,
+                fn (): string => (string) app(Vite::class)([
+                    'resources/js/upload-progress.js',
+                    'resources/css/upload-progress.css',
+                ]),
+            )
             // The media center's accent, so buttons, links, focus rings and
             // active states inherit it rather than being patched one selector
             // at a time. The panel previously used a blue that appeared
