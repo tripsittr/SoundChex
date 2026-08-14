@@ -290,16 +290,31 @@
                                 @click="
                                     if (busy) return;
                                     busy = true;
+                                    const wanted = !inList;
+
                                     fetch('{{ route('media.watchlist.toggle', $item) }}', {
                                         method: 'POST',
                                         headers: {
+                                            'Content-Type': 'application/json',
                                             'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
                                             Accept: 'application/json',
                                         },
+                                        body: JSON.stringify({ in_watchlist: wanted }),
                                     })
                                     .then((r) => r.json())
                                     .then((d) => { inList = d.inWatchlist })
-                                    .catch(() => {})
+                                    .catch(() => {
+                                        // Offline. The state asked for is queued
+                                        // rather than the toggle, so a replay
+                                        // cannot flip it back.
+                                        inList = wanted;
+                                        window.soundchexWrites?.enqueue({
+                                            kind: 'watchlist',
+                                            url: '{{ route('media.watchlist.toggle', $item) }}',
+                                            body: { in_watchlist: wanted },
+                                            key: 'watchlist:{{ $item->id }}',
+                                        });
+                                    })
                                     .finally(() => { busy = false });
                                 "
                                 class="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition"

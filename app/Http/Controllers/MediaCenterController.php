@@ -216,6 +216,10 @@ class MediaCenterController extends Controller
         $data = $request->validate([
             'position' => ['required', 'integer', 'min:0'],
             'duration' => ['nullable', 'integer', 'min:0'],
+            // When the device recorded this. Offline writes are queued and
+            // replayed later, so a request can arrive well after the moment it
+            // describes — and must not overwrite progress made since.
+            'recorded_at' => ['nullable', 'date'],
         ]);
 
         $userId = Auth::id();
@@ -238,6 +242,25 @@ class MediaCenterController extends Controller
         // Past 95% counts as finished — credits and trailing silence mean
         // almost nothing is ever played to its literal final second.
         $completed = $duration > 0 && $data['position'] >= $duration * 0.95;
+
+        // A replayed write is only applied if it is newer than what is already
+        // stored. Without this, reconnecting after a drive replays an hour-old
+        // position over the one from the episode being watched now — the
+        // device would silently undo the user's own progress.
+        //
+        // Checked before the row is created, not after: creating first stamps
+        // updated_at with "now", which makes every queued write look stale
+        // against a row this request just made.
+        $recordedAt = isset($data['recorded_at'])
+            ? \Illuminate\Support\Carbon::parse($data['recorded_at'])
+            : now();
+
+        if ($play !== null && $play->updated_at !== null && $recordedAt->lt($play->updated_at)) {
+            return response()->json([
+                'completed' => (bool) $play->completed,
+                'stale' => true,
+            ]);
+        }
 
         if ($play === null) {
             $play = $item->plays()->create([

@@ -357,7 +357,19 @@ export default class MediaPlayer {
             }),
             keepalive: true,
         }).catch(() => {
-            // A dropped position update isn't worth interrupting playback.
+            // Offline. Queued rather than dropped: this is the position of a
+            // film someone is watching on a train, and losing it means
+            // starting over. The queue collapses repeats per item, so a long
+            // film leaves one entry rather than hundreds.
+            window.soundchexWrites?.enqueue({
+                kind: 'progress',
+                url: this.progressUrlFor(item),
+                body: {
+                    position: Math.floor(this.el.currentTime),
+                    duration: Math.floor(this.el.duration),
+                },
+                key: `progress:${item.id}`,
+            });
         });
     }
 

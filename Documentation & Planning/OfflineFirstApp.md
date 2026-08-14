@@ -230,11 +230,37 @@ Three rules worth keeping:
 Still server-rendered, deliberately: the reader and the watch page mount their
 own renderers and own the viewport, and downloads was already client-side.
 
-### Phase 4 — write queue (~3 days)
+### Phase 4 — write queue — **DONE**
 
 - Queue progress, watchlist and ratings while offline; replay on reconnect.
 - Idempotent writes, so a replayed queue cannot double-apply.
 - Annotations already have an API; they join the same queue.
+
+**Built and pushed.** `resources/js/library/write-queue.js`, plus the server
+guards that make a replay safe.
+
+Only writes the device can legitimately decide alone are queued: position,
+watchlist, ratings. Anything needing the server to answer is not queued,
+because a queued request whose result the user is waiting for is just a
+request that failed slowly.
+
+Two server changes were needed, and neither was optional:
+
+- **Progress now carries `recorded_at`** and is refused if older than what is
+  stored. Without it, reconnecting after a drive replays an hour-old position
+  over the episode being watched now — the device silently undoing the user's
+  own progress.
+- **The watchlist takes a stated result rather than toggling.** A toggle is
+  not replayable: sent twice it returns to where it started, and a retry after
+  a timeout is indistinguishable from a first attempt.
+
+**A real bug surfaced while testing this.** `profile_id` was missing from
+`MediaPlay::$fillable`, so it was silently dropped on every create. The column
+stayed null, the "reuse this session's row" lookup filters on it and never
+matched, and each position update wrote a **new row**. In the live library:
+1,062 of 1,074 play rows had a null profile, and 27 items had accumulated more
+than three rows each. Two people sharing a login were also not keeping separate
+places in the same film, which is what the column exists for.
 
 ### Phase 5 — tests and cutover (~4 days)
 

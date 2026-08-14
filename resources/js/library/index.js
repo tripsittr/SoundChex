@@ -1,5 +1,6 @@
 import * as mirror from './mirror.js';
 import { serverReachable, takeOver } from './offline-shell.js';
+import * as writes from './write-queue.js';
 import * as query from './query.js';
 import * as sync from './sync.js';
 
@@ -32,6 +33,10 @@ const library = {
 
 window.soundchexLibrary = library;
 
+// Its own global: the player reaches for this without importing the library,
+// so a page that has no mirror still queues its writes.
+window.soundchexWrites = writes;
+
 /**
  * Syncs when the app is opened and whenever it comes back to the foreground.
  *
@@ -41,6 +46,15 @@ window.soundchexLibrary = library;
  */
 function scheduleSync() {
     if (!sync.token()) return;
+
+    // Queued writes go first. They describe a moment already past, and
+    // sending them before pulling means the sync reflects them rather than
+    // overwriting the device's view with a server state that predates them.
+    writes.flush().then((flushed) => {
+        if (flushed.sent > 0) {
+            document.dispatchEvent(new CustomEvent('soundchex:writes-flushed', { detail: flushed }));
+        }
+    });
 
     sync.sync().then((result) => {
         // Dispatched rather than logged, so a UI can show "synced" or
