@@ -29,6 +29,7 @@
         'resources/css/media-center.css',
         'resources/js/media-center.js',
         'resources/js/now-playing.js',
+        'resources/js/now-playing-sheet.js',
         'resources/js/navigate.js',
     ])
 

@@ -43,6 +43,11 @@ function bindNowPlaying() {
 
     window.soundchexPlayer = player;
 
+    // Anything that decorates the player — the full-screen sheet — may have
+    // loaded before this module did, so announce readiness rather than relying
+    // on bundle order.
+    document.dispatchEvent(new CustomEvent('soundchex:player-ready'));
+
     // The handlers below write into this page's elements, which are replaced
     // on every navigation. Clearing first keeps exactly one live set.
     player.resetListeners();

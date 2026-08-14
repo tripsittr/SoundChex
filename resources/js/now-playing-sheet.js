@@ -17,9 +17,17 @@ export function bindNowPlayingSheet() {
 
     if (!sheet) return;
 
+    // The bar owns the player singleton. As separate Vite entry points there
+    // is no guaranteed execution order, so this can run first — in which case
+    // binding is deferred rather than silently skipped, which is what left the
+    // sheet inert.
     const player = window.soundchexPlayer;
 
-    if (!player) return;
+    if (!player) {
+        document.addEventListener('soundchex:player-ready', () => bindNowPlayingSheet(), { once: true });
+
+        return;
+    }
 
     const current = (window.soundchexSheet ??= {});
 
@@ -259,7 +267,7 @@ export function bindNowPlayingSheet() {
         event.preventDefault();
         event.stopPropagation();
         open();
-    });
+    }, true);
 
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && isOpen()) close();

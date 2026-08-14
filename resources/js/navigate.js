@@ -24,6 +24,12 @@ const EXCLUDED = [
 ];
 
 function shouldNavigate(link) {
+    // The now-playing bar's title is an <a> to the item page, but tapping it
+    // opens the full-screen player instead. Tagging it would hand the click to
+    // Livewire in the capture phase and navigate away before the sheet's own
+    // handler ever ran.
+    if (link.id === 'np-link') return false;
+
     // Only same-origin, ordinary links.
     if (link.origin !== window.location.origin) return false;
     if (link.hasAttribute('download') || link.target === '_blank') return false;
