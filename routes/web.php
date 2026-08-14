@@ -82,6 +82,7 @@ Route::middleware(['auth'])->group(function (): void {
             // segment would mean escaping every one of them.
             Route::get('/albums', [AlbumController::class, 'index'])->name('albums');
             Route::get('/album', [AlbumController::class, 'show'])->name('album');
+            Route::get('/artist', [AlbumController::class, 'artist'])->name('artist');
 
             // Playlists. Listed before /{type} so "playlists" is not captured
             // as a media type.

@@ -31,6 +31,7 @@
         'resources/js/now-playing.js',
         'resources/js/now-playing-sheet.js',
         'resources/js/playlists.js',
+        'resources/js/playlist-reorder.js',
         'resources/js/navigate.js',
     ])
 

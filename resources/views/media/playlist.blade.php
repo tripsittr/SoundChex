@@ -77,15 +77,32 @@
 
             <p id="download-status" class="download-status mt-3 hidden"></p>
 
-            <ol class="mt-8 divide-y divide-base-700/60">
+            {{-- data-reorderable turns on drag-to-reorder; the URL travels
+                 with the list so the script needs no route helper. --}}
+            <ol class="mt-8 divide-y divide-base-700/60"
+                data-reorderable
+                data-reorder-url="{{ route('media.playlists.reorder', $playlist) }}">
                 @foreach ($tracks as $index => $track)
-                    <li class="group flex items-center gap-3 py-2.5">
+                    <li class="group flex items-center gap-2 bg-base-900 py-2.5"
+                        data-track-row="{{ $track->id }}">
+
+                        {{-- Dragging is restricted to the handle so the list
+                             can still be scrolled with a finger. --}}
+                        <button type="button"
+                                data-drag-handle
+                                class="flex size-8 shrink-0 cursor-grab touch-none items-center justify-center rounded text-ink-600 transition hover:bg-base-700 hover:text-ink-300 active:cursor-grabbing"
+                                aria-label="Reorder {{ $track->title }}">
+                            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M4 8h16M4 16h16" stroke-linecap="round" />
+                            </svg>
+                        </button>
+
                         <button type="button"
                                 data-play="{{ $queue->toJson() }}"
                                 data-play-index="{{ $index }}"
                                 class="relative flex size-8 shrink-0 items-center justify-center rounded text-sm tabular-nums text-ink-500 transition hover:bg-base-700 hover:text-ink-100"
                                 aria-label="Play {{ $track->title }}">
-                            <span class="group-hover:opacity-0">{{ $index + 1 }}</span>
+                            <span data-track-number class="group-hover:opacity-0">{{ $index + 1 }}</span>
                             <svg class="absolute size-4 opacity-0 transition group-hover:opacity-100" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                 <path d="M8 5v14l11-7z" />
                             </svg>

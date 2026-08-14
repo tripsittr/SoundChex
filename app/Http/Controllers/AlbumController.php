@@ -25,6 +25,29 @@ class AlbumController extends Controller
         ]);
     }
 
+    /**
+     * Everything by one artist: their albums, then any loose tracks.
+     */
+    public function artist(Request $request): View
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:500'],
+        ]);
+
+        $albums = $this->albums->forArtist($data['name']);
+        $singles = $this->albums->singlesForArtist($data['name']);
+
+        // Nothing visible under this name means it does not exist as far as
+        // this profile is concerned.
+        abort_if($albums->isEmpty() && $singles->isEmpty(), 404);
+
+        return view('media.artist', [
+            'artist' => $data['name'],
+            'albums' => $albums,
+            'singles' => $singles,
+        ]);
+    }
+
     public function show(Request $request): View
     {
         $data = $request->validate([

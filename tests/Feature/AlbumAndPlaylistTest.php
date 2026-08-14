@@ -218,6 +218,71 @@ class AlbumAndPlaylistTest extends TestCase
             ->assertSee('One');
     }
 
+    public function test_reordering_persists_the_new_order(): void
+    {
+        $playlist = $this->playlist();
+        $ids = [];
+
+        foreach (['A', 'B', 'C'] as $title) {
+            $track = $this->track($title, 'Artist A', 'Album A', 1);
+            $ids[$title] = $track->id;
+            $this->postJson(route('media.playlists.items.add', $playlist), ['item_id' => $track->id]);
+        }
+
+        $this->postJson(route('media.playlists.reorder', $playlist), [
+            'order' => [$ids['C'], $ids['A'], $ids['B']],
+        ])->assertOk();
+
+        $this->assertSame(
+            ['C', 'A', 'B'],
+            $playlist->fresh()->mediaItems->pluck('title')->all(),
+        );
+    }
+
+    public function test_another_household_cannot_reorder_a_playlist(): void
+    {
+        $playlist = $this->playlist();
+        $track = $this->track('One', 'Artist A', 'Album A', 1);
+
+        $this->postJson(route('media.playlists.items.add', $playlist), ['item_id' => $track->id]);
+
+        $stranger = User::factory()->create();
+        $this->actingAs($stranger);
+
+        $this->postJson(route('media.playlists.reorder', $playlist), ['order' => [$track->id]])
+            ->assertNotFound();
+    }
+
+    /* --------------------------------------------------------- artist --- */
+
+    public function test_the_artist_page_shows_albums_and_singles(): void
+    {
+        $this->track('On An Album', 'Artist A', 'Album A', 1);
+        $this->track('A Loose Track', 'Artist A', null);
+
+        $this->get(route('media.artist', ['name' => 'Artist A']))
+            ->assertOk()
+            ->assertSee('Album A')
+            ->assertSee('A Loose Track');
+    }
+
+    public function test_an_artist_page_does_not_show_another_artists_work(): void
+    {
+        $this->track('Mine', 'Artist A', 'Album A', 1);
+        $this->track('Theirs', 'Artist B', 'Album B', 1);
+
+        $this->get(route('media.artist', ['name' => 'Artist A']))
+            ->assertOk()
+            ->assertSee('Album A')
+            ->assertDontSee('Album B');
+    }
+
+    public function test_an_unknown_artist_is_a_404(): void
+    {
+        $this->get(route('media.artist', ['name' => 'Nobody At All']))
+            ->assertNotFound();
+    }
+
     /* -------------------------------------------------------- helpers --- */
 
     private function playlist(string $name = 'Test'): Collection

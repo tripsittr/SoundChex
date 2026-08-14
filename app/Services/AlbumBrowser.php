@@ -87,6 +87,29 @@ class AlbumBrowser
     }
 
     /**
+     * Tracks by an artist that belong to no album.
+     *
+     * Singles and loose files would otherwise be unreachable from the artist
+     * page, which is where someone would reasonably expect to find everything
+     * by that name.
+     *
+     * @return Collection<int, MediaItem>
+     */
+    public function singlesForArtist(string $artist): Collection
+    {
+        return $this->gate->apply(MediaItem::query())
+            ->where('media_items.type', MediaItemType::Music)
+            ->whereHas('musicMetadata', fn (Builder $q) => $q
+                ->where('artist', $artist)
+                ->where(fn (Builder $inner) => $inner
+                    ->whereNull('album')
+                    ->orWhere('album', '')))
+            ->with('musicMetadata')
+            ->orderBy('title')
+            ->get();
+    }
+
+    /**
      * Whether an album has more than one disc, so the listing can say so.
      */
     public function isMultiDisc(Collection $tracks): bool

@@ -38,7 +38,7 @@
                 <h1 class="mt-1 text-2xl font-bold text-ink-100 sm:text-4xl">{{ $album }}</h1>
 
                 <p class="mt-2 text-sm text-ink-400">
-                    <a href="{{ route('media.albums', ['artist' => $artist]) }}"
+                    <a href="{{ route('media.artist', ['name' => $artist]) }}"
                        class="font-medium text-ink-200 hover:text-ink-100 hover:underline">{{ $artist }}</a>
                     <span class="text-ink-600">·</span>
                     {{ $tracks->count() }} {{ Str::plural('track', $tracks->count()) }}
