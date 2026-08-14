@@ -41,7 +41,7 @@ function element(tag, className, text = null) {
  *
  * A grey box reads as broken; a type glyph reads as deliberate.
  */
-function artwork(item, className) {
+export function artwork(item, className) {
     if (item.artwork) {
         const image = element('img', className);
 

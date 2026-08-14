@@ -173,7 +173,7 @@ Sync runs on launch and on returning to the foreground — a phone suspends a
 page rather than closing it, so an app left open would otherwise show a
 day-old library with nothing to say it was stale.
 
-### Phase 3 — client-rendered UI (~5–8 days)
+### Phase 3 — offline browsing — **DONE**
 
 The bulk of it, but smaller than first scoped.
 
@@ -199,6 +199,36 @@ Ported screen by screen, each fed by the mirror:
 Existing player, download and reader JS is reused rather than rewritten.
 **Each screen ships behind a flag**, so the Blade version stays until its
 replacement is proven.
+
+**Built and pushed.** Songs, films, shows, books, albums, artists, search and
+the item page all rebuild from the mirror when the server cannot be reached.
+
+Taken as **progressive enhancement, not a rewrite**: online, Blade renders
+every page exactly as before and none of this runs, so the path used every day
+cannot regress. Rendering client-side always would make the first paint wait
+on JavaScript and IndexedDB even when the server is on the same network and
+faster — the wrong trade for a self-hosted app.
+
+The gap that made none of it work at first: the service worker serves
+`offline.html` on a failed navigation, and that page loaded **no scripts**, so
+the mirror was unreachable and offline was a dead end with the whole catalogue
+sitting on the device. It now imports the library bundle, resolving the
+content-hashed filename from Vite's manifest rather than hardcoding one that
+goes stale on the next build.
+
+Three rules worth keeping:
+
+- **Reachability is checked against the server, not `navigator.onLine`.** Over
+  Tailscale a phone can be on wifi with the tailnet unreachable, which is a
+  different question entirely.
+- **The takeover refuses to run on a page that already has content.** Swapping
+  live data for a snapshot is a downgrade, not a rescue.
+- **Every offline screen says it is a local copy**, and search says what it
+  cannot search. A library that is quietly a snapshot looks like one that has
+  lost things.
+
+Still server-rendered, deliberately: the reader and the watch page mount their
+own renderers and own the viewport, and downloads was already client-side.
 
 ### Phase 4 — write queue (~3 days)
 

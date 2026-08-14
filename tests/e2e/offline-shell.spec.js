@@ -70,6 +70,38 @@ test.describe('offline browsing', () => {
         await context.setOffline(false);
     });
 
+    test('search runs against the device copy', async ({ page, context }) => {
+        await context.setOffline(true);
+        await page.goto('/app/search?q=Offline+Song').catch(() => {});
+        await page.waitForTimeout(2500);
+
+        await expect(page.locator('body')).toContainText('Offline Song A');
+
+        await context.setOffline(false);
+    });
+
+    test('offline search says what it cannot search', async ({ page, context }) => {
+        // Dialogue and page text are not mirrored. Results that are quietly
+        // narrower than usual look like a library that has lost things.
+        await context.setOffline(true);
+        await page.goto('/app/search?q=Offline').catch(() => {});
+        await page.waitForTimeout(2500);
+
+        await expect(page.locator('body')).toContainText(/subtitles and books needs a connection/i);
+
+        await context.setOffline(false);
+    });
+
+    test('an item page rebuilds from the device', async ({ page, context }) => {
+        await context.setOffline(true);
+        await page.goto('/app/item/1').catch(() => {});
+        await page.waitForTimeout(2500);
+
+        await expect(page.locator('body')).toContainText('Offline Song A');
+
+        await context.setOffline(false);
+    });
+
     test('online pages are still server-rendered', async ({ page }) => {
         // The takeover must never fire on a page the server drew: swapping
         // live data for a snapshot is a downgrade, not a rescue.

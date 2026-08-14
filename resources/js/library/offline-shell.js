@@ -1,6 +1,6 @@
 import * as mirror from './mirror.js';
 import * as query from './query.js';
-import { fill, poster, songList } from './render.js';
+import { artwork, fill, playerPayload, poster, songList } from './render.js';
 
 /**
  * Takes over a page when the server cannot be reached.
@@ -49,6 +49,26 @@ const SCREENS = [
             const items = query.sortBy(query.byType(await mirror.all(), type), 'title');
 
             return renderGrid(root, items, type);
+        },
+    },
+    {
+        match: (path) => path === '/app/search',
+        render: async (root) => {
+            const term = new URLSearchParams(window.location.search).get('q') ?? '';
+            const items = query.search(await mirror.all(), term);
+
+            return renderSearch(root, items, term);
+        },
+    },
+    {
+        match: (path) => /^\/app\/item\/\d+$/.test(path),
+        render: async (root, path) => {
+            const id = Number(path.split('/').pop());
+            const item = await mirror.find(id);
+
+            if (!item) return 0;
+
+            return renderDetail(root, item);
         },
     },
 ];
@@ -226,6 +246,111 @@ function renderArtists(root, people) {
     fill(root, [wrap]);
 
     return people.length;
+}
+
+/**
+ * Search results, with an honest note about what cannot be searched.
+ *
+ * Dialogue and page text are not mirrored — 2,879 cues and 1,346 pages are a
+ * different order of data from the catalogue. Saying so is the point: results
+ * that are quietly narrower than usual look like a library that has lost
+ * things.
+ */
+function renderSearch(root, items, term) {
+    const wrap = container();
+
+    wrap.append(banner(items.length));
+    wrap.append(heading(term ? `Results for “${term}”` : 'Search', items.length));
+
+    const note = document.createElement('p');
+
+    note.className = 'mb-4 text-xs text-ink-500';
+    note.textContent = 'Offline, this searches titles, artists and authors. '
+        + 'Searching inside subtitles and books needs a connection.';
+    wrap.append(note);
+
+    if (items.length === 0) {
+        wrap.append(Object.assign(document.createElement('p'), {
+            className: 'py-16 text-center text-ink-500',
+            textContent: term.length < 2
+                ? 'Type at least two characters.'
+                : 'Nothing on this device matches that.',
+        }));
+    } else {
+        const list = document.createElement('ol');
+
+        list.className = 'divide-y divide-base-700/40';
+        fill(list, songList(items.filter((item) => item.type === 'music')));
+
+        const others = items.filter((item) => item.type !== 'music');
+
+        if (others.length > 0) {
+            const grid = document.createElement('div');
+
+            grid.className = 'mt-6 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6';
+            fill(grid, others.map(poster));
+            wrap.append(list, grid);
+        } else {
+            wrap.append(list);
+        }
+    }
+
+    fill(root, [wrap]);
+
+    return items.length;
+}
+
+/**
+ * One item.
+ *
+ * Deliberately sparse next to the server's detail page: that one shows
+ * subtitles, related items and metadata history, none of which is mirrored.
+ * Showing the fields that exist beats showing empty sections that imply
+ * something failed to load.
+ */
+function renderDetail(root, item) {
+    const wrap = container();
+
+    wrap.append(banner(1));
+
+    const header = document.createElement('div');
+
+    header.className = 'flex flex-col gap-6 sm:flex-row sm:items-end';
+
+    const frame = document.createElement('div');
+
+    frame.className = 'mx-auto aspect-square w-44 shrink-0 overflow-hidden rounded-lg bg-base-700 sm:mx-0 sm:w-52';
+    frame.append(artwork(item, 'size-full object-cover'));
+
+    const side = document.createElement('div');
+
+    side.className = 'min-w-0 flex-1 text-center sm:text-left';
+    side.append(
+        Object.assign(document.createElement('h1'), {
+            className: 'text-2xl font-bold text-ink-100 sm:text-4xl',
+            textContent: item.title ?? '',
+        }),
+        Object.assign(document.createElement('p'), {
+            className: 'mt-2 text-sm text-ink-400',
+            textContent: item.subtitle ?? '',
+        }),
+    );
+
+    if (item.playable) {
+        const play = document.createElement('button');
+
+        play.type = 'button';
+        play.className = 'mt-5 inline-flex items-center gap-2 rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white';
+        play.dataset.play = JSON.stringify([playerPayload(item)]);
+        play.textContent = 'Play';
+        side.append(play);
+    }
+
+    header.append(frame, side);
+    wrap.append(header);
+    fill(root, [wrap]);
+
+    return 1;
 }
 
 /* ------------------------------------------------------------- takeover --- */
