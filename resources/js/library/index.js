@@ -1,5 +1,5 @@
 import * as mirror from './mirror.js';
-import { serverReachable, takeOver } from './offline-shell.js';
+import { preRender, serverReachable, takeOver } from './offline-shell.js';
 import * as writes from './write-queue.js';
 import * as query from './query.js';
 import * as sync from './sync.js';
@@ -20,6 +20,7 @@ const library = {
     ...query,
     mirror,
     takeOver,
+    preRender,
     serverReachable,
     sync: sync.sync,
     signOut: sync.signOut,
@@ -84,8 +85,40 @@ async function considerTakeover() {
     document.dispatchEvent(new CustomEvent('soundchex:offline', { detail: { drawn } }));
 }
 
+/**
+ * Paints the destination from the device the moment a link is tapped.
+ *
+ * A navigation over the relay costs the best part of a second; the same screen
+ * comes out of IndexedDB in single digits. So the local copy is drawn straight
+ * away and the server's version replaces it when it arrives — the page is
+ * useful immediately instead of after a blank wait.
+ *
+ * Capture phase, and passive: this must not interfere with the navigation
+ * itself, only get ahead of it.
+ */
+function paintAhead() {
+    document.addEventListener('click', (event) => {
+        if (event.defaultPrevented || event.button !== 0) return;
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+        const link = event.target.closest('a[href]');
+
+        if (!link || link.origin !== window.location.origin) return;
+
+        const main = document.querySelector('main');
+
+        if (!main) return;
+
+        // Drawn only if the mirror actually knows this screen; otherwise the
+        // page is left alone rather than blanked in favour of nothing.
+        preRender(main, new URL(link.href).pathname);
+    }, true);
+}
+
 if (!window.soundchexLibraryBound) {
     window.soundchexLibraryBound = true;
+
+    paintAhead();
 
     scheduleSync();
     considerTakeover();

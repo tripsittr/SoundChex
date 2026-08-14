@@ -356,6 +356,31 @@ function renderDetail(root, item) {
 /* ------------------------------------------------------------- takeover --- */
 
 /**
+ * Draws a screen from the mirror *before* the server answers.
+ *
+ * Distinct from takeOver(), which rescues a page that failed. This one runs
+ * while a navigation is still in flight: over a relay a page costs ~700ms, and
+ * the same screen can be drawn from the device in single-digit milliseconds.
+ * The server's version replaces it when it lands.
+ *
+ * Only for a link the app is about to follow, so the URL is passed in rather
+ * than read from location — the navigation has not happened yet.
+ */
+export async function preRender(root, path) {
+    const screen = SCREENS.find((candidate) => candidate.match(path));
+
+    if (!screen) return false;
+
+    try {
+        await screen.render(root, path);
+
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Rebuilds the current screen from the mirror.
  *
  * Returns false when this path is not one it knows how to draw, so a caller

@@ -71,6 +71,24 @@
     .status[data-error="true"] { color: #fda4af; }
 
     .hint { margin-top: 1.5rem; font-size: .75rem; color: #71717a; }
+
+    .alt { margin-top: 1.5rem; }
+    .alt summary {
+        cursor: pointer;
+        font-size: .8125rem;
+        color: #a1a1aa;
+        list-style: none;
+    }
+    .alt summary::-webkit-details-marker { display: none; }
+    .alt summary::before { content: '+ '; }
+    .alt[open] summary::before { content: '\2212 '; }
+    .alt .hint { margin-top: .6rem; }
+    .alt button {
+        margin-top: .5rem;
+        background: #27272a;
+        font-size: .8125rem;
+        padding: .5rem 1rem;
+    }
 </style>
 </head>
 <body>
@@ -88,14 +106,92 @@
 
     <p class="status" id="status" role="status" aria-live="polite"></p>
 
+    <details class="alt">
+        <summary>Add another address</summary>
+        <p class="hint">
+            A server on your own network is far quicker than the same server
+            reached through a public tunnel — often 20ms against 700ms. Add
+            both and the app uses whichever answers first, so it is fast at
+            home and still works away from it.
+        </p>
+        <label for="alt-host" class="auth-label">Local address</label>
+        <input id="alt-host" type="url" inputmode="url" autocapitalize="none"
+               autocorrect="off" spellcheck="false"
+               placeholder="http://192.168.1.10:8000">
+        <button type="button" id="add-alt">Remember this too</button>
+    </details>
+
     <p class="hint">
-        Over Tailscale this is your machine's MagicDNS name. It is stored on
-        this device only.
+        Addresses are stored on this device only.
     </p>
 </main>
 
 <script type="module">
     const KEY = 'soundchex.host';
+    const CANDIDATES_KEY = 'soundchex.hosts';
+
+    /**
+     * Every address this server is known by, fastest-first at launch.
+     *
+     * A self-hosted library is reachable several ways — over the LAN, over a
+     * VPN, and through a public tunnel — and they are not remotely equal:
+     * measured here at 53ms, 22ms and 782ms respectively. Storing one address
+     * means picking one of those permanently, and picking the only one that
+     * always works means paying 780ms on every request at home.
+     *
+     * So all of them are kept and raced on launch, and whichever answers first
+     * is used. This is what a native media client does; a browser cannot,
+     * because a page may only talk to the origin that served it.
+     */
+    function candidates() {
+        try {
+            const stored = JSON.parse(localStorage.getItem(CANDIDATES_KEY) ?? '[]');
+
+            return Array.isArray(stored) ? stored.filter(Boolean) : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function rememberCandidates(list) {
+        try {
+            localStorage.setItem(CANDIDATES_KEY, JSON.stringify([...new Set(list)]));
+        } catch {
+            // Private browsing. The single saved host still works.
+        }
+    }
+
+    /**
+     * Returns whichever address answers first.
+     *
+     * Raced rather than tried in order: a dead LAN address on a mobile network
+     * takes until timeout to fail, and sequencing would make every launch away
+     * from home pay that wait before falling back.
+     */
+    async function fastest(origins, timeout = 3000) {
+        if (origins.length === 0) return null;
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+
+        try {
+            return await Promise.any(origins.map(async (origin) => {
+                await fetch(`${origin}/login`, {
+                    mode: 'no-cors',
+                    signal: controller.signal,
+                    credentials: 'omit',
+                    cache: 'no-store',
+                });
+
+                return origin;
+            }));
+        } catch {
+            // Promise.any rejects only when every candidate failed.
+            return null;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
     const form = document.getElementById('connect');
     const field = document.getElementById('host');
     const status = document.getElementById('status');
@@ -113,14 +209,23 @@
 
         // Default to https: this app is only reachable over TLS, and a typed
         // "http://" would silently fail the CSP rather than explaining itself.
-        const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+        const looksPrivate = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/
+            .test(trimmed);
+
+        const withScheme = /^https?:\/\//i.test(trimmed)
+            ? trimmed
+            : `${looksPrivate ? 'http' : 'https'}://${trimmed}`;
 
         try {
             const url = new URL(withScheme);
 
-            return url.protocol === 'https:' || url.hostname === 'localhost'
-                ? url.origin
-                : null;
+            // http is fine on a private network — a LAN or VPN address has no
+            // certificate and needs none, and refusing it would rule out the
+            // only fast route. Public addresses still have to be https.
+            const isPrivate = /^(localhost$|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/
+                .test(url.hostname);
+
+            return url.protocol === 'https:' || isPrivate ? url.origin : null;
         } catch {
             return null;
         }
@@ -185,6 +290,11 @@
         }
 
         localStorage.setItem(KEY, origin);
+
+        // Remembered alongside any others already known, so a second address
+        // entered later becomes a candidate rather than replacing the first.
+        rememberCandidates([...candidates(), origin]);
+
         window.location.replace(origin);
     });
 
@@ -201,12 +311,43 @@
      * app's data, or reinstall. Rare enough to be worth the simplicity, since
      * the address is entered once.
      */
-    const saved = localStorage.getItem(KEY);
+    document.getElementById('add-alt')?.addEventListener('click', () => {
+        const extra = normalise(document.getElementById('alt-host').value);
 
-    if (saved) {
-        field.value = saved;
-        say('Connecting…');
-        window.location.replace(saved);
+        if (extra === null) {
+            say('That does not look like a valid address.', true);
+
+            return;
+        }
+
+        rememberCandidates([...candidates(), extra]);
+        say(`Remembered. ${candidates().length} addresses known.`);
+        document.getElementById('alt-host').value = '';
+    });
+
+    const saved = localStorage.getItem(KEY);
+    const known = candidates();
+
+    if (saved || known.length > 0) {
+        field.value = saved ?? known[0];
+        say('Finding the fastest route…');
+
+        // The saved host is included but not privileged: it may be the slow
+        // public address, and a faster one may be reachable right now.
+        const pool = [...new Set([...known, saved].filter(Boolean))];
+
+        fastest(pool).then((winner) => {
+            const target = winner ?? saved ?? known[0];
+
+            if (winner && winner !== saved) {
+                // Remembered so the next launch starts from the one that
+                // actually worked, though it is raced again regardless —
+                // moving between home and mobile changes the answer.
+                localStorage.setItem(KEY, winner);
+            }
+
+            window.location.replace(target);
+        });
     } else {
         field.focus();
     }
