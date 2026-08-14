@@ -150,7 +150,14 @@ class MediaCenterController extends Controller
             'type'       => $mediaType,
             // Rails are a discovery aid; once the user filters, they want the
             // grid to be the answer, so the rails step out of the way.
-            'hero'       => $isFiltered ? null : $this->browser->hero($mediaType),
+            //
+            // Music has no hero at all. A hero sells one title, which is how a
+            // film library works — a music library opens on what you were
+            // listening to and what is new, and a full-screen image of a
+            // single track pushes all of that below the fold.
+            'hero'       => $isFiltered || $mediaType === MediaItemType::Music
+                ? null
+                : $this->browser->hero($mediaType),
             'rows'       => $isFiltered ? [] : $this->browser->rowsForType($mediaType),
             'items'      => $this->browser->grid($mediaType, $filters),
             'genres'     => $this->browser->genresFor($mediaType),

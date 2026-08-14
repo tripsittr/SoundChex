@@ -50,11 +50,16 @@
                     @endif
                 </p>
 
-                <div class="mt-5 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                {{-- One action row.
+                     Play, Shuffle, then everything else behind the overflow —
+                     which is what every music app does. These were three
+                     stacked rows: Play and Shuffle, then Download on its own
+                     line, then a centred "More" floating alone. --}}
+                <div class="album-actions mt-5 flex items-center justify-center gap-2 sm:justify-start">
                     <button type="button"
                             data-play="{{ $queue->toJson() }}"
                             data-play-index="0"
-                            class="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hot">
+                            class="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-hot sm:flex-none">
                         <svg class="size-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                             <path d="M8 5v14l11-7z" />
                         </svg>
@@ -67,26 +72,26 @@
                     <button type="button"
                             data-play="{{ $queue->toJson() }}"
                             data-play-shuffle="true"
-                            class="inline-flex items-center gap-2 rounded-full border border-base-500 px-5 py-2.5 text-sm font-medium text-ink-200 transition hover:border-ink-500 hover:text-ink-100">
+                            class="flex size-11 shrink-0 items-center justify-center rounded-full border border-base-500 text-ink-200 transition hover:border-ink-500 hover:text-ink-100"
+                            aria-label="Shuffle this album">
                         <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
-                        Shuffle
                     </button>
 
                     <button type="button"
                             data-download-batch
                             data-state="idle"
                             data-tracks="{{ $downloadable->toJson() }}"
-                            class="download-btn inline-flex items-center gap-2 rounded-full border border-base-500 px-5 py-2.5 text-sm font-medium text-ink-200 transition hover:border-ink-500 hover:text-ink-100">
+                            class="download-btn download-btn--circle flex size-11 shrink-0 items-center justify-center rounded-full border border-base-500 text-ink-200 transition hover:border-ink-500 hover:text-ink-100"
+                            aria-label="Download this album">
                         <svg class="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round"
                                   d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
                         </svg>
-                        <span data-download-label>Download album</span>
                     </button>
 
-                    <x-media.track-menu :items="$tracks" :label="$album" :compact="false" />
+                    <x-media.track-menu :items="$tracks" :label="$album" />
                 </div>
 
                 <p id="download-status" class="download-status mt-3 hidden"></p>

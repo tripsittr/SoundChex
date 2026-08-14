@@ -361,6 +361,15 @@
     background: transparent;
 }
 
+/* The same icon-only sizing, but keeping a border — for a header action that
+   sits beside Play and Shuffle and should read as one of a set, rather than
+   inside a list row where a border would be noise. */
+.download-btn--circle {
+    width: auto;
+    padding: 0;
+    background: transparent;
+}
+
 /* ------------------------------------------------------------ track menu */
 
 /* The overflow menu on songs and albums. Built on <details>, so the marker
@@ -627,4 +636,44 @@
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
     color: var(--color-ink-200);
     font-size: 0.8125rem;
+}
+
+/* ----------------------------------------------------------- filter toggle */
+
+/* Filters are occasional, so they collapse. A permanent search field, two
+   toggles and an Apply button pushed the library itself most of a screen down
+   on a phone. */
+.browse-filters-wrap { margin-bottom: 1.25rem; }
+
+.browse-filters-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--color-base-500) 70%, transparent);
+    border-radius: 999px;
+    background: var(--color-base-800);
+    color: var(--color-ink-300);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    list-style: none;
+}
+
+.browse-filters-toggle::-webkit-details-marker { display: none; }
+.browse-filters-toggle::marker { content: ''; }
+.browse-filters-toggle:hover { color: var(--color-ink-100); border-color: var(--color-ink-500); }
+
+.browse-filters-wrap[open] .browse-filters-toggle {
+    margin-bottom: 0.75rem;
+    border-color: var(--color-accent);
+    color: var(--color-ink-100);
+}
+
+/* A dot rather than a count: knowing filters are on is the useful part, and a
+   number would need explaining. */
+.browse-filters-dot {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 999px;
+    background: var(--color-accent);
 }

@@ -4,7 +4,20 @@
         <x-media.hero :item="$hero" :eyebrow="$type->label()" />
     @endif
 
-    <div class="relative z-10 {{ $hero ? '-mt-8 sm:-mt-16' : 'pt-28 sm:pt-32' }}">
+    <div class="relative z-10 {{ $hero ? '-mt-8 sm:-mt-16' : 'pt-24 sm:pt-28' }}">
+
+        {{-- Music leads with its groupings.
+             They used to sit below the rails and above the tab bar, where they
+             read as a footer rather than as the navigation they are — the one
+             control most likely to be wanted first was the last thing on the
+             page. --}}
+        @if ($type === \App\Enums\MediaItemType::Music)
+            {{-- No page title: the header logo and the active tab already say
+                 where this is, and a heading here collided with the logo. --}}
+            <div class="px-4 sm:px-8">
+                <x-media.music-nav />
+            </div>
+        @endif
 
         {{-- Genre rails live on the Genres tab for music. Stacking a dozen
              carousels above the songs list pushed it off the screen. --}}
@@ -20,15 +33,9 @@
         {{-- Full grid + filters --}}
         <section class="px-4 pt-8 sm:px-8" aria-label="All {{ str($type->label())->plural() }}">
 
-            {{-- Music has five groupings; the main nav has room for one, so
-                 they live in a sub-nav here rather than at the top level. --}}
-            @if ($type === \App\Enums\MediaItemType::Music)
-                <x-media.music-nav />
-            @endif
-
             <div class="mb-4 flex items-baseline justify-between gap-4">
                 <h2 class="text-lg font-bold tracking-tight sm:text-xl">
-                    {{ $isFiltered ? 'Results' : 'All ' . str($type->label())->plural() }}
+                    {{ $isFiltered ? 'Results' : ($type === \App\Enums\MediaItemType::Music ? 'Songs' : 'All ' . str($type->label())->plural()) }}
                     <span class="ml-1 text-sm font-normal text-ink-500">{{ $items->total() }}</span>
                 </h2>
 
@@ -51,6 +58,19 @@
                  rest share what is left, and every control is the same height.
                  The toggles are on one line of their own so they read as a
                  pair rather than as two more fields. --}}
+            {{-- Collapsed by default. Filtering is occasional, and a permanent
+                 search box plus two toggles plus an Apply button pushed the
+                 library itself most of a screen down. Open when in use, so a
+                 filtered page still shows what it is filtered by. --}}
+            <details class="browse-filters-wrap" @if ($isFiltered) open @endif>
+                <summary class="browse-filters-toggle">
+                    <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M3 6h18M6 12h12M10 18h4" stroke-linecap="round" />
+                    </svg>
+                    Filter
+                    @if ($isFiltered)<span class="browse-filters-dot" aria-label="filters active"></span>@endif
+                </summary>
+
             <form method="GET" class="browse-filters">
                 <div class="browse-filters__row">
                     <label for="filter-search" class="sr-only">Search {{ $type->label() }}</label>
@@ -92,6 +112,7 @@
                     </label>
                 </div>
             </form>
+            </details>
 
             @if ($items->isEmpty())
                 <p class="rounded-lg border border-dashed border-base-500 py-16 text-center text-ink-500">

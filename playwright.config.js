@@ -37,7 +37,7 @@ export default defineConfig({
             name: 'reseed',
             testMatch: /reseed\.teardown\.js/,
         },
-        { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: /mobile\.spec\.js/ },
+        { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: /(mobile|phone)\.spec\.js/ },
     ],
     webServer: {
         // --env=e2e is what keeps this off the real database.
