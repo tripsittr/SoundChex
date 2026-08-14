@@ -173,9 +173,23 @@ Sync runs on launch and on returning to the foreground — a phone suspends a
 page rather than closing it, so an app left open would otherwise show a
 day-old library with nothing to say it was stale.
 
-### Phase 3 — client-rendered UI (~2 weeks)
+### Phase 3 — client-rendered UI (~5–8 days)
 
-The bulk of it. Port 14 templates, screen by screen, each fed by the mirror:
+The bulk of it, but smaller than first scoped.
+
+The original estimate counted all 3,326 lines of Blade in the media center.
+That was wrong: **1,922 of them should not be ported at all.**
+`reader.blade.php` (1,373 lines) mounts epub.js or pdf.js against the
+document, `watch.blade.php` (519) owns the viewport for video and subtitles,
+and `downloads.blade.php` (30) is already client-side. All three are already
+excluded from SPA navigation for that reason, and they stay server-rendered.
+
+That leaves **1,404 lines across 12 templates**, several of them trivial —
+genres is 22 lines, albums 45, artists 46. The real cost is `show.blade.php`
+at 396 lines, four media types of conditional logic, and the fact that this
+replaces working code: "as good as before" is the floor, not the goal.
+
+Ported screen by screen, each fed by the mirror:
 
 1. Home rails, item detail, type grids
 2. Search
