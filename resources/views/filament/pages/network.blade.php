@@ -24,43 +24,58 @@
                 </x-filament::button>
             </div>
         @else
-            <div class="fi-ta-ctn divide-y divide-gray-200 overflow-hidden rounded-xl ring-1 ring-gray-950/5 dark:divide-white/10 dark:ring-white/10">
+            {{-- fi-ta-ctn is Filament's *table* container and lays its children out
+                 horizontally, so the address rows sat side by side and everything
+                 past the first ran off the screen. A plain divided stack is what
+                 this needs. --}}
+            <div class="divide-y divide-gray-200 overflow-hidden rounded-xl ring-1 ring-gray-950/5 dark:divide-white/10 dark:ring-white/10">
                 @foreach ($results as $index => $row)
                     @php
                         $isFastest = $index === 0 && $row['reachable'];
                     @endphp
 
+                    {{-- Stacked on a phone, one line on a desktop. The address,
+                         its badges and the delete button cannot share a row at
+                         390px — they were pushing past the screen edge. --}}
                     <div @class([
-                        'flex flex-wrap items-center gap-3 px-4 py-3',
+                        'px-4 py-3',
                         'bg-primary-50 dark:bg-primary-500/5' => $isFastest,
                     ])>
-                        <div class="min-w-0 flex-1">
-                            <p class="truncate font-mono text-sm text-gray-950 dark:text-white">
-                                {{ $row['address'] }}
-                            </p>
-                            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                                {{ $this->describe($row['address']) }}
-                            </p>
+                        <div class="flex items-start gap-3">
+                            <div class="min-w-0 flex-1">
+                                {{-- break-all, not truncate: an address is the
+                                     one thing on this page worth reading in
+                                     full, and half of one is useless. --}}
+                                <p class="break-all font-mono text-sm text-gray-950 dark:text-white">
+                                    {{ $row['address'] }}
+                                </p>
+                                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                                    {{ $this->describe($row['address']) }}
+                                </p>
+                            </div>
+
+                            <x-filament::icon-button
+                                icon="heroicon-m-trash"
+                                color="gray"
+                                size="sm"
+                                class="shrink-0"
+                                label="Remove {{ $row['address'] }}"
+                                wire:click="removeAddress('{{ $row['address'] }}')" />
                         </div>
 
-                        @if ($isFastest)
-                            <x-filament::badge color="primary">Fastest</x-filament::badge>
-                        @endif
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            @if ($isFastest)
+                                <x-filament::badge color="primary">Fastest</x-filament::badge>
+                            @endif
 
-                        @if ($row['reachable'])
-                            <x-filament::badge :color="$row['ms'] < 100 ? 'success' : ($row['ms'] < 500 ? 'warning' : 'danger')">
-                                {{ $row['ms'] }} ms
-                            </x-filament::badge>
-                        @else
-                            <x-filament::badge color="gray">No answer</x-filament::badge>
-                        @endif
-
-                        <x-filament::icon-button
-                            icon="heroicon-m-trash"
-                            color="gray"
-                            size="sm"
-                            label="Remove {{ $row['address'] }}"
-                            wire:click="removeAddress('{{ $row['address'] }}')" />
+                            @if ($row['reachable'])
+                                <x-filament::badge :color="$row['ms'] < 100 ? 'success' : ($row['ms'] < 500 ? 'warning' : 'danger')">
+                                    {{ $row['ms'] }} ms
+                                </x-filament::badge>
+                            @else
+                                <x-filament::badge color="gray">No answer</x-filament::badge>
+                            @endif
+                        </div>
                     </div>
                 @endforeach
             </div>

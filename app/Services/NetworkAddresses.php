@@ -36,9 +36,13 @@ class NetworkAddresses
             return $this->detected();
         }
 
+        // Tolerates both shapes: a value stored before this was encoded, and
+        // the JSON written since.
         $list = is_array($stored) ? $stored : json_decode((string) $stored, true);
 
-        return is_array($list) ? array_values(array_filter($list)) : $this->detected();
+        return is_array($list) && $list !== []
+            ? array_values(array_filter($list))
+            : $this->detected();
     }
 
     /**
@@ -53,7 +57,10 @@ class NetworkAddresses
             ->values()
             ->all();
 
-        $this->settings->set(self::KEY, $clean);
+        // Encoded, because a Setting holds a string: the column is encrypted
+        // per-value and the mutator is typed ?string, so handing it an array
+        // throws — which made every save fail rather than storing anything.
+        $this->settings->set(self::KEY, json_encode($clean));
 
         Cache::forget('network_addresses_probe');
     }
