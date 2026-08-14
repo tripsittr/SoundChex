@@ -193,6 +193,13 @@ function bindNowPlaying() {
             const items = Array.isArray(payload) ? payload : [payload];
             const startIndex = Number(trigger.dataset.playIndex ?? 0);
 
+            // "Shuffle this album" is a different intent from "shuffle
+            // whatever is playing", so the trigger turns the mode on rather
+            // than the user setting it first and pressing play second.
+            if (trigger.dataset.playShuffle !== undefined && !player.shuffle) {
+                player.toggleShuffle();
+            }
+
             player.play(items, startIndex);
         } catch {
             // A malformed payload shouldn't break the page.

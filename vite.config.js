@@ -15,6 +15,7 @@ export default defineConfig({
                 'resources/js/reader.js',
                 'resources/js/now-playing.js',
                 'resources/js/now-playing-sheet.js',
+                'resources/js/playlists.js',
                 'resources/js/navigate.js',
                 'resources/js/watch.js',
                 // Referenced from Blade via Vite::asset() rather than imported

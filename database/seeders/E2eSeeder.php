@@ -46,8 +46,9 @@ class E2eSeeder extends Seeder
 
         $this->command?->info("owner profile: {$owner->id}, kid profile: {$kid->id}");
 
-        $this->track($user, 'Test Tone One', 'Synthetic Artist');
-        $this->track($user, 'Test Tone Two', 'Synthetic Artist');
+        // Two tracks on one album, so the album views have something to group.
+        $this->track($user, 'Test Tone One', 'Synthetic Artist', 'Synthetic Album', 1);
+        $this->track($user, 'Test Tone Two', 'Synthetic Artist', 'Synthetic Album', 2);
 
         $this->film($user, 'Family Film', 'G');
         $this->film($user, 'Grown Up Film', 'R');
@@ -119,9 +120,9 @@ class E2eSeeder extends Seeder
         return $item;
     }
 
-    private function track(User $user, string $title, string $artist): MediaItem
+    private function track(User $user, string $title, string $artist, ?string $album = null, ?int $trackNumber = null): MediaItem
     {
-        $relative = 'media/library/Music/' . $artist . '/Singles/' . $title . '.mp3';
+        $relative = 'media/library/Music/' . $artist . '/' . ($album ?? 'Singles') . '/' . $title . '.mp3';
 
         $this->generate($relative, [
             '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono', '-t', '30', '-q:a', '9',
@@ -138,6 +139,8 @@ class E2eSeeder extends Seeder
 
         $item->musicMetadata()->create([
             'artist' => $artist,
+            'album' => $album,
+            'track_number' => $trackNumber,
             'duration_ms' => 30_000,
         ]);
 

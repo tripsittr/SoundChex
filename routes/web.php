@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\AnnotationController;
+use App\Http\Controllers\AlbumController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MediaCenterController;
+use App\Http\Controllers\PlaylistController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\SubtitleController;
@@ -73,6 +75,24 @@ Route::middleware(['auth'])->group(function (): void {
         ->group(function (): void {
             Route::get('/', [MediaCenterController::class, 'home'])->name('home');
             Route::get('/search', [MediaCenterController::class, 'search'])->name('search');
+
+            // Albums are derived from track tags rather than stored, so they
+            // are addressed by artist and title in the query string. Album
+            // names contain slashes and colons often enough that a path
+            // segment would mean escaping every one of them.
+            Route::get('/albums', [AlbumController::class, 'index'])->name('albums');
+            Route::get('/album', [AlbumController::class, 'show'])->name('album');
+
+            // Playlists. Listed before /{type} so "playlists" is not captured
+            // as a media type.
+            Route::get('/playlists', [PlaylistController::class, 'index'])->name('playlists');
+            Route::post('/playlists', [PlaylistController::class, 'store'])->name('playlists.store');
+            Route::get('/playlists/{collection}', [PlaylistController::class, 'show'])->name('playlist');
+            Route::patch('/playlists/{collection}', [PlaylistController::class, 'update'])->name('playlists.update');
+            Route::delete('/playlists/{collection}', [PlaylistController::class, 'destroy'])->name('playlists.destroy');
+            Route::post('/playlists/{collection}/items', [PlaylistController::class, 'addItem'])->name('playlists.items.add');
+            Route::delete('/playlists/{collection}/items/{item}', [PlaylistController::class, 'removeItem'])->name('playlists.items.remove');
+            Route::post('/playlists/{collection}/reorder', [PlaylistController::class, 'reorder'])->name('playlists.reorder');
 
             // What this device is holding offline. The list itself lives in
             // the browser, so this only renders the shell.
