@@ -141,7 +141,7 @@ Deletion and a tightened cap share one mechanism: the device sends
 `known_ids` and gets back what it may no longer hold. A delete-only list
 would leave a newly blocked film playable on a child's device.
 
-### Phase 2 — device mirror (~4 days)
+### Phase 2 — device mirror — **DONE**
 
 - IndexedDB schema for items, metadata, genres, people.
 - Sync on launch, on foreground, and on demand; delta after the first pull.
@@ -150,6 +150,28 @@ would leave a newly blocked film playable on a child's device.
 - Title/person/tag search against the mirror.
 - Conflict rule: **server wins for catalogue data, device wins for playback
   progress.** Progress is the only field the device legitimately knows better.
+
+**Built and pushed.** `resources/js/library/` — `mirror.js` (IndexedDB),
+`sync.js` (full pull, delta, sign-out), `query.js` (pure query layer),
+exposed as `window.soundchexLibrary`. 23 Vitest cases and 6 browser cases.
+
+Its own database, not a new version of the downloads one: bumping that runs
+an upgrade transaction across a store holding gigabytes of media blobs, and
+a failure there loses files the user chose to keep.
+
+Two rules worth keeping:
+
+- **A full sync replaces; a delta carries removals.** Merging would leave an
+  item the server has stopped sending — deleted, or newly blocked by a cap —
+  on the device forever. Deletion and a tightened cap use one list, because
+  the device cannot tell them apart and must act identically on both.
+- **Sign-out and profile switch clear the mirror.** It holds exactly what one
+  profile may see, so carrying it across would let a capped profile browse the
+  previous one's library offline, where no server check applies.
+
+Sync runs on launch and on returning to the foreground — a phone suspends a
+page rather than closing it, so an app left open would otherwise show a
+day-old library with nothing to say it was stale.
 
 ### Phase 3 — client-rendered UI (~2 weeks)
 
