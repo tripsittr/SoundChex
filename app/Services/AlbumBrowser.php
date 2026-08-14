@@ -43,6 +43,30 @@ class AlbumBrowser
     }
 
     /**
+     * Every artist in the library, with what they have.
+     *
+     * Grouped in SQL rather than by loading tracks and folding them, because
+     * the artist list is a browse page and the library is thousands of rows.
+     *
+     * @return LengthAwarePaginator<int, object>
+     */
+    public function artists(int $perPage = 100): LengthAwarePaginator
+    {
+        return $this->gate->apply(MediaItem::query())
+            ->join('music_metadata', 'music_metadata.media_item_id', '=', 'media_items.id')
+            ->where('media_items.type', MediaItemType::Music)
+            ->whereNotNull('music_metadata.artist')
+            ->where('music_metadata.artist', '!=', '')
+            ->selectRaw('music_metadata.artist as artist')
+            ->selectRaw('COUNT(*) as track_count')
+            ->selectRaw('COUNT(DISTINCT music_metadata.album) as album_count')
+            ->selectRaw('MIN(media_items.id) as sample_item_id')
+            ->groupBy('music_metadata.artist')
+            ->orderByRaw('LOWER(music_metadata.artist)')
+            ->paginate($perPage);
+    }
+
+    /**
      * Albums by one artist, for the artist view and "more from" rails.
      *
      * @return Collection<int, object>

@@ -5,6 +5,8 @@
             <p class="text-sm text-ink-500">{{ number_format($albums->total()) }} albums</p>
         </div>
 
+        <x-media.music-nav />
+
         @if ($albums->isEmpty())
             <p class="py-16 text-center text-ink-500">
                 No albums yet. Tracks need an album tag to be grouped here.

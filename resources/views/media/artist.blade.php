@@ -54,7 +54,7 @@
 
             <ol class="divide-y divide-base-700/60">
                 @foreach ($singles as $index => $track)
-                    <li class="group flex items-center gap-3 py-2.5">
+                    <li data-long-press-menu class="group flex items-center gap-3 py-2.5">
                         <button type="button"
                                 data-play="{{ $queue->toJson() }}"
                                 data-play-index="{{ $index }}"

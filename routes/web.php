@@ -82,6 +82,8 @@ Route::middleware(['auth'])->group(function (): void {
             // segment would mean escaping every one of them.
             Route::get('/albums', [AlbumController::class, 'index'])->name('albums');
             Route::get('/album', [AlbumController::class, 'show'])->name('album');
+            Route::get('/genres', [AlbumController::class, 'genres'])->name('genres');
+            Route::get('/artists', [AlbumController::class, 'artists'])->name('artists');
             Route::get('/artist', [AlbumController::class, 'artist'])->name('artist');
 
             // A shuffled queue from the whole music library, built server-side

@@ -105,7 +105,7 @@
                     </li>
                 @endif
 
-                <li class="group flex items-center gap-3 py-2.5">
+                <li data-long-press-menu class="group flex items-center gap-3 py-2.5">
                     {{-- The number becomes a play button on hover, so the row
                          stays quiet until it is being used. --}}
                     <button type="button"

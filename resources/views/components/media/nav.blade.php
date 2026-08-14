@@ -15,7 +15,6 @@
         ['label' => 'Watch', 'route' => 'media.watch.index', 'type' => 'watch'],
         ['label' => 'Music', 'route' => 'media.browse',      'type' => 'music'],
         ['label' => 'Books', 'route' => 'media.browse',      'type' => 'book'],
-        ['label' => 'Albums', 'route' => 'media.albums',    'type' => 'albums'],
     ];
 
     $activeType = request()->route('type');
@@ -38,14 +37,6 @@
                 'href' => route('media.watch.index'),
                 'active' => $isWatch,
                 'count' => $watchCount,
-            ],
-            // Albums are derived from tags rather than counted as rows, so
-            // there is no badge — a number here would need its own query on
-            // every page for no real benefit.
-            'albums' => [
-                'href' => route('media.albums'),
-                'active' => request()->routeIs('media.albums') || request()->routeIs('media.album'),
-                'count' => 0,
             ],
             default => [
                 'href' => route('media.browse', $link['type']),

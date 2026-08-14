@@ -60,6 +60,29 @@ class AlbumController extends Controller
     }
 
     /**
+     * Genre rails, on their own page.
+     *
+     * They used to sit above the songs list, where a dozen carousels pushed
+     * the list itself off the screen.
+     */
+    public function genres(\App\Services\MediaBrowser $browser): View
+    {
+        $rows = collect($browser->rowsForType(MediaItemType::Music))
+            ->filter(fn (array $row): bool => str_starts_with($row['key'] ?? '', 'genre-'))
+            ->values()
+            ->all();
+
+        return view('media.genres', ['rows' => $rows]);
+    }
+
+    public function artists(): View
+    {
+        return view('media.artists', [
+            'artists' => $this->albums->artists(),
+        ]);
+    }
+
+    /**
      * Everything by one artist: their albums, then any loose tracks.
      */
     public function artist(Request $request): View

@@ -2,6 +2,8 @@
     <div class="mx-auto max-w-4xl px-4 pb-16 pt-20 sm:px-8">
         <h1 class="text-2xl font-bold text-ink-100 sm:text-3xl">Playlists</h1>
 
+        <x-media.music-nav />
+
         @if (session('status'))
             <p class="mt-4 rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-sm text-ink-200">
                 {{ session('status') }}

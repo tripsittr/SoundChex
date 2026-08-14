@@ -32,9 +32,12 @@ test.describe('music browsing', () => {
         await page.goto('/app/albums');
         await page.locator('a[href*="/app/album?"]').first().click();
 
-        await page.locator('a[href*="/app/artist"]').first().click();
+        // Scoped to the page body: the sub-nav's "Artists" tab also matches
+        // /app/artist, and clicking that would pass while proving nothing
+        // about the link on the album itself.
+        await page.locator('main a[href*="/app/artist?"], a[href*="/app/artist?name="]').first().click();
 
-        await expect(page).toHaveURL(/\/app\/artist/);
+        await expect(page).toHaveURL(/\/app\/artist\?/);
         await expect(page.locator('a[href*="/app/album?"]').first()).toBeVisible();
     });
 
@@ -102,6 +105,75 @@ test.describe('music browsing', () => {
         await expect.poll(
             () => page.evaluate(() => window.soundchexPlayer?.queue?.length ?? 0),
         ).toBeGreaterThan(0);
+    });
+
+    test('the music sub-nav reaches every grouping', async ({ page }) => {
+        // Albums used to sit in the main nav beside Watch and Books, which put
+        // one music grouping at the top level and hid the other four.
+        await page.goto('/app/music');
+
+        const tabs = await page.locator('.music-subnav__tab').allTextContents();
+
+        expect(tabs.map((t) => t.trim())).toEqual(
+            ['Songs', 'Albums', 'Artists', 'Genres', 'Playlists'],
+        );
+    });
+
+    test('albums is not in the main navigation', async ({ page }) => {
+        await page.goto('/app');
+
+        const main = await page.locator('header nav a').allTextContents();
+
+        expect(main.map((t) => t.trim()).join(' ')).not.toContain('Albums');
+    });
+
+    test('a song row carries its own actions', async ({ page }) => {
+        // A poster grid has none of these: music needs play, download and the
+        // overflow menu per track, without hovering a tile to find them.
+        await page.goto('/app/music');
+
+        const row = page.locator('ol li[data-long-press-menu]').first();
+
+        await expect(row).toBeVisible();
+        await expect(row.locator('.track-menu')).toHaveCount(1);
+        // The kebab holds a download of its own, so the row has two: the
+        // always-visible one and the one inside the menu.
+        await expect(row.locator('.download-btn').first()).toBeVisible();
+        await expect(row.locator('[data-play]')).toHaveCount(1);
+    });
+
+    test('genre rails live on their own tab, not above the songs list', async ({ page }) => {
+        const response = await page.goto('/app/genres');
+
+        expect(response.status()).toBe(200);
+        await expect(page.locator('.music-subnav')).toHaveCount(1);
+    });
+
+    test('the artists index lists artists', async ({ page }) => {
+        await page.goto('/app/artists');
+
+        await expect(page.locator('a[href*="/app/artist?name="]').first()).toBeVisible();
+    });
+
+    test('filter controls line up at one height', async ({ page }) => {
+        // They were a wrapping row of five controls with different heights,
+        // which stacked raggedly on a phone.
+        await page.goto('/app/music');
+
+        const heights = await page
+            .locator('.browse-filters__field, .browse-filters__apply, .browse-filters__toggle')
+            .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+
+        expect(new Set(heights).size).toBe(1);
+    });
+
+    test('the page does not scroll sideways on a phone', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto('/app/music');
+
+        expect(await page.evaluate(
+            () => document.documentElement.scrollWidth > window.innerWidth + 1,
+        )).toBe(false);
     });
 });
 

@@ -150,6 +150,56 @@ function setupPlaylists() {
         }
     });
 
+    // Long-press opens the menu on a touchscreen.
+    //
+    // A kebab that only appears on hover is unreachable with a finger, and
+    // shrinking it to a permanent tap target would clutter every row. Pressing
+    // and holding is the phone convention for "more options".
+    let pressTimer = null;
+    let pressTarget = null;
+
+    const cancelPress = () => {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+        pressTarget = null;
+    };
+
+    document.addEventListener('touchstart', (event) => {
+        const row = event.target.closest('[data-long-press-menu]');
+
+        if (!row) return;
+
+        // Not on a control: a long press on the play button means the user is
+        // hesitating over play, not asking for a menu.
+        if (event.target.closest('button, a, summary, input')) return;
+
+        pressTarget = row;
+
+        pressTimer = setTimeout(() => {
+            const menu = row.querySelector('.track-menu');
+
+            if (!menu) return;
+
+            menu.setAttribute('open', '');
+
+            // The same feedback a native long press gives, where supported.
+            navigator.vibrate?.(15);
+        }, 450);
+    }, { passive: true });
+
+    // Any of these means the press ended or turned into a scroll.
+    ['touchend', 'touchmove', 'touchcancel', 'scroll'].forEach((name) => {
+        document.addEventListener(name, cancelPress, { passive: true });
+    });
+
+    // Opening a menu by long press must not also fire the click that follows,
+    // which would immediately close it again.
+    document.addEventListener('click', (event) => {
+        if (pressTarget && event.target.closest('[data-long-press-menu]') === pressTarget) {
+            cancelPress();
+        }
+    }, true);
+
     // A dropdown that stays open after the pointer has gone elsewhere reads as
     // stuck, so clicking outside closes it.
     document.addEventListener('click', (event) => {

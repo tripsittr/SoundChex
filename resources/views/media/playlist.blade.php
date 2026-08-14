@@ -83,7 +83,7 @@
                 data-reorderable
                 data-reorder-url="{{ route('media.playlists.reorder', $playlist) }}">
                 @foreach ($tracks as $index => $track)
-                    <li class="group flex items-center gap-2 bg-base-900 py-2.5"
+                    <li data-long-press-menu class="group flex items-center gap-2 bg-base-900 py-2.5"
                         data-track-row="{{ $track->id }}">
 
                         {{-- Dragging is restricted to the handle so the list
