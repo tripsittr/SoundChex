@@ -39,6 +39,29 @@ class CurrentProfile
             return null;
         }
 
+        // A token request has no session, so without this the API would fall
+        // through to defaultFor() — the owner — and hand a capped profile the
+        // entire uncapped library. The profile is baked into the token as an
+        // ability at issue time, so a client cannot claim a different one.
+        if ($user->currentAccessToken() !== null) {
+            // Asked through tokenCan() rather than by reading the abilities
+            // array: that array is not populated on the token double Sanctum
+            // uses in tests, so parsing it silently resolved to null and no
+            // cap applied — a leak that only showed up because the test
+            // asserted the payload rather than the plumbing.
+            //
+            // Candidates come from this account's own profiles, so a token
+            // cannot name one belonging to someone else.
+            $profile = Profile::where('user_id', $user->id)
+                ->get()
+                ->first(fn (Profile $candidate) => $user->tokenCan('profile:' . $candidate->id));
+
+            // Fails closed: a token naming a profile that no longer exists
+            // resolves to nothing rather than to a default with more access
+            // than the token was ever issued for.
+            return $this->resolved = $profile;
+        }
+
         $id = Session::get(self::SESSION_KEY);
 
         if ($id !== null) {
