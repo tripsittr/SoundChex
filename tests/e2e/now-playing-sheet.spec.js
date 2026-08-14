@@ -63,6 +63,48 @@ test.describe('now-playing sheet', () => {
         await expect(page.locator('#np-sheet')).toHaveAttribute('inert', '');
         await expect(page.locator('#np-sheet')).toHaveAttribute('aria-hidden', 'true');
     });
+
+    test('the hidden bar does not cover the mobile navigation', async ({ page }) => {
+        // Before anything had played, the "hidden" bar sat directly over the
+        // tab bar and swallowed its taps. translate-y-full moves the bar down
+        // by its own height, which stopped being enough once it was raised to
+        // clear the tabs.
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto('/app/music');
+        await page.waitForTimeout(800);
+
+        const clickable = await page.evaluate(() => {
+            const bar = document.getElementById('now-playing');
+            const tabs = document.querySelector('.mobile-tabs');
+            const box = tabs.getBoundingClientRect();
+            const atCentre = document.elementFromPoint(
+                box.left + box.width / 2,
+                box.top + box.height / 2,
+            );
+
+            return !bar.contains(atCentre);
+        });
+
+        expect(clickable).toBe(true);
+    });
+
+    test('the bar clears the tab bar once something plays', async ({ page }) => {
+        // And the other half: visible, but not on top of the navigation.
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto('/app/music');
+        await page.waitForTimeout(800);
+        await page.locator('ol li [data-play]').first().click();
+        await page.waitForTimeout(2000);
+
+        const overlap = await page.evaluate(() => {
+            const bar = document.getElementById('now-playing').getBoundingClientRect();
+            const tabs = document.querySelector('.mobile-tabs').getBoundingClientRect();
+
+            return bar.bottom > tabs.top + 0.5;
+        });
+
+        expect(overlap).toBe(false);
+    });
 });
 
 async function startPlaying(page) {

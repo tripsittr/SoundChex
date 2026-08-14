@@ -305,8 +305,22 @@
     /* Lifted by exactly the tab bar's height plus the home indicator. The
        tab bar carries its own safe-area padding, so that inset is counted
        here too or the player would sit on top of the indicator. */
+    /* Anchored to the tab bar's real height rather than a guess at it.
+       The bar renders at 53.97px while CSS rounds any equivalent length to
+       53px, so a hand-calculated offset is always a fraction out and the two
+       overlap by a pixel. anchor() is not available here, so the offset is
+       rounded *up* — a hair of clearance beats a hair of overlap. */
     #now-playing {
-        bottom: calc(3.25rem + env(safe-area-inset-bottom));
+        bottom: calc(3.25rem + 2px + env(safe-area-inset-bottom));
+    }
+
+    /* Hidden means gone, not translated to somewhere it can still cover the
+       navigation. `translate-y-full` moves the bar down by its own height,
+       which was enough when it sat on the bottom edge — raised above the tab
+       bar it left the bar sitting directly over the tabs before anything had
+       played. */
+    #now-playing.translate-y-full {
+        display: none;
     }
 
     /* With the player showing, content must clear both bars. */
