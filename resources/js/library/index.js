@@ -1,4 +1,5 @@
 import * as mirror from './mirror.js';
+import { serverReachable, takeOver } from './offline-shell.js';
 import * as query from './query.js';
 import * as sync from './sync.js';
 
@@ -17,6 +18,8 @@ import * as sync from './sync.js';
 const library = {
     ...query,
     mirror,
+    takeOver,
+    serverReachable,
     sync: sync.sync,
     signOut: sync.signOut,
     setToken: sync.setToken,
@@ -46,10 +49,32 @@ function scheduleSync() {
     });
 }
 
+/**
+ * Rebuilds the page from the mirror when the server cannot be reached.
+ *
+ * Only on a page the server never rendered — an offline fallback page, or a
+ * navigation that failed. A page already showing real content must be left
+ * alone: replacing it would swap live data for a snapshot, which is a
+ * downgrade rather than a rescue.
+ */
+async function considerTakeover() {
+    const main = document.querySelector('main');
+
+    // Something already rendered here. Nothing to rescue.
+    if (main && main.textContent.trim().length > 40) return;
+
+    if (await serverReachable()) return;
+
+    const drawn = await takeOver();
+
+    document.dispatchEvent(new CustomEvent('soundchex:offline', { detail: { drawn } }));
+}
+
 if (!window.soundchexLibraryBound) {
     window.soundchexLibraryBound = true;
 
     scheduleSync();
+    considerTakeover();
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') scheduleSync();

@@ -44,5 +44,41 @@
         </p>
         <button type="button" onclick="location.reload()">Try again</button>
     </main>
+
+    <script type="module">
+        /*
+         * Rebuild the page from the device's copy of the library.
+         *
+         * This page is what the service worker serves when a navigation fails,
+         * and it previously loaded no scripts at all — so the mirror could
+         * never be reached and "offline" meant a dead end even with the whole
+         * catalogue sitting on the device.
+         *
+         * The bundle filename is content-hashed, so it is resolved from Vite's
+         * manifest rather than written in here, where it would go stale on the
+         * next build and fail silently.
+         */
+        try {
+            const manifest = await fetch('/build/manifest.json', { cache: 'force-cache' })
+                .then((response) => response.json());
+
+            const entry = Object.entries(manifest)
+                .find(([key]) => key.endsWith('library/index.js'));
+
+            if (entry) {
+                await import(`/build/${entry[1].file}`);
+
+                // The module exposes the library once it has loaded.
+                const drawn = await window.soundchexLibrary?.takeOver();
+
+                // Nothing to draw — no sync yet, or a screen this cannot
+                // rebuild. The static message above is the honest answer.
+                if (!drawn) document.querySelector('main')?.removeAttribute('hidden');
+            }
+        } catch {
+            // The manifest is itself a network request. If it is not cached,
+            // the static page stands.
+        }
+    </script>
 </body>
 </html>
