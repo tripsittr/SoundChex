@@ -283,6 +283,124 @@ class AlbumAndPlaylistTest extends TestCase
             ->assertNotFound();
     }
 
+    /* ------------------------------------------------ track numbering --- */
+
+    public function test_an_implausible_track_number_is_treated_as_absent(): void
+    {
+        // Real libraries are full of these: 1,129 of 1,258 tracks in one
+        // carried a library-wide position rather than a track number, which
+        // put nonsense in the listing and sorted albums by it.
+        $track = $this->track('One', 'Artist A', 'Album A', 588);
+
+        $this->assertNull($track->musicMetadata->trackNumber());
+        $this->assertSame(588, $track->musicMetadata->track_number, 'the raw tag is preserved');
+    }
+
+    public function test_a_plausible_track_number_is_kept(): void
+    {
+        // Proves the rule is a range check rather than blanket rejection.
+        $track = $this->track('One', 'Artist A', 'Album A', 7);
+
+        $this->assertSame(7, $track->musicMetadata->trackNumber());
+    }
+
+    public function test_junk_numbering_does_not_scramble_album_order(): void
+    {
+        // With every number rejected, the fallback is alphabetical rather
+        // than whatever order the rows came back in.
+        $this->track('Beta', 'Artist A', 'Album A', 900);
+        $this->track('Alpha', 'Artist A', 'Album A', 800);
+
+        $this->assertSame(
+            ['Alpha', 'Beta'],
+            app(AlbumBrowser::class)->tracks('Artist A', 'Album A')->pluck('title')->all(),
+        );
+    }
+
+    /* -------------------------------------------------------- shuffle --- */
+
+    public function test_shuffling_the_library_returns_a_playable_queue(): void
+    {
+        $this->track('One', 'Artist A', 'Album A', 1);
+        $this->track('Two', 'Artist B', 'Album B', 1);
+
+        $response = $this->getJson(route('media.shuffle'))->assertOk();
+
+        $this->assertCount(2, $response->json('queue'));
+        $this->assertNotNull($response->json('queue.0.src'));
+    }
+
+    public function test_shuffle_only_returns_music(): void
+    {
+        // A film in the audio queue would play as a black screen with sound.
+        $this->track('Song', 'Artist A', 'Album A', 1);
+
+        MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Movie,
+            'title' => 'A Film',
+            'file_path' => '/tmp/film.mkv',
+            'owned' => true,
+        ]);
+
+        $queue = $this->getJson(route('media.shuffle'))->json('queue');
+
+        $this->assertCount(1, $queue);
+        $this->assertSame('Song', $queue[0]['title']);
+    }
+
+    public function test_shuffle_skips_tracks_with_no_file(): void
+    {
+        // A wishlist row has no bytes behind it, so queueing it would stall
+        // playback on an item that can never load.
+        $this->track('Playable', 'Artist A', 'Album A', 1);
+
+        MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => 'Wishlisted',
+            'file_path' => null,
+            'wishlist' => true,
+            'owned' => false,
+        ]);
+
+        $queue = $this->getJson(route('media.shuffle'))->json('queue');
+
+        $this->assertCount(1, $queue);
+        $this->assertSame('Playable', $queue[0]['title']);
+    }
+
+    public function test_shuffle_returns_only_what_the_profile_may_play(): void
+    {
+        // Documented limitation, found by sabotage: removing ContentGate from
+        // the shuffle query breaks no test, because the gate filters on movie
+        // and show certifications and music carries none. There is currently
+        // no rating a capped profile can be blocked from in a music-only
+        // queue.
+        //
+        // The gate stays in the query regardless — the moment music gains a
+        // certification, or the gate gains a rule that touches it, this
+        // endpoint must not be the one place that skipped it. This test pins
+        // the shape that makes that safe: shuffle draws through the same
+        // query builder the rest of the app uses.
+        $this->track('One', 'Artist A', 'Album A', 1);
+
+        $kid = Profile::create([
+            'user_id' => $this->user->id,
+            'name' => 'Kid',
+            'is_owner' => false,
+            'max_rating' => 'PG',
+        ]);
+
+        app(CurrentProfile::class)->switchTo($kid->id);
+
+        $queue = $this->getJson(route('media.shuffle'))->assertOk()->json('queue');
+
+        // Unrated music must survive a cap: a kids profile with no music is a
+        // bug, not protection.
+        $this->assertCount(1, $queue);
+    }
+
     /* -------------------------------------------------------- helpers --- */
 
     private function playlist(string $name = 'Test'): Collection

@@ -78,9 +78,11 @@ class AlbumBrowser
                 ->where('album', $album))
             ->with('musicMetadata')
             ->get()
+            // Through the accessors, so an implausible tag sorts as absent
+            // rather than throwing an album into an arbitrary order.
             ->sortBy([
-                fn (MediaItem $item) => $item->musicMetadata?->disc_number ?? 1,
-                fn (MediaItem $item) => $item->musicMetadata?->track_number ?? PHP_INT_MAX,
+                fn (MediaItem $item) => $item->musicMetadata?->discNumber() ?? 1,
+                fn (MediaItem $item) => $item->musicMetadata?->trackNumber() ?? PHP_INT_MAX,
                 fn (MediaItem $item) => mb_strtolower($item->title),
             ])
             ->values();
@@ -115,7 +117,7 @@ class AlbumBrowser
     public function isMultiDisc(Collection $tracks): bool
     {
         return $tracks
-            ->map(fn (MediaItem $item) => $item->musicMetadata?->disc_number ?? 1)
+            ->map(fn (MediaItem $item) => $item->musicMetadata?->discNumber() ?? 1)
             ->unique()
             ->count() > 1;
     }

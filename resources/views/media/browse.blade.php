@@ -16,6 +16,31 @@
         {{-- Full grid + filters --}}
         <section class="px-4 pt-8 sm:px-8" aria-label="All {{ str($type->label())->plural() }}">
 
+            {{-- Music gets two things the other types do not: albums are how
+                 music is actually organised, and shuffling the whole library
+                 only makes sense for tracks. --}}
+            @if ($type === \App\Enums\MediaItemType::Music)
+                <div class="mb-5 flex flex-wrap items-center gap-2">
+                    <a href="{{ route('media.albums') }}"
+                       class="inline-flex items-center gap-2 rounded-full border border-base-500 px-5 py-2 text-sm font-medium text-ink-200 transition hover:border-ink-500 hover:text-ink-100">
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9" />
+                            <circle cx="12" cy="12" r="2.5" />
+                        </svg>
+                        Browse albums
+                    </a>
+
+                    <button type="button"
+                            data-shuffle-library
+                            class="inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-accent-hot disabled:opacity-60">
+                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <span data-shuffle-label>Shuffle everything</span>
+                    </button>
+                </div>
+            @endif
+
             <div class="mb-4 flex flex-wrap items-end justify-between gap-4">
                 <h2 class="text-lg font-bold tracking-tight sm:text-xl">
                     {{ $isFiltered ? 'Results' : 'All ' . str($type->label())->plural() }}

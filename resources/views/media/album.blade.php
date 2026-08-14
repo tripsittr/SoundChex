@@ -86,7 +86,7 @@
                         <span data-download-label>Download album</span>
                     </button>
 
-                    <x-media.add-to-playlist :items="$tracks" label="Add album" />
+                    <x-media.track-menu :items="$tracks" :label="$album" :compact="false" />
                 </div>
 
                 <p id="download-status" class="download-status mt-3 hidden"></p>
@@ -98,8 +98,8 @@
             @php $disc = null; @endphp
 
             @foreach ($tracks as $index => $track)
-                @if ($multiDisc && ($track->musicMetadata?->disc_number ?? 1) !== $disc)
-                    @php $disc = $track->musicMetadata?->disc_number ?? 1; @endphp
+                @if ($multiDisc && ($track->musicMetadata?->discNumber() ?? 1) !== $disc)
+                    @php $disc = $track->musicMetadata?->discNumber() ?? 1; @endphp
                     <li class="pb-2 pt-6 text-xs font-semibold uppercase tracking-wider text-ink-500">
                         Disc {{ $disc }}
                     </li>
@@ -113,7 +113,7 @@
                             data-play-index="{{ $index }}"
                             class="relative flex size-8 shrink-0 items-center justify-center rounded text-sm tabular-nums text-ink-500 transition hover:bg-base-700 hover:text-ink-100"
                             aria-label="Play {{ $track->title }}">
-                        <span class="group-hover:opacity-0">{{ $track->musicMetadata?->track_number ?? $index + 1 }}</span>
+                        <span class="group-hover:opacity-0">{{ $track->musicMetadata?->trackNumber() ?? $index + 1 }}</span>
                         <svg class="absolute size-4 opacity-0 transition group-hover:opacity-100" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                             <path d="M8 5v14l11-7z" />
                         </svg>
@@ -128,21 +128,7 @@
                         @endif
                     </div>
 
-                    <x-media.add-to-playlist :items="collect([$track])" :compact="true" />
-
-                    <button type="button"
-                            data-download="{{ $track->id }}"
-                            data-download-url="{{ route('media.stream', $track) }}"
-                            data-download-title="{{ $track->title }}"
-                            data-download-type="music"
-                            data-state="idle"
-                            class="download-btn flex size-8 shrink-0 items-center justify-center rounded text-ink-500 opacity-0 transition hover:bg-base-700 hover:text-ink-100 focus:opacity-100 group-hover:opacity-100"
-                            aria-label="Download {{ $track->title }}">
-                        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                  d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-                        </svg>
-                    </button>
+                    <x-media.track-menu :items="collect([$track])" :label="$track->title" />
 
                     @if ($track->musicMetadata?->duration_ms)
                         <span class="w-12 shrink-0 text-right text-xs tabular-nums text-ink-500">

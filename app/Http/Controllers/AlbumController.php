@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MediaItemType;
+use App\Models\MediaItem;
 use App\Services\AlbumBrowser;
+use App\Services\ContentGate;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -16,7 +20,37 @@ use Illuminate\View\View;
  */
 class AlbumController extends Controller
 {
-    public function __construct(private AlbumBrowser $albums) {}
+    public function __construct(
+        private AlbumBrowser $albums,
+        private ContentGate $gate,
+    ) {}
+
+    /**
+     * A shuffled queue drawn from the whole music library.
+     *
+     * Built on the server because the alternative is shipping 1,450 rows to
+     * the page so the browser can pick from them. Capped rather than
+     * unbounded: a queue of everything is not a feature anyone uses, and the
+     * payload would be megabytes.
+     *
+     * Randomised in SQL rather than by fetching and shuffling, so the database
+     * does the work and only the chosen rows are hydrated.
+     */
+    public function shuffleAll(): JsonResponse
+    {
+        $items = $this->gate
+            ->apply(MediaItem::query())
+            ->where('media_items.type', MediaItemType::Music)
+            ->whereNotNull('media_items.file_path')
+            ->inRandomOrder()
+            ->limit(200)
+            ->with('musicMetadata')
+            ->get();
+
+        return response()->json([
+            'queue' => $items->map(fn (MediaItem $item) => $item->playerPayload())->values(),
+        ]);
+    }
 
     public function index(): View
     {

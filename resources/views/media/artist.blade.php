@@ -71,21 +71,7 @@
                             {{ $track->title }}
                         </a>
 
-                        <x-media.add-to-playlist :items="collect([$track])" :compact="true" />
-
-                        <button type="button"
-                                data-download="{{ $track->id }}"
-                                data-download-url="{{ route('media.stream', $track) }}"
-                                data-download-title="{{ $track->title }}"
-                                data-download-type="music"
-                                data-state="idle"
-                                class="download-btn flex size-8 shrink-0 items-center justify-center rounded text-ink-500 opacity-0 transition hover:bg-base-700 hover:text-ink-100 focus:opacity-100 group-hover:opacity-100"
-                                aria-label="Download {{ $track->title }}">
-                            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round"
-                                      d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
-                            </svg>
-                        </button>
+                        <x-media.track-menu :items="collect([$track])" :label="$track->title" />
                     </li>
                 @endforeach
             </ol>

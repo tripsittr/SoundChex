@@ -84,6 +84,10 @@ Route::middleware(['auth'])->group(function (): void {
             Route::get('/album', [AlbumController::class, 'show'])->name('album');
             Route::get('/artist', [AlbumController::class, 'artist'])->name('artist');
 
+            // A shuffled queue from the whole music library, built server-side
+            // so the page never has to hold every row to pick from.
+            Route::get('/shuffle', [AlbumController::class, 'shuffleAll'])->name('shuffle');
+
             // Playlists. Listed before /{type} so "playlists" is not captured
             // as a media type.
             Route::get('/playlists', [PlaylistController::class, 'index'])->name('playlists');

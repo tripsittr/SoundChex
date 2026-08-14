@@ -11,6 +11,41 @@ function setupPlaylists() {
 
     window.soundchexPlaylistsBound = true;
 
+    // Play / play next / add to queue, read from the menu's own dataset so the
+    // markup carries the payload and the script needs no route helpers.
+    document.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-menu-play], [data-menu-play-next], [data-menu-queue]');
+
+        if (!button) return;
+
+        event.preventDefault();
+
+        const menu = button.closest('.track-menu');
+        const player = window.soundchexPlayer;
+
+        if (!menu || !player) return;
+
+        let items = [];
+
+        try {
+            items = JSON.parse(menu.dataset.queue ?? '[]');
+        } catch {
+            return;
+        }
+
+        if (items.length === 0) return;
+
+        if (button.hasAttribute('data-menu-play')) {
+            player.play(items, 0);
+        } else if (button.hasAttribute('data-menu-play-next')) {
+            player.playNext(items);
+        } else {
+            player.enqueue(items);
+        }
+
+        menu.removeAttribute('open');
+    });
+
     document.addEventListener('click', async (event) => {
         const button = event.target.closest('[data-add-to-playlist]');
 
@@ -18,7 +53,7 @@ function setupPlaylists() {
 
         event.preventDefault();
 
-        const holder = button.closest('.add-to-playlist');
+        const holder = button.closest('.add-to-playlist, .track-menu');
         const playlistId = button.dataset.addToPlaylist;
 
         let items = [];
@@ -71,10 +106,54 @@ function setupPlaylists() {
         }
     });
 
+    // Shuffle the whole library. The queue is fetched rather than embedded,
+    // because putting every track in the page to pick from is exactly what
+    // the endpoint exists to avoid.
+    document.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-shuffle-library]');
+
+        if (!button) return;
+
+        event.preventDefault();
+
+        const player = window.soundchexPlayer;
+
+        if (!player) return;
+
+        const label = button.querySelector('[data-shuffle-label]');
+        const original = label?.textContent;
+
+        button.disabled = true;
+
+        if (label) label.textContent = 'Shuffling…';
+
+        try {
+            const response = await fetch('/app/shuffle', { headers: { Accept: 'application/json' } });
+
+            if (!response.ok) throw new Error(String(response.status));
+
+            const { queue } = await response.json();
+
+            if (!queue?.length) throw new Error('empty');
+
+            // Shuffle is already applied server-side, so the player's own
+            // shuffle stays off — turning it on would reshuffle a shuffled
+            // list and make "next" unpredictable for no gain.
+            player.play(queue, 0);
+        } catch {
+            if (label) label.textContent = 'Could not shuffle';
+        } finally {
+            setTimeout(() => {
+                if (label) label.textContent = original;
+                button.disabled = false;
+            }, 1200);
+        }
+    });
+
     // A dropdown that stays open after the pointer has gone elsewhere reads as
     // stuck, so clicking outside closes it.
     document.addEventListener('click', (event) => {
-        document.querySelectorAll('.add-to-playlist[open]').forEach((holder) => {
+        document.querySelectorAll('.add-to-playlist[open], .track-menu[open]').forEach((holder) => {
             if (!holder.contains(event.target)) holder.removeAttribute('open');
         });
     });

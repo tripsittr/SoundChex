@@ -58,6 +58,51 @@ test.describe('music browsing', () => {
 
         await expect(page.locator('[data-reorderable]')).toHaveCount(0);
     });
+
+    test('the music tab offers albums and library shuffle', async ({ page }) => {
+        await page.goto('/app/music');
+
+        await expect(page.locator('a[href$="/app/albums"]').first()).toBeVisible();
+        await expect(page.locator('[data-shuffle-library]')).toHaveCount(1);
+    });
+
+    test('shuffling the library queues tracks and starts playing', async ({ page }) => {
+        await page.goto('/app/music');
+        await page.locator('[data-shuffle-library]').click();
+
+        await expect.poll(
+            () => page.evaluate(() => window.soundchexPlayer?.queue?.length ?? 0),
+            { timeout: 15000 },
+        ).toBeGreaterThan(0);
+
+        expect(await page.evaluate(() => window.soundchexPlayer.el.paused)).toBe(false);
+    });
+
+    test('a track row shows its title, not only a number', async ({ page }) => {
+        // Most tags in a real library carry an implausible track number, and
+        // the row showed that instead of anything readable.
+        await page.goto('/app/albums');
+        await page.locator('a[href*="/app/album?"]').first().click();
+
+        const title = page.locator('ol li a[href*="/app/item/"]').first();
+
+        await expect(title).toBeVisible();
+        expect((await title.textContent()).trim()).not.toBe('');
+    });
+
+    test('the overflow menu can queue a track', async ({ page }) => {
+        await page.goto('/app/albums');
+        await page.locator('a[href*="/app/album?"]').first().click();
+
+        const menu = page.locator('.track-menu').last();
+
+        await menu.locator('summary').click();
+        await menu.locator('[data-menu-queue]').click();
+
+        await expect.poll(
+            () => page.evaluate(() => window.soundchexPlayer?.queue?.length ?? 0),
+        ).toBeGreaterThan(0);
+    });
 });
 
 async function createPlaylistWithTracks(page) {

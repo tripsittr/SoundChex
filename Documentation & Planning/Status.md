@@ -99,6 +99,15 @@ Google Books · LibraryThing · Fanart.tv
 
 ## Known gaps and caveats
 
+**The rating cap does not apply to music.** `ContentGate` filters on movie
+`mpaa_rating` and show `content_rating`; music has no certification column, so
+a capped profile sees every track. Found by sabotage — removing the gate from
+the shuffle endpoint broke no test, because there is nothing in a music-only
+queue it could have blocked. The gate stays in those queries so the day music
+gains a rating, no endpoint is the one that skipped it. Explicit-lyrics
+filtering would need a new column and a rule in the gate.
+
+
 - **No TV shows in the library**, so that path is largely unexercised. The
   schema, TMDB show source and `content_rating` column exist but have not run
   against real episodes.

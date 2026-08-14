@@ -67,6 +67,34 @@ export default class MediaPlayer {
         this.emit('queuechange');
     }
 
+    /**
+     * Inserts straight after whatever is playing.
+     *
+     * Distinct from enqueue(), which appends: "play next" is a promise about
+     * position, and dropping the track at the end of a long queue would break
+     * it silently.
+     *
+     * With nothing playing there is no "next", so this starts the items
+     * instead — the alternative is a queue the user cannot hear.
+     */
+    playNext(items) {
+        if (this.index < 0) {
+            this.play(items, 0);
+
+            return;
+        }
+
+        this.queue.splice(this.index + 1, 0, ...items);
+
+        // Mirrored into originalQueue so turning shuffle off later does not
+        // resurrect a queue these tracks were never in.
+        const anchor = this.originalQueue.indexOf(this.queue[this.index]);
+
+        this.originalQueue.splice(anchor < 0 ? this.originalQueue.length : anchor + 1, 0, ...items);
+
+        this.emit('queuechange');
+    }
+
     current() {
         return this.queue[this.index] ?? null;
     }

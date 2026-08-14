@@ -333,3 +333,42 @@
     font-size: 0.6875rem;
     color: var(--color-ink-100);
 }
+
+/* ------------------------------------------------------------ track menu */
+
+/* The overflow menu on songs and albums. Built on <details>, so the marker
+   has to go or Safari draws a disclosure triangle beside the meatball. */
+.track-menu > summary::-webkit-details-marker,
+.add-to-playlist > summary::-webkit-details-marker { display: none; }
+
+.track-menu > summary::marker,
+.add-to-playlist > summary::marker { content: ''; }
+
+.track-menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-size: 0.8125rem;
+    color: var(--color-ink-200);
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.track-menu-item:hover {
+    background: var(--color-base-700);
+    color: var(--color-ink-100);
+}
+
+/* The menu is anchored to its button, which sits at the right edge of a row.
+   Near the bottom of a long list it would otherwise open off-screen. */
+@media (max-width: 640px) {
+    .track-menu > div[role='menu'] {
+        position: fixed;
+        inset-inline: 1rem;
+        width: auto;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+}
