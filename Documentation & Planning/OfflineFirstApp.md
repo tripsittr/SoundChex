@@ -25,6 +25,27 @@ The expensive part is not the API. It is that **3,400 lines of Blade across 14
 templates** currently render the UI server-side, and offline-first means the
 device renders instead.
 
+## Media is never downloaded automatically
+
+**The user chooses what lives on the device. Nothing else does.**
+
+Only the *catalogue* syncs automatically — 76 KB of titles and metadata, which
+is what makes browsing work offline. Actual media files are downloaded on an
+explicit tap and never in the background, never on wifi "helpfully", never
+because something was played once.
+
+This is a rule, not a default to be revisited:
+
+- A media library is large and personal. Filling someone's phone with films
+  they did not ask for is a real harm, not an inconvenience.
+- On a metered connection an automatic download costs money.
+- The existing download button already works this way; the offline work must
+  not quietly change it into a sync-everything feature.
+
+The corollary is that **the app must say clearly what is and is not available
+offline** — a greyed-out item with "not downloaded" is honest, whereas an item
+that looks playable and then fails is not.
+
 ## What "usable offline" means here
 
 Honest boundaries, decided up front so the plan can be judged against them.

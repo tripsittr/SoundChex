@@ -37,6 +37,26 @@ It does two things worth keeping:
 The CSP allows `https:` broadly rather than naming one host, because the host
 is user-supplied and unknown at build time. `http:` is not permitted.
 
+## Why this lives in the main repo
+
+Considered and settled, so it does not get relitigated.
+
+The shell is **six source files** — `lib.rs`, `main.rs`, `build.rs`,
+`Cargo.toml`, `tauri.conf.json`, a capability file — plus the connect page and
+generated icons. **0.9 MB tracked, against 468 files in the repo.** Build
+output (`target/`, `gen/`) is gitignored and never enters history.
+
+Size was never the argument. The reason is that **the app and the server change
+together**. The offline-first work adds an API whose only consumer is this
+client: every endpoint has a caller, and every payload shape has a test. In two
+repositories each of those becomes a coordinated pair of pull requests with
+version skew in between — the client shipping against an endpoint the server
+has already changed. In one, a single commit moves the endpoint, its consumer
+and the test that proves they still agree.
+
+Splitting would be right if the client were maintained separately, released on
+its own cadence, or written by different people. None of those apply here.
+
 ## Building
 
 ```bash
