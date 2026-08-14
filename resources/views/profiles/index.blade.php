@@ -22,6 +22,11 @@
                             @error('pin')
                                 <p class="auth-error">{{ $message }}</p>
                             @enderror
+
+                            {{-- Enter submits, but a phone keyboard's return
+                                 key is not an obvious "unlock" — so there is a
+                                 button to press. --}}
+                            <button type="submit" class="profile-pin-submit">Unlock</button>
                         </div>
                     @endif
 
@@ -36,6 +41,15 @@
 
                         <span class="profile-name">
                             {{ $profile->name }}
+                            {{-- A padlock, so it is obvious which profiles
+                                 will ask before they are tapped rather than
+                                 after. --}}
+                            @if ($profile->requiresPin())
+                                <svg class="profile-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-label="PIN required">
+                                    <rect x="5" y="11" width="14" height="10" rx="2" />
+                                    <path d="M8 11V8a4 4 0 018 0v3" stroke-linecap="round" />
+                                </svg>
+                            @endif
                             @if ($profile->is_kids)
                                 <span class="profile-badge">Kids</span>
                             @endif
@@ -182,6 +196,26 @@
            stylesheet, so `peer-checked:ring-2` had no base ring to build on
            and `ring-offset-color` isn't a real property at all — it was
            silently dropped, leaving the chosen colour unmarked. */
+        .profile-lock {
+            width: 0.85rem;
+            height: 0.85rem;
+            display: inline-block;
+            vertical-align: -0.1rem;
+            margin-inline-start: 0.3rem;
+            color: var(--color-ink-500, #a1a1aa);
+        }
+
+        .profile-pin-submit {
+            width: 100%;
+            margin-top: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            background: var(--color-accent, #e11d3a);
+            color: #fff;
+            font-size: 0.8125rem;
+            font-weight: 600;
+        }
+
         .profile-pin {
             width: 8rem;
             margin-bottom: 0.75rem;

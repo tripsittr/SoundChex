@@ -41,13 +41,21 @@ class ProfileController extends Controller
         // the picker does not know one is needed until it asks.
         $pin = $data['pin'] ?? null;
 
+        // Always the picker, never back(). Profiles can also be switched from
+        // the account menu, which has nowhere to put a PIN field — going back
+        // there left the user on the page they started on, still signed in as
+        // the previous profile, with no prompt and no explanation. The picker
+        // is the one screen that can ask.
         if ($target?->requiresPin() && blank($pin)) {
-            return back()->with('pin_for', $target->id);
+            return redirect()
+                ->route('profiles.index')
+                ->with('pin_for', $target->id);
         }
 
         // Fails closed: a profile on another account is simply not switched to.
         if (! $profiles->switchTo((int) $data['profile_id'], $pin)) {
-            return back()
+            return redirect()
+                ->route('profiles.index')
                 ->with('pin_for', $target?->requiresPin() ? $target->id : null)
                 ->withErrors([
                     'pin' => $target?->pinIsLocked()

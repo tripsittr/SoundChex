@@ -190,6 +190,58 @@ class AccessControlTest extends TestCase
         $this->assertTrue($this->owner->fresh()->verifyPin('4821'));
     }
 
+    public function test_switching_to_a_pinned_profile_lands_on_the_picker(): void
+    {
+        // Profiles can be switched from the account menu, which has nowhere to
+        // put a PIN field. Returning back() left the user on the page they
+        // started from, still on the old profile, with no prompt and no
+        // explanation — the switch simply appeared to do nothing.
+        $this->owner->setPin('4821');
+        $this->actingAs($this->user);
+
+        $this->from('/app')
+            ->post(route('profiles.switch'), ['profile_id' => $this->owner->id])
+            ->assertRedirect(route('profiles.index'))
+            ->assertSessionHas('pin_for', $this->owner->id);
+    }
+
+    public function test_a_wrong_pin_returns_to_the_picker_with_an_error(): void
+    {
+        $this->owner->setPin('4821');
+        $this->actingAs($this->user);
+
+        $this->from('/app')
+            ->post(route('profiles.switch'), [
+                'profile_id' => $this->owner->id,
+                'pin' => '0000',
+            ])
+            ->assertRedirect(route('profiles.index'))
+            ->assertSessionHasErrors('pin');
+    }
+
+    public function test_the_right_pin_switches_and_goes_to_the_library(): void
+    {
+        // Proves the redirect above is the prompt working rather than the
+        // switch being broken for everyone.
+        $this->owner->setPin('4821');
+        $this->actingAs($this->user);
+
+        $this->post(route('profiles.switch'), [
+            'profile_id' => $this->owner->id,
+            'pin' => '4821',
+        ])->assertRedirect(route('media.home'));
+    }
+
+    public function test_a_profile_without_a_pin_still_switches_in_one_step(): void
+    {
+        // The prompt must not appear for everyone: an unpinned profile is one
+        // tap, which is the whole point of the picker.
+        $this->actingAs($this->user);
+
+        $this->post(route('profiles.switch'), ['profile_id' => $this->member->id])
+            ->assertRedirect(route('media.home'));
+    }
+
     /* ------------------------------------------------------ rating cap --- */
 
     public function test_a_capped_profile_cannot_see_a_higher_rated_film(): void
