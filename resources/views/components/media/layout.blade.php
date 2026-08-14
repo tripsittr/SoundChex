@@ -33,6 +33,7 @@
         'resources/js/playlists.js',
         'resources/js/playlist-reorder.js',
         'resources/js/upload-progress.js',
+        'resources/js/library/index.js',
         'resources/js/navigate.js',
     ])
 

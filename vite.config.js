@@ -18,6 +18,7 @@ export default defineConfig({
                 'resources/js/playlists.js',
                 'resources/js/playlist-reorder.js',
                 'resources/js/upload-progress.js',
+                'resources/js/library/index.js',
                 'resources/css/upload-progress.css',
                 'resources/js/navigate.js',
                 'resources/js/watch.js',
