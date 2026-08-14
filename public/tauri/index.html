@@ -131,20 +131,32 @@
      *
      * Without this a typo lands on a blank page with no way back, because the
      * connect screen has already been replaced.
+     *
+     * `no-cors` is essential, not incidental. This page is served from a
+     * tauri:// origin, so a normal fetch to the server is cross-origin, and
+     * the server sends no CORS headers — the browser rejects the response
+     * before any status is readable and every address looks unreachable. An
+     * opaque response cannot be inspected, but the request either reached the
+     * network or it threw, and that is the only thing being asked here.
+     *
+     * The navigation that follows is a top-level one, which CORS does not
+     * apply to, so this restriction never affects the app itself.
      */
     async function reachable(origin) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
 
         try {
-            const response = await fetch(`${origin}/login`, {
+            await fetch(`${origin}/login`, {
+                mode: 'no-cors',
                 signal: controller.signal,
                 credentials: 'omit',
                 cache: 'no-store',
             });
 
-            return response.ok || response.status === 302;
+            return true;
         } catch {
+            // A DNS failure, a refused connection, or the timeout above.
             return false;
         } finally {
             clearTimeout(timeout);
@@ -176,7 +188,19 @@
         window.location.replace(origin);
     });
 
-    // Straight in on every launch after the first.
+    /**
+     * Straight in on every launch after the first.
+     *
+     * There is deliberately no "did the last attempt work" flag here. This
+     * page and the app live on different origins (tauri:// and https://), so
+     * they have separate localStorage — the app could never clear a flag set
+     * here, and the warning would fire on every launch instead of only after
+     * a real failure.
+     *
+     * Recovering from a wrong address is therefore a manual step: delete the
+     * app's data, or reinstall. Rare enough to be worth the simplicity, since
+     * the address is entered once.
+     */
     const saved = localStorage.getItem(KEY);
 
     if (saved) {
