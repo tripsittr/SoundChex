@@ -83,6 +83,14 @@
     .alt summary::before { content: '+ '; }
     .alt[open] summary::before { content: '\2212 '; }
     .alt .hint { margin-top: .6rem; }
+    .stay {
+        width: 100%;
+        margin-top: .75rem;
+        background: #27272a;
+        font-size: .8125rem;
+        padding: .5rem 1rem;
+    }
+
     .alt button {
         margin-top: .5rem;
         background: #27272a;
@@ -332,11 +340,36 @@
         field.value = saved ?? known[0];
         say('Finding the fastest route…');
 
+        // A way to stop.
+        //
+        // Without this the form is unreachable once an address is saved: the
+        // page redirects on load, so there is no moment in which to add a
+        // second address or correct a wrong one. Short of deleting the app,
+        // the first address entered was permanent.
+        let cancelled = false;
+
+        const stay = document.createElement('button');
+
+        stay.type = 'button';
+        stay.className = 'stay';
+        stay.textContent = 'Change server';
+        stay.addEventListener('click', () => {
+            cancelled = true;
+            say('Connection cancelled. Edit the addresses below.');
+            stay.remove();
+            field.focus();
+            field.select();
+        });
+
+        status.after(stay);
+
         // The saved host is included but not privileged: it may be the slow
         // public address, and a faster one may be reachable right now.
         const pool = [...new Set([...known, saved].filter(Boolean))];
 
         fastest(pool).then((winner) => {
+            if (cancelled) return;
+
             const target = winner ?? saved ?? known[0];
 
             if (winner && winner !== saved) {
