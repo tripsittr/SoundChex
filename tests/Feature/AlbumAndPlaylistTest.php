@@ -77,6 +77,20 @@ class AlbumAndPlaylistTest extends TestCase
         $this->assertSame(['First', 'Second'], $tracks->pluck('title')->all());
     }
 
+    public function test_tracks_order_correctly_when_no_disc_is_tagged(): void
+    {
+        // Most albums have no disc number at all, and sortBy()'s array form
+        // reversed the pair on the resulting null rather than falling through
+        // to the track number — so a normal two-track album listed backwards.
+        $this->track('Second', 'Artist A', 'Album A', 2);
+        $this->track('First', 'Artist A', 'Album A', 1);
+
+        $this->assertSame(
+            ['First', 'Second'],
+            app(AlbumBrowser::class)->tracks('Artist A', 'Album A')->pluck('title')->all(),
+        );
+    }
+
     public function test_an_untagged_track_is_not_an_album(): void
     {
         $this->track('Loose', 'Artist A', null);

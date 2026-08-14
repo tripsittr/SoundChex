@@ -102,13 +102,26 @@ class AlbumBrowser
                 ->where('album', $album))
             ->with('musicMetadata')
             ->get()
+            // One comparator rather than sortBy()'s array form.
+            //
+            // That form compares each closure's value in turn, and a null from
+            // discNumber() — which is what an untagged album gives — made it
+            // reverse the pair instead of falling through to the track number.
+            // Albums listed backwards as a result.
+            //
             // Through the accessors, so an implausible tag sorts as absent
             // rather than throwing an album into an arbitrary order.
-            ->sortBy([
-                fn (MediaItem $item) => $item->musicMetadata?->discNumber() ?? 1,
-                fn (MediaItem $item) => $item->musicMetadata?->trackNumber() ?? PHP_INT_MAX,
-                fn (MediaItem $item) => mb_strtolower($item->title),
-            ])
+            ->sort(function (MediaItem $a, MediaItem $b): int {
+                return [
+                    $a->musicMetadata?->discNumber() ?? 1,
+                    $a->musicMetadata?->trackNumber() ?? PHP_INT_MAX,
+                    mb_strtolower($a->title ?? ''),
+                ] <=> [
+                    $b->musicMetadata?->discNumber() ?? 1,
+                    $b->musicMetadata?->trackNumber() ?? PHP_INT_MAX,
+                    mb_strtolower($b->title ?? ''),
+                ];
+            })
             ->values();
     }
 
