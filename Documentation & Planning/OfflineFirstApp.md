@@ -102,7 +102,7 @@ worse product.
 
 Ordered so each one ships something usable, and so the risky part comes early.
 
-### Phase 1 — API foundation (~4 days)
+### Phase 1 — API foundation — **DONE**
 
 - Sanctum token issue/revoke; the Tauri shell stores the token, not a session
   cookie. Session auth over a `tauri://` origin is exactly the CORS problem
@@ -116,6 +116,30 @@ Ordered so each one ships something usable, and so the risky part comes early.
   just the UI. A capped profile must not receive an R-rated item in its sync
   payload at all — this is where an offline copy could otherwise leak the
   thing `ContentGate` exists to prevent.
+
+**Built and pushed.** `POST /api/v1/tokens`, `GET /api/v1/me`,
+`DELETE /api/v1/tokens/current`, `GET /api/v1/library`,
+`GET|POST /api/v1/library/delta`. 13 tests, both leaks below verified by
+sabotage.
+
+Real numbers, measured rather than estimated: **1,454 items, 0.61 MB raw,
+94 KB gzipped**. No `file_path` in the payload.
+
+Two leaks the tests caught before this shipped, both worth remembering:
+
+- `CurrentProfile` read `$token->abilities` directly. That array is not
+  populated on the token double Sanctum uses in tests, so the profile
+  resolved to null, no cap applied, and a capped device would have received
+  the whole library. It asks through `tokenCan()` now.
+- The controller injected `ContentGate` and `CurrentProfile` in its
+  constructor, which runs *before* the auth middleware. The cached profile
+  was null, so the gate filtered nothing **and** the ETag carried profile 0 —
+  a capped device could 304 its way into keeping what it should have lost.
+  Both resolve per call now.
+
+Deletion and a tightened cap share one mechanism: the device sends
+`known_ids` and gets back what it may no longer hold. A delete-only list
+would leave a newly blocked film playable on a child's device.
 
 ### Phase 2 — device mirror (~4 days)
 
