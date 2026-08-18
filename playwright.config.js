@@ -25,7 +25,15 @@ export default defineConfig({
             // and a playback test that picks one up fails with a media error
             // that looks like a player bug. Running them last, then tearing
             // down, keeps that contained.
-            testIgnore: /upload\.spec\.js/,
+            testIgnore: /(upload|embedded-shell)\.spec\.js/,
+        },
+        {
+            // The app shell served on its own origin, standing in for
+            // tauri://localhost. It needs a static server of its own, because
+            // the whole point is that it works without the Laravel one.
+            name: 'shell',
+            use: { ...devices['Desktop Chrome'] },
+            testMatch: /embedded-shell\.spec\.js/,
         },
         {
             name: 'uploads',
@@ -39,11 +47,19 @@ export default defineConfig({
         },
         { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: /(mobile|phone)\.spec\.js/ },
     ],
-    webServer: {
+    // Two servers: the Laravel app, and a static one for the Tauri shell.
+    // The shell's tests prove it works *without* the Laravel one, so it cannot
+    // be served by it.
+    webServer: [{
         // --env=e2e is what keeps this off the real database.
         command: `php artisan --env=e2e serve --host=127.0.0.1 --port=${PORT}`,
         url: `http://127.0.0.1:${PORT}/login`,
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,
-    },
+    }, {
+        command: 'npx --yes http-server public/tauri -p 8199 --silent',
+        url: 'http://127.0.0.1:8199/index.html',
+        reuseExistingServer: !process.env.CI,
+        timeout: 30_000,
+    }],
 });

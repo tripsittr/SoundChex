@@ -70,4 +70,26 @@ A service worker cannot install itself without one successful request, and iOS
 evicts it on its own schedule. Anything that depends on it is a cache, not a
 guarantee — and the point of downloading music is that it is there regardless.
 
-## Not started
+## Built
+
+`scripts/embed-offline-shell.mjs` copies the offline bundle into
+`public/tauri/offline/` after every `vite build`, resolving an entry's imports
+transitively — copying only the entry leaves it importing files that are not
+there. Tauri compiles that directory into the binary, verified by finding both
+content-hashed filenames inside the built executable.
+
+When no address answers, the connect screen renders the library itself rather
+than navigating to a server that is not there. Everything it needs is local:
+the assets ship in the app, and the catalogue is IndexedDB on the app's own
+origin.
+
+Tests run against the shell on its own static server, and never visit the
+Laravel one while online — the earlier offline tests did, which warmed the
+service worker cache and let them pass against a build with no offline
+capability at all. Verified by deleting the embedded assets: all four fail,
+which is the state the app shipped in before.
+
+One thing worth remembering: Playwright's `setOffline` blocks same-origin
+requests too, so it cannot be used to test this — it stops the shell loading
+its own assets, which real offline does not. Only the server is routed to
+abort.

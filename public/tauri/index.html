@@ -340,14 +340,59 @@
 
         say('Server unreachable — opening what is on this device…');
 
-        // Straight to the library rather than the origin root: the offline
-        // shell rebuilds known screens, and "/" is not one of them — landing
-        // there showed the generic "can't reach your library" page with the
-        // catalogue sitting unread on the device.
+        // Rendered here, from assets shipped inside the app.
         //
-        // A real navigation, so the service worker gets the chance to answer.
-        // It is the only thing that can serve a page here.
-        window.location.replace(origin.replace(/\/$/, '') + '/app');
+        // This used to navigate to `origin + '/app'` and hope the service
+        // worker answered. That works only when its cache is warm, and the
+        // cache is not a guarantee: a fresh install has never populated it,
+        // and iOS evicts it from apps that have not been opened recently —
+        // exactly when someone reaches for music they downloaded for this
+        // situation. A cold device landed on the browser's error page with
+        // the whole catalogue sitting unread beside it.
+        renderEmbedded();
+    }
+
+    /**
+     * Draws the library from the copy on this device.
+     *
+     * Everything here is local: the assets ship in the app bundle, and the
+     * catalogue is IndexedDB on this origin. No request is made, because the
+     * network is the thing that just failed.
+     */
+    async function renderEmbedded() {
+        try {
+            const manifest = await fetch('./offline/manifest.json').then((r) => r.json());
+            const entry = manifest['resources/js/library/index.js'];
+            const css = manifest['resources/css/media-center.css'];
+
+            if (css) {
+                const link = document.createElement('link');
+
+                link.rel = 'stylesheet';
+                link.href = `./offline/${css.file}`;
+                document.head.append(link);
+            }
+
+            if (!entry) throw new Error('offline bundle missing');
+
+            const library = await import(`./offline/${entry.file}`);
+
+            // A <main> for the shell to draw into: the connect screen has none
+            // of the app's structure, so one is made for it.
+            document.body.replaceChildren(document.createElement('main'));
+            document.body.classList.add('offline-standalone');
+
+            const drawn = await (window.soundchexLibrary ?? library.default)
+                ?.preRender?.(document.querySelector('main'), '/app');
+
+            if (!drawn) throw new Error('nothing stored');
+        } catch (error) {
+            // Nothing has ever been synced to this device, so there is
+            // genuinely nothing to show. Say that rather than a blank screen.
+            document.body.replaceChildren();
+            say('Nothing has been synced to this device yet, so there is nothing to open offline.', true);
+            field.focus();
+        }
     }
 
     document.getElementById('add-alt')?.addEventListener('click', () => {

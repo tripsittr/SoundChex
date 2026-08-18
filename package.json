@@ -3,7 +3,7 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build",
+        "build": "vite build && node scripts/embed-offline-shell.mjs",
         "dev": "vite",
         "test": "vitest run",
         "test:watch": "vitest",
