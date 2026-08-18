@@ -238,6 +238,14 @@
     padding-top: max(0.75rem, env(safe-area-inset-top));
 }
 
+/* A screen the offline shell rebuilt. The fixed header's height varies with the
+   safe-area inset, so a fixed padding either overlaps on a notched phone or
+   leaves a gap on one without a notch. Adding the inset to the base clearance
+   tracks the header instead of guessing at it. */
+.offline-screen {
+    padding-top: calc(8rem + env(safe-area-inset-top));
+}
+
 /* ---------------------------------------------------------- mobile tabs */
 
 /* Bottom navigation on phones, sitting above the home indicator. Fixed rather

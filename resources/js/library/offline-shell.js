@@ -132,9 +132,15 @@ function heading(text, count) {
 function container() {
     const div = document.createElement('div');
 
-    // Matches the padding a server-rendered page uses, so a rebuilt screen
-    // sits where the real one does rather than an inch off.
-    div.className = 'mx-auto max-w-7xl px-4 pb-16 pt-20 sm:px-8';
+    // Clears the fixed header, which is taller than it looks on a notched
+    // phone: its inner nav is padded by the safe-area inset, so on a 16 Pro the
+    // header runs to ~119px against ~60px on desktop. This was pt-20 (80px) and
+    // the first rows sat underneath it — invisible, and unreachable by
+    // scrolling, since the page was already at the top.
+    //
+    // The class matches what the server-rendered music page uses, and the
+    // safe-area top-up is applied below for the notch.
+    div.className = 'offline-screen mx-auto max-w-7xl px-4 pb-16 pt-32 sm:px-8 sm:pt-36';
 
     return div;
 }
