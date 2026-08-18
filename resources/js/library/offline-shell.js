@@ -19,6 +19,18 @@ import { artwork, fill, playerPayload, poster, songList } from './render.js';
 /** Screens this can rebuild, and how. */
 const SCREENS = [
     {
+        // The home screen, and the landing place when the server is off. It
+        // has to be first: without it a launch with nothing reachable showed
+        // the generic offline page while the whole catalogue sat unread.
+        match: (path) => path === '/app' || path === '/app/',
+        render: async (root) => {
+            const items = await mirror.all();
+            const music = query.sortBy(query.byType(items, 'music'), 'title');
+
+            return renderSongs(root, music, 'Your library');
+        },
+    },
+    {
         match: (path) => path === '/app/music' || path === '/app/music/',
         render: async (root) => {
             const items = query.sortBy(query.byType(await mirror.all(), 'music'), 'title');

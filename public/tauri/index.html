@@ -319,6 +319,37 @@
      * app's data, or reinstall. Rare enough to be worth the simplicity, since
      * the address is entered once.
      */
+    /**
+     * Goes to the app anyway, with the server unreachable.
+     *
+     * The service worker on that origin serves its offline shell for a
+     * navigation it cannot fetch, and that shell reads the mirrored catalogue
+     * and the downloaded files — both of which are on this device already.
+     *
+     * Without this the app was unusable with the server off: the connect
+     * screen would not let anyone past, so music that had been deliberately
+     * downloaded for exactly this situation could not be reached.
+     */
+    function offline(origin) {
+        if (!origin) {
+            say('No server saved yet, so there is nothing stored to open.', true);
+            field.focus();
+
+            return;
+        }
+
+        say('Server unreachable — opening what is on this device…');
+
+        // Straight to the library rather than the origin root: the offline
+        // shell rebuilds known screens, and "/" is not one of them — landing
+        // there showed the generic "can't reach your library" page with the
+        // catalogue sitting unread on the device.
+        //
+        // A real navigation, so the service worker gets the chance to answer.
+        // It is the only thing that can serve a page here.
+        window.location.replace(origin.replace(/\/$/, '') + '/app');
+    }
+
     document.getElementById('add-alt')?.addEventListener('click', () => {
         const extra = normalise(document.getElementById('alt-host').value);
 
@@ -370,16 +401,29 @@
         fastest(pool).then((winner) => {
             if (cancelled) return;
 
-            const target = winner ?? saved ?? known[0];
+            if (winner) {
+                if (winner !== saved) {
+                    // Remembered so the next launch starts from the one that
+                    // actually worked, though it is raced again regardless —
+                    // moving between home and mobile changes the answer.
+                    localStorage.setItem(KEY, winner);
+                }
 
-            if (winner && winner !== saved) {
-                // Remembered so the next launch starts from the one that
-                // actually worked, though it is raced again regardless —
-                // moving between home and mobile changes the answer.
-                localStorage.setItem(KEY, winner);
+                window.location.replace(winner);
+
+                return;
             }
 
-            window.location.replace(target);
+            // Nothing answered — the server is off, or this device is
+            // somewhere none of its addresses reach.
+            //
+            // Navigating anyway lands on the browser's own error page, which
+            // is where this app became unusable with the server off: the
+            // downloaded music and the mirrored catalogue were both sitting on
+            // the device, and the connect screen would not let anyone past to
+            // reach them. Going to the last known host instead lets the
+            // service worker serve the offline shell, which reads that data.
+            offline(saved ?? known[0]);
         });
     } else {
         field.focus();

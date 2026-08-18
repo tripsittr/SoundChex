@@ -54,7 +54,15 @@ test.describe('now-playing sheet', () => {
         await page.locator('#np-sheet-close').click();
 
         await expect(page.locator('#np-sheet')).toHaveClass(/translate-y-full/);
-        expect(await page.evaluate(() => window.soundchexPlayer.el.paused)).toBe(false);
+
+        // Polled rather than read once. A track that has only just started can
+        // still be buffering, and `paused` flickers true for a moment during
+        // that — asserting an instant made this fail roughly one run in ten
+        // for a reason that had nothing to do with the sheet.
+        await expect.poll(
+            () => page.evaluate(() => window.soundchexPlayer.el.paused),
+            { message: 'closing the sheet should not stop playback', timeout: 5000 },
+        ).toBe(false);
     });
 
     test('it is inert while closed', async ({ page }) => {

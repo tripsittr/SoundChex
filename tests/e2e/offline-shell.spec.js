@@ -102,6 +102,22 @@ test.describe('offline browsing', () => {
         await context.setOffline(false);
     });
 
+    test('the home screen rebuilds when nothing is reachable', async ({ page, context }) => {
+        // Where the app landed when the server was off. /app was not a screen
+        // the shell knew how to rebuild, so it showed the generic "can't reach
+        // your library" page while the whole catalogue sat unread on the
+        // device — the app was unusable exactly when its offline copy was the
+        // only thing that mattered.
+        await context.setOffline(true);
+        await page.goto('/app').catch(() => {});
+        await page.waitForTimeout(2500);
+
+        await expect(page.locator('body')).toContainText('Offline Song A');
+        await expect(page.locator('body')).not.toContainText("Can't reach your library");
+
+        await context.setOffline(false);
+    });
+
     test('online pages are still server-rendered', async ({ page }) => {
         // The takeover must never fire on a page the server drew: swapping
         // live data for a snapshot is a downgrade, not a rescue.
