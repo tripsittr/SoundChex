@@ -370,6 +370,50 @@
     background: transparent;
 }
 
+/* One glyph at a time, chosen by the state the handler writes. Driven by CSS
+   rather than JS so the icon cannot fall out of step with data-state — they are
+   the same fact, and keeping two copies is how they diverge. */
+.download-btn [data-icon] { display: none; }
+.download-btn[data-state='idle'] [data-icon='idle'],
+.download-btn[data-state='downloading'] [data-icon='downloading'],
+.download-btn[data-state='stored'] [data-icon='stored'],
+.download-btn[data-state='failed'] [data-icon='failed'] { display: block; }
+
+/* No state yet — the server renders data-state="idle", but a button the JS has
+   not painted should still show something rather than an empty box. */
+.download-btn:not([data-state]) [data-icon='idle'] { display: block; }
+
+/* Green once stored: the one state worth spotting while scrolling a list. The
+   icon buttons are deliberately low-contrast until hovered, so this overrides
+   that — a download that finished should not need a hover to be seen. */
+/* Scoped to the icon variant, and to both states, so these beat the Tailwind
+   text colour on the element and the full-width button's own state styling
+   further up — that one is a bordered control with a label and should keep its
+   existing treatment. */
+.download-btn--icon[data-state='stored'],
+.download-btn--icon[data-state='stored']:hover { color: #34d399; opacity: 1; }
+
+.download-btn--icon[data-state='failed'],
+.download-btn--icon[data-state='failed']:hover { color: #fca5a5; opacity: 1; }
+
+/* The transfer is running, so the button should not read as tappable-idle.
+   Kept at full opacity on a phone too, where the row's hover-reveal never
+   fires and an in-flight download would otherwise stay invisible. */
+.download-btn--icon[data-state='downloading'],
+.download-btn--icon[data-state='downloading']:hover { color: var(--color-ink-100); opacity: 1; }
+
+.download-spinner { animation: download-spin 0.9s linear infinite; }
+
+@keyframes download-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Respects a system preference for less motion: a spinner is decorative, and
+   the state is already carried by the glyph itself. */
+@media (prefers-reduced-motion: reduce) {
+    .download-spinner { animation: none; }
+}
+
 /* ------------------------------------------------------------ track menu */
 
 /* The overflow menu on songs and albums. Built on <details>, so the marker

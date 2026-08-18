@@ -16,6 +16,97 @@ import {
 window.soundchexDownloads = { checkSpace, download, isDownloaded, list, localUrl, remove };
 
 /**
+ * The icon download buttons, in song rows and in the now-playing sheet.
+ *
+ * These render a [data-download] button carrying the item on the element
+ * itself, and nothing bound them — every one of them was inert, so tapping
+ * download in a song list or on the full-screen player did nothing at all and
+ * reported nothing either.
+ *
+ * Delegated on document rather than bound per button: rows arrive with SPA
+ * navigation and the sheet re-points its button at each track, so anything
+ * bound to a specific element goes stale. One listener covers every button
+ * that exists now or later.
+ */
+export function setupIconDownloads() {
+    if (!window.indexedDB || window.__soundchexIconDownloads) return;
+
+    window.__soundchexIconDownloads = true;
+
+    document.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-download]');
+
+        // The detail-page control is bound separately and owns its own state;
+        // it carries a label element these icon buttons do not have.
+        if (!button || button.id === 'download-toggle') return;
+
+        event.preventDefault();
+
+        const id = button.dataset.download;
+        const url = button.dataset.downloadUrl;
+
+        if (!id || !url) return;
+
+        // Guards a second tap while the first is still running: the button
+        // stays in the DOM and is still clickable mid-transfer.
+        if (button.dataset.state === 'downloading') return;
+
+        const title = button.dataset.downloadTitle ?? '';
+        const type = button.dataset.downloadType ?? '';
+
+        if (await isDownloaded(id)) {
+            await remove(id);
+            button.dataset.state = 'idle';
+            button.setAttribute('aria-label', `Download ${title}`);
+
+            return;
+        }
+
+        button.dataset.state = 'downloading';
+        button.setAttribute('aria-label', `Downloading ${title}`);
+
+        try {
+            await download({ id, url, meta: { title, type, url } });
+
+            button.dataset.state = 'stored';
+            button.setAttribute('aria-label', `${title} downloaded — tap to remove`);
+        } catch (error) {
+            // Reported on the button itself: these live in a scrolling list
+            // with no status line to write to, so a silent failure is
+            // indistinguishable from a download that simply has not finished.
+            button.dataset.state = 'failed';
+            button.setAttribute('aria-label', `Download failed for ${title} — tap to retry`);
+
+            if (error?.name !== 'AbortError') {
+                console.error('Download failed', error);
+            }
+        }
+    });
+}
+
+/**
+ * Marks buttons whose item is already on the device.
+ *
+ * Without this a stored track shows an idle download icon until it is tapped,
+ * which invites downloading the same file twice.
+ */
+export async function paintIconDownloadStates() {
+    const buttons = document.querySelectorAll('[data-download]:not(#download-toggle)');
+
+    if (buttons.length === 0) return;
+
+    const stored = new Set((await list()).map((entry) => String(entry.id)));
+
+    buttons.forEach((button) => {
+        const id = button.dataset.download;
+
+        if (!id) return;
+
+        button.dataset.state = stored.has(id) ? 'stored' : 'idle';
+    });
+}
+
+/**
  * The download control on a detail page.
  *
  * Four states, and the button says which it is in rather than relying on an

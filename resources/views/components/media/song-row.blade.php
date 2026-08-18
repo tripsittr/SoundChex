@@ -73,8 +73,29 @@
             data-state="idle"
             class="download-btn download-btn--icon flex size-8 shrink-0 items-center justify-center rounded text-ink-500 transition hover:bg-base-700 hover:text-ink-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
             aria-label="Download {{ $item->title }}">
-        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        {{-- Three glyphs, swapped by CSS on data-state. Kept in the markup
+             rather than drawn in JS so the state is visible in the DOM and a
+             test can assert on it without reading pixels. --}}
+        <svg data-icon="idle" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+
+        {{-- Spins while the transfer runs. --}}
+        <svg data-icon="downloading" class="size-4 download-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke-opacity="0.25" />
+            <path d="M21 12a9 9 0 00-9-9" stroke-linecap="round" />
+        </svg>
+
+        {{-- Green tick once the bytes are on the device. --}}
+        <svg data-icon="stored" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M8.5 12.5l2.5 2.5 4.5-5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+
+        {{-- A failure has to be visible: these rows have no status line. --}}
+        <svg data-icon="failed" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v4.5M12 16h.01" stroke-linecap="round" />
         </svg>
     </button>
 

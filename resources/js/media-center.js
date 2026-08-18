@@ -1,4 +1,9 @@
-import { setupBatchDownload, setupDownloadButton } from './download-button.js';
+import {
+    paintIconDownloadStates,
+    setupBatchDownload,
+    setupDownloadButton,
+    setupIconDownloads,
+} from './download-button.js';
 import Alpine from 'alpinejs';
 
 /**
@@ -105,6 +110,11 @@ if ('serviceWorker' in navigator) {
 function bindPageScripts() {
     setupDownloadButton();
     setupBatchDownload();
+    setupIconDownloads();
+
+    // Repainted per navigation: the delegated listener is registered once, but
+    // each new page brings rows whose stored state has not been read yet.
+    paintIconDownloadStates();
 }
 
 document.addEventListener('livewire:navigated', bindPageScripts);
