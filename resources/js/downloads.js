@@ -181,7 +181,18 @@ export async function download({ id, url, meta = {}, onProgress, signal }) {
 
     const blob = new Blob(chunks, { type });
 
-    await transaction(BLOB_STORE, 'readwrite', (store) => store.put(blob, String(id)));
+    // Stored as an ArrayBuffer with its type beside it, not as a Blob.
+    //
+    // Safari aborts the transaction when a Blob is put into IndexedDB, and
+    // does it with a null error — so a download appeared to fail for no
+    // reason, and the bytes that had just been written were rolled back. This
+    // is why downloads worked in Chrome and never on the phone.
+    const buffer = await blob.arrayBuffer();
+
+    await transaction(BLOB_STORE, 'readwrite', (store) => store.put(
+        { buffer, type },
+        String(id),
+    ));
 
     // Written after the blob, so a metadata row always implies a real file.
     await transaction(META_STORE, 'readwrite', (store) => store.put({
@@ -201,8 +212,24 @@ export async function download({ id, url, meta = {}, onProgress, signal }) {
  * Callers must revoke the URL when finished — a live URL pins the whole file
  * in memory, which for a film is gigabytes.
  */
+/**
+ * Rebuilds a Blob from what was stored.
+ *
+ * Records are `{ buffer, type }` because Safari will not hold a Blob in
+ * IndexedDB. An older record may still be a Blob itself, so both are handled —
+ * anything already downloaded keeps working across the change.
+ */
+function toBlob(record) {
+    if (!record) return null;
+    if (record instanceof Blob) return record;
+
+    return record.buffer
+        ? new Blob([record.buffer], { type: record.type || 'application/octet-stream' })
+        : null;
+}
+
 export async function localUrl(id) {
-    const blob = await transaction(BLOB_STORE, 'readonly', (store) => store.get(String(id)));
+    const blob = toBlob(await transaction(BLOB_STORE, 'readonly', (store) => store.get(String(id))));
 
     // Type-checked rather than merely truthy, matching isDownloaded(): a
     // record that is not a Blob cannot become an object URL, and passing one
@@ -217,9 +244,9 @@ export async function localUrl(id) {
  * record, and a record alone would produce a player pointed at nothing.
  */
 export async function isDownloaded(id) {
-    const blob = await transaction(BLOB_STORE, 'readonly', (store) => store.get(String(id)));
+    const record = await transaction(BLOB_STORE, 'readonly', (store) => store.get(String(id)));
 
-    return blob instanceof Blob;
+    return toBlob(record) !== null;
 }
 
 export async function remove(id) {
