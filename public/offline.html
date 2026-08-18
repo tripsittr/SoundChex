@@ -6,6 +6,10 @@
     <title>Offline — SoundChex</title>
     <style>
         :root { color-scheme: dark; }
+        /* Centred while this is a message. Once the library has been drawn
+           into the page the app's own layout takes over — an offline library
+           that is centred and narrow looks like a different, lesser
+           application rather than the same one with less in it. */
         body {
             margin: 0;
             min-height: 100vh;
@@ -45,6 +49,16 @@
         <button type="button" onclick="location.reload()">Try again</button>
     </main>
 
+    <style>
+        /* Applied once a library has been rendered: normal document flow, and
+           the app's stylesheet supplies everything else. */
+        body.has-library {
+            display: block;
+            place-items: initial;
+            text-align: initial;
+        }
+    </style>
+
     <script type="module">
         /*
          * Rebuild the page from the device's copy of the library.
@@ -66,10 +80,28 @@
                 .find(([key]) => key.endsWith('library/index.js'));
 
             if (entry) {
+                // The app's stylesheet, or the rendered library has no styling
+                // at all — the classes the shell emits are the app's own, and
+                // without this they mean nothing.
+                const css = Object.entries(manifest)
+                    .find(([key]) => key.endsWith('media-center.css'));
+
+                if (css) {
+                    const link = document.createElement('link');
+
+                    link.rel = 'stylesheet';
+                    link.href = `/build/${css[1].file}`;
+                    document.head.append(link);
+                }
+
                 await import(`/build/${entry[1].file}`);
 
                 // The module exposes the library once it has loaded.
                 const drawn = await window.soundchexLibrary?.takeOver();
+
+                // The message layout is wrong for a library; the app's is
+                // right. Swapped only once there is something to show.
+                if (drawn) document.body.classList.add('has-library');
 
                 // Nothing to draw — no sync yet, or a screen this cannot
                 // rebuild. The static message above is the honest answer.

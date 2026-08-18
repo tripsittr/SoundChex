@@ -51,6 +51,44 @@ async function request(path, { method = 'GET', body = null, headers = {} } = {})
 }
 
 /**
+ * Gets a token from the session, if this page has one.
+ *
+ * The API needs a bearer token and the web form only creates a session, so
+ * without this nothing ever obtained one — the mirror stayed empty and every
+ * offline feature was unreachable. The session is the proof: same person, same
+ * device, already signed in.
+ *
+ * Only from a page the server rendered; the connect screen has no session and
+ * nothing to ask with.
+ */
+async function ensureToken() {
+    if (token()) return true;
+
+    try {
+        const response = await fetch('/app/device-token', {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+            },
+        });
+
+        if (!response.ok) return false;
+
+        const { token: issued } = await response.json();
+
+        if (!issued) return false;
+
+        setToken(issued);
+
+        return true;
+    } catch {
+        // Offline, or not signed in. The mirror keeps whatever it already has.
+        return false;
+    }
+}
+
+/**
  * Brings the mirror up to date, choosing the cheaper route.
  *
  * Returns what happened so a caller can tell "nothing changed" from "synced
@@ -58,7 +96,7 @@ async function request(path, { method = 'GET', body = null, headers = {} } = {})
  * user to distrust it.
  */
 export async function sync({ force = false } = {}) {
-    if (!token()) return { status: 'unauthenticated' };
+    if (!await ensureToken()) return { status: 'unauthenticated' };
 
     const since = force ? null : await mirror.syncedAt();
 

@@ -91,16 +91,20 @@ test.describe('offline shell inside the app', () => {
         await page.reload();
         await page.waitForTimeout(6000);
 
-        await expect(page.locator('body')).toContainText(/offline/i);
+        await expect(page.locator('body')).toContainText(/saved on this device/i);
     });
 
-    test('an empty device says so rather than showing a blank screen', async ({ page, context }) => {
+    test('an empty device offers the form rather than a blank screen', async ({ page, context }) => {
         // Nothing has ever been synced, so there is genuinely nothing to show.
-        // A blank page reads as broken; saying so reads as a state.
+        // The connect form comes back rather than a bare message: this is the
+        // one screen that can do anything about the situation, and clearing it
+        // left an empty document with no way forward.
+        await page.evaluate(() => indexedDB.deleteDatabase('soundchex-library'));
         await context.route('**://127.0.0.1:8111/**', (route) => route.abort());
         await page.reload();
         await page.waitForTimeout(6000);
 
-        await expect(page.locator('body')).toContainText(/nothing has been synced|nothing to open/i);
+        await expect(page.locator('body')).toContainText(/connect to your library/i);
+        await expect(page.locator('#host')).toBeVisible();
     });
 });

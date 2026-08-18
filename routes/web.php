@@ -90,6 +90,16 @@ Route::middleware(['auth'])->group(function (): void {
             // so the page never has to hold every row to pick from.
             Route::get('/shuffle', [AlbumController::class, 'shuffleAll'])->name('shuffle');
 
+            // A token for the device to sync with.
+            //
+            // The API needs a bearer token, but signing in through the web
+            // form only creates a session — so nothing ever issued one and the
+            // mirror stayed permanently empty, which made every offline
+            // feature dead weight. This mints one for the profile already
+            // signed in, using the session as the proof.
+            Route::post('/device-token', [MediaCenterController::class, 'deviceToken'])
+                ->name('device-token');
+
             // Playlists. Listed before /{type} so "playlists" is not captured
             // as a media type.
             Route::get('/playlists', [PlaylistController::class, 'index'])->name('playlists');

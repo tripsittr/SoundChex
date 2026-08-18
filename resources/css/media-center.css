@@ -625,17 +625,14 @@
 
 /* --------------------------------------------------------- offline shell */
 
-/* Shown when a screen was rebuilt from the device's copy rather than fetched.
-   Saying so matters: a library that is quietly a snapshot looks like one that
-   has lost things. */
-.offline-banner {
-    margin-bottom: 1rem;
-    padding: 0.6rem 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-    border-radius: 0.5rem;
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-    color: var(--color-ink-200);
-    font-size: 0.8125rem;
+/* A quiet note that a screen came from the device's own copy.
+   It was a coloured banner, which made the app look like a different and
+   lesser application whenever the server was away — the intent is the same app
+   with less in it. */
+.offline-note {
+    margin-bottom: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--color-ink-500);
 }
 
 /* ----------------------------------------------------------- filter toggle */

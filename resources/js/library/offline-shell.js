@@ -87,14 +87,26 @@ const SCREENS = [
 
 /* --------------------------------------------------------------- chrome --- */
 
+/**
+ * A quiet note that this is the device's copy.
+ *
+ * Deliberately understated. It used to be a coloured banner at the top of
+ * every screen, which made the app look like a different, lesser application
+ * the moment the server went away — the intent is the same app with less in
+ * it, not a fallback mode.
+ *
+ * Suppressed entirely when the page still has its own chrome: there the nav,
+ * tabs and player are all present and the app plainly *is* itself, so
+ * announcing otherwise is noise.
+ */
 function banner(count) {
-    const bar = document.createElement('div');
+    const bar = document.createElement('p');
 
-    bar.className = 'offline-banner';
+    bar.className = 'offline-note';
     bar.setAttribute('role', 'status');
     bar.textContent = count > 0
-        ? `Offline — showing ${count} items from this device. Downloads still play.`
-        : 'Offline, and nothing has been synced to this device yet.';
+        ? 'Showing what is saved on this device.'
+        : 'Nothing is saved on this device yet.';
 
     return bar;
 }
@@ -120,9 +132,24 @@ function heading(text, count) {
 function container() {
     const div = document.createElement('div');
 
+    // Matches the padding a server-rendered page uses, so a rebuilt screen
+    // sits where the real one does rather than an inch off.
     div.className = 'mx-auto max-w-7xl px-4 pb-16 pt-20 sm:px-8';
 
     return div;
+}
+
+/**
+ * Whether the page still has the app's own chrome around it.
+ *
+ * When the server rendered the page, the header, tab bar and player are all
+ * present and only the content needs replacing. When the app opened straight
+ * into the offline shell there is nothing but a bare <main>, and the note is
+ * the only thing saying where the data came from.
+ */
+function hasChrome() {
+    return document.querySelector('header') !== null
+        && document.querySelector('.mobile-tabs, .music-subnav') !== null;
 }
 
 /* -------------------------------------------------------------- screens --- */
@@ -134,7 +161,8 @@ function renderSongs(root, items, title) {
     list.className = 'divide-y divide-base-700/40';
 
     fill(list, songList(items));
-    wrap.append(banner(items.length), heading(title, items.length), list);
+    if (!hasChrome()) wrap.append(banner(items.length));
+    wrap.append(heading(title, items.length), list);
     fill(root, [wrap]);
 
     return items.length;
@@ -147,7 +175,8 @@ function renderGrid(root, items, label) {
     grid.className = 'grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8';
 
     fill(grid, items.map(poster));
-    wrap.append(banner(items.length), heading(label, items.length), grid);
+    if (!hasChrome()) wrap.append(banner(items.length));
+    wrap.append(heading(label, items.length), grid);
     fill(root, [wrap]);
 
     return items.length;
@@ -199,7 +228,8 @@ function renderAlbums(root, groups) {
         return link;
     }));
 
-    wrap.append(banner(groups.length), heading('Albums', groups.length), grid);
+    if (!hasChrome()) wrap.append(banner(groups.length));
+    wrap.append(heading('Albums', groups.length), grid);
     fill(root, [wrap]);
 
     return groups.length;
@@ -254,7 +284,8 @@ function renderArtists(root, people) {
         return row;
     }));
 
-    wrap.append(banner(people.length), heading('Artists', people.length), list);
+    if (!hasChrome()) wrap.append(banner(people.length));
+    wrap.append(heading('Artists', people.length), list);
     fill(root, [wrap]);
 
     return people.length;
@@ -271,7 +302,7 @@ function renderArtists(root, people) {
 function renderSearch(root, items, term) {
     const wrap = container();
 
-    wrap.append(banner(items.length));
+    if (!hasChrome()) wrap.append(banner(items.length));
     wrap.append(heading(term ? `Results for “${term}”` : 'Search', items.length));
 
     const note = document.createElement('p');
@@ -323,7 +354,7 @@ function renderSearch(root, items, term) {
 function renderDetail(root, item) {
     const wrap = container();
 
-    wrap.append(banner(1));
+    if (!hasChrome()) wrap.append(banner(1));
 
     const header = document.createElement('div');
 
@@ -382,6 +413,15 @@ export async function preRender(root, path) {
     const screen = SCREENS.find((candidate) => candidate.match(path));
 
     if (!screen) return false;
+
+    // Nothing mirrored, nothing to draw.
+    //
+    // This rendered regardless, so on a device that had not synced yet every
+    // link tap replaced the page with "Offline, and nothing has been synced to
+    // this device yet" — while the server was up and about to answer. A
+    // pre-render is an optimisation; with nothing to show it has to decline
+    // rather than blank a working page.
+    if (await mirror.count() === 0) return false;
 
     try {
         await screen.render(root, path);

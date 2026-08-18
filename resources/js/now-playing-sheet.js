@@ -53,6 +53,8 @@ export function bindNowPlayingSheet() {
         shuffle: document.getElementById('np-sheet-shuffle'),
         repeat: document.getElementById('np-sheet-repeat'),
         repeatOne: document.getElementById('np-sheet-repeat-one'),
+        download: document.getElementById('np-sheet-download'),
+        playlist: document.getElementById('np-sheet-playlist'),
     };
 
     current.ui = ui;
@@ -111,6 +113,7 @@ export function bindNowPlayingSheet() {
             ui.artworkFallback.hidden = false;
         }
 
+        pointActionsAt(item);
         setPlaying(!player.el.paused);
         setModes();
         setTime(player.el.currentTime, player.el.duration);
@@ -196,6 +199,29 @@ export function bindNowPlayingSheet() {
         ui.queueToggle.classList.toggle('text-accent', show);
     }
 
+    /**
+     * Points the download and playlist buttons at the current track.
+     *
+     * The sheet outlives any one track, so these are updated on every change
+     * rather than rendered with an item baked in.
+     */
+    function pointActionsAt(item) {
+        const { download, playlist } = current.ui;
+
+        if (download && item) {
+            download.dataset.download = String(item.id);
+            download.dataset.downloadUrl = item.src ?? `/app/item/${item.id}/stream`;
+            download.dataset.downloadTitle = item.title ?? '';
+            download.dataset.downloadType = item.type ?? 'music';
+            // Reset: the previous track's state says nothing about this one.
+            download.dataset.state = 'idle';
+        }
+
+        if (playlist && item) {
+            playlist.dataset.items = JSON.stringify([item.id]);
+        }
+    }
+
     /* ----------------------------------------------------------- wiring */
 
     ui.close.addEventListener('click', close);
@@ -204,6 +230,18 @@ export function bindNowPlayingSheet() {
     ui.next.addEventListener('click', () => player.next());
     ui.shuffle.addEventListener('click', () => player.toggleShuffle());
     ui.repeat.addEventListener('click', () => player.cycleRepeat());
+
+    // Delegated to the existing add-to-playlist flow rather than duplicating
+    // it: the menu already knows how to list playlists and create one.
+    ui.playlist?.addEventListener('click', () => {
+        const items = JSON.parse(ui.playlist.dataset.items ?? '[]');
+
+        if (items.length === 0) return;
+
+        document.dispatchEvent(new CustomEvent('soundchex:add-to-playlist', {
+            detail: { items },
+        }));
+    });
 
     ui.queueToggle.addEventListener('click', () => {
         showQueue(current.ui.queuePane.hidden);

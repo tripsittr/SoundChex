@@ -200,6 +200,30 @@ function setupPlaylists() {
         }
     }, true);
 
+    // The now-playing sheet asks for this rather than carrying its own copy of
+    // the playlist list: the sheet outlives any one track, so a menu rendered
+    // with an item baked in would be wrong the moment the track changed.
+    document.addEventListener('soundchex:add-to-playlist', async (event) => {
+        const items = event.detail?.items ?? [];
+
+        if (items.length === 0) return;
+
+        // Reuse a menu already on the page — any of them can act on any items,
+        // since the ids travel with the request rather than the markup.
+        const menu = document.querySelector('.track-menu');
+
+        if (!menu) return;
+
+        menu.dataset.items = JSON.stringify(items);
+        menu.setAttribute('open', '');
+
+        // Brought to the sheet, which is above everything else on screen.
+        menu.style.position = 'fixed';
+        menu.style.zIndex = '70';
+        menu.style.insetInlineEnd = '1rem';
+        menu.style.bottom = '6rem';
+    });
+
     // A dropdown that stays open after the pointer has gone elsewhere reads as
     // stuck, so clicking outside closes it.
     document.addEventListener('click', (event) => {

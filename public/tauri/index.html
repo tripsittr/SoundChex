@@ -360,6 +360,13 @@
      * network is the thing that just failed.
      */
     async function renderEmbedded() {
+        // Kept so the form can be put back: the failure path needs the screen
+        // that can fix the problem, not an empty document.
+        //
+        // Not named `saved` — that is the stored address, and shadowing it
+        // here silently broke the very fallback this is for.
+        const originalBody = document.body.cloneNode(true);
+
         try {
             const manifest = await fetch('./offline/manifest.json').then((r) => r.json());
             const entry = manifest['resources/js/library/index.js'];
@@ -388,10 +395,15 @@
             if (!drawn) throw new Error('nothing stored');
         } catch (error) {
             // Nothing has ever been synced to this device, so there is
-            // genuinely nothing to show. Say that rather than a blank screen.
-            document.body.replaceChildren();
-            say('Nothing has been synced to this device yet, so there is nothing to open offline.', true);
-            field.focus();
+            // genuinely nothing to show.
+            //
+            // The whole form is restored rather than a bare message: this is
+            // the one screen that can do anything about the situation, and
+            // clearing it left an empty body with no way forward — the blank
+            // page this was meant to prevent.
+            document.body.replaceChildren(...originalBody.children);
+            document.body.classList.remove('offline-standalone');
+            say('Nothing is saved on this device yet, so there is nothing to open offline.', true);
         }
     }
 

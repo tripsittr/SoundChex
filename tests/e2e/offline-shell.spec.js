@@ -40,12 +40,15 @@ test.describe('offline browsing', () => {
 
     test('it says the library is a local copy', async ({ page, context }) => {
         // A library that is quietly a snapshot looks like one that has lost
-        // things. Saying so is the difference between degraded and broken.
+        // things. Saying so is the difference between degraded and broken —
+        // but quietly: it used to be a coloured banner, which made the app
+        // look like a different, lesser application whenever the server was
+        // away.
         await context.setOffline(true);
         await page.goto('/app/music').catch(() => {});
         await page.waitForTimeout(2500);
 
-        await expect(page.locator('.offline-banner')).toBeVisible();
+        await expect(page.locator('.offline-note')).toBeVisible();
 
         await context.setOffline(false);
     });

@@ -4,7 +4,11 @@
         <x-media.hero :item="$hero" :eyebrow="$type->label()" />
     @endif
 
-    <div class="relative z-10 {{ $hero ? '-mt-8 sm:-mt-16' : 'pt-24 sm:pt-28' }}">
+    {{-- The header is fixed and translucent, so content passes under it. This
+         clearance is what stops the first row of chips sitting against the
+         logo and search — it was reduced when the hero was removed, which
+         brought them too close. --}}
+    <div class="relative z-10 {{ $hero ? '-mt-8 sm:-mt-16' : 'pt-32 sm:pt-36' }}">
 
         {{-- Music leads with its groupings.
              They used to sit below the rails and above the tab bar, where they

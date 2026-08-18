@@ -285,6 +285,38 @@ class MediaCenterController extends Controller
     }
 
     /**
+     * Issues an API token for the signed-in profile.
+     *
+     * The sync API authenticates with a bearer token, and the web form only
+     * creates a session — so without this nothing ever obtained one and the
+     * device mirror stayed empty, leaving every offline feature unreachable.
+     *
+     * The session is the proof: this is the same person, on the same device,
+     * already authenticated. The token names the current profile so it carries
+     * exactly the same rating cap, and a profile switch issues a new one.
+     */
+    public function deviceToken(Request $request): JsonResponse
+    {
+        $profile = app(CurrentProfile::class)->get();
+
+        abort_unless($profile !== null, 403);
+
+        $user = Auth::user();
+
+        // Replaced rather than accumulated: a browser that syncs on every
+        // launch would otherwise leave a token per visit, and a list of
+        // hundreds is impossible to audit or revoke meaningfully.
+        $user->tokens()->where('name', 'device:' . $profile->id)->delete();
+
+        $token = $user->createToken('device:' . $profile->id, ['profile:' . $profile->id]);
+
+        return response()->json([
+            'token' => $token->plainTextToken,
+            'profile_id' => $profile->id,
+        ]);
+    }
+
+    /**
      * Cross-type search results.
      */
     public function search(Request $request): View

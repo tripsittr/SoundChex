@@ -46,7 +46,13 @@ window.soundchexWrites = writes;
  * library with no indication anything was stale.
  */
 function scheduleSync() {
-    if (!sync.token()) return;
+    // No token check here.
+    //
+    // There used to be one, and it deadlocked: the token is obtained *during*
+    // sync, from the session this page already has — so refusing to sync
+    // without one meant never getting one, and the mirror stayed permanently
+    // empty. sync() returns 'unauthenticated' by itself when there is no
+    // session to ask with, which is the correct place to decide that.
 
     // Queued writes go first. They describe a moment already past, and
     // sending them before pulling means the sync reflects them rather than
@@ -105,12 +111,19 @@ function paintAhead() {
 
         if (!link || link.origin !== window.location.origin) return;
 
+        // Not the now-playing bar. It is an <a> to the item page, but tapping
+        // it opens the full-screen player instead — and repainting <main> here
+        // tore out the handler that stops the navigation, so the bar started
+        // navigating away again.
+        if (link.id === 'np-link') return;
+
         const main = document.querySelector('main');
 
         if (!main) return;
 
-        // Drawn only if the mirror actually knows this screen; otherwise the
-        // page is left alone rather than blanked in favour of nothing.
+        // Only while the destination is one the mirror can actually draw, and
+        // only when there is something in it — preRender declines otherwise,
+        // so a working page is never replaced by an empty offline screen.
         preRender(main, new URL(link.href).pathname);
     }, true);
 }

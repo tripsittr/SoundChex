@@ -163,9 +163,34 @@
     {{-- Controls, pinned above the home indicator. --}}
     <div class="px-6 pt-4" style="padding-bottom: max(1.5rem, env(safe-area-inset-bottom))">
 
-        <div class="mb-4 min-w-0">
-            <p id="np-sheet-title" class="truncate text-lg font-semibold text-ink-100"></p>
-            <p id="np-sheet-subtitle" class="truncate text-sm text-ink-400"></p>
+        <div class="mb-4 flex items-center gap-3">
+            <div class="min-w-0 flex-1">
+                <p id="np-sheet-title" class="truncate text-lg font-semibold text-ink-100"></p>
+                <p id="np-sheet-subtitle" class="truncate text-sm text-ink-400"></p>
+            </div>
+
+            {{-- Acting on whatever is playing, so both are wired up as the
+                 track changes rather than rendered per item. Beside the title
+                 because that is what they act on — in the header they would
+                 read as acting on the queue. --}}
+            <button type="button"
+                    id="np-sheet-download"
+                    data-state="idle"
+                    class="download-btn download-btn--icon flex size-10 shrink-0 items-center justify-center rounded-full text-ink-400 transition hover:bg-base-700 hover:text-ink-100"
+                    aria-label="Download this track">
+                <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+
+            <button type="button"
+                    id="np-sheet-playlist"
+                    class="flex size-10 shrink-0 items-center justify-center rounded-full text-ink-400 transition hover:bg-base-700 hover:text-ink-100"
+                    aria-label="Add this track to a playlist">
+                <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M4 6h11M4 12h11M4 18h7M17 12v8M13 16h8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
         </div>
 
         {{-- A tall hit area around a thin track: thumbs are imprecise, but a
