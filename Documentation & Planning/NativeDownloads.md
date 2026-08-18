@@ -34,13 +34,23 @@ What it cannot do is hold more than a gigabyte, or survive eviction.
 
 ### 1. A storage bridge in the shell (~1 day)
 
-Two Tauri commands, `save_media` and `delete_media`, writing into the app's
-Documents directory. Everything else stays where it is: the download button,
-the progress indicator, the queue and the offline shell all keep working, and
-only the final write changes.
+Two Tauri commands, `save_media` and `delete_media`, writing into
+`Library/Application Support/media/`. Everything else stays where it is: the
+download button, the progress indicator, the queue and the offline shell all
+keep working, and only the final write changes.
 
-Documents rather than Caches, deliberately: iOS purges Caches under storage
-pressure, which is the same failure in a different place.
+That location is where Netflix and Spotify put downloaded media, and each
+alternative is wrong for a reason:
+
+- **`Caches/`** is purged by iOS under storage pressure — the same eviction
+  problem in a different place.
+- **`Documents/`** is surfaced in the Files app if the app declares it, which
+  invites the OS and the user to move or delete media the app is tracking.
+- **`Application Support/`** is private, survives backup, and is removed with
+  the app. It is what a downloads feature is expected to do.
+
+Marked `isExcludedFromBackup`, or a 40GB library quietly fills someone's
+iCloud. The two apps above do the same.
 
 ### 2. Serve the files back (~1 day)
 
@@ -103,9 +113,8 @@ starts, rather than a failure part way through.
 - **Range requests.** If the asset protocol does not honour them on iOS,
   seeking within a downloaded film breaks — which would be a worse experience
   than today. Worth testing before the rest is built on it.
-- **App size review.** Not a concern for sideloading, but an app storing tens
-  of gigabytes in Documents is backed up to iCloud by default unless excluded.
-  Media must be marked `isExcludedFromBackup`, or a 40GB library quietly fills
-  someone's iCloud.
+- **iCloud backup.** Anything under Application Support is backed up unless
+  marked `isExcludedFromBackup`. Missing that would quietly fill someone's
+  iCloud with tens of gigabytes of media they already own.
 
 ## Not started
