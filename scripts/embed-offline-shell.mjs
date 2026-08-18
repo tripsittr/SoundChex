@@ -14,7 +14,8 @@
  *
  * Run after `vite build`, because it reads the manifest that build produces.
  */
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const root = process.cwd();
@@ -77,4 +78,34 @@ for (const needed of NEEDED) {
 
 writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(local, null, 2));
 
-console.log(`  embedded ${copied.length} files into public/tauri/offline`);
+// Stamp the service worker with this build, so its activate handler has an
+// old cache key to delete. Without it the version stayed 'v1' forever and
+// nothing was ever evicted — a stale stylesheet served alongside fresh HTML,
+// which is how a page ends up referencing classes its CSS does not have.
+const swPath = join(root, 'public/sw.js');
+const stamp = createHash('sha1')
+    .update(JSON.stringify(manifest))
+    .digest('hex')
+    .slice(0, 12);
+
+writeFileSync(
+    swPath,
+    readFileSync(swPath, 'utf8').replace(/const VERSION = '[^']*';/, `const VERSION = '${stamp}';`),
+);
+
+// Refuse to finish having produced nothing. Tauri copies frontendDist into
+// the bundle verbatim, so an empty directory ships as an app with no connect
+// screen and no offline bundle — which it does without complaint, and which is
+// only discoverable by unzipping the IPA. Failing here makes that a build
+// error rather than a broken install.
+if (copied.length === 0) {
+    console.error('embed-offline-shell: nothing was embedded — refusing to leave an empty shell.');
+    process.exit(1);
+}
+
+if (!existsSync(join(root, 'public/tauri/index.html'))) {
+    console.error('embed-offline-shell: public/tauri/index.html is missing — the app would have no connect screen.');
+    process.exit(1);
+}
+
+console.log(`  embedded ${copied.length} files, service worker stamped ${stamp}`);

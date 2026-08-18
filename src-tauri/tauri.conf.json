@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "identifier": "net.soundchex.client",
   "build": {
-    "frontendDist": "../public/tauri"
+    "frontendDist": "../public/tauri",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [

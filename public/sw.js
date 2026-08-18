@@ -12,7 +12,14 @@
  *     or cheap to refresh.
  */
 
-const VERSION = 'v1';
+// Rewritten by scripts/embed-offline-shell.mjs on every build.
+//
+// It was a hardcoded 'v1', so the activate handler that deletes old caches
+// never had a different key to delete and nothing was ever evicted. Assets are
+// content-hashed, which usually makes that harmless — but a stale stylesheet
+// kept serving alongside fresh HTML, so a page referencing new class names was
+// styled by a sheet that did not have them. The header disappeared.
+const VERSION = '70081e5a309f';
 const ASSET_CACHE = `soundchex-assets-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
 
@@ -82,7 +89,16 @@ self.addEventListener('fetch', (event) => {
     }
 
     if (isCacheableAsset(url)) {
-        event.respondWith(staleWhileRevalidate(request));
+        // Build output is content-hashed, so the cache can only ever hold the
+        // bytes that URL has always had — revalidating it buys nothing, and
+        // serving it stale-first is what let an old stylesheet outlive its
+        // build. Network-first with a cache fallback keeps it available
+        // offline without letting it win while the server is reachable.
+        event.respondWith(
+            url.pathname.startsWith('/build/')
+                ? networkFirst(request)
+                : staleWhileRevalidate(request),
+        );
     }
 });
 
@@ -100,6 +116,36 @@ function isCacheableAsset(url) {
  * Serve from cache immediately when present, and refresh in the background so
  * the next load is current.
  */
+/**
+ * The network's answer, falling back to whatever was cached.
+ *
+ * For content-hashed assets this is strictly better than serving stale: the
+ * bytes behind a given URL never change, so there is nothing to gain by
+ * answering from cache first, and a cache that outlives its build actively
+ * breaks the page it styles.
+ */
+async function networkFirst(request) {
+    const cache = await caches.open(ASSET_CACHE);
+
+    try {
+        const response = await fetch(request);
+
+        if (response.ok && response.type === 'basic') {
+            cache.put(request, response.clone());
+        }
+
+        return response;
+    } catch (error) {
+        const cached = await cache.match(request);
+
+        // Rethrowing rather than returning undefined: a failed asset fetch with
+        // nothing cached must surface as a failed request, not an empty 200.
+        if (!cached) throw error;
+
+        return cached;
+    }
+}
+
 async function staleWhileRevalidate(request) {
     const cache = await caches.open(ASSET_CACHE);
     const cached = await cache.match(request);
