@@ -20,7 +20,17 @@
     {{-- The reader deliberately does NOT use the media center layout: an
          e-reader wants the whole viewport, with no nav bar competing with the
          page. Everything here is scoped to reading. --}}
-    @vite(['resources/css/media-center.css', 'resources/js/reader.js'])
+    {{-- The player comes too. This page is a standalone document rather than
+         part of the media centre layout — an e-reader wants the whole viewport
+         — so opening a book was a full page load that destroyed the player
+         object and stopped whatever was playing. The bar restores the queue
+         from the session and gives the reader somewhere to control it from. --}}
+    @vite([
+        'resources/css/media-center.css',
+        'resources/js/reader.js',
+        'resources/js/now-playing.js',
+        'resources/js/now-playing-sheet.js',
+    ])
 
     <style>
         /* Theme tokens are set from JS so the page, the chrome, and the
@@ -1369,5 +1379,8 @@
     @endif
 </div>
 
+    {{-- Hidden until something is playing, so a reader with silence gets the
+         whole screen as before. --}}
+    <x-media.now-playing />
 </body>
 </html>

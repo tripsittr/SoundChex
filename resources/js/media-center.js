@@ -1,3 +1,4 @@
+import * as downloadQueue from './download-queue.js';
 import {
     paintIconDownloadStates,
     setupBatchDownload,
@@ -111,6 +112,10 @@ function bindPageScripts() {
     setupDownloadButton();
     setupBatchDownload();
     setupIconDownloads();
+
+    // Exposed for the browser tests, which drive the queue directly rather than
+    // racing five real downloads.
+    window.soundchexDownloadQueue = downloadQueue;
 
     // Repainted per navigation: the delegated listener is registered once, but
     // each new page brings rows whose stored state has not been read yet.

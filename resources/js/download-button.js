@@ -1,3 +1,4 @@
+import * as queue from './download-queue.js';
 import {
     checkSpace,
     download,
@@ -73,11 +74,33 @@ export function setupIconDownloads() {
             return;
         }
 
+        // Queued rather than started: five taps used to open five concurrent
+        // transfers to the same server, which on a phone is slower than doing
+        // them in turn and makes a dropped connection take down all five.
+        const { queued, position, promise } = queue.enqueue(
+            { id, url, title, type },
+            (item) => download({
+                id: item.id,
+                url: item.url,
+                meta: { title: item.title, type: item.type, url: item.url },
+            }),
+        );
+
+        if (!queued) return;
+
         button.dataset.state = 'downloading';
-        button.setAttribute('aria-label', `Downloading ${title}`);
+        button.setAttribute('aria-label', position > 1
+            ? `${title} is number ${position} in the download queue`
+            : `Downloading ${title}`);
+
+        // Only worth saying when something is actually waiting behind another
+        // download — a toast for every single tap is noise.
+        if (position > 1) {
+            toast(`Added to download queue — ${position} waiting`);
+        }
 
         try {
-            await download({ id, url, meta: { title, type, url } });
+            await promise;
 
             button.dataset.state = 'stored';
             button.setAttribute('aria-label', `${title} downloaded — tap to remove`);
@@ -101,6 +124,32 @@ export function setupIconDownloads() {
  * Without this a stored track shows an idle download icon until it is tapped,
  * which invites downloading the same file twice.
  */
+/**
+ * A brief message at the foot of the screen.
+ *
+ * Built here rather than rendered into every page: these rows appear in lists
+ * the offline shell also builds, and a toast anchored to page markup would be
+ * missing from half of them.
+ */
+function toast(message) {
+    let host = document.getElementById('soundchex-toast');
+
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'soundchex-toast';
+        host.className = 'toast';
+        host.setAttribute('role', 'status');
+        host.setAttribute('aria-live', 'polite');
+        document.body.append(host);
+    }
+
+    host.textContent = message;
+    host.dataset.visible = 'true';
+
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => { host.dataset.visible = 'false'; }, 2600);
+}
+
 // The offline shell rebuilds rows from the mirror and cannot import this
 // module, so it asks by event instead.
 if (!window.__soundchexRepaintBound) {

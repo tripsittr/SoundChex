@@ -12,6 +12,18 @@
 
 const PREFS_KEY = 'soundchex.player.prefs';
 
+/**
+ * Where the queue and position live between page loads.
+ *
+ * sessionStorage rather than local: this is "what I am listening to right now",
+ * which should not come back a week later, but must survive a full page load.
+ * The reader is a standalone document — deliberately, since an e-reader wants
+ * the whole viewport — so opening a book replaces the page entirely and takes
+ * the player object with it. Restoring from here is what stops the music
+ * stopping.
+ */
+const SESSION_KEY = 'soundchex.player.session';
+
 export default class MediaPlayer {
     constructor(options = {}) {
         this.el = options.element ?? new Audio();
@@ -43,6 +55,7 @@ export default class MediaPlayer {
         this.shuffle = prefs.shuffle;
 
         this.bindElement();
+        this.restoreSession();
     }
 
     /* ----------------------------------------------------------- queue */
@@ -195,7 +208,11 @@ export default class MediaPlayer {
         }
 
         const position = this.el.currentTime;
-        const wasPlaying = !this.el.paused;
+        // The listener's intent, not the element's momentary state: on a fresh
+        // page the restore has called play() but the element has not started
+        // yet, so reading el.paused here reported "not playing" and the local
+        // source was swapped in and left sitting silent.
+        const wasPlaying = this.wantedPlaying ?? !this.el.paused;
 
         this.localSourceUrl = url;
         this.el.src = url;
@@ -288,7 +305,36 @@ export default class MediaPlayer {
         this.el.addEventListener('timeupdate', () => {
             this.emit('time', { current: this.el.currentTime, duration: this.el.duration });
             this.reportProgress();
+            this.rememberPosition();
         });
+
+        // Written on the transitions that matter, so a page load lands on the
+        // right track in the right state rather than wherever the last
+        // throttled tick happened to leave it.
+        // `wanted` is what the listener asked for, which is not always what
+        // the element reports: a browser pauses the audio while tearing the
+        // page down, so a save driven by the element's own state during
+        // navigation records "paused" for music that was playing, and the next
+        // page restores it stopped.
+        this.el.addEventListener('play', () => {
+            this.wantedPlaying = true;
+            this.saveSession();
+        });
+
+        this.el.addEventListener('pause', () => {
+            // Only a pause the page is still alive for counts as a decision.
+            if (document.visibilityState !== 'hidden') {
+                this.wantedPlaying = false;
+            }
+
+            this.saveSession();
+        });
+
+        this.el.addEventListener('loadedmetadata', () => this.saveSession());
+
+        // A phone kills a backgrounded tab without warning, and pagehide is the
+        // last event that reliably fires before it goes.
+        window.addEventListener('pagehide', () => this.saveSession());
 
         this.el.addEventListener('play', () => this.emit('playstate', true));
         this.el.addEventListener('pause', () => this.emit('playstate', false));
@@ -396,6 +442,151 @@ export default class MediaPlayer {
     }
 
     /* ----------------------------------------------------------- prefs */
+
+    /**
+     * Writes down what is playing, so a full page load can pick it up.
+     *
+     * Position included: resuming a forty-minute track from the beginning is
+     * not resuming it. Paused state is carried too — a page load should not
+     * start playing something the listener had stopped.
+     */
+    /**
+     * Throttled position write.
+     *
+     * timeupdate fires several times a second, and serialising the whole queue
+     * that often is wasted work on a phone. Once a second is enough to land
+     * within a second of where playback actually was.
+     */
+    rememberPosition() {
+        const now = Date.now();
+
+        if (now - (this.lastSessionWrite ?? 0) < 1000) return;
+
+        this.lastSessionWrite = now;
+        this.saveSession();
+    }
+
+    saveSession() {
+        if (this.restoring) return;
+        if (this.index < 0 || this.queue.length === 0) return;
+
+        try {
+            sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+                queue: this.queue,
+                originalQueue: this.originalQueue,
+                index: this.index,
+                position: this.el.currentTime || 0,
+                paused: !(this.wantedPlaying ?? !this.el.paused),
+            }));
+        } catch {
+            // Private browsing, or the quota is full. Playback still works;
+            // it just will not survive a page load.
+        }
+    }
+
+    /**
+     * Picks up where the previous page left off.
+     *
+     * Loaded but not played: a browser will refuse an autoplay that no gesture
+     * asked for, and more importantly a page opening itself into sound is
+     * hostile. The audio is primed at the right position and the bar shows the
+     * track, so one tap resumes it.
+     *
+     * Except when it was already playing — a page load in the middle of a track
+     * is a navigation, not a decision to stop, and the gesture that triggered it
+     * is recent enough that the browser allows it.
+     */
+    restoreSession() {
+        // Guarded for the duration of the restore. Loading a source fires
+        // pause, and a save triggered by that would overwrite the very state
+        // being restored — which is what turned a playing queue into a paused
+        // one at position zero the moment the new page came up.
+        this.restoring = true;
+
+        try {
+            this.applySession();
+        } finally {
+            this.restoring = false;
+        }
+    }
+
+    applySession() {
+        let state;
+
+        try {
+            state = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null');
+        } catch {
+            return;
+        }
+
+        if (!state || !Array.isArray(state.queue) || state.queue.length === 0) return;
+        if (typeof state.index !== 'number' || state.index < 0) return;
+
+        this.queue = state.queue;
+        this.originalQueue = Array.isArray(state.originalQueue) ? state.originalQueue : [];
+        this.index = Math.min(state.index, state.queue.length - 1);
+
+        const item = this.current();
+
+        if (!item) return;
+
+        // Through the item's own resumeAt, which is how load() already carries
+        // a position — rather than a second mechanism that would drift from it.
+        this.load({ ...item, resumeAt: state.position ?? 0 });
+
+        // Carried across so the next save records the listener's intent rather
+        // than whatever the element happens to report on a fresh page.
+        this.wantedPlaying = state.paused === false;
+
+        // A page load in the middle of a track is a navigation, not a decision
+        // to stop — but one that was already paused must stay paused, and
+        // load() always starts playback.
+        if (state.paused !== false) {
+            this.el.pause();
+
+            return;
+        }
+
+        // A fresh document has no user gesture behind it, so the browser
+        // refuses the play() that load() issued — the track is primed at the
+        // right position and silent. Nothing can override that policy, so the
+        // next tap anywhere on the page resumes it, which is the first moment
+        // the browser will allow it.
+        this.resumeOnFirstGesture();
+    }
+
+    /**
+     * Resumes at the first user gesture, once.
+     *
+     * Only when the listener had it playing: a page load should never turn
+     * silence into sound. Bound on pointerdown and keydown rather than click so
+     * it fires on the same gesture that scrolls or turns a page, rather than
+     * waiting for a deliberate tap on a control.
+     */
+    resumeOnFirstGesture() {
+        const resume = () => {
+            detach();
+
+            if (this.wantedPlaying === false) return;
+
+            this.el.play().catch(() => {
+                // Still refused. The bar shows the track, so the play button
+                // works — there is nothing further to try automatically.
+            });
+        };
+
+        const detach = () => {
+            document.removeEventListener('pointerdown', resume);
+            document.removeEventListener('keydown', resume);
+            this.el.removeEventListener('play', detach);
+        };
+
+        document.addEventListener('pointerdown', resume, { once: true });
+        document.addEventListener('keydown', resume, { once: true });
+
+        // Superseded if the listener presses play themselves first.
+        this.el.addEventListener('play', detach, { once: true });
+    }
 
     loadPrefs() {
         const defaults = { volume: 1, repeat: 'off', shuffle: false };

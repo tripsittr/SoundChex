@@ -432,6 +432,40 @@
     .download-spinner { animation: none; }
 }
 
+/* ----------------------------------------------------------------- toast */
+
+/* Sits above the tab bar and the now-playing bar, both of which are fixed to
+   the bottom — a toast underneath either is invisible on the screen where it
+   matters most. */
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(9rem + env(safe-area-inset-bottom));
+    z-index: 60;
+    transform: translate(-50%, 0.5rem);
+    max-width: min(22rem, calc(100vw - 2rem));
+    padding: 0.625rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-base-600);
+    background: color-mix(in srgb, var(--color-base-800) 96%, transparent);
+    backdrop-filter: blur(12px);
+    color: var(--color-ink-100);
+    font-size: 0.8125rem;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast[data-visible='true'] {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toast { transition: opacity 0.2s ease; }
+}
+
 /* ------------------------------------------------------------ pagination */
 
 /* Laravel's stock view is built for a light page — white fills, grey-300
