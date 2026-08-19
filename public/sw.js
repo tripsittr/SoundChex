@@ -22,11 +22,16 @@
 const VERSION = '1815cb29c22d';
 const ASSET_CACHE = `soundchex-assets-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
+const PROBE_URL = '/offline-probe.html';
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(ASSET_CACHE)
-            .then((cache) => cache.add(OFFLINE_URL))
+            // The probe is cached alongside the offline page: the app shell
+            // frames it with the network down to ask whether this origin holds
+            // a synced catalogue, and an uncached probe would answer "no" for a
+            // device that is full of music.
+            .then((cache) => cache.addAll([OFFLINE_URL, PROBE_URL]))
             // A missing offline page must not block installation.
             .catch(() => undefined)
             .then(() => self.skipWaiting()),
@@ -68,6 +73,19 @@ self.addEventListener('fetch', (event) => {
     // is cached and served when the network is gone. It contains no library
     // data — the list is read from IndexedDB — so a stale copy is harmless.
     if (request.mode === 'navigate') {
+        // The probe answers from cache first. An iframe load is a navigation,
+        // so without this it would fall through to the offline page below and
+        // the shell would never get its answer — and it is framed precisely
+        // when the network is down, so trying the network first only adds a
+        // timeout to a question that has to be quick.
+        if (url.pathname === PROBE_URL) {
+            event.respondWith(
+                caches.match(PROBE_URL).then((hit) => hit ?? fetch(request)),
+            );
+
+            return;
+        }
+
         const isDownloadsPage = url.pathname === '/app/downloads';
 
         event.respondWith(

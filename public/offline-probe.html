@@ -1,0 +1,65 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SoundChex</title>
+<!--
+    Answers one question for the app shell: is there anything stored here?
+
+    IndexedDB is partitioned per origin. The app syncs the catalogue while
+    running on the server's origin; the connect screen runs on tauri://localhost
+    and cannot see that database at all. So a device with a fully synced library
+    was told there was nothing saved on it.
+
+    This page is same-origin with the data, so it can read the count and post it
+    back to the shell that framed it. Deliberately tiny and dependency-free: it
+    is fetched with the network down, from the service worker's cache, and
+    anything it imported would have to be cached too.
+-->
+<script>
+    const DB_NAME = 'soundchex-library';
+    const STORE = 'items';
+
+    function count() {
+        return new Promise((resolve) => {
+            let settled = false;
+            const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+
+            // An open() that never fires either handler leaves the shell
+            // waiting, so the answer is bounded here as well.
+            setTimeout(() => finish(0), 2500);
+
+            let request;
+
+            try {
+                request = indexedDB.open(DB_NAME);
+            } catch {
+                return finish(0);
+            }
+
+            request.onerror = () => finish(0);
+            request.onblocked = () => finish(0);
+
+            // No upgrade handler: opening without a version must not create the
+            // store. If it is missing then nothing was ever synced, which is
+            // the answer rather than an error.
+            request.onsuccess = () => {
+                const db = request.result;
+
+                if (!db.objectStoreNames.contains(STORE)) return finish(0);
+
+                try {
+                    const tx = db.transaction(STORE, 'readonly');
+                    const counted = tx.objectStore(STORE).count();
+
+                    counted.onsuccess = () => finish(counted.result ?? 0);
+                    counted.onerror = () => finish(0);
+                } catch {
+                    finish(0);
+                }
+            };
+        });
+    }
+
+    count().then((value) => {
+        parent.postMessage({ type: 'soundchex:mirror-count', count: value }, '*');
+    });
+</script>

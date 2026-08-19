@@ -349,7 +349,7 @@
      * screen would not let anyone past, so music that had been deliberately
      * downloaded for exactly this situation could not be reached.
      */
-    function offline(origin) {
+    async function offline(origin) {
         if (!origin) {
             say('No server saved yet, so there is nothing stored to open.', true);
             field().focus();
@@ -358,6 +358,26 @@
         }
 
         say('Server unreachable — opening what is on this device…');
+
+        // The server's origin first, because that is where the data is.
+        //
+        // IndexedDB is partitioned per origin: the app syncs the catalogue
+        // while running on the server's origin, and this screen runs on
+        // tauri://localhost, so the mirror is simply not visible from here. The
+        // embedded shell below can render, but only ever from an empty
+        // database — which is why a device with a fully synced library was told
+        // there was nothing stored.
+        //
+        // That origin has a service worker which caches its own offline page at
+        // install, so a navigation there answers without the network. If it does
+        // not — a fresh install whose worker never ran, or a cache iOS has since
+        // evicted — the navigation fails and the embedded shell still catches
+        // it.
+        if (await originHasData(origin)) {
+            window.location.replace(origin + '/app');
+
+            return;
+        }
 
         // Rendered here, from assets shipped inside the app.
         //
@@ -369,6 +389,53 @@
         // situation. A cold device landed on the browser's error page with
         // the whole catalogue sitting unread beside it.
         renderEmbedded();
+    }
+
+    /**
+     * Whether the server's origin has anything worth opening.
+     *
+     * Asked in a hidden iframe on that origin, which is the only way to reach
+     * its IndexedDB from here — a same-origin script can read it and post the
+     * count back. Cheap, and it avoids navigating away to a page that would
+     * turn out to be as empty as this one.
+     *
+     * Any failure answers no: this is an optimisation over the embedded shell,
+     * not a replacement for it, and a hang here would be the freeze this whole
+     * change is meant to remove.
+     */
+    async function originHasData(origin) {
+        return new Promise((resolve) => {
+            const frame = document.createElement('iframe');
+            let settled = false;
+
+            const finish = (answer) => {
+                if (settled) return;
+
+                settled = true;
+                clearTimeout(timer);
+                window.removeEventListener('message', onMessage);
+                frame.remove();
+                resolve(answer);
+            };
+
+            // Bounded: an origin that is unreachable will never load the frame
+            // at all, and without this the screen would sit waiting on it.
+            const timer = setTimeout(() => finish(false), 4000);
+
+            const onMessage = (event) => {
+                if (event.origin !== origin) return;
+                if (event.data?.type !== 'soundchex:mirror-count') return;
+
+                finish(Number(event.data.count) > 0);
+            };
+
+            window.addEventListener('message', onMessage);
+
+            frame.style.display = 'none';
+            frame.src = origin + '/offline-probe.html';
+            frame.addEventListener('error', () => finish(false));
+            document.body.append(frame);
+        });
     }
 
     /**
