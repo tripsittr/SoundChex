@@ -102,12 +102,20 @@ export function songRow(item, queue, index) {
     play.setAttribute('aria-label', `Play ${item.title ?? ''}`);
     play.append(artwork(item, 'size-full object-cover'));
 
-    const text = element('div', 'min-w-0 flex-1');
-    const title = element('a', 'block truncate text-sm text-ink-100 hover:underline', item.title ?? '');
+    // Tapping the row plays it, matching the server-rendered row. This was a
+    // link to the detail page, so the same tap did different things depending
+    // on which of the two drew the row.
+    const text = element('button', 'min-w-0 flex-1 text-left');
 
-    title.href = `/app/item/${item.id}`;
+    text.type = 'button';
+    text.dataset.play = JSON.stringify(queue);
+    text.dataset.playIndex = String(index);
+    text.setAttribute('aria-label', `Play ${item.title ?? ''}`);
 
-    text.append(title, element('span', 'block truncate text-xs text-ink-500', item.subtitle ?? ''));
+    text.append(
+        element('span', 'block truncate text-sm text-ink-100', item.title ?? ''),
+        element('span', 'block truncate text-xs text-ink-500', item.subtitle ?? ''),
+    );
 
     row.append(play, text);
 
@@ -118,7 +126,56 @@ export function songRow(item, queue, index) {
         row.append(element('span', 'hidden w-11 shrink-0 text-right text-xs tabular-nums text-ink-500 sm:block', stamp));
     }
 
+    // A rebuilt row had no download button at all, so every pre-render — which
+    // is every tap, online — replaced the list with rows whose download icons
+    // had vanished, until the server's page landed and put them back. The state
+    // itself was never lost; there was nothing to show it on.
+    row.append(downloadButton(item));
+
     return row;
+}
+
+/**
+ * The per-row download control.
+ *
+ * Matches the markup in x-media.song-row: same attributes, same four glyphs, so
+ * the delegated handler and the stylesheet cover a rebuilt row identically to a
+ * server-rendered one.
+ */
+function downloadButton(item) {
+    const button = element(
+        'button',
+        'download-btn download-btn--icon flex size-8 shrink-0 items-center justify-center rounded text-ink-500 transition hover:bg-base-700 hover:text-ink-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100',
+    );
+
+    button.type = 'button';
+    button.dataset.download = String(item.id);
+    button.dataset.downloadUrl = `/app/item/${item.id}/stream`;
+    button.dataset.downloadTitle = item.title ?? '';
+    button.dataset.downloadType = item.type ?? 'music';
+    button.dataset.state = 'idle';
+    button.setAttribute('aria-label', `Download ${item.title ?? ''}`);
+
+    button.innerHTML = `
+        <svg data-icon="idle" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <svg data-icon="downloading" class="size-4 download-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke-opacity="0.25" />
+            <path d="M21 12a9 9 0 00-9-9" stroke-linecap="round" />
+        </svg>
+        <svg data-icon="stored" class="size-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" fill="currentColor" />
+            <path d="M7.5 12.4l3 3 6-6.4" fill="none" stroke="var(--color-base-900)" stroke-width="2.5"
+                  stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <svg data-icon="failed" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v4.5M12 16h.01" stroke-linecap="round" />
+        </svg>
+    `;
+
+    return button;
 }
 
 /**

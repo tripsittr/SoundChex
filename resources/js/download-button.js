@@ -55,6 +55,17 @@ export function setupIconDownloads() {
         const type = button.dataset.downloadType ?? '';
 
         if (await isDownloaded(id)) {
+            // Confirmed, because this deletes the audio from the device and the
+            // same button both downloads and removes — a mis-tap on a stored
+            // track silently threw away a file the user may have downloaded
+            // precisely because they were about to lose their connection.
+            const confirmed = window.confirm(
+                `Remove ${title || 'this track'} from downloads?\n\n`
+                + 'It will need to be downloaded again to play offline.',
+            );
+
+            if (!confirmed) return;
+
             await remove(id);
             button.dataset.state = 'idle';
             button.setAttribute('aria-label', `Download ${title}`);
@@ -90,6 +101,16 @@ export function setupIconDownloads() {
  * Without this a stored track shows an idle download icon until it is tapped,
  * which invites downloading the same file twice.
  */
+// The offline shell rebuilds rows from the mirror and cannot import this
+// module, so it asks by event instead.
+if (!window.__soundchexRepaintBound) {
+    window.__soundchexRepaintBound = true;
+
+    document.addEventListener('soundchex:repaint-downloads', () => {
+        paintIconDownloadStates();
+    });
+}
+
 export async function paintIconDownloadStates() {
     const buttons = document.querySelectorAll('[data-download]:not(#download-toggle)');
 

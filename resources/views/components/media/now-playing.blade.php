@@ -178,8 +178,28 @@
                     data-state="idle"
                     class="download-btn download-btn--icon flex size-10 shrink-0 items-center justify-center rounded-full text-ink-400 transition hover:bg-base-700 hover:text-ink-100"
                     aria-label="Download this track">
-                <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                {{-- The same four states a song row shows. This button had only
+                     the download glyph, so tapping it here gave no sign the
+                     transfer had started or finished — the state was written to
+                     the element and nothing rendered it. --}}
+                <svg data-icon="idle" class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+
+                <svg data-icon="downloading" class="size-5 download-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" stroke-opacity="0.25" />
+                    <path d="M21 12a9 9 0 00-9-9" stroke-linecap="round" />
+                </svg>
+
+                <svg data-icon="stored" class="size-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" fill="currentColor" />
+                    <path d="M7.5 12.4l3 3 6-6.4" fill="none" stroke="var(--color-base-900)" stroke-width="2.5"
+                          stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+
+                <svg data-icon="failed" class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 8v4.5M12 16h.01" stroke-linecap="round" />
                 </svg>
             </button>
 

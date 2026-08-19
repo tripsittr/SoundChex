@@ -21,7 +21,7 @@
 @endphp
 
 <x-media.layout :title="$album">
-    <div class="mx-auto max-w-5xl px-4 pb-16 pt-20 sm:px-8">
+    <div class="clears-header mx-auto max-w-5xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8">
 
         {{-- Header: artwork beside the album's identity and its actions. --}}
         <div class="flex flex-col gap-6 sm:flex-row sm:items-end">

@@ -15,7 +15,7 @@
 @endphp
 
 <x-media.layout :title="$playlist->name">
-    <div class="mx-auto max-w-4xl px-4 pb-16 pt-20 sm:px-8">
+    <div class="clears-header mx-auto max-w-4xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8">
 
         <div class="flex flex-wrap items-start justify-between gap-4">
             <div class="min-w-0">

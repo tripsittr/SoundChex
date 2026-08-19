@@ -140,7 +140,7 @@ function container() {
     //
     // The class matches what the server-rendered music page uses, and the
     // safe-area top-up is applied below for the notch.
-    div.className = 'offline-screen mx-auto max-w-7xl px-4 pb-16 pt-32 sm:px-8 sm:pt-36';
+    div.className = 'clears-header mx-auto max-w-7xl px-4 pb-16 pt-32 sm:px-8 sm:pt-36';
 
     return div;
 }
@@ -159,6 +159,117 @@ function hasChrome() {
 }
 
 /* -------------------------------------------------------------- screens --- */
+
+/**
+ * The music sub-navigation, rebuilt.
+ *
+ * The server renders these tabs inside <main>, and rebuilding a screen replaces
+ * everything in there — so an offline music screen lost the one control that
+ * moves between Songs, Albums, Artists, Genres and Playlists, stranding the
+ * user on whichever screen they happened to open.
+ *
+ * Mirrors x-media.music-nav: same classes, same order, same wire:navigate, so
+ * the two are indistinguishable and a tab behaves identically whichever drew
+ * it.
+ *
+ * Every tab is a real link. Genres and Playlists were rendered as disabled
+ * spans on the grounds that the mirror cannot fill them, which made them dead
+ * on a working online page — the pre-render runs while the server is answering,
+ * so a tab disabled for being offline was disabled the rest of the time too.
+ * The server's page replaces this within a moment and can fill them itself.
+ */
+const MUSIC_TABS = [
+    { label: 'Songs', href: '/app/music' },
+    { label: 'Albums', href: '/app/albums' },
+    { label: 'Artists', href: '/app/artists' },
+    { label: 'Genres', href: '/app/genres' },
+    { label: 'Playlists', href: '/app/playlists' },
+];
+
+function musicSubnav(path) {
+    const wrap = document.createElement('div');
+    const nav = document.createElement('nav');
+
+    wrap.className = 'music-subnav-wrap';
+    nav.className = 'music-subnav';
+    nav.setAttribute('aria-label', 'Music sections');
+
+    MUSIC_TABS.forEach((tab) => {
+        const active = path === tab.href || path === `${tab.href}/`;
+
+        const link = document.createElement('a');
+
+        link.href = tab.href;
+        // Without this every tab is a full page load, which tears down the
+        // audio element and stops whatever is playing. The server's own tabs
+        // carry it; these have to as well or the two behave differently.
+        link.setAttribute('wire:navigate', '');
+        link.className = `music-subnav__tab ${active ? 'is-active' : ''}`.trim();
+        link.textContent = tab.label;
+
+        if (active) link.setAttribute('aria-current', 'page');
+
+        nav.append(link);
+    });
+
+    // Shuffle belongs with the groupings, and the server's subnav carries it —
+    // leaving it out here meant it vanished on every pre-render, which is every
+    // tap while online.
+    const shuffle = document.createElement('button');
+
+    shuffle.type = 'button';
+    shuffle.className = 'music-subnav__shuffle';
+    shuffle.dataset.shuffleLibrary = '';
+    shuffle.innerHTML = `
+        <svg class="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span data-shuffle-label>Shuffle all</span>
+    `;
+
+    nav.append(shuffle);
+    wrap.append(nav);
+
+    return wrap;
+}
+
+/**
+ * Marks rebuilt rows whose track is already on the device.
+ *
+ * Rows are built fresh from the mirror and start at data-state="idle", so
+ * without this a downloaded track shows an empty download icon after every
+ * pre-render — which reads as the download having been lost.
+ *
+ * Fired rather than imported: this module is loaded by the offline bundle,
+ * which has no access to the download layer, and a hard import would pull
+ * IndexedDB code into a shell that may never use it.
+ */
+function repaintDownloadStates() {
+    document.dispatchEvent(new CustomEvent('soundchex:repaint-downloads'));
+}
+
+/** Whether a rebuilt screen is one of the music ones. */
+function isMusicPath(path) {
+    return /^\/app\/(music|albums|artists|genres|playlists)\/?$/.test(path);
+}
+
+/**
+ * Puts the music tabs back above a rebuilt screen.
+ *
+ * Applied here rather than inside each render function so a screen added later
+ * cannot forget it — every music path goes through one place. Inserted into the
+ * screen's own container so it inherits the header clearance rather than
+ * sitting above it.
+ */
+function restoreMusicSubnav(root, path) {
+    if (!isMusicPath(path)) return;
+    if (root.querySelector('.music-subnav')) return;
+
+    const screen = root.querySelector('.clears-header') ?? root;
+    const heading = screen.firstElementChild;
+
+    screen.insertBefore(musicSubnav(path), heading);
+}
 
 function renderSongs(root, items, title) {
     const wrap = container();
@@ -431,6 +542,8 @@ export async function preRender(root, path) {
 
     try {
         await screen.render(root, path);
+        restoreMusicSubnav(root, path);
+        repaintDownloadStates();
 
         return true;
     } catch {
@@ -457,6 +570,8 @@ export async function takeOver() {
 
     try {
         await screen.render(root, path);
+        restoreMusicSubnav(root, path);
+        repaintDownloadStates();
 
         // The play buttons are bound by a delegated listener on document, so
         // rendered rows work without rebinding anything.

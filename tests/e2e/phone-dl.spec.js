@@ -109,13 +109,14 @@ test.describe('download buttons', () => {
         expect(stored, 'the track is on the device').toBe(true);
     });
 
-    test('tapping a stored track removes it', async ({ page }) => {
+    test('tapping a stored track removes it, once confirmed', async ({ page }) => {
         const button = page.locator('[data-download]:not(#download-toggle)').first();
         const id = await button.getAttribute('data-download');
 
         await button.click();
         await expect(button).toHaveAttribute('data-state', 'stored', { timeout: 20000 });
 
+        page.once('dialog', (dialog) => dialog.accept());
         await button.click();
         await expect(button).toHaveAttribute('data-state', 'idle');
 
@@ -125,6 +126,30 @@ test.describe('download buttons', () => {
         );
 
         expect(stored, 'the track is gone from the device').toBe(false);
+    });
+
+    test('declining the confirmation keeps the download', async ({ page }) => {
+        const button = page.locator('[data-download]:not(#download-toggle)').first();
+        const id = await button.getAttribute('data-download');
+
+        await button.click();
+        await expect(button).toHaveAttribute('data-state', 'stored', { timeout: 20000 });
+
+        // Dismissed, not accepted: the audio is deleted from the device, and
+        // the same button both downloads and removes — so a mis-tap must not
+        // throw away a file downloaded precisely for being about to go offline.
+        page.once('dialog', (dialog) => dialog.dismiss());
+        await button.click();
+        await page.waitForTimeout(500);
+
+        await expect(button).toHaveAttribute('data-state', 'stored');
+
+        const stored = await page.evaluate(
+            (itemId) => window.soundchexDownloads.isDownloaded(itemId),
+            id,
+        );
+
+        expect(stored, 'the track is still on the device').toBe(true);
     });
 
     test('a stored track is marked as stored on a later visit', async ({ page }) => {
@@ -207,5 +232,44 @@ test.describe('download button states', () => {
         const { icons } = await settled(page, button);
 
         expect(icons).toEqual(['stored']);
+    });
+});
+
+/**
+ * Download state across a rebuilt list.
+ *
+ * The offline shell rebuilds rows from the mirror, and a pre-render runs on
+ * every tap while the server is answering — so these rows are what the user
+ * actually sees for the moment before the server's page lands. They carried no
+ * download button at all, and then started at idle once they did, so a
+ * downloaded track looked like it had lost its download.
+ */
+test.describe('download state on rebuilt rows', () => {
+    test.beforeEach(async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await page.waitForTimeout(1500);
+    });
+
+    test('a rebuilt row has a download button', async ({ page }) => {
+        await page.evaluate(() => window.soundchexLibrary.preRender(
+            document.querySelector('main'), '/app/music',
+        ));
+
+        await expect(page.locator('[data-download]:not(#download-toggle)').first()).toBeVisible();
+    });
+
+    test('a stored track stays marked through a pre-render', async ({ page }) => {
+        const button = page.locator('[data-download]:not(#download-toggle)').first();
+
+        await button.click();
+        await expect(button).toHaveAttribute('data-state', 'stored', { timeout: 20000 });
+
+        await page.evaluate(() => window.soundchexLibrary.preRender(
+            document.querySelector('main'), '/app/music',
+        ));
+
+        await expect(page.locator('[data-download]:not(#download-toggle)').first())
+            .toHaveAttribute('data-state', 'stored', { timeout: 10000 });
     });
 });

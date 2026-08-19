@@ -9,7 +9,7 @@
 @endphp
 
 <x-media.layout :title="$artist">
-    <div class="mx-auto max-w-6xl px-4 pb-16 pt-20 sm:px-8">
+    <div class="clears-header mx-auto max-w-6xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8">
 
         <p class="text-xs font-medium uppercase tracking-wider text-ink-500">Artist</p>
         <h1 class="mt-1 text-2xl font-bold text-ink-100 sm:text-4xl">{{ $artist }}</h1>

@@ -1,5 +1,5 @@
 <x-media.layout title="Genres">
-    <div class="mx-auto max-w-7xl px-4 pb-16 pt-20 sm:px-8">
+    <div class="clears-header mx-auto max-w-7xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8">
         <h1 class="mb-4 text-2xl font-bold text-ink-100 sm:text-3xl">Genres</h1>
 
         <x-media.music-nav />

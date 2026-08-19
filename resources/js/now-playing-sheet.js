@@ -213,8 +213,14 @@ export function bindNowPlayingSheet() {
             download.dataset.downloadUrl = item.src ?? `/app/item/${item.id}/stream`;
             download.dataset.downloadTitle = item.title ?? '';
             download.dataset.downloadType = item.type ?? 'music';
-            // Reset: the previous track's state says nothing about this one.
+
+            // Reset first, because the previous track's state says nothing
+            // about this one — then ask whether *this* track is already on the
+            // device. Without the second step a track downloaded from a song
+            // row showed an idle icon here, which reads as the download having
+            // been lost, and tapping it would have downloaded it twice.
             download.dataset.state = 'idle';
+            document.dispatchEvent(new CustomEvent('soundchex:repaint-downloads'));
         }
 
         if (playlist && item) {

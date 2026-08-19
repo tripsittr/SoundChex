@@ -139,7 +139,9 @@ test.describe('music browsing', () => {
         // The kebab holds a download of its own, so the row has two: the
         // always-visible one and the one inside the menu.
         await expect(row.locator('.download-btn').first()).toBeVisible();
-        await expect(row.locator('[data-play]')).toHaveCount(1);
+        // Two: the artwork and the title. The title used to link to the detail
+        // page, which put a page load between a tap and hearing the song.
+        await expect(row.locator('[data-play]')).toHaveCount(2);
     });
 
     test('genre rails live on their own tab, not above the songs list', async ({ page }) => {
@@ -203,3 +205,40 @@ async function createPlaylistWithTracks(page) {
 
     return id;
 }
+
+/**
+ * Tapping a song plays it.
+ *
+ * The title was a link to the detail page, which is backwards for a music
+ * library: the common intent is to listen, and routing that through a page load
+ * put the details screen between the user and the song. The kebab keeps a More
+ * info entry, so nothing became unreachable.
+ */
+test.describe('playing from a row', () => {
+    test.beforeEach(async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await page.waitForTimeout(1500);
+    });
+
+    test('tapping the title plays without leaving the page', async ({ page }) => {
+        const before = new URL(page.url()).pathname;
+
+        await page.locator('li[data-long-press-menu] button[data-play]').nth(1).click();
+
+        await expect.poll(
+            () => page.evaluate(() => document.getElementById('np-title')?.textContent?.trim()),
+            { message: 'the now-playing bar names the track', timeout: 15000 },
+        ).toBeTruthy();
+
+        expect(new URL(page.url()).pathname, 'still on the library').toBe(before);
+    });
+
+    test('the kebab still reaches the details page', async ({ page }) => {
+        const row = page.locator('li[data-long-press-menu]').first();
+
+        await row.locator('summary').click();
+
+        await expect(row.getByRole('menuitem', { name: /more info/i })).toBeVisible();
+    });
+});

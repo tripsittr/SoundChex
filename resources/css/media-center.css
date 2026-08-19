@@ -238,11 +238,11 @@
     padding-top: max(0.75rem, env(safe-area-inset-top));
 }
 
-/* A screen the offline shell rebuilt. The fixed header's height varies with the
-   safe-area inset, so a fixed padding either overlaps on a notched phone or
-   leaves a gap on one without a notch. Adding the inset to the base clearance
-   tracks the header instead of guessing at it. */
-.offline-screen {
+/* Clearance for the fixed header, on any page that starts with content rather
+   than a hero. The header's height varies with the safe-area inset, so a flat
+   padding either overlaps on a notched phone or leaves a gap on one without a
+   notch — adding the inset tracks the header instead of guessing at it. */
+.clears-header {
     padding-top: calc(8rem + env(safe-area-inset-top));
 }
 
@@ -398,6 +398,16 @@
    text colour on the element and the full-width button's own state styling
    further up — that one is a bordered control with a label and should keep its
    existing treatment. */
+/* No plate behind an icon. The bordered full-width button tints its background
+   when stored, and that rule sits later in this file with the same specificity
+   as .download-btn--icon's background reset — so it won, and a list row showed
+   a filled rectangle behind the tick instead of a bare icon. */
+.download-btn--icon[data-state],
+.download-btn--icon[data-state]:hover {
+    background: transparent;
+    border-color: transparent;
+}
+
 .download-btn--icon[data-state='stored'],
 .download-btn--icon[data-state='stored']:hover { color: #34d399; opacity: 1; }
 
@@ -420,6 +430,66 @@
    the state is already carried by the glyph itself. */
 @media (prefers-reduced-motion: reduce) {
     .download-spinner { animation: none; }
+}
+
+/* ------------------------------------------------------------ pagination */
+
+/* Laravel's stock view is built for a light page — white fills, grey-300
+   borders, dark text — which rendered as a bright slab at the foot of a dark
+   list. These use the app's own tokens. */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+}
+
+.pagination__link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* 2.75rem is 44px: the smallest target reliably hittable with a thumb. */
+    min-width: 2.75rem;
+    height: 2.75rem;
+    padding: 0 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-base-600);
+    background: var(--color-base-800);
+    color: var(--color-ink-300);
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.pagination__link:hover {
+    background: var(--color-base-700);
+    border-color: var(--color-ink-500);
+    color: var(--color-ink-100);
+}
+
+.pagination__link.is-active {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+}
+
+.pagination__link.is-disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.pagination__gap {
+    padding: 0 0.25rem;
+    color: var(--color-ink-500);
+}
+
+/* The numbers are noise on a phone: the two arrows and the current page are
+   what fit, and what a thumb can actually aim at. */
+@media (max-width: 639px) {
+    .pagination__link--number,
+    .pagination__gap { display: none; }
 }
 
 /* ------------------------------------------------------------ track menu */

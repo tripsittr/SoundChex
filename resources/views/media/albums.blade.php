@@ -1,5 +1,5 @@
 <x-media.layout title="Albums">
-    <div class="mx-auto max-w-7xl px-4 pb-16 pt-20 sm:px-8">
+    <div class="clears-header mx-auto max-w-7xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8">
         <div class="mb-6 flex items-baseline justify-between gap-4">
             <h1 class="text-2xl font-bold text-ink-100 sm:text-3xl">Albums</h1>
             <p class="text-sm text-ink-500">{{ number_format($albums->total()) }} albums</p>

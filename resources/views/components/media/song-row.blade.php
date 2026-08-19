@@ -49,12 +49,19 @@
         </svg>
     </button>
 
-    <div class="min-w-0 flex-1">
-        <a href="{{ route('media.show', $item) }}" class="block truncate text-sm text-ink-100 hover:underline">
-            {{ $item->title }}
-        </a>
+    {{-- Tapping the row plays it. This was a link to the detail page, which is
+         backwards for a music library: the overwhelmingly common intent is to
+         listen, and routing that through a details page put a page load between
+         the user and the song. Details moved to the kebab, where the
+         occasionally-wanted things live. --}}
+    <button type="button"
+            data-play="{{ $payload->toJson() }}"
+            data-play-index="{{ $index }}"
+            class="min-w-0 flex-1 text-left"
+            aria-label="Play {{ $item->title }}">
+        <span class="block truncate text-sm text-ink-100">{{ $item->title }}</span>
         <span class="block truncate text-xs text-ink-500">{{ $item->subtitle() }}</span>
-    </div>
+    </button>
 
     @if ($item->musicMetadata?->album)
         {{-- Hidden on a phone: the album is one tap away on the detail page,
@@ -87,9 +94,14 @@
         </svg>
 
         {{-- Green tick once the bytes are on the device. --}}
-        <svg data-icon="stored" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M8.5 12.5l2.5 2.5 4.5-5" stroke-linecap="round" stroke-linejoin="round" />
+        {{-- Filled rather than outlined: at 16px a thin stroked circle reads as
+             faint and indecisive, where the point of this state is to be
+             recognisable at a glance while scrolling. The tick is knocked out of
+             the disc, which is the convention every music app uses. --}}
+        <svg data-icon="stored" class="size-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" fill="currentColor" />
+            <path d="M7.5 12.4l3 3 6-6.4" fill="none" stroke="var(--color-base-900)" stroke-width="2.5"
+                  stroke-linecap="round" stroke-linejoin="round" />
         </svg>
 
         {{-- A failure has to be visible: these rows have no status line. --}}
