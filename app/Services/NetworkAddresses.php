@@ -40,9 +40,21 @@ class NetworkAddresses
         // the JSON written since.
         $list = is_array($stored) ? $stored : json_decode((string) $stored, true);
 
-        return is_array($list) && $list !== []
-            ? array_values(array_filter($list))
-            : $this->detected();
+        if (! is_array($list) || $list === []) {
+            return $this->detected();
+        }
+
+        // Merged with what the machine currently reports, rather than returned
+        // as stored. A LAN address is only true until the server joins a
+        // different network — moving between wifi and a hotspot changes it —
+        // and the stored list kept handing out the old one while never
+        // mentioning the new one, so every client was pointed at an address
+        // that no longer existed. Detected addresses come first because they
+        // are the ones known to be current.
+        return array_values(array_unique([
+            ...$this->detected(),
+            ...array_filter($list),
+        ]));
     }
 
     /**

@@ -1,4 +1,5 @@
 import * as mirror from './mirror.js';
+import * as failover from './failover.js';
 import { preRender, serverReachable, takeOver } from './offline-shell.js';
 import * as writes from './write-queue.js';
 import * as query from './query.js';
@@ -22,6 +23,7 @@ const library = {
     takeOver,
     preRender,
     serverReachable,
+    failover,
     sync: sync.sync,
     signOut: sync.signOut,
     setToken: sync.setToken,
@@ -135,6 +137,12 @@ if (!window.soundchexLibraryBound) {
 
     scheduleSync();
     considerTakeover();
+
+    // Watches for the server's address changing underneath the app — a laptop
+    // moving between wifi and a hotspot gets a new LAN address, and the one the
+    // app is on simply stops answering. Switches to whichever known address
+    // responds, so this recovers without the connect screen.
+    failover.start();
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') scheduleSync();
