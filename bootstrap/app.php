@@ -18,6 +18,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // Without this, generated URLs come out as http:// and rate limiting
         // would throttle every remote visitor as one shared IP.
         $middleware->trustProxies(at: '*');
+
+        // The library sync ships every visible item, which for a real library
+        // is hundreds of kilobytes — six times more than it needs to be.
+        $middleware->api(append: [
+            \App\Http\Middleware\CompressJsonResponses::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

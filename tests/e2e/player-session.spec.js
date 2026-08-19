@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { signIn } from './helpers.js';
+import { appReady, signIn } from './helpers.js';
 
 /**
  * Music surviving a full page load.
@@ -18,7 +18,7 @@ test.describe('playback across a full page load', () => {
     test.beforeEach(async ({ page }) => {
         await signIn(page);
         await page.goto('/app/music');
-        await page.waitForTimeout(1500);
+        await appReady(page, { rows: true });
     });
 
     const startPlaying = async (page) => {
@@ -57,7 +57,7 @@ test.describe('playback across a full page load', () => {
     test('the first tap in the reader resumes it', async ({ page }) => {
         await startPlaying(page);
         await page.goto('/app/read/5');
-        await page.waitForTimeout(1200);
+        await page.waitForTimeout(1500);
 
         // Silent until asked: a page that opens itself into sound is hostile,
         // and the browser refuses it anyway without a gesture.
@@ -78,7 +78,7 @@ test.describe('playback across a full page load', () => {
         await page.waitForTimeout(400);
 
         await page.goto('/app/read/5');
-        await page.waitForTimeout(1200);
+        await page.waitForTimeout(1500);
         await page.mouse.click(200, 400);
         await page.waitForTimeout(800);
 

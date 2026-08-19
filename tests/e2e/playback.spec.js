@@ -67,17 +67,29 @@ test.describe('playback across navigation', () => {
         expect(await paused(page)).toBe(false);
     });
 
-    test('a full page load does stop playback, as the design accepts', async ({ page }) => {
-        // Pinning the boundary rather than pretending it does not exist.
-        // Downloads and the reader are excluded from SPA navigation on
-        // purpose, so entering them starts a fresh player.
+    test('a full page load keeps the track and position', async ({ page }) => {
+        // This used to pin the opposite — that a full load stops playback — on
+        // the grounds that the reader and downloads are deliberately outside
+        // SPA navigation. That boundary is real, but losing the music at it was
+        // not a design decision worth keeping: the queue and position are
+        // carried in sessionStorage and picked up by the next page.
         await page.goto('/app');
         await startFirstTrack(page);
 
+        await expect.poll(
+            () => currentTime(page),
+            { message: 'playback is far enough in to be worth resuming', timeout: 15000 },
+        ).toBeGreaterThan(6);
+
+        const before = await currentTime(page);
+
         await page.goto('/app/downloads');
         await page.waitForLoadState('domcontentloaded');
+        await page.waitForTimeout(1200);
 
-        expect(await currentTime(page)).toBe(0);
+        // Within a couple of seconds: the position is written about once a
+        // second, so it lands near where playback was rather than exactly on it.
+        expect(Math.abs(await currentTime(page) - before)).toBeLessThan(3);
     });
 });
 
@@ -93,7 +105,11 @@ async function navigateWithinApp(page, path) {
     // Hrefs are rendered absolute, so match on the ending rather than equality.
     const link = page.locator(`a[href$="${path}"]`).filter({ visible: true }).first();
 
-    await link.scrollIntoViewIfNeeded();
+    // Clicked without scrolling to it first. The app paints the destination
+    // from the device the moment a link is tapped, which replaces <main> — so a
+    // reference resolved before that repaint is detached by the time an action
+    // runs against it. Playwright's own click re-resolves the locator, and
+    // scrollIntoViewIfNeeded is what was holding the stale one.
     await link.click();
     await page.waitForURL(new RegExp(`${path}$`));
 

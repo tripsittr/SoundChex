@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { signIn } from './helpers.js';
+import { appReady, signIn } from './helpers.js';
 
 /**
  * Downloading on WebKit.
@@ -17,7 +17,7 @@ test.describe('downloads on a phone', () => {
     test.beforeEach(async ({ page }) => {
         await signIn(page);
         await page.goto('/app/music');
-        await page.waitForTimeout(1200);
+        await appReady(page, { rows: true });
     });
 
     test('a track downloads and is playable from storage', async ({ page }) => {
@@ -85,7 +85,7 @@ test.describe('download buttons', () => {
     test.beforeEach(async ({ page }) => {
         await signIn(page);
         await page.goto('/app/music');
-        await page.waitForTimeout(1500);
+        await appReady(page, { rows: true });
     });
 
     test('the icon button in a song row downloads the track', async ({ page }) => {
@@ -162,7 +162,7 @@ test.describe('download buttons', () => {
         // icon, which invites downloading the same file twice.
         await page.goto('/app');
         await page.goto('/app/music');
-        await page.waitForTimeout(1500);
+        await appReady(page, { rows: true });
 
         await expect(page.locator('[data-download]:not(#download-toggle)').first())
             .toHaveAttribute('data-state', 'stored');
@@ -181,7 +181,7 @@ test.describe('download button states', () => {
     test.beforeEach(async ({ page }) => {
         await signIn(page);
         await page.goto('/app/music');
-        await page.waitForTimeout(1500);
+        await appReady(page, { rows: true });
     });
 
     // The button transitions colour, so a read taken immediately after a state
@@ -248,7 +248,7 @@ test.describe('download state on rebuilt rows', () => {
     test.beforeEach(async ({ page }) => {
         await signIn(page);
         await page.goto('/app/music');
-        await page.waitForTimeout(1500);
+        await appReady(page, { rows: true });
     });
 
     test('a rebuilt row has a download button', async ({ page }) => {

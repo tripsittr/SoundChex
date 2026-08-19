@@ -74,6 +74,17 @@ IndexedDB record read as a hit. See `DONE_TestCoverage.md`.
 
 Roughly in the order they're worth doing.
 
+### Native offline bridge
+
+Downloads stop when the app is backgrounded, audio eventually does too, and
+IndexedDB caps the library at about a gigabyte — none of which JavaScript can
+fix. `NativeOfflineBridge.md` keeps the Tauri UI and moves only those three
+things into a native plugin, rather than rewriting every screen in Swift.
+Depends on `NativeDownloads.md` for where the bytes land.
+
+**Blocked on diagnosing the current offline failures first**, since if those
+are application logic then none of this addresses them.
+
 ### Cross-media links
 
 A novel pointing at its film adaptation and soundtrack. Deferred from

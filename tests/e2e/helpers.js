@@ -41,3 +41,24 @@ export async function chooseProfile(page, name) {
 
     await page.waitForURL((url) => !url.pathname.includes('/profiles'), { timeout: 10000 });
 }
+
+/**
+ * Waits for the media centre to be ready to drive.
+ *
+ * Replaces a fixed sleep after every goto. Those were sized for the slowest
+ * observed boot, so every test paid the worst case whether it needed to or not
+ * — across ~40 of them the suite spent over a minute doing nothing at all.
+ * This returns as soon as the thing being waited for is actually there.
+ *
+ * Waits on the library module rather than a DOM element: it is what the tests
+ * reach for, and the last of the bundles to arrive.
+ */
+export async function appReady(page, { rows = false } = {}) {
+    await page.waitForFunction(() => window.soundchexLibrary !== undefined, null, { timeout: 20000 });
+
+    if (rows) {
+        // Server-rendered, so their presence means painted rather than merely
+        // booted.
+        await page.waitForSelector('li[data-long-press-menu]', { timeout: 20000 });
+    }
+}

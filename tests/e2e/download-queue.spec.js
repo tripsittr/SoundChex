@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { signIn } from './helpers.js';
+import { appReady, signIn } from './helpers.js';
 
 /**
  * Downloads run one at a time.
@@ -14,7 +14,7 @@ test.describe('download queue', () => {
     test.beforeEach(async ({ page }) => {
         await signIn(page);
         await page.goto('/app/music');
-        await page.waitForTimeout(1200);
+        await appReady(page, { rows: true });
         await page.evaluate(() => window.soundchexDownloadQueue.clear());
     });
 
