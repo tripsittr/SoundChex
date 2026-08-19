@@ -11,7 +11,17 @@
 /// Boots the app. Shared by desktop (`main.rs`) and the mobile entrypoints.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
+        // Notifications are desktop and mobile both, so this is unconditional.
+        .plugin(tauri_plugin_notification::init());
+
+    // Biometric has no desktop implementation. Registering it behind the same
+    // cfg as the dependency keeps one entrypoint for every platform rather than
+    // forking run() per target.
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let builder = builder.plugin(tauri_plugin_biometric::init());
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running SoundChex");
 }

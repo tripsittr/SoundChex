@@ -47,15 +47,78 @@ class Profile extends Model
         'is_default',
         'sort_order',
         'last_used_at',
+        'preferences',
     ];
 
     protected $casts = [
+        'preferences' => 'array',
         'pin_locked_until' => 'datetime',
         'is_kids' => 'boolean',
         'is_owner' => 'boolean',
         'is_default' => 'boolean',
         'last_used_at' => 'datetime',
     ];
+
+    /**
+     * What a profile may set for itself, and what each defaults to.
+     *
+     * Declared in one place so the form, the API and the reader all agree on
+     * the shape — a preference that exists in the UI but not here would be
+     * written and silently dropped on the next save.
+     *
+     * Notifications default to off. They require an OS-level permission prompt
+     * on a phone, and asking for that before anyone has expressed interest is
+     * how an app gets its notifications denied permanently.
+     */
+    public const PREFERENCE_DEFAULTS = [
+        // Playback
+        'autoplay_next' => true,
+        'crossfade_seconds' => 0,
+        'remember_position' => true,
+        'prefer_downloaded' => true,
+
+        // Security
+        'biometric_unlock' => false,
+
+        // Notifications, all off until asked for.
+        'notifications_enabled' => false,
+        'notify_download_complete' => true,
+        'notify_scan_complete' => false,
+
+        // Quality of life
+        'confirm_download_removal' => true,
+        'reduce_motion' => false,
+    ];
+
+    /**
+     * Preferences with the defaults filled in.
+     *
+     * Merged rather than returned raw: a profile created before a preference
+     * existed has no value for it, and every caller would otherwise need its
+     * own fallback.
+     */
+    public function preferences(): array
+    {
+        return [...self::PREFERENCE_DEFAULTS, ...($this->preferences ?? [])];
+    }
+
+    public function preference(string $key): mixed
+    {
+        return $this->preferences()[$key] ?? null;
+    }
+
+    /**
+     * Stores only what is recognised.
+     *
+     * Unknown keys are dropped rather than persisted: this is written from a
+     * client, and an unbounded JSON column is somewhere to hide arbitrary data.
+     */
+    public function setPreferences(array $values): void
+    {
+        $clean = array_intersect_key($values, self::PREFERENCE_DEFAULTS);
+
+        $this->update(['preferences' => [...($this->preferences ?? []), ...$clean]]);
+    }
 
     public function user(): BelongsTo
     {

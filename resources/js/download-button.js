@@ -104,6 +104,15 @@ export function setupIconDownloads() {
 
             button.dataset.state = 'stored';
             button.setAttribute('aria-label', `${title} downloaded — tap to remove`);
+
+            // Only worth a notification when it was queued behind something
+            // else: a download that finishes while you are watching the button
+            // does not need the OS to tell you about it.
+            if (position > 1) {
+                const { notify } = await import('./device-settings.js');
+
+                notify('Download finished', `${title} is ready to play offline.`);
+            }
         } catch (error) {
             // Reported on the button itself: these live in a scrolling list
             // with no status line to write to, so a silent failure is

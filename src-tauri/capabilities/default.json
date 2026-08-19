@@ -1,9 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Minimal surface. The shell adds no privileged commands of its own: everything the user sees is the web app, so nothing here needs to reach the filesystem or the shell.",
-  "windows": ["main"],
+  "description": "Minimal surface. The shell adds no privileged commands of its own: everything the user sees is the web app. Notifications and biometric prompts are the two exceptions, because neither has a web equivalent inside a Tauri webview.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "notification:default"
   ]
 }

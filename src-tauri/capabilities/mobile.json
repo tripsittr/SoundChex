@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "Biometric unlock. iOS and Android only — there is no desktop implementation, so this capability is scoped to those platforms rather than sitting in the default set and failing to resolve on a desktop build.",
+  "platforms": ["iOS", "android"],
+  "windows": ["main"],
+  "permissions": [
+    "biometric:default"
+  ]
+}

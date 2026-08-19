@@ -5,6 +5,7 @@ use App\Http\Controllers\AlbumController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\MediaCenterController;
 use App\Http\Controllers\PlaylistController;
+use App\Http\Controllers\ProfileSettingsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\SubtitleController;
@@ -114,6 +115,13 @@ Route::middleware(['auth'])->group(function (): void {
             // What this device is holding offline. The list itself lives in
             // the browser, so this only renders the shell.
             Route::get('/downloads', [MediaCenterController::class, 'downloads'])->name('downloads');
+
+            // Settings for whoever is watching, as opposed to the admin panel's
+            // server-wide configuration. Declared before the {type} wildcard, or
+            // "settings" would be read as a media type.
+            Route::get('/settings', [ProfileSettingsController::class, 'edit'])->name('settings');
+            Route::patch('/settings', [ProfileSettingsController::class, 'update'])->name('settings.update');
+            Route::patch('/settings/pin', [ProfileSettingsController::class, 'updatePin'])->name('settings.pin');
 
             // Movies and shows browse as one section, split by a sub-nav.
             // Declared before the {type} wildcard so "watch" isn't captured

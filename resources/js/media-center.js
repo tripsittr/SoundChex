@@ -1,3 +1,4 @@
+import { bindDeviceSettings } from './device-settings.js';
 import * as downloadQueue from './download-queue.js';
 import {
     paintIconDownloadStates,
@@ -112,6 +113,9 @@ function bindPageScripts() {
     setupDownloadButton();
     setupBatchDownload();
     setupIconDownloads();
+
+    // Face ID and notifications, where the shell can offer them.
+    bindDeviceSettings();
 
     // Exposed for the browser tests, which drive the queue directly rather than
     // racing five real downloads.

@@ -181,6 +181,14 @@
                             Playlists
                         </a>
 
+                        {{-- Settings for this profile, as opposed to the admin
+                             panel's server-wide configuration. Reachable by every
+                             profile, since most have no admin access at all. --}}
+                        <a href="{{ route('media.settings') }}" role="menuitem"
+                           class="block px-3 py-2 text-sm text-ink-300 transition hover:bg-base-700 hover:text-ink-100">
+                            Settings
+                        </a>
+
                         <a href="{{ route('profiles.index') }}" role="menuitem"
                            class="block px-3 py-2 text-sm text-ink-300 transition hover:bg-base-700 hover:text-ink-100">
                             Manage profiles
