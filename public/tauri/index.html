@@ -200,13 +200,26 @@
             clearTimeout(timer);
         }
     }
-    const form = document.getElementById('connect');
-    const field = document.getElementById('host');
-    const status = document.getElementById('status');
+    // Looked up on use rather than captured once.
+    //
+    // The offline fallback restores the form by cloning the original body and
+    // replacing the live children with it, so every element on this screen is
+    // swapped for a copy. A reference taken at load points at the detached
+    // original from that moment on — which is why the screen appeared to freeze
+    // on "opening what is on this device…": the recovery ran, the form came
+    // back, and the message explaining what had happened was written to a node
+    // that was no longer in the document.
+    const form = () => document.getElementById('connect');
+    const field = () => document.getElementById('host');
+    const status = () => document.getElementById('status');
 
     const say = (message, isError = false) => {
-        status.textContent = message;
-        status.dataset.error = String(isError);
+        const el = status();
+
+        if (!el) return;
+
+        el.textContent = message;
+        el.dataset.error = String(isError);
     };
 
     /** Adds a scheme if the user typed a bare hostname, and drops any path. */
@@ -276,10 +289,16 @@
         }
     }
 
-    form.addEventListener('submit', async (event) => {
+    // Delegated on document rather than bound to the form element. The offline
+    // fallback replaces the form with a clone, and a listener attached to the
+    // original does not come with it — leaving a form that looks right and does
+    // nothing when submitted.
+    document.addEventListener('submit', async (event) => {
+        if (event.target.id !== 'connect') return;
+
         event.preventDefault();
 
-        const origin = normalise(field.value);
+        const origin = normalise(field().value);
 
         if (origin === null) {
             say('That does not look like a valid https address.', true);
@@ -287,12 +306,12 @@
             return;
         }
 
-        form.querySelector('button').disabled = true;
+        form().querySelector('button').disabled = true;
         say('Checking…');
 
         if (!await reachable(origin)) {
             say('Could not reach that address. Is the server running?', true);
-            form.querySelector('button').disabled = false;
+            form().querySelector('button').disabled = false;
 
             return;
         }
@@ -333,7 +352,7 @@
     function offline(origin) {
         if (!origin) {
             say('No server saved yet, so there is nothing stored to open.', true);
-            field.focus();
+            field().focus();
 
             return;
         }
@@ -425,7 +444,7 @@
     const known = candidates();
 
     if (saved || known.length > 0) {
-        field.value = saved ?? known[0];
+        field().value = saved ?? known[0];
         say('Finding the fastest route…');
 
         // A way to stop.
@@ -445,11 +464,11 @@
             cancelled = true;
             say('Connection cancelled. Edit the addresses below.');
             stay.remove();
-            field.focus();
-            field.select();
+            field().focus();
+            field().select();
         });
 
-        status.after(stay);
+        status().after(stay);
 
         // The saved host is included but not privileged: it may be the slow
         // public address, and a faster one may be reachable right now.
@@ -483,7 +502,7 @@
             offline(saved ?? known[0]);
         });
     } else {
-        field.focus();
+        field().focus();
     }
 </script>
 </body>

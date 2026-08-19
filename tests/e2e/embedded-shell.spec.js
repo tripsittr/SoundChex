@@ -108,3 +108,57 @@ test.describe('offline shell inside the app', () => {
         await expect(page.locator('#host')).toBeVisible();
     });
 });
+
+/**
+ * Recovering when there is nothing stored to open.
+ *
+ * The offline fallback restores the connect form by cloning the original body
+ * and replacing the live children with it — so every element on the screen is
+ * swapped for a copy. References captured at load pointed at the detached
+ * originals from that moment on, which made the screen appear to freeze on
+ * "opening what is on this device…": the recovery ran and the form came back,
+ * but the message explaining what had happened was written to a node no longer
+ * in the document, and the restored form had no submit handler.
+ *
+ * This is the airplane-mode case on a device that has never synced.
+ */
+test.describe('offline with nothing stored', () => {
+    test.beforeEach(async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        await page.evaluate(() => {
+            // Raw string, not JSON — that is how the connect screen stores it.
+            localStorage.setItem('soundchex.host', 'http://10.55.55.55:8000');
+            localStorage.setItem('soundchex.hosts', JSON.stringify(['http://10.55.55.55:8000']));
+        });
+
+        await page.reload();
+    });
+
+    test('it says what happened rather than sitting on the old message', async ({ page }) => {
+        await expect(page.locator('#status')).toContainText(
+            /nothing to open offline/i,
+            { timeout: 20000 },
+        );
+    });
+
+    test('the connect form comes back', async ({ page }) => {
+        // The one screen that can do anything about the situation. Clearing it
+        // left a blank page with no way forward.
+        await expect(page.locator('#connect')).toBeVisible({ timeout: 20000 });
+        await expect(page.locator('#host')).toBeVisible();
+    });
+
+    test('the restored form still submits', async ({ page }) => {
+        await expect(page.locator('#status')).toContainText(/nothing to open offline/i, { timeout: 20000 });
+
+        await page.locator('#host').fill('http://10.55.55.56:8000');
+        await page.locator('#connect button[type="submit"], #connect button').first().click();
+
+        // A handler bound to the pre-clone element would leave this silent.
+        await expect(page.locator('#status')).toContainText(
+            /could not reach|finding/i,
+            { timeout: 20000 },
+        );
+    });
+});
