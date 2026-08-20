@@ -3,6 +3,7 @@ import { showDiagnostics, watchForProblems } from './diagnostics.js';
 import { bindDeviceSettings } from './device-settings.js';
 import { watchForNotifications } from './notifications.js';
 import * as downloadQueue from './download-queue.js';
+import { bindDownloadQueueUi } from './download-queue-ui.js';
 import {
     paintIconDownloadStates,
     setupBatchDownload,
@@ -118,6 +119,7 @@ function bindPageScripts() {
     setupBatchDownload();
     setupIconDownloads();
     setupBatchDownloads();
+    bindDownloadQueueUi();
 
     // Face ID and notifications, where the shell can offer them.
     bindDeviceSettings();

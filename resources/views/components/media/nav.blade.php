@@ -171,6 +171,23 @@
                     @endif
 
                     <div class="border-t border-base-600 py-1">
+                        {{-- The queue, shown only while something is in it. A
+                             download that says "queued" and then gives no sign
+                             of progress is indistinguishable from one that did
+                             nothing. --}}
+                        <div data-download-queue hidden>
+                            <button type="button"
+                                    data-download-queue-toggle
+                                    class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink-300 transition hover:bg-base-700 hover:text-ink-100">
+                                <span>Downloading</span>
+                                <span data-download-queue-count class="text-xs tabular-nums text-ink-500"></span>
+                            </button>
+
+                            <div data-download-queue-list
+                                 class="max-h-48 overflow-y-auto border-y border-base-700 bg-base-900/60 px-3 py-1"
+                                 hidden></div>
+                        </div>
+
                         <a href="{{ route('media.downloads') }}" role="menuitem"
                            class="block px-3 py-2 text-sm text-ink-300 transition hover:bg-base-700 hover:text-ink-100">
                             Downloads

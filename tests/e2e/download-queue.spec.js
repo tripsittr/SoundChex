@@ -205,3 +205,83 @@ test.describe('downloading in bulk', () => {
         await expect(button).toHaveAttribute('data-state', /downloading|stored/, { timeout: 30000 });
     });
 });
+
+/**
+ * Seeing what is downloading.
+ *
+ * "Added to download queue" and then no sign of anything is indistinguishable
+ * from a button that did nothing — especially for a whole library, where the
+ * first file takes a while and the toast has long gone.
+ */
+test.describe('the download queue in the menu', () => {
+    test.beforeEach(async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await appReady(page, { rows: true });
+        await page.evaluate(() => window.soundchexDownloadQueue.clear());
+    });
+
+    test('it is hidden when nothing is downloading', async ({ page }) => {
+        // A permanent empty row is clutter.
+        await expect(page.locator('[data-download-queue]')).toBeHidden();
+    });
+
+    test('it counts progress through the batch', async ({ page }) => {
+        await page.evaluate(() => {
+            const queue = window.soundchexDownloadQueue;
+            const slow = () => new Promise((resolve) => setTimeout(resolve, 900));
+
+            for (let index = 1; index <= 4; index += 1) {
+                queue.enqueue({ id: 900 + index, url: '/x', title: `Track ${index}` }, slow);
+            }
+        });
+
+        // Out of the whole batch: "3 of 40" says how far along this is, where
+        // "37 left" says only that it is not finished.
+        await expect(page.locator('[data-download-queue-count]')).toHaveText(/of 4/);
+    });
+
+    test('it lists what is waiting when opened', async ({ page }) => {
+        await page.evaluate(() => {
+            const queue = window.soundchexDownloadQueue;
+            const slow = () => new Promise((resolve) => setTimeout(resolve, 1500));
+
+            for (let index = 1; index <= 3; index += 1) {
+                queue.enqueue({ id: 910 + index, url: '/x', title: `Song ${index}` }, slow);
+            }
+        });
+
+        await page.evaluate(() => document.querySelector('[data-download-queue-toggle]').click());
+
+        const list = page.locator('[data-download-queue-list]');
+
+        await expect(list).toContainText('Song 1');
+        await expect(list, 'the active one says so').toContainText(/downloading/);
+    });
+
+    test('it goes away when the queue empties', async ({ page }) => {
+        await page.evaluate(() => {
+            // Long enough to be observed before it finishes: a 300ms download
+            // completes before the assertion runs, so the test raced itself
+            // rather than the code.
+            window.soundchexDownloadQueue.enqueue(
+                { id: 999, url: '/x', title: 'Last' },
+                () => new Promise((resolve) => setTimeout(resolve, 2000)),
+            );
+        });
+
+        // Polled rather than asserted once: enqueue resolves before the event
+        // that renders the row has been handled, so a bare assertion races the
+        // UI rather than testing it.
+        await expect.poll(
+            () => page.evaluate(() => document.querySelector('[data-download-queue]')?.hidden),
+            { message: 'the queue row appears', timeout: 10000 },
+        ).toBe(false);
+
+        await expect.poll(
+            () => page.evaluate(() => document.querySelector('[data-download-queue]')?.hidden),
+            { message: 'and goes when the queue empties', timeout: 15000 },
+        ).toBe(true);
+    });
+});
+

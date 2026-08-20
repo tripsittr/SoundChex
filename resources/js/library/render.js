@@ -41,6 +41,15 @@ function element(tag, className, text = null) {
  *
  * A grey box reads as broken; a type glyph reads as deliberate.
  */
+/** The stand-in for a cover that is missing or would not load. */
+function glyphFor(item, className) {
+    return element(
+        'div',
+        `${className} flex items-center justify-center text-2xl text-ink-600`,
+        GLYPH[item.type] ?? '♪',
+    );
+}
+
 export function artwork(item, className) {
     if (item.artwork) {
         const image = element('img', className);
@@ -50,16 +59,18 @@ export function artwork(item, className) {
         image.loading = 'lazy';
         image.decoding = 'async';
 
+        // A cover that fails to load leaves an empty box otherwise — and these
+        // rows are drawn from the mirror, which can name a file the server no
+        // longer has. The glyph is the same one used when there was never any
+        // artwork, so a missing image looks deliberate rather than broken.
+        image.addEventListener('error', () => {
+            image.replaceWith(glyphFor(item, className));
+        }, { once: true });
+
         return image;
     }
 
-    const fallback = element(
-        'div',
-        `${className} flex items-center justify-center text-2xl text-ink-600`,
-        GLYPH[item.type] ?? '♪',
-    );
-
-    return fallback;
+    return glyphFor(item, className);
 }
 
 /**
