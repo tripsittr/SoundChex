@@ -20,7 +20,11 @@ import { readFileSync } from 'node:fs';
 const CAPABILITIES = ['default'];
 
 const ORIGINS = [
+    // Two different LAN addresses: this machine's changed twice in one day, so
+    // the patterns must cover the range rather than a literal address.
+    'http://192.168.1.155:8000/app/settings',
     'http://192.168.1.205:8000/app/settings',
+    'http://10.0.0.5:8000/app/music',
     'http://100.106.62.120:8000/app/settings',
     'https://macbookair.tail7e590c.ts.net/app/settings',
     'http://localhost:8000/app/settings',
