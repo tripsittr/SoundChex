@@ -103,6 +103,19 @@
 
     .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; padding: 0.75rem 0 0.25rem; }
 
+    /* Inline with the state it acts on, so it reads as "this one is stopped,
+       start it" rather than a control floating on its own. */
+    .state button {
+        min-height: 1.9rem;
+        padding: 0 0.625rem;
+        font-size: 0.75rem;
+        background: var(--accent);
+        border-color: var(--accent);
+    }
+
+    .state button[hidden] { display: none; }
+    .state button:disabled { opacity: 0.6; cursor: default; }
+
     #status { min-height: 1.25rem; font-size: 0.8125rem; color: var(--ink-500); }
     #status[data-error='true'] { color: var(--bad); }
 </style>
@@ -120,7 +133,11 @@
                 Web server
                 <span class="row__hint">Serves the library to every device.</span>
             </span>
-            <span class="state"><span class="dot" data-state="unknown" data-dot="serve"></span><span data-label="serve">Checking…</span></span>
+            <span class="state">
+                <span class="dot" data-state="unknown" data-dot="serve"></span>
+                <span data-label="serve">Checking…</span>
+                <button type="button" data-start="serve" hidden>Start</button>
+            </span>
         </div>
 
         <div class="row">
@@ -128,7 +145,11 @@
                 Queue worker
                 <span class="row__hint">Identifies new media, imports subtitles, transcodes.</span>
             </span>
-            <span class="state"><span class="dot" data-state="unknown" data-dot="queue"></span><span data-label="queue">Checking…</span></span>
+            <span class="state">
+                <span class="dot" data-state="unknown" data-dot="queue"></span>
+                <span data-label="queue">Checking…</span>
+                <button type="button" data-start="queue" hidden>Start</button>
+            </span>
         </div>
 
         <div class="row">
@@ -136,7 +157,11 @@
                 Scheduler
                 <span class="row__hint">Scans watched folders and backs up nightly.</span>
             </span>
-            <span class="state"><span class="dot" data-state="unknown" data-dot="scheduler"></span><span data-label="scheduler">Checking…</span></span>
+            <span class="state">
+                <span class="dot" data-state="unknown" data-dot="scheduler"></span>
+                <span data-label="scheduler">Checking…</span>
+                <button type="button" data-start="scheduler" hidden>Start</button>
+            </span>
         </div>
 
         <div class="actions">
@@ -172,6 +197,52 @@
  * needs a Rust command to shell out to launchctl.
  */
 const ORIGIN = 'http://127.0.0.1:8000';
+
+/**
+ * Where the plists live, so the shell can install them.
+ *
+ * Baked in at build time rather than discovered: the app is bundled from this
+ * repository, and asking the user where their own source tree is would be a
+ * worse question than the one this screen exists to answer.
+ */
+const REPO = '/Users/tripsittr/Documents/GitHub/SoundChex';
+
+const invoke = (command, args) => window.__TAURI__?.core?.invoke?.(command, args);
+
+/**
+ * Starts a stopped service.
+ *
+ * The admin panel does this too and does it better — it can report queue depth
+ * and when the scheduler last ran. But it is served by the web server, so when
+ * that is down the one page that could start it is unreachable. This is the way
+ * out of that.
+ */
+async function startService(key, button) {
+    if (!invoke) {
+        status('Service management needs the SoundChex Server app.', true);
+
+        return;
+    }
+
+    const original = button.textContent;
+
+    button.disabled = true;
+    button.textContent = 'Starting…';
+
+    try {
+        await invoke('start_service', { key, repo: REPO });
+
+        status('Started. Waiting for it to answer…');
+
+        // launchd returns as soon as it has accepted the job, which is before
+        // the server is listening.
+        setTimeout(refresh, 1500);
+    } catch (error) {
+        status(`Could not start it: ${error}`, true);
+        button.disabled = false;
+        button.textContent = original;
+    }
+}
 
 const status = (message, isError = false) => {
     const el = document.getElementById('status');
@@ -212,13 +283,37 @@ async function refresh() {
 
     setState('serve', up ? 'up' : 'down', up ? 'Running' : 'Not running');
 
+    // Offered only where it can work, and only for what is stopped.
+    document.querySelectorAll('[data-start]').forEach((button) => {
+        button.hidden = !invoke;
+    });
+
+    const serveButton = document.querySelector('[data-start="serve"]');
+
+    if (serveButton) {
+        serveButton.hidden = !invoke || up;
+        serveButton.disabled = false;
+        serveButton.textContent = 'Start';
+    }
+
     if (!up) {
         // The other two cannot be inspected from here without the server, and
         // guessing would be worse than admitting it.
         setState('queue', 'unknown', 'Unknown');
         setState('scheduler', 'unknown', 'Unknown');
         document.getElementById('addresses').textContent = 'Start the web server to see this.';
-        status('The web server is not running, so nothing can reach your library.', true);
+        status(invoke
+            ? 'The web server is not running. Start it to reach your library.'
+            : 'The web server is not running, so nothing can reach your library.', true);
+
+        // Hidden while the server is down: their state cannot be read without
+        // it, and offering a button whose effect is invisible is worse than
+        // offering none.
+        ['queue', 'scheduler'].forEach((key) => {
+            const button = document.querySelector(`[data-start="${key}"]`);
+
+            if (button) button.hidden = true;
+        });
 
         return;
     }
@@ -241,6 +336,12 @@ async function refresh() {
 }
 
 document.getElementById('recheck').addEventListener('click', refresh);
+
+document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-start]');
+
+    if (button) startService(button.dataset.start, button);
+});
 document.getElementById('open-admin').addEventListener('click', () => {
     window.location.href = `${ORIGIN}/admin`;
 });
