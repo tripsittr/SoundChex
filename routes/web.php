@@ -34,6 +34,23 @@ Route::get('/', fn () => redirect()->route(
 | Deliberately CORS-open and unauthenticated: it says only that SoundChex is
 | here, which is what any client on the network can already tell by connecting.
 */
+/*
+| Every address this server can be reached on.
+|
+| The app only ever knew the address it happened to arrive on, so a device that
+| connected through the public relay had nothing to compare it against and
+| stayed there — a second and a third on every page, for the rest of the
+| session, with no way out short of retyping the address.
+|
+| CORS-open and unauthenticated for the same reason as the identity endpoint:
+| it says only where this server is, which anyone who can already reach it can
+| discover by looking at their own connection.
+*/
+Route::get('/soundchex-addresses.json', fn () => response()
+    ->json(['addresses' => app(App\Services\NetworkAddresses::class)->all()])
+    ->header('Access-Control-Allow-Origin', '*'))
+    ->name('addresses');
+
 Route::get('/soundchex.json', function () {
     // The build manifest's digest, which changes exactly when the frontend
     // does. Clients compare it against what they loaded and reload themselves

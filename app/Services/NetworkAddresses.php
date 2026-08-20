@@ -99,7 +99,12 @@ class NetworkAddresses
         }
 
         // The tailnet address, when Tailscale is up.
-        $tailscale = trim((string) @shell_exec('tailscale ip -4 2>/dev/null'));
+        // Found by path rather than name. A web server started by launchd has
+        // a minimal PATH that does not include Homebrew, so `tailscale` was
+        // simply not found — and the tailnet address, the one route that is
+        // both fast and survives the machine changing networks, was silently
+        // dropped from the list every client reads.
+        $tailscale = trim((string) @shell_exec($this->tailscaleBinary() . ' ip -4 2>/dev/null'));
 
         if ($tailscale !== '') {
             $found[] = 'http://' . strtok($tailscale, "\n") . ":{$port}";
@@ -112,6 +117,27 @@ class NetworkAddresses
         }
 
         return array_values(array_unique($found));
+    }
+
+    /**
+     * Where the tailscale command actually is.
+     *
+     * Checked in the usual places rather than trusted to PATH, which under
+     * launchd contains none of them.
+     */
+    private function tailscaleBinary(): string
+    {
+        foreach ([
+            '/opt/homebrew/bin/tailscale',
+            '/usr/local/bin/tailscale',
+            '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
+        ] as $candidate) {
+            if (is_executable($candidate)) {
+                return escapeshellarg($candidate);
+            }
+        }
+
+        return 'tailscale';
     }
 
     /**

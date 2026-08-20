@@ -158,5 +158,33 @@ test.describe('address failover', () => {
 
         expect(leaves).toBe(true);
     });
+
+    test('it asks the server where else it can be reached', async ({ page }) => {
+        await page.evaluate(() => localStorage.removeItem('soundchex.hosts'));
+
+        const before = await page.evaluate(() => window.soundchexLibrary.failover.candidates());
+
+        expect(before, 'only the address it arrived on').toHaveLength(1);
+
+        const learned = await page.evaluate(() => window.soundchexLibrary.failover.learnAddresses());
+
+        // Without this the app knows only where it happened to connect, so a
+        // device that arrived through the public relay had nothing to compare
+        // against and stayed there for the rest of the session.
+        expect(learned.length, 'the server named more than one').toBeGreaterThan(1);
+    });
+
+    test('the server names its tailnet address', async ({ page }) => {
+        const addresses = await page.evaluate(
+            () => fetch('/soundchex-addresses.json').then((r) => r.json()).then((d) => d.addresses),
+        );
+
+        // Found by absolute path rather than trusted to PATH: a web server
+        // started by launchd has none of the usual directories on it, so
+        // `tailscale` was not found and the one route that is both fast and
+        // survives the machine changing networks was silently dropped.
+        expect(addresses.some((address) => /^http:\/\/100\./.test(address)))
+            .toBe(true);
+    });
 });
 

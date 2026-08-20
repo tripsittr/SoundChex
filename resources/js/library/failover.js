@@ -67,6 +67,42 @@ export function candidates() {
 }
 
 /**
+ * Asks the server where else it can be reached.
+ *
+ * Without this the app knows only the address it happened to arrive on, so a
+ * device that connected through the public relay had nothing to compare against
+ * and stayed there — every page a second and a third slower, for the rest of
+ * the session, with no way out short of retyping the address.
+ *
+ * Merged into the stored list rather than replacing it: an address someone
+ * typed by hand is worth keeping even if the server does not know to advertise
+ * it.
+ */
+export async function learnAddresses() {
+    try {
+        const response = await fetch('/soundchex-addresses.json', { cache: 'no-store' });
+
+        if (!response.ok) return stored();
+
+        const { addresses } = await response.json();
+
+        if (!Array.isArray(addresses) || addresses.length === 0) return stored();
+
+        const merged = [...new Set([...stored(), ...addresses.filter(Boolean)])];
+
+        try {
+            localStorage.setItem(CANDIDATES_KEY, JSON.stringify(merged));
+        } catch {
+            // Private browsing. The addresses are still used for this check.
+        }
+
+        return merged;
+    } catch {
+        return stored();
+    }
+}
+
+/**
  * Asks the server, from this device, whether an address answers.
  *
  * An unauthenticated identity endpoint rather than a real route: the question
@@ -209,6 +245,11 @@ export async function check() {
     if (navigator.onLine === false) return { status: 'offline' };
 
     const here = window.location.origin;
+
+    // Asked before comparing. The list is otherwise whatever this origin
+    // happens to have stored, which on a first connection is nothing at all.
+    await learnAddresses();
+
     const alternatives = candidates().filter((origin) => origin !== here);
 
     // Everything measured, including where we already are.
