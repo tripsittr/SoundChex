@@ -61,6 +61,11 @@ export async function sendReport() {
         const response = await fetch('/api/v1/device-reports', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            // Survives the page going away, which is when the interesting
+            // reports are sent: a reload or a failed navigation cancels an
+            // ordinary fetch before it leaves, so the one event worth hearing
+            // about was the one that never arrived.
+            keepalive: true,
             body: JSON.stringify({
                 device: deviceId(),
                 platform: navigator.userAgent.slice(0, 40),
@@ -101,8 +106,11 @@ export function record(kind, detail = {}) {
     // something going wrong. Sending every page load would be a stream of
     // noise that buries the one event worth reading.
     if (WORTH_REPORTING.has(kind)) {
-        // Deferred so recording never blocks whatever is failing.
-        setTimeout(() => sendReport(), 0);
+        // Sent immediately rather than deferred. A timeout does not run if the
+        // page is being torn down, which is precisely the case these events
+        // describe — the report was scheduled and then discarded with the page
+        // that scheduled it.
+        sendReport();
     }
 
     events.push({
@@ -200,6 +208,13 @@ export function watchForProblems() {
 
     window.addEventListener('unhandledrejection', (event) => {
         record('rejection', { reason: String(event.reason).slice(0, 160) });
+    });
+
+    // A last chance as the page goes. Anything recorded and not yet sent —
+    // because it was not a reportable kind on its own, or because a send was
+    // still in flight — goes now, while there is still a page to send it from.
+    window.addEventListener('pagehide', () => {
+        if (events().length > 0) sendReport();
     });
 
     // The worker standing in for a page is the failure being chased, and it is

@@ -59,6 +59,74 @@
         }
     </style>
 
+    <script>
+        /*
+         * Reporting from the one page that most needs it.
+         *
+         * This page is served when a navigation fails, which is exactly the
+         * failure worth hearing about — and it loaded no diagnostics at all, so
+         * the moment things went wrong was the moment nothing was recording.
+         * Written inline because the whole point of this page is that it needs
+         * nothing fetched to work.
+         */
+        (function reportArrival() {
+            var wanted = typeof window.__soundchexWanted === 'string'
+                ? window.__soundchexWanted
+                : location.pathname;
+
+            var events = [];
+
+            try {
+                events = JSON.parse(sessionStorage.getItem('soundchex.diagnostics') || '[]');
+            } catch (error) {
+                events = [];
+            }
+
+            events.push({
+                kind: 'served-offline-page',
+                detail: { wanted: wanted },
+                at: Math.round(performance.now()),
+                path: wanted,
+            });
+
+            try {
+                sessionStorage.setItem('soundchex.diagnostics', JSON.stringify(events.slice(-40)));
+            } catch (error) {
+                // Nothing to do; the send below still carries this arrival.
+            }
+
+            var device = 'unknown';
+
+            try {
+                device = localStorage.getItem('soundchex.device-id') || 'unknown';
+            } catch (error) {
+                // Private browsing.
+            }
+
+            // Sent from here rather than left for the next page, which may
+            // never come: someone who cannot reach a screen closes the app.
+            try {
+                fetch('/api/v1/device-reports', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        device: device,
+                        platform: navigator.userAgent.slice(0, 40),
+                        origin: location.origin,
+                        events: events.slice(-40),
+                    }),
+                    keepalive: true,
+                }).catch(function () {
+                    // Offline is the expected case here. Nothing to be done
+                    // about a report that cannot be sent from a device with no
+                    // connection — it stays in session storage for next time.
+                });
+            } catch (error) {
+                // Ditto.
+            }
+        }());
+    </script>
+
     <script type="module">
         /*
          * Rebuild the page from the device's copy of the library.
