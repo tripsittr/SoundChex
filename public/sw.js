@@ -19,9 +19,37 @@
 // content-hashed, which usually makes that harmless — but a stale stylesheet
 // kept serving alongside fresh HTML, so a page referencing new class names was
 // styled by a sheet that did not have them. The header disappeared.
-const VERSION = '9dc144aa0302';
+const VERSION = '482d5222206b';
 const ASSET_CACHE = `soundchex-assets-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
+
+/**
+ * Tells the page something happened in here.
+ *
+ * A service worker has no console anyone reads on a phone, so a navigation that
+ * quietly fell back is invisible — which is exactly the failure being chased.
+ * Posted to every open client, and stored so a page that arrives afterwards can
+ * still find out why it is not the page that was asked for.
+ */
+const workerEvents = [];
+
+function report(kind, detail) {
+    const entry = { kind, detail, at: Date.now() };
+
+    workerEvents.push(entry);
+
+    if (workerEvents.length > 20) workerEvents.shift();
+
+    self.clients.matchAll({ includeUncontrolled: true }).then((clients) => {
+        clients.forEach((client) => client.postMessage({ soundchex: entry }));
+    });
+}
+
+self.addEventListener('message', (event) => {
+    if (event.data?.ask === 'soundchex:events') {
+        event.source?.postMessage({ soundchexEvents: workerEvents });
+    }
+});
 const PROBE_URL = '/offline-probe.html';
 
 self.addEventListener('install', (event) => {
@@ -145,6 +173,11 @@ self.addEventListener('fetch', (event) => {
  * lose it a second time.
  */
 async function offlinePageFor(url) {
+    // Recorded so a device can say what happened. A navigation that falls back
+    // here is invisible otherwise — the user sees a white flash and the home
+    // screen, and there is nothing anywhere saying which page was lost or why.
+    report('offline-fallback', { wanted: url.pathname + url.search });
+
     const response = await caches.match(OFFLINE_URL);
 
     if (!response) return response;
@@ -162,6 +195,11 @@ async function fetchWithRetry(request) {
     try {
         return await fetch(request);
     } catch (error) {
+        report('navigation-retry', {
+            url: new URL(request.url).pathname,
+            reason: String(error?.message ?? error).slice(0, 120),
+        });
+
         // A navigation body can only be read once, so the retry needs its own
         // copy of the request.
         try {

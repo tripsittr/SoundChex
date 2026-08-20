@@ -1,4 +1,5 @@
 import { watchForBuilds } from './build-watch.js';
+import { showDiagnostics, watchForProblems } from './diagnostics.js';
 import { bindDeviceSettings } from './device-settings.js';
 import { watchForNotifications } from './notifications.js';
 import * as downloadQueue from './download-queue.js';
@@ -123,6 +124,16 @@ function bindPageScripts() {
 
     // What happened while the app was closed.
     watchForNotifications();
+
+    // Kept so a failure on a device with no console can still be read.
+    watchForProblems();
+
+    document.querySelectorAll('[data-show-diagnostics]').forEach((button) => {
+        if (button.dataset.bound === 'true') return;
+
+        button.dataset.bound = 'true';
+        button.addEventListener('click', showDiagnostics);
+    });
 
     // A deploy, picked up without a reinstall.
     watchForBuilds();

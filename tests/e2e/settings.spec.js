@@ -69,4 +69,24 @@ test.describe('profile settings', () => {
         // admin panel is not a route to it.
         await expect(link).toHaveCount(1);
     });
+
+    test('diagnostics can be opened on the device', async ({ page }) => {
+        // A phone has no console anyone can reach, so a failed navigation shows
+        // as a white flash and nothing else. This is where that gets read.
+        await page.locator('[data-show-diagnostics]').click();
+
+        await expect(page.locator('#soundchex-diagnostics')).toBeVisible();
+        await expect(page.locator('#soundchex-diagnostics')).toContainText(/diagnostics/i);
+    });
+
+    test('it records what the page did', async ({ page }) => {
+        const events = await page.evaluate(() => window.soundchexDiagnostics.events());
+
+        // A page load is always worth recording: without it a log that is empty
+        // because nothing went wrong is indistinguishable from one that is
+        // empty because recording never started.
+        expect(events.length).toBeGreaterThan(0);
+        expect(events.some((event) => event.kind === 'page-load')).toBe(true);
+    });
 });
+

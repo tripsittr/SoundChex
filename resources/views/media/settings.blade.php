@@ -157,5 +157,20 @@
                 <button type="submit" class="settings-save">Update PIN</button>
             </form>
         </section>
+        {{-- Last, and deliberately plain: this is for the moment something has
+             gone wrong on a device with no console to open. --}}
+        <section class="settings-group mt-10">
+            <h2 class="settings-group__title">Diagnostics</h2>
+
+            <p class="settings-note">
+                What the app has been doing, including navigations that failed and
+                had to fall back. Useful when a page will not load and there is no
+                obvious reason why.
+            </p>
+
+            <button type="button" data-show-diagnostics class="settings-save">
+                Show recent activity
+            </button>
+        </section>
     </section>
 </x-media.layout>
