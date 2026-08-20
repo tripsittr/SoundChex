@@ -8,6 +8,7 @@ use App\Jobs\EnrichMediaItemJob;
 use App\Jobs\ExtractBookAssetsJob;
 use App\Jobs\ImportSubtitlesJob;
 use App\Models\MediaItem;
+use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
 use SplFileInfo;
@@ -187,7 +188,40 @@ class LibraryScanner
             }
         }
 
+        if (! $dryRun) {
+            $this->announceScan($result);
+        }
+
         return $result;
+    }
+
+    /**
+     * One notification for the whole scan.
+     *
+     * Never one per file. A first run over a large folder imports hundreds of
+     * items, and an app that sends hundreds of notifications is an app whose
+     * notifications get turned off — so the count is the message, with a few
+     * names for colour.
+     *
+     * @param array{imported: int, duplicates: int, titles: array<int, string>} $result
+     */
+    private function announceScan(array $result): void
+    {
+        if ($result['imported'] === 0) {
+            return;
+        }
+
+        $body = implode(', ', array_slice($result['titles'], 0, 3));
+
+        if ($result['imported'] > 3) {
+            $body .= sprintf(' and %d more', $result['imported'] - 3);
+        }
+
+        Notification::record(
+            Notification::SCAN_FINISHED,
+            sprintf('%d new item%s', $result['imported'], $result['imported'] === 1 ? '' : 's'),
+            $body ?: null,
+        );
     }
 
     /**
@@ -225,6 +259,20 @@ class LibraryScanner
             }
 
             $episode->forceFill(['parent_id' => $series->id])->saveQuietly();
+
+            // Worth its own notification, unlike everything else a scan finds.
+            // Episodes arrive one at a time and are usually the thing someone
+            // is waiting for — where a hundred imported tracks are one event,
+            // not a hundred. A brand-new series is left to the scan summary:
+            // nobody is waiting for a show they have not started.
+            if (! $series->wasRecentlyCreated) {
+                Notification::record(
+                    Notification::EPISODE_ADDED,
+                    $seriesTitle,
+                    $episode->title,
+                    $episode,
+                );
+            }
         } catch (\Throwable $e) {
             report($e);
         }

@@ -43,7 +43,20 @@
          this costs no new dependency. --}}
     @livewireStyles
 </head>
-<body class="min-h-screen bg-base-900 text-ink-100 antialiased">
+@php
+    // Rendered into the page rather than fetched. These change rarely, and a
+    // request per launch to learn them is a request wasted.
+    $notificationPrefs = ($p = app(\App\Services\CurrentProfile::class)->get())
+        ? [
+            'enabled' => (bool) $p->preference('notifications_enabled'),
+            'episodes' => (bool) $p->preference('notify_download_complete'),
+            'scans' => (bool) $p->preference('notify_scan_complete'),
+        ]
+        : ['enabled' => false];
+@endphp
+
+<body class="min-h-screen bg-base-900 text-ink-100 antialiased"
+      data-notification-prefs="{{ json_encode($notificationPrefs) }}">
 
     <a href="#main"
        class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:m-3 focus:rounded-md focus:bg-accent focus:px-4 focus:py-2 focus:text-white">

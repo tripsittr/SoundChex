@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\LibraryController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\TokenController;
 use Illuminate\Support\Facades\Route;
 
@@ -29,6 +30,10 @@ Route::prefix('v1')->group(function (): void {
 
         // The catalogue. Both go through ContentGate — see LibraryController.
         Route::get('/library', [LibraryController::class, 'index'])->name('api.library');
+
+        // What has happened since this device last asked.
+        Route::get('/notifications', [NotificationController::class, 'index'])
+            ->name('api.notifications');
         Route::match(['get', 'post'], '/library/delta', [LibraryController::class, 'delta'])
             ->name('api.library.delta');
     });

@@ -1,4 +1,5 @@
 import { bindDeviceSettings } from './device-settings.js';
+import { watchForNotifications } from './notifications.js';
 import * as downloadQueue from './download-queue.js';
 import {
     paintIconDownloadStates,
@@ -116,6 +117,9 @@ function bindPageScripts() {
 
     // Face ID and notifications, where the shell can offer them.
     bindDeviceSettings();
+
+    // What happened while the app was closed.
+    watchForNotifications();
 
     // Exposed for the browser tests, which drive the queue directly rather than
     // racing five real downloads.

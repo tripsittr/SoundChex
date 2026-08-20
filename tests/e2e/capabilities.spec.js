@@ -14,7 +14,10 @@ import { readFileSync } from 'node:fs';
  * capability written that way grants access to no origin while looking correct.
  * URLPattern is a browser API, so this runs in one.
  */
-const CAPABILITIES = ['default', 'mobile'];
+// The mobile capability existed only for the biometric plugin, which has been
+// removed: Face ID cannot be reached from a page the webview loaded over the
+// network, whatever the ACL says.
+const CAPABILITIES = ['default'];
 
 const ORIGINS = [
     'http://192.168.1.205:8000/app/settings',

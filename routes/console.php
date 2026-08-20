@@ -49,3 +49,13 @@ Schedule::command('db:backup')
     // database it is trying to snapshot.
     ->withoutOverlapping()
     ->runInBackground();
+
+/*
+| Notifications are "what happened while you were away", not a permanent log.
+| A device that has not opened in a month does not want a month of history, and
+| an unbounded table on a server that scans every few minutes grows forever.
+*/
+Schedule::call(fn () => \App\Models\Notification::prune())
+    ->daily()
+    ->name('prune-notifications')
+    ->withoutOverlapping();

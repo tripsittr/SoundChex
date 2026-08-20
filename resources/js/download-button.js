@@ -122,6 +122,14 @@ export function setupIconDownloads() {
 
             if (error?.name !== 'AbortError') {
                 console.error('Download failed', error);
+
+                // Worth telling someone about: the red icon is only visible if
+                // they happen to be looking at that row, and a download queued
+                // for a flight that failed silently is the case notifications
+                // exist for.
+                const { notify } = await import('./device-settings.js');
+
+                notify('Download failed', `${title} could not be downloaded.`);
             }
         }
     });
