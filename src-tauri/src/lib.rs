@@ -15,6 +15,11 @@ pub fn run() {
         // Notifications are desktop and mobile both, so this is unconditional.
         .plugin(tauri_plugin_notification::init());
 
+    // Desktop only. iOS and Android install through their own mechanisms, and
+    // the plugin has no implementation there.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
     builder
         .run(tauri::generate_context!())
         .expect("error while running SoundChex");

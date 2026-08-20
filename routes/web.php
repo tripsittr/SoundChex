@@ -34,10 +34,23 @@ Route::get('/', fn () => redirect()->route(
 | Deliberately CORS-open and unauthenticated: it says only that SoundChex is
 | here, which is what any client on the network can already tell by connecting.
 */
-Route::get('/soundchex.json', fn () => response()
-    ->json(['app' => 'soundchex', 'version' => 1])
-    ->header('Access-Control-Allow-Origin', '*'))
-    ->name('identity');
+Route::get('/soundchex.json', function () {
+    // The build manifest's digest, which changes exactly when the frontend
+    // does. Clients compare it against what they loaded and reload themselves
+    // when it moves, so a deploy reaches a phone without anyone reinstalling
+    // anything — which matters most when the phone is not in the same building.
+    $manifest = public_path('build/manifest.json');
+
+    return response()
+        ->json([
+            'app' => 'soundchex',
+            'version' => 1,
+            'build' => is_file($manifest)
+                ? substr(hash_file('sha1', $manifest), 0, 12)
+                : null,
+        ])
+        ->header('Access-Control-Allow-Origin', '*');
+})->name('identity');
 
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');

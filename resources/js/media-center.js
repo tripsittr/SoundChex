@@ -1,3 +1,4 @@
+import { watchForBuilds } from './build-watch.js';
 import { bindDeviceSettings } from './device-settings.js';
 import { watchForNotifications } from './notifications.js';
 import * as downloadQueue from './download-queue.js';
@@ -120,6 +121,9 @@ function bindPageScripts() {
 
     // What happened while the app was closed.
     watchForNotifications();
+
+    // A deploy, picked up without a reinstall.
+    watchForBuilds();
 
     // Exposed for the browser tests, which drive the queue directly rather than
     // racing five real downloads.

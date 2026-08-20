@@ -54,5 +54,16 @@
     "iOS": {
       "developmentTeam": "7GSWB72PH6"
     }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://macbookair.tail7e590c.ts.net/api/v1/updates/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYyODJBNzYyMzRCMEQxMDcKUldRSDBiQTBZcWVDWXRQUjhXeWFpTEFFbVZtZCtNOXk2SzNxVk5xLzBXc1JrRDV1RHFacVhWdTMK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

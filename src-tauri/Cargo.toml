@@ -17,6 +17,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
+tauri-plugin-updater = "2"
+# generate_context! expands the updater's configuration into code that parses
+# JSON, so this is required even though nothing here uses it directly.
+serde_json = "1"
 
 
 [features]

@@ -56,6 +56,10 @@ Thumbs.db
 # Database snapshots. These hold the whole catalogue — every title, every play,
 # every profile — so committing one would publish the library.
 /storage/backups/
+
+# Published release bundles. Large binaries, rebuildable, and signed with a key
+# that is deliberately not in this repository.
+/storage/app/updates/
 /storage/app/public/
 /media/
 /library/

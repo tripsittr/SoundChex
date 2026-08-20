@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\LibraryController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ServerHealthController;
+use App\Http\Controllers\Api\UpdateController;
 use App\Http\Middleware\LoopbackOnly;
 use App\Http\Controllers\Api\TokenController;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,18 @@ Route::prefix('v1')->group(function (): void {
     | the library, and the server app has to reach it before anyone has signed
     | in — but there is no reason for it to answer the network.
     */
+    /*
+    | Where the desktop apps look for a new version.
+    |
+    | Unauthenticated: the updater runs before anyone has signed in, and the
+    | signature is what makes a served bundle trustworthy rather than the
+    | request being authorised.
+    */
+    Route::get('/updates/{target}/{arch}/{currentVersion}', [UpdateController::class, 'show'])
+        ->name('api.updates');
+    Route::get('/updates/{target}/{arch}/download/{file}', [UpdateController::class, 'download'])
+        ->name('api.updates.download');
+
     Route::get('/server/health', [ServerHealthController::class, 'show'])
         ->middleware(LoopbackOnly::class)
         ->name('api.server.health');
