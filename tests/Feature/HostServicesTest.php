@@ -89,7 +89,10 @@ class HostServicesTest extends TestCase
 
     public function test_the_log_is_tailed_rather_than_read_whole(): void
     {
-        $path = storage_path('logs/serve.log');
+        // ~/Library/Logs, where the agents write: the repository sits under
+        // ~/Documents, which macOS gates behind TCC, and a launchd job told to
+        // log there is dropped before its program runs.
+        $path = ($_SERVER['HOME'] ?? getenv('HOME')) . '/Library/Logs/SoundChex/serve.log';
         $existing = is_file($path) ? file_get_contents($path) : null;
 
         try {

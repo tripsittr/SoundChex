@@ -67,11 +67,31 @@ class HostServices
      * Idempotent: installing twice must not produce two agents, so an existing
      * one is unloaded first.
      */
+    /**
+     * Why the last install, start or stop failed.
+     *
+     * These return a bare boolean, which left the screen able to say only
+     * "check that the plist exists and launchctl is available" — a message that
+     * names two things and diagnoses neither. The reason is kept here so the
+     * page can report what actually went wrong.
+     */
+    public ?string $lastError = null;
+
     public function install(string $key): bool
     {
+        $this->lastError = null;
+
         $service = self::SERVICES[$key] ?? null;
 
-        if ($service === null || ! $this->supported()) {
+        if ($service === null) {
+            $this->lastError = "Unknown service: {$key}";
+
+            return false;
+        }
+
+        if (! $this->supported()) {
+            $this->lastError = 'launchd is macOS only.';
+
             return false;
         }
 
@@ -79,6 +99,8 @@ class HostServices
         $target = $this->agentPath($service['label']);
 
         if (! is_file($source)) {
+            $this->lastError = "No plist at {$source}";
+
             return false;
         }
 
@@ -89,12 +111,22 @@ class HostServices
         $this->run(['launchctl', 'unload', $target]);
 
         if (! @copy($source, $target)) {
+            $this->lastError = "Could not write {$target}";
+
             return false;
         }
 
-        $this->run(['launchctl', 'load', $target]);
+        $result = $this->runWithError(['launchctl', 'load', $target]);
 
-        return $this->isLoaded($service['label']);
+        if (! $this->isLoaded($service['label'])) {
+            // launchctl exits zero for a job it accepted and then dropped, so
+            // the error it printed is the only account of why.
+            $this->lastError = $result !== '' ? $result : 'launchctl loaded it but it is not running.';
+
+            return false;
+        }
+
+        return true;
     }
 
     public function start(string $key): bool
@@ -150,7 +182,11 @@ class HostServices
             return '';
         }
 
-        $path = storage_path('logs/' . $key . '.log');
+        // ~/Library/Logs, not the repository. macOS gates ~/Documents behind
+        // TCC and a launchd agent has no UI to prompt with, so a job told to
+        // redirect output into a folder there is dropped with EX_CONFIG before
+        // its program ever runs — which is exactly what happened, silently.
+        $path = ($_SERVER['HOME'] ?? getenv('HOME')) . '/Library/Logs/SoundChex/' . $key . '.log';
 
         if (! is_file($path)) {
             return 'Nothing logged yet.';
@@ -264,6 +300,39 @@ class HostServices
      * that is not loaded, for one — so the exit code decides rather than the
      * output.
      */
+    /**
+     * Runs a command and returns whatever it complained about.
+     *
+     * launchctl reports real failures on stderr while still exiting zero, so
+     * the exit code alone cannot distinguish "loaded" from "accepted and then
+     * dropped".
+     */
+    private function runWithError(array $command): string
+    {
+        if (! $this->supported()) {
+            return 'Not macOS.';
+        }
+
+        $process = proc_open(
+            $command,
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+
+        if (! is_resource($process)) {
+            return 'Could not run launchctl.';
+        }
+
+        $out = trim((string) stream_get_contents($pipes[1]));
+        $err = trim((string) stream_get_contents($pipes[2]));
+
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($process);
+
+        return $err !== '' ? $err : $out;
+    }
+
     private function run(array $command): ?string
     {
         if (! $this->supported()) {

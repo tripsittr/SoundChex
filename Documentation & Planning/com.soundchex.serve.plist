@@ -1,62 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  Keeps the app listening on 127.0.0.1:8000 so `tailscale serve` always has
-  something to proxy to, including after a reboot.
-
-  Install:
-    cp "Documentation & Planning/com.soundchex.serve.plist" ~/Library/LaunchAgents/
-    launchctl load ~/Library/LaunchAgents/com.soundchex.serve.plist
-
-  Stop:
-    launchctl unload ~/Library/LaunchAgents/com.soundchex.serve.plist
-
-  Bound to every interface so the LAN route works. A phone on the same wifi
-  reaches the server directly rather than through Tailscale, and the public
-  Funnel relay — measured at 1,332ms against 37ms — is never the fast path.
-  Access is controlled by sign-in and the machine's firewall rather than by
-  which interface the port listens on.
--->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>com.soundchex.serve</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <!-- Herd's PHP, not Homebrew's: there is no /opt/homebrew/bin/php on
-             this machine, and launchd fails silently on a missing binary. -->
-        <string>/Users/tripsittr/Library/Application Support/Herd/bin/php84</string>
-        <string>/Users/tripsittr/Documents/GitHub/SoundChex/artisan</string>
-        <string>serve</string>
-        <!-- Every interface, not just loopback.
-             Bound to 127.0.0.1 this is reachable only through a proxy, so the
-             LAN route disappears and a phone on the same wifi has to go via
-             Tailscale — or, worse, via the public relay, which measured 1,332ms
-             against 37ms on the LAN. The library is already behind sign-in, and
-             the machine's own firewall decides who may reach the port. -->
-        <string>--host=0.0.0.0</string>
-        <string>--port=8000</string>
-    </array>
-
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/Users/tripsittr/Library/Application Support/Herd/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-
-    <key>WorkingDirectory</key>
-    <string>/Users/tripsittr/Documents/GitHub/SoundChex</string>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>KeepAlive</key>
-    <true/>
-
-    <key>StandardOutPath</key>
-    <string>/Users/tripsittr/Documents/GitHub/SoundChex/storage/logs/serve.log</string>
-    <key>StandardErrorPath</key>
-    <string>/Users/tripsittr/Documents/GitHub/SoundChex/storage/logs/serve.log</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/tripsittr/Library/Application Support/Herd/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.soundchex.serve</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/tripsittr/Library/Application Support/Herd/bin/php84</string>
+		<string>/Users/tripsittr/Documents/GitHub/SoundChex/artisan</string>
+		<string>serve</string>
+		<string>--host=0.0.0.0</string>
+		<string>--port=8000</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/tripsittr/Library/Logs/SoundChex/serve.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/tripsittr/Library/Logs/SoundChex/serve.log</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/tripsittr/Documents/GitHub/SoundChex</string>
 </dict>
 </plist>

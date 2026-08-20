@@ -137,17 +137,31 @@ class Services extends Page
 
     public function installService(string $key): void
     {
-        $installed = app(HostServices::class)->install($key);
+        $host = app(HostServices::class);
+        $installed = $host->install($key);
 
         $this->refreshServices();
 
+        // The actual reason, not a list of things to check. "Check that the
+        // plist exists and launchctl is available" names two possibilities and
+        // diagnoses neither, which leaves someone guessing at a machine they
+        // cannot see into.
         Notification::make()
             ->title($installed ? 'Service installed' : 'Could not install it')
             ->body($installed
                 ? 'It will start on its own from now on, including after a reboot.'
-                : 'Check that the plist exists and launchctl is available.')
+                : ($host->lastError ?? 'No reason given.'))
             ->{$installed ? 'success' : 'danger'}()
+            ->persistent()
             ->send();
+
+        if (! $installed) {
+            // Opened automatically: the log is where a service that will not
+            // start explains itself, and asking someone to press another button
+            // to find that out is a step too many.
+            $this->showingLog = $key;
+            $this->logContents = $host->log($key);
+        }
     }
 
     /**
