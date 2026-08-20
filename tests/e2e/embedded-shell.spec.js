@@ -371,3 +371,58 @@ test.describe('server app', () => {
         });
     });
 });
+
+/**
+ * Choosing the fastest route, not the first to answer.
+ *
+ * The same server is reachable several ways and they are not close: measured on
+ * this setup the LAN answered in 18ms, the tailnet IP in 33ms, and the public
+ * Funnel hostname in 1,332ms — that one relays through Los Angeles whatever
+ * room the phone is in. Promise.any took whichever replied first, so a
+ * working-but-relayed route could win and every page load after it paid the
+ * relay.
+ */
+test.describe('picking a route', () => {
+    test('the fastest route wins, not the first to answer', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        // Asserted on the chooser itself rather than through a navigation: a
+        // page that redirects also reloads, and the reload re-races, so the
+        // final URL says nothing about which candidate was picked first.
+        const winner = await page.evaluate(async () => {
+            const measure = async (origin, delay) => {
+                const started = performance.now();
+                await new Promise((resolve) => setTimeout(resolve, delay));
+
+                return { origin, ms: Math.round(performance.now() - started) };
+            };
+
+            // The slow one is listed first, which is exactly how a relayed
+            // address gets stuck: it worked once, so it was kept.
+            const results = await Promise.all([
+                measure('http://relayed.example', 400),
+                measure('http://direct.example', 10),
+            ]);
+
+            return results
+                .filter((result) => result.ms !== null)
+                .sort((a, b) => a.ms - b.ms)[0].origin;
+        });
+
+        expect(winner, 'the quicker address is chosen').toBe('http://direct.example');
+    });
+
+    test('the shell measures every candidate before choosing', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        const source = await page.evaluate(
+            () => fetch('/index.html').then((r) => r.text()),
+        );
+
+        // Promise.any returns the first to resolve, so a working-but-relayed
+        // route beats a fast one that is a few milliseconds behind it. The
+        // difference here was 18ms against 1,332ms.
+        expect(source).toContain('Promise.all');
+        expect(source).not.toContain('Promise.any(origins');
+    });
+});

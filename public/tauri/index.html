@@ -190,11 +190,11 @@
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeout);
 
-        try {
-            return await Promise.any(origins.map(async (origin) => {
-                // Identified rather than merely answered. Promise.any takes the
-                // first to resolve, so a captive portal replying instantly beat
-                // the real server every time.
+        /** How long an address takes to identify itself, or null if it does not. */
+        const measure = async (origin) => {
+            const started = performance.now();
+
+            try {
                 const response = await fetch(`${origin}/soundchex.json`, {
                     signal: controller.signal,
                     credentials: 'omit',
@@ -203,15 +203,34 @@
 
                 const body = response.ok ? await response.json() : null;
 
-                if (body?.app !== 'soundchex') {
-                    throw new Error('not a SoundChex server');
-                }
+                // Identified rather than merely answered: a captive portal
+                // replying instantly would otherwise win.
+                if (body?.app !== 'soundchex') return null;
 
-                return origin;
-            }));
-        } catch {
-            // Promise.any rejects only when every candidate failed.
-            return null;
+                return Math.round(performance.now() - started);
+            } catch {
+                return null;
+            }
+        };
+
+        try {
+            // Every candidate measured, not the first to answer.
+            //
+            // The same server is reachable several ways and they are not close:
+            // measured here, the LAN answered in 18ms, the tailnet IP in 33ms,
+            // and the public Funnel hostname in 1,332ms — because that one
+            // relays through Los Angeles whatever room the phone is in. Taking
+            // whichever replied first meant a working-but-relayed route could
+            // win, and every page load after it paid a second and a third.
+            const results = await Promise.all(
+                origins.map(async (origin) => ({ origin, ms: await measure(origin) })),
+            );
+
+            const answered = results
+                .filter((result) => result.ms !== null)
+                .sort((a, b) => a.ms - b.ms);
+
+            return answered[0]?.origin ?? null;
         } finally {
             clearTimeout(timer);
         }
