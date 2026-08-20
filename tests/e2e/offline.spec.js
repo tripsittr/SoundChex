@@ -210,3 +210,78 @@ test.describe('artwork caching', () => {
     });
 });
 
+/**
+ * A pre-render draws a screenful, not the library.
+ *
+ * The server paginates to 48; the offline shell drew everything in the mirror —
+ * over thirteen hundred rows for a real library, each with an image, so a single
+ * tap asked the server for thirteen hundred files. Measured: 684 artwork
+ * requests in one minute, and a music page that never finished while books and
+ * films, with a dozen items between them, were instant.
+ *
+ * It is a placeholder shown for a moment before the server's page replaces it.
+ * Drawing more than a screenful was never the point.
+ */
+test.describe('pre-render size', () => {
+    test('a large library draws a screenful', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await page.waitForFunction(() => window.soundchexLibrary !== undefined, null, { timeout: 20000 });
+
+        await page.evaluate(() => {
+            const items = Array.from({ length: 400 }, (_, index) => ({
+                id: index + 1,
+                type: 'music',
+                title: `Song ${index}`,
+                parent_id: null,
+                playable: true,
+                subtitle: 'Artist',
+                artwork: `/storage/artwork/x-${index}.jpg`,
+                meta: {},
+            }));
+
+            return window.soundchexLibrary.mirror.replaceAll(items, {
+                syncedAt: '2026-08-20T00:00:00Z',
+            });
+        });
+
+        await page.evaluate(() => window.soundchexLibrary.preRender(
+            document.querySelector('main'), '/app/music',
+        ));
+
+        const drawn = await page.evaluate(() => ({
+            rows: document.querySelectorAll('ol li').length,
+            images: document.querySelectorAll('main img').length,
+        }));
+
+        // Each row carries an image, so the row count is the request count.
+        expect(drawn.rows, 'a screenful, not the library').toBeLessThanOrEqual(60);
+        expect(drawn.images).toBeLessThanOrEqual(60);
+    });
+
+    test('the count still names the whole library', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await page.waitForFunction(() => window.soundchexLibrary !== undefined, null, { timeout: 20000 });
+
+        await page.evaluate(() => {
+            const items = Array.from({ length: 200 }, (_, index) => ({
+                id: index + 1, type: 'music', title: `Song ${index}`, parent_id: null,
+                playable: true, subtitle: 'Artist', meta: {},
+            }));
+
+            return window.soundchexLibrary.mirror.replaceAll(items, {
+                syncedAt: '2026-08-20T00:00:00Z',
+            });
+        });
+
+        await page.evaluate(() => window.soundchexLibrary.preRender(
+            document.querySelector('main'), '/app/music',
+        ));
+
+        // Saying "60 songs" to someone with two hundred would be a lie in
+        // service of a placeholder.
+        await expect(page.locator('main')).toContainText('200');
+    });
+});
+

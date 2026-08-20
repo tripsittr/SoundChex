@@ -16,6 +16,20 @@ import { artwork, fill, playerPayload, poster, songList } from './render.js';
  * network.
  */
 
+/**
+ * How many rows a rebuilt screen draws.
+ *
+ * The server paginates to 48; this drew everything in the mirror, which for a
+ * real library is over thirteen hundred rows — each with an image, so a single
+ * pre-render asked the server for thirteen hundred files. Measured here: 684
+ * artwork requests in one minute, and a music page that never finished loading
+ * while books and films, with a dozen items between them, were instant.
+ *
+ * A pre-render is a placeholder shown for a moment before the server's page
+ * replaces it. Drawing more than a screenful was never the point.
+ */
+const MAX_ROWS = 60;
+
 /** Screens this can rebuild, and how. */
 const SCREENS = [
     {
@@ -27,7 +41,7 @@ const SCREENS = [
             const items = await mirror.all();
             const music = query.sortBy(query.byType(items, 'music'), 'title');
 
-            return renderSongs(root, music, 'Your library');
+            return renderSongs(root, music.slice(0, MAX_ROWS), 'Your library', music.length);
         },
     },
     {
@@ -35,7 +49,7 @@ const SCREENS = [
         render: async (root) => {
             const items = query.sortBy(query.byType(await mirror.all(), 'music'), 'title');
 
-            return renderSongs(root, items, 'Songs');
+            return renderSongs(root, items.slice(0, MAX_ROWS), 'Songs', items.length);
         },
     },
     {
@@ -43,7 +57,7 @@ const SCREENS = [
         render: async (root) => {
             const groups = query.albums(await mirror.all());
 
-            return renderAlbums(root, groups);
+            return renderAlbums(root, groups.slice(0, MAX_ROWS));
         },
     },
     {
@@ -51,7 +65,7 @@ const SCREENS = [
         render: async (root) => {
             const people = query.artists(await mirror.all());
 
-            return renderArtists(root, people);
+            return renderArtists(root, people.slice(0, MAX_ROWS));
         },
     },
     {
@@ -60,7 +74,7 @@ const SCREENS = [
             const type = path.split('/').pop();
             const items = query.sortBy(query.byType(await mirror.all(), type), 'title');
 
-            return renderGrid(root, items, type);
+            return renderGrid(root, items.slice(0, MAX_ROWS), type);
         },
     },
     {
@@ -271,7 +285,7 @@ function restoreMusicSubnav(root, path) {
     screen.insertBefore(musicSubnav(path), heading);
 }
 
-function renderSongs(root, items, title) {
+function renderSongs(root, items, title, total = null) {
     const wrap = container();
     const list = document.createElement('ol');
 
@@ -279,7 +293,9 @@ function renderSongs(root, items, title) {
 
     fill(list, songList(items));
     if (!hasChrome()) wrap.append(banner(items.length));
-    wrap.append(heading(title, items.length), list);
+    // The real count, not the number drawn: saying "60 songs" to someone with
+    // thirteen hundred would be a lie in service of a placeholder.
+    wrap.append(heading(title, total ?? items.length), list);
     fill(root, [wrap]);
 
     return items.length;
