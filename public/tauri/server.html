@@ -360,6 +360,59 @@ document.getElementById('open-library').addEventListener('click', () => {
  * *by* the thing being administered, so it cannot render when that is down —
  * which is the one case this page exists for.
  */
+/** Whether setup has been offered on this machine before. */
+const SETUP_KEY = 'soundchex.server.setup-offered';
+
+/**
+ * Offers to install the services, once.
+ *
+ * Asked at first open rather than assumed: installing registers launchd agents
+ * that start on login and outlive the app, which is a change to the machine and
+ * should be a decision. Asked *only* once, because a prompt that returns every
+ * launch is one people learn to dismiss without reading.
+ */
+async function offerSetup() {
+    if (!invoke) return;
+
+    try {
+        if (localStorage.getItem(SETUP_KEY)) return;
+    } catch {
+        // Private browsing. Better to skip the prompt than to show it forever.
+        return;
+    }
+
+    const wanted = window.confirm(
+        'Keep SoundChex running?\n\n'
+        + 'The web server, queue worker and scheduler can start themselves on login '
+        + 'and restart if they stop. Without this the library goes offline whenever '
+        + 'the server is closed, which on a phone looks like the app being broken.\n\n'
+        + 'You can change this later under Services in library management.',
+    );
+
+    try {
+        localStorage.setItem(SETUP_KEY, '1');
+    } catch {
+        // Nothing to do; the prompt simply appears again next launch.
+    }
+
+    if (!wanted) return;
+
+    status('Setting up…');
+
+    for (const key of ['serve', 'queue', 'scheduler']) {
+        try {
+            await invoke('start_service', { key, repo: REPO });
+        } catch (error) {
+            status(`Could not set up ${key}: ${error}`, true);
+
+            return;
+        }
+    }
+
+    status('Set up. Starting…');
+    setTimeout(refresh, 2000);
+}
+
 async function openOrExplain() {
     if (await checkServer()) {
         window.location.replace(`${ORIGIN}/admin`);
@@ -370,7 +423,9 @@ async function openOrExplain() {
     await refresh();
 }
 
-openOrExplain();
+// Offered before the redirect, or a working server would send the window to the
+// admin panel and the question would never be asked.
+offerSetup().then(openOrExplain);
 
 // Kept checking, so starting the server elsewhere brings this window back to
 // the panel without anyone having to reopen it.

@@ -47,17 +47,54 @@ class Services extends Page
 
     public bool $supported = true;
 
+    /** When the state on screen was read, so a refresh visibly did something. */
+    public ?string $checkedAt = null;
+
+    /** Which service's log is open, if any. */
+    public ?string $showingLog = null;
+
+    public string $logContents = '';
+
     public function mount(): void
     {
         $this->refreshServices();
     }
 
-    public function refreshServices(): void
+    public function refreshServices(bool $quiet = true): void
     {
         $host = app(HostServices::class);
 
         $this->supported = $host->supported();
         $this->services = $this->supported ? $host->all() : [];
+        $this->checkedAt = now()->format('H:i:s');
+
+        if ($quiet) {
+            return;
+        }
+
+        // Said out loud when someone pressed the button. Refreshing silently
+        // looks identical to a button that does nothing when the state has not
+        // changed — which is most of the time, and exactly when someone is
+        // pressing it because they are unsure.
+        $running = collect($this->services)->filter(fn (array $s): bool => $s['running'])->count();
+
+        Notification::make()
+            ->title('Checked just now')
+            ->body(sprintf('%d of %d running.', $running, count($this->services)))
+            ->success()
+            ->send();
+    }
+
+    /**
+     * The last few lines each service wrote.
+     *
+     * A service that will not start says why in its log, and without this the
+     * only way to read it is a terminal — which is the thing this page exists
+     * to avoid.
+     */
+    public function logFor(string $key): string
+    {
+        return app(HostServices::class)->log($key);
     }
 
     public function startService(string $key): void
@@ -85,6 +122,19 @@ class Services extends Page
             ->send();
     }
 
+    public function toggleLog(string $key): void
+    {
+        if ($this->showingLog === $key) {
+            $this->showingLog = null;
+            $this->logContents = '';
+
+            return;
+        }
+
+        $this->showingLog = $key;
+        $this->logContents = $this->logFor($key);
+    }
+
     public function installService(string $key): void
     {
         $installed = app(HostServices::class)->install($key);
@@ -109,7 +159,7 @@ class Services extends Page
             Action::make('refresh')
                 ->label('Refresh')
                 ->icon(Heroicon::OutlinedArrowPath)
-                ->action('refreshServices'),
+                ->action(fn () => $this->refreshServices(quiet: false)),
 
             Action::make('installAll')
                 ->label('Install all')

@@ -16,6 +16,9 @@
             <x-slot name="description">
                 Kept alive by launchd, so they restart themselves and survive a
                 reboot. A process started by hand in a terminal does neither.
+                @if ($checkedAt)
+                    <span class="text-gray-400 dark:text-gray-500">Checked at {{ $checkedAt }}.</span>
+                @endif
             </x-slot>
 
             <div class="divide-y divide-gray-200 dark:divide-white/10">
@@ -50,22 +53,49 @@
                             </p>
                         </div>
 
-                        <div class="flex shrink-0 gap-2">
+                        <div class="flex shrink-0 flex-wrap gap-2">
                             @if (! $service['installed'])
-                                <x-filament::button size="sm" wire:click="installService('{{ $key }}')">
-                                    Install
-                                </x-filament::button>
-                            @elseif ($service['running'])
-                                <x-filament::button size="sm" color="gray" wire:click="stopService('{{ $key }}')">
-                                    Stop
+                                <x-filament::button size="sm" wire:click="installService('{{ $key }}')"
+                                                    wire:loading.attr="disabled"
+                                                    wire:target="installService('{{ $key }}')">
+                                    <span wire:loading.remove wire:target="installService('{{ $key }}')">Install</span>
+                                    <span wire:loading wire:target="installService('{{ $key }}')">Installing…</span>
                                 </x-filament::button>
                             @else
-                                <x-filament::button size="sm" wire:click="startService('{{ $key }}')">
-                                    Start
+                                {{-- Both offered whatever the state: a service
+                                     that reports "running" while nothing answers
+                                     needs stopping before it can be started, and
+                                     hiding the button makes that impossible. --}}
+                                <x-filament::button size="sm" wire:click="startService('{{ $key }}')"
+                                                    :disabled="$service['running']"
+                                                    wire:loading.attr="disabled"
+                                                    wire:target="startService('{{ $key }}')">
+                                    <span wire:loading.remove wire:target="startService('{{ $key }}')">Start</span>
+                                    <span wire:loading wire:target="startService('{{ $key }}')">Starting…</span>
+                                </x-filament::button>
+
+                                <x-filament::button size="sm" color="gray" wire:click="stopService('{{ $key }}')"
+                                                    :disabled="! $service['running']"
+                                                    wire:loading.attr="disabled"
+                                                    wire:target="stopService('{{ $key }}')">
+                                    <span wire:loading.remove wire:target="stopService('{{ $key }}')">Stop</span>
+                                    <span wire:loading wire:target="stopService('{{ $key }}')">Stopping…</span>
                                 </x-filament::button>
                             @endif
+
+                            <x-filament::button size="sm" color="gray" outlined
+                                                wire:click="toggleLog('{{ $key }}')">
+                                {{ $showingLog === $key ? 'Hide log' : 'Log' }}
+                            </x-filament::button>
                         </div>
                     </div>
+
+                    @if ($showingLog === $key)
+                        {{-- A service that will not start says why here, and
+                             without this the only way to read it is a terminal —
+                             which is what this page exists to avoid. --}}
+                        <pre class="mb-4 max-h-64 overflow-auto rounded-lg bg-gray-950 p-3 text-xs leading-relaxed text-gray-300 dark:bg-black">{{ $logContents }}</pre>
+                    @endif
                 @endforeach
             </div>
         </x-filament::section>

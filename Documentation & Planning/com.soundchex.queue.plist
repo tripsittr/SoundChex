@@ -34,6 +34,13 @@
         <string>--sleep=1</string>
     </array>
 
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/tripsittr/Library/Application Support/Herd/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
     <key>WorkingDirectory</key>
     <string>/Users/tripsittr/Documents/GitHub/SoundChex</string>
 

@@ -71,4 +71,43 @@ class HostServicesTest extends TestCase
             app(HostServices::class)->supported(),
         );
     }
+
+    public function test_a_log_can_be_read_for_each_service(): void
+    {
+        foreach (array_keys(HostServices::SERVICES) as $key) {
+            // Never empty: a service that will not start says why here, and
+            // the only alternative is a terminal — which is what the screen
+            // exists to avoid.
+            $this->assertNotEmpty(app(HostServices::class)->log($key), $key);
+        }
+    }
+
+    public function test_reading_a_log_for_an_unknown_service_is_empty(): void
+    {
+        $this->assertSame('', app(HostServices::class)->log('not-a-service'));
+    }
+
+    public function test_the_log_is_tailed_rather_than_read_whole(): void
+    {
+        $path = storage_path('logs/serve.log');
+        $existing = is_file($path) ? file_get_contents($path) : null;
+
+        try {
+            // A hundred lines written, ten asked for.
+            file_put_contents($path, implode("\n", array_map(
+                fn (int $i): string => "line {$i}",
+                range(1, 100),
+            )));
+
+            $log = app(HostServices::class)->log('serve', 10);
+
+            $this->assertStringContainsString('line 100', $log);
+            $this->assertStringNotContainsString('line 1' . "\n", $log);
+            $this->assertLessThanOrEqual(10, substr_count($log, "\n") + 1);
+        } finally {
+            if ($existing !== null) {
+                file_put_contents($path, $existing);
+            }
+        }
+    }
 }

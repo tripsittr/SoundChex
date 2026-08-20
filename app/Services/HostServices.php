@@ -134,6 +134,55 @@ class HostServices
         return ! $this->isLoaded($service['label']);
     }
 
+    /**
+     * The last few lines this service wrote.
+     *
+     * A service that will not start says why here, and without a way to read it
+     * the only recourse is a terminal — which is what this screen exists to
+     * avoid. Tailed rather than read whole: these grow to megabytes and only
+     * the end is ever interesting.
+     */
+    public function log(string $key, int $lines = 40): string
+    {
+        $service = self::SERVICES[$key] ?? null;
+
+        if ($service === null) {
+            return '';
+        }
+
+        $path = storage_path('logs/' . $key . '.log');
+
+        if (! is_file($path)) {
+            return 'Nothing logged yet.';
+        }
+
+        $handle = @fopen($path, 'r');
+
+        if ($handle === false) {
+            return 'Could not read the log.';
+        }
+
+        // Read from the end, so a large file costs the same as a small one.
+        $buffer = [];
+
+        fseek($handle, 0, SEEK_END);
+        $position = ftell($handle);
+        $chunk = '';
+
+        while ($position > 0 && count($buffer) <= $lines) {
+            $read = min(4096, $position);
+            $position -= $read;
+
+            fseek($handle, $position);
+            $chunk = fread($handle, $read) . $chunk;
+            $buffer = explode("\n", $chunk);
+        }
+
+        fclose($handle);
+
+        return trim(implode("\n", array_slice($buffer, -$lines))) ?: 'Nothing logged yet.';
+    }
+
     /** Whether service management is available on this platform. */
     public function supported(): bool
     {
