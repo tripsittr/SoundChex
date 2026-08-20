@@ -138,19 +138,19 @@ test.describe('offline with nothing stored', () => {
     test('it says what happened rather than sitting on the old message', async ({ page }) => {
         await expect(page.locator('#status')).toContainText(
             /nothing to open offline/i,
-            { timeout: 20000 },
+            { timeout: 45000 },
         );
     });
 
     test('the connect form comes back', async ({ page }) => {
         // The one screen that can do anything about the situation. Clearing it
         // left a blank page with no way forward.
-        await expect(page.locator('#connect')).toBeVisible({ timeout: 20000 });
+        await expect(page.locator('#connect')).toBeVisible({ timeout: 45000 });
         await expect(page.locator('#host')).toBeVisible();
     });
 
     test('the restored form still submits', async ({ page }) => {
-        await expect(page.locator('#status')).toContainText(/nothing to open offline/i, { timeout: 20000 });
+        await expect(page.locator('#status')).toContainText(/nothing to open offline/i, { timeout: 45000 });
 
         await page.locator('#host').fill('http://10.55.55.56:8000');
         await page.locator('#connect button[type="submit"], #connect button').first().click();
@@ -158,7 +158,7 @@ test.describe('offline with nothing stored', () => {
         // A handler bound to the pre-clone element would leave this silent.
         await expect(page.locator('#status')).toContainText(
             /could not reach|finding/i,
-            { timeout: 20000 },
+            { timeout: 45000 },
         );
     });
 });
@@ -426,3 +426,67 @@ test.describe('picking a route', () => {
         expect(source).not.toContain('Promise.any(origins');
     });
 });
+
+/**
+ * No false errors on the way to a working connection.
+ *
+ * The race gave up after three seconds while the manual check allowed eight, so
+ * a relayed address — measured at 1.3s a request — could miss the deadline. The
+ * offline path then ran, reported "nothing saved on this device", and the
+ * connection succeeded anyway: two errors and a working app, in that order,
+ * which teaches people to distrust every message this screen prints.
+ */
+test.describe('connecting without false alarms', () => {
+    test('the race waits as long as the manual check does', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        const source = await page.evaluate(() => fetch('/index.html').then((r) => r.text()));
+
+        // These disagreed: the race gave up at three seconds while the manual
+        // check allowed eight. A relayed address — measured at 1.3s a request —
+        // could miss the shorter deadline, so the offline path ran and reported
+        // "nothing saved on this device" moments before the connection
+        // succeeded anyway. Two false errors and then a working app, which
+        // teaches people to distrust every message this screen prints.
+        const race = source.match(/async function fastest\(origins, timeout = (\d+)\)/);
+        const manual = source.match(/setTimeout\(\(\) => controller\.abort\(\), (\d+)\)/g);
+
+        expect(race, 'the race declares its timeout').not.toBeNull();
+        expect(Number(race[1]), 'the race waits at least as long as the manual check')
+            .toBeGreaterThanOrEqual(8000);
+        expect(manual, 'the manual check declares one too').not.toBeNull();
+    });
+
+    test('a silent race tries once more before declaring failure', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        const source = await page.evaluate(() => fetch('/index.html').then((r) => r.text()));
+
+        // A race that ends in silence is not proof the server is off — it may
+        // simply be slower than the deadline. Going straight to the offline
+        // path on that basis is what produced an error for a server that was
+        // about to answer.
+        expect(source).toContain('if (host && await reachable(host))');
+    });
+
+    test('a genuinely dead server still reaches the offline path', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        await page.route('**/soundchex.json', (route) => route.abort());
+
+        await page.evaluate(() => {
+            localStorage.setItem('soundchex.host', 'http://10.55.55.55:8000');
+            localStorage.setItem('soundchex.hosts', JSON.stringify(['http://10.55.55.55:8000']));
+        });
+
+        await page.reload();
+
+        // Waiting longer must not mean never saying anything.
+        await expect(page.locator('#status')).toContainText(/nothing to open offline/i, {
+            timeout: 30000,
+        });
+
+        await expect(page.locator('#connect')).toBeVisible();
+    });
+});
+

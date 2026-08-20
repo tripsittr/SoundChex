@@ -184,7 +184,16 @@
      * takes until timeout to fail, and sequencing would make every launch away
      * from home pay that wait before falling back.
      */
-    async function fastest(origins, timeout = 3000) {
+    // Long enough for a relayed address to answer.
+    //
+    // Three seconds was under the round trip for a Funnel address measured at
+    // 1.3s, so on a slow route the race gave up, the offline path ran and
+    // reported "nothing saved on this device" — and then the connection
+    // succeeded anyway. Two false errors and a working app, in that order.
+    //
+    // Matched to the manual check below, which always allowed eight: the two
+    // disagreeing is what let one fail while the other was still going.
+    async function fastest(origins, timeout = 8000) {
         if (origins.length === 0) return null;
 
         const controller = new AbortController();
@@ -596,7 +605,7 @@
         // public address, and a faster one may be reachable right now.
         const pool = [...new Set([...known, saved].filter(Boolean))];
 
-        fastest(pool).then((winner) => {
+        fastest(pool).then(async (winner) => {
             if (cancelled) return;
 
             if (winner) {
@@ -618,16 +627,24 @@
                 return;
             }
 
-            // Nothing answered — the server is off, or this device is
-            // somewhere none of its addresses reach.
+            // One last try before giving up, at the longer timeout the manual
+            // check uses.
             //
-            // Navigating anyway lands on the browser's own error page, which
-            // is where this app became unusable with the server off: the
-            // downloaded music and the mirrored catalogue were both sitting on
-            // the device, and the connect screen would not let anyone past to
-            // reach them. Going to the last known host instead lets the
-            // service worker serve the offline shell, which reads that data.
-            offline(saved ?? known[0]);
+            // A race that ends in silence is not proof the server is off — it
+            // may just be slower than the deadline, which over a relay it
+            // frequently is. Declaring failure at that point showed two errors
+            // and then connected anyway, which teaches people to distrust every
+            // message this screen prints.
+            const host = saved ?? known[0];
+
+            if (host && await reachable(host)) {
+                localStorage.setItem(KEY, host);
+                window.location.replace(host);
+
+                return;
+            }
+
+            offline(host);
         });
     } else {
         // Nothing saved, so this is a first launch and the form is the point.
