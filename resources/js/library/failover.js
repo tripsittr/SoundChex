@@ -117,6 +117,24 @@ function isStable(origin) {
 }
 
 /**
+ * Whether an address reaches the server through a public relay.
+ *
+ * A Tailscale Funnel hostname is served from Tailscale's own infrastructure —
+ * the nearest relay here is Los Angeles — so it answers from across the country
+ * whatever room the phone is in: 1,332ms against 18ms for the same server on a
+ * direct route.
+ *
+ * It earns its place as the only address that works from outside the tailnet,
+ * and it should never be preferred while a direct one answers. Ranked below
+ * both, rather than merely slower, because a relay that happens to measure well
+ * on one probe is still a relay.
+ */
+function isRelayed(origin) {
+    // The tailnet IP is direct; the public hostname is the Funnel.
+    return /\.ts\.net(:|\/|$)/.test(origin);
+}
+
+/**
  * The best address that answers, or null when none do.
  *
  * Raced rather than tried in turn: a dead address costs the full timeout, and
@@ -154,6 +172,25 @@ function switchTo(origin) {
     if (origin === window.location.origin) return;
 
     switching = true;
+
+    // Recorded before it happens: a switch is a full page load, so anything
+    // written afterwards is lost with the page that wrote it. Without this the
+    // reload is indistinguishable from the app crashing.
+    try {
+        const events = JSON.parse(sessionStorage.getItem('soundchex.diagnostics') ?? '[]');
+
+        events.push({
+            kind: 'switching-address',
+            detail: { to: origin, from: window.location.origin },
+            at: Math.round(performance.now()),
+            path: window.location.pathname,
+        });
+
+        sessionStorage.setItem('soundchex.diagnostics', JSON.stringify(events.slice(-40)));
+    } catch {
+        // Diagnostics are not worth failing a recovery for.
+    }
+
     window.location.replace(origin + window.location.pathname + window.location.search);
 }
 
@@ -187,7 +224,9 @@ export async function check() {
 
     const answered = results
         .filter((result) => result.ms !== null)
-        .sort((a, b) => (isStable(b.origin) - isStable(a.origin)) || (a.ms - b.ms));
+        .sort((a, b) => (isRelayed(a.origin) - isRelayed(b.origin))
+            || (isStable(b.origin) - isStable(a.origin))
+            || (a.ms - b.ms));
 
     if (answered.length === 0) return { status: 'unreachable' };
 
@@ -203,7 +242,14 @@ export async function check() {
     // Only for a difference worth a page reload. Two addresses within a few
     // milliseconds of each other trade places on noise alone, and switching on
     // that would reload the app every half minute for nothing.
-    if (current?.ms != null && current.ms - best.ms < SWITCH_THRESHOLD) {
+    // Leaving a relay is always worth the page load, whatever the margin says.
+    // The threshold exists so two comparable addresses do not trade places on
+    // noise; a relayed route is not comparable, and staying on one because a
+    // single probe looked acceptable is how the app ends up a second and a
+    // third slower on every page for the rest of the session.
+    const leavingRelay = isRelayed(here) && !isRelayed(best.origin);
+
+    if (! leavingRelay && current?.ms != null && current.ms - best.ms < SWITCH_THRESHOLD) {
         return { status: 'healthy', origin: here, ms: current.ms };
     }
 

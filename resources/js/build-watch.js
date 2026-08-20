@@ -53,6 +53,23 @@ function reloadWhenIdle() {
     }
 
     reloading = true;
+
+    // Recorded before the reload, which destroys anything written after it.
+    try {
+        const events = JSON.parse(sessionStorage.getItem('soundchex.diagnostics') ?? '[]');
+
+        events.push({
+            kind: 'reloading-for-build',
+            detail: { was: loadedBuild },
+            at: Math.round(performance.now()),
+            path: window.location.pathname,
+        });
+
+        sessionStorage.setItem('soundchex.diagnostics', JSON.stringify(events.slice(-40)));
+    } catch {
+        // Not worth failing the reload for.
+    }
+
     window.location.reload();
 }
 

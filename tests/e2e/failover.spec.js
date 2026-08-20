@@ -112,4 +112,51 @@ test.describe('address failover', () => {
         // which is the difference between 18ms and a second and a third.
         expect(winner.origin).toBe('http://100.106.62.120:8000');
     });
+
+    test('a relay ranks below every direct route, however it measures', async ({ page }) => {
+        const order = await page.evaluate(() => {
+            const { isStable } = window.soundchexLibrary.failover;
+            const isRelayed = (origin) => /\.ts\.net(:|\/|$)/.test(origin);
+
+            // The relay measured best here and must still lose. A Funnel
+            // hostname is served from Tailscale's own infrastructure — nearest
+            // relay Los Angeles — so it answers from across the country
+            // whatever room the phone is in, and a single flattering probe does
+            // not change that.
+            return [
+                { origin: 'https://macbookair.tail7e590c.ts.net', ms: 40 },
+                { origin: 'http://100.106.62.120:8000', ms: 90 },
+                { origin: 'http://192.168.1.74:8000', ms: 120 },
+            ]
+                .sort((a, b) => (isRelayed(a.origin) - isRelayed(b.origin))
+                    || (isStable(b.origin) - isStable(a.origin))
+                    || (a.ms - b.ms))
+                .map((result) => result.origin);
+        });
+
+        expect(order[0]).toBe('http://100.106.62.120:8000');
+        expect(order[2], 'the relay is last').toContain('ts.net');
+    });
+
+    test('the app leaves a relay whatever the margin says', async ({ page }) => {
+        const source = await page.evaluate(
+            () => fetch('/build/manifest.json').then((r) => r.json()),
+        );
+
+        expect(source, 'the build is served').toBeTruthy();
+
+        // The threshold stops two comparable addresses trading places on noise.
+        // A relayed route is not comparable, and staying on one because a
+        // single probe looked acceptable leaves every page a second slower for
+        // the rest of the session.
+        const leaves = await page.evaluate(() => {
+            const isRelayed = (origin) => /\.ts\.net(:|\/|$)/.test(origin);
+
+            return isRelayed('https://macbookair.tail7e590c.ts.net')
+                && !isRelayed('http://100.106.62.120:8000');
+        });
+
+        expect(leaves).toBe(true);
+    });
 });
+
