@@ -49,9 +49,9 @@ export function candidates() {
 /**
  * Asks the server, from this device, whether an address answers.
  *
- * /up rather than an authenticated route: the question is whether the server is
- * there, and a 401 from a valid host would be indistinguishable from a timeout
- * if the check itself could fail on credentials.
+ * An unauthenticated identity endpoint rather than a real route: the question
+ * is whether *this* server is there, and a 401 from a valid host would be
+ * indistinguishable from a timeout if the check could fail on credentials.
  */
 export async function probe(origin, timeout = PROBE_TIMEOUT) {
     const controller = new AbortController();
@@ -59,12 +59,21 @@ export async function probe(origin, timeout = PROBE_TIMEOUT) {
     const started = performance.now();
 
     try {
-        await fetch(`${origin}/up`, {
+        // Identified, not merely answered. A no-cors probe resolves for any
+        // response — a captive portal, a router page, an unrelated server — so
+        // the app would switch to whatever replied fastest regardless of what
+        // it was.
+        const response = await fetch(`${origin}/soundchex.json`, {
             signal: controller.signal,
-            mode: 'no-cors',
             credentials: 'omit',
             cache: 'no-store',
         });
+
+        if (!response.ok) return null;
+
+        const body = await response.json();
+
+        if (body?.app !== 'soundchex') return null;
 
         return Math.round(performance.now() - started);
     } catch {

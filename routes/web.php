@@ -22,6 +22,23 @@ Route::get('/', fn () => redirect()->route(
     auth()->check() ? 'media.home' : 'login',
 ));
 
+/*
+| Proof that this address is a SoundChex server.
+|
+| The connect screen used a no-cors fetch of /login, which resolves for any
+| response at all — a captive portal, a router's admin page, an unrelated
+| server's 500. It meant "something answered", not "this is your library", and
+| with the addresses raced the first thing to answer won regardless of what it
+| was.
+|
+| Deliberately CORS-open and unauthenticated: it says only that SoundChex is
+| here, which is what any client on the network can already tell by connecting.
+*/
+Route::get('/soundchex.json', fn () => response()
+    ->json(['app' => 'soundchex', 'version' => 1])
+    ->header('Access-Control-Allow-Origin', '*'))
+    ->name('identity');
+
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 

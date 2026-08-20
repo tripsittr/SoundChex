@@ -162,3 +162,112 @@ test.describe('offline with nothing stored', () => {
         );
     });
 });
+
+/**
+ * The connect screen as setup, not a destination.
+ *
+ * It showed on every launch and then redirected, so it read as part of using
+ * the app rather than a one-off. It is hidden while a saved address is being
+ * tried, and revealed only when there is nothing saved or nothing answers —
+ * because a hidden form with no way forward is a blank screen.
+ */
+test.describe('connect screen visibility', () => {
+    test('a first launch shows the form', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        // Nothing saved: this is exactly when the form is the point.
+        await expect(page.locator('#connect-screen')).toBeVisible();
+    });
+
+    test('a saved address that answers nothing still reveals the form', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        await page.evaluate(() => {
+            localStorage.setItem('soundchex.host', 'http://10.55.55.55:8000');
+            localStorage.setItem('soundchex.hosts', JSON.stringify(['http://10.55.55.55:8000']));
+        });
+
+        await page.reload();
+
+        // The address is dead, so the app cannot proceed on its own — leaving
+        // the form hidden would strand the user with no way to fix it.
+        await expect(page.locator('#connect-screen')).toBeVisible({ timeout: 20000 });
+    });
+
+    test('the form is always visible, even while an address is being tried', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        await page.evaluate(() => {
+            localStorage.setItem('soundchex.host', 'http://10.55.55.55:8000');
+            localStorage.setItem('soundchex.hosts', JSON.stringify(['http://10.55.55.55:8000']));
+        });
+
+        // Hiding it while racing meant the screen appeared and vanished on a
+        // slow connection, and any error shown during the race flashed up
+        // before a success replaced it. A screen that is always there is one
+        // that can be made correct; one that flickers cannot.
+        await page.goto('http://127.0.0.1:8199/index.html', { waitUntil: 'commit' });
+
+        await expect(page.locator('#connect-screen')).toBeVisible();
+    });
+});
+
+/**
+ * Telling a SoundChex server from anything else that answers.
+ *
+ * The screen probed with a no-cors fetch of /login, which resolves for *any*
+ * response — a captive portal, a router's admin page, an unrelated server's
+ * error. It meant "something answered", not "this is your library". With the
+ * addresses raced through Promise.any, the first thing to reply won regardless
+ * of what it was, so a hotel wifi portal could beat the real server.
+ */
+test.describe('identifying the server', () => {
+    test('a real server identifies itself', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        const body = await page.evaluate(
+            () => fetch('http://127.0.0.1:8111/soundchex.json').then((r) => r.json()),
+        );
+
+        expect(body.app).toBe('soundchex');
+    });
+
+    test('something else answering is not accepted', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        // The static server the shell itself is served from answers on /,
+        // but it is not a SoundChex server.
+        await page.evaluate(() => {
+            localStorage.setItem('soundchex.host', 'http://127.0.0.1:8199');
+            localStorage.setItem('soundchex.hosts', JSON.stringify(['http://127.0.0.1:8199']));
+        });
+
+        await page.reload();
+
+        // It must not navigate there. Reaching the offline path or the form is
+        // correct; silently "connecting" to the wrong thing is not.
+        await page.waitForTimeout(6000);
+
+        expect(new URL(page.url()).port).toBe('8199');
+        await expect(page.locator('#connect-screen')).toBeVisible();
+    });
+
+    test('the real server is chosen over one that merely answers', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        await page.evaluate(() => {
+            // The impostor is listed first and is faster, being the very origin
+            // this page came from.
+            localStorage.setItem('soundchex.hosts', JSON.stringify([
+                'http://127.0.0.1:8199',
+                'http://127.0.0.1:8111',
+            ]));
+            localStorage.removeItem('soundchex.host');
+        });
+
+        await page.reload();
+        await page.waitForURL(/:8111\//, { timeout: 20000 });
+
+        expect(new URL(page.url()).port).toBe('8111');
+    });
+});

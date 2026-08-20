@@ -100,7 +100,15 @@
 </style>
 </head>
 <body>
-<main>
+<!--
+    Always visible.
+
+    Hiding it while an address was raced meant the screen appeared and vanished
+    on a slow connection, and any error shown during the race flashed up before
+    a success replaced it. A screen that is always there is one that can be made
+    correct; one that flickers cannot.
+-->
+<main id="connect-screen">
     <h1>Connect to your library</h1>
     <p class="lede">The address of your SoundChex server. Asked once, then remembered.</p>
 
@@ -184,12 +192,20 @@
 
         try {
             return await Promise.any(origins.map(async (origin) => {
-                await fetch(`${origin}/login`, {
-                    mode: 'no-cors',
+                // Identified rather than merely answered. Promise.any takes the
+                // first to resolve, so a captive portal replying instantly beat
+                // the real server every time.
+                const response = await fetch(`${origin}/soundchex.json`, {
                     signal: controller.signal,
                     credentials: 'omit',
                     cache: 'no-store',
                 });
+
+                const body = response.ok ? await response.json() : null;
+
+                if (body?.app !== 'soundchex') {
+                    throw new Error('not a SoundChex server');
+                }
 
                 return origin;
             }));
@@ -273,16 +289,24 @@
         const timeout = setTimeout(() => controller.abort(), 8000);
 
         try {
-            await fetch(`${origin}/login`, {
-                mode: 'no-cors',
+            // Read, not just requested. A no-cors fetch of /login resolved for
+            // any response at all — a captive portal, a router's admin page, an
+            // unrelated server's error — so "reachable" meant "something
+            // answered" rather than "this is your library".
+            const response = await fetch(`${origin}/soundchex.json`, {
                 signal: controller.signal,
                 credentials: 'omit',
                 cache: 'no-store',
             });
 
-            return true;
+            if (!response.ok) return false;
+
+            const body = await response.json();
+
+            return body?.app === 'soundchex';
         } catch {
-            // A DNS failure, a refused connection, or the timeout above.
+            // A DNS failure, a refused connection, the timeout above, or a
+            // response that was not this application.
             return false;
         } finally {
             clearTimeout(timeout);
@@ -488,6 +512,11 @@
             // clearing it left an empty body with no way forward — the blank
             // page this was meant to prevent.
             document.body.replaceChildren(...originalBody.children);
+
+            // The clone carries the hidden attribute, so the restored form
+            // would come back invisible — a blank screen with no way forward,
+            // which is the failure this whole path exists to prevent.
+            document.getElementById('connect-screen')?.removeAttribute('hidden');
             document.body.classList.remove('offline-standalone');
             say('Nothing is saved on this device yet, so there is nothing to open offline.', true);
         }
@@ -507,12 +536,19 @@
         document.getElementById('alt-host').value = '';
     });
 
+    const screen = () => document.getElementById('connect-screen');
+
+    /** Shows the form, for when connecting is not going to happen by itself. */
+    const revealForm = () => screen()?.removeAttribute('hidden');
+
     const saved = localStorage.getItem(KEY);
     const known = candidates();
 
     if (saved || known.length > 0) {
         field().value = saved ?? known[0];
         say('Finding the fastest route…');
+
+
 
         // A way to stop.
         //
@@ -545,6 +581,12 @@
             if (cancelled) return;
 
             if (winner) {
+                document.dispatchEvent(new CustomEvent('soundchex:connected'));
+            } else {
+                revealForm();
+            }
+
+            if (winner) {
                 if (winner !== saved) {
                     // Remembered so the next launch starts from the one that
                     // actually worked, though it is raced again regardless —
@@ -569,6 +611,8 @@
             offline(saved ?? known[0]);
         });
     } else {
+        // Nothing saved, so this is a first launch and the form is the point.
+        revealForm();
         field().focus();
     }
 </script>
