@@ -8,5 +8,17 @@
   "permissions": [
     "core:default",
     "notification:default"
-  ]
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*",
+      "http://127.0.0.1:*",
+      "http://192.168.*.*:*",
+      "http://10.*.*.*:*",
+      "http://172.16.*.*:*",
+      "http://100.*.*.*:*",
+      "https://*.ts.net",
+      "https://*.ts.net:*"
+    ]
+  }
 }

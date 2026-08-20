@@ -233,6 +233,122 @@ class LibraryScanner
     /**
      * @param array<string, mixed> $attributes Seed values for the metadata row.
      */
+    /**
+     * Rebuilds catalogue rows for media that is already filed.
+     *
+     * The scanner deliberately refuses to look inside its own output — filed
+     * media is catalogued by definition, and re-scanning it would file it a
+     * second time. That guard is right in normal operation and exactly wrong
+     * after a catalogue is lost with the files intact: 1,300 tracks sat on disk
+     * that no scan would ever look at.
+     *
+     * This walks that folder and writes a row per file **without moving
+     * anything**. The organiser is never invoked, so a library that is already
+     * correctly filed keeps its structure — which is the whole reason to
+     * recover in place rather than tipping everything into an unsorted folder
+     * and letting the filer sort it out from tags.
+     *
+     * @param array<int, string> $folders Absolute paths to walk.
+     * @return array{recovered: int, skipped: int, titles: array<int, string>}
+     */
+    public function recover(array $folders, bool $dryRun = false, bool $enrich = false): array
+    {
+        $result = ['recovered' => 0, 'skipped' => 0, 'titles' => []];
+        $userId = User::query()->min('id');
+
+        if ($userId === null && ! $dryRun) {
+            return $result;
+        }
+
+        // Same path-keyed lookup the scan uses, so running this twice does not
+        // produce two rows for one file.
+        $known = MediaItem::query()
+            ->whereNotNull('file_path')
+            ->get(['id', 'file_path'])
+            ->mapWithKeys(fn (MediaItem $item) => [
+                ($item->absoluteFilePath() ?? $item->file_path) => true,
+            ]);
+
+        foreach ($this->realPaths($folders) as $folder) {
+            // No exclusion list: this is called *because* the target is
+            // normally excluded.
+            foreach ($this->mediaFilesIn($folder, []) as $file) {
+                $path = $file->getRealPath();
+
+                if ($path === false || isset($known[$path])) {
+                    $result['skipped']++;
+
+                    continue;
+                }
+
+                $type = $this->typeForExtension($file->getExtension());
+
+                if ($type === null) {
+                    continue;
+                }
+
+                $basename = $file->getBasename('.' . $file->getExtension());
+                $parsed = $type === MediaItemType::Movie
+                    ? $this->episodes->parse($basename)
+                    : null;
+
+                if ($parsed !== null) {
+                    $type = MediaItemType::Show;
+                }
+
+                $title = $parsed !== null
+                    ? sprintf('%s S%02dE%02d', $parsed['series'], $parsed['season'], $parsed['episode'])
+                    : $this->cleanTitle($basename, $type);
+
+                if ($title === null) {
+                    $result['skipped']++;
+
+                    continue;
+                }
+
+                $seed = [];
+
+                if ($type === MediaItemType::Book) {
+                    $author = $this->authorHintFrom($basename);
+
+                    if ($author !== null) {
+                        $seed['author'] = $author;
+                    }
+                }
+
+                if ($parsed !== null) {
+                    $seed['season_number'] = $parsed['season'];
+                    $seed['episode_number'] = $parsed['episode'];
+                }
+
+                if (! $dryRun) {
+                    $item = $this->catalog($path, $title, $type, $userId, $seed);
+
+                    if ($parsed !== null) {
+                        $this->attachToSeries($item, $parsed['series'], $userId);
+                    }
+
+                    // Opt-in, unlike a scan. Recovery is about getting the rows
+                    // back; enrichment reads tags, extracts cover art and makes
+                    // network requests, which is a separate decision from
+                    // whether the library exists at all.
+                    if ($enrich) {
+                        EnrichMediaItemJob::dispatch($item->id);
+                    }
+                }
+
+                $known[$path] = true;
+                $result['recovered']++;
+
+                if (count($result['titles']) < 10) {
+                    $result['titles'][] = $title;
+                }
+            }
+        }
+
+        return $result;
+    }
+
     private function catalog(string $path, string $title, MediaItemType $type, ?int $userId, array $attributes = []): MediaItem
     {
         $item = MediaItem::create([

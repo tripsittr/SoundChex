@@ -52,6 +52,10 @@ Thumbs.db
 # watch folder, an export, or a converted copy lands somewhere unexpected.
 
 /storage/app/private/
+
+# Database snapshots. These hold the whole catalogue — every title, every play,
+# every profile — so committing one would publish the library.
+/storage/backups/
 /storage/app/public/
 /media/
 /library/

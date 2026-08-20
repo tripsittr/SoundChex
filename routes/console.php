@@ -34,3 +34,18 @@ Schedule::command('library:scan')
     // Nothing to see when there are no new files; only failures are worth
     // surfacing in the log.
     ->runInBackground();
+
+/*
+| A nightly snapshot of the catalogue.
+|
+| The media is safe on disk regardless — the database is only a catalogue — but
+| play history, watchlists, ratings, playlists and profiles exist nowhere else
+| and cannot be rebuilt by rescanning. Compressed this costs a few hundred
+| kilobytes a night, which is nothing against having to rebuild by hand.
+*/
+Schedule::command('db:backup')
+    ->dailyAt('04:00')
+    // A backup that stacks up behind a slow one would compete for the same
+    // database it is trying to snapshot.
+    ->withoutOverlapping()
+    ->runInBackground();

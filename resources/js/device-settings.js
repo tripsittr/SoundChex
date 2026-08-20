@@ -7,7 +7,17 @@
  * browser, so this hides what it cannot deliver rather than offering a toggle
  * that does nothing.
  */
-const isTauri = () => typeof window !== 'undefined' && window.__TAURI_INTERNALS__ !== undefined;
+/**
+ * Whether this page is running inside the app shell.
+ *
+ * Both globals are checked. __TAURI_INTERNALS__ is the IPC bridge and
+ * __TAURI__ is the convenience API exposed by withGlobalTauri — which one is
+ * present depends on configuration, and checking only the internals reported
+ * "this is a browser" inside the app, so the settings page told the user Face
+ * ID was a browser limitation while they were holding the phone.
+ */
+const isTauri = () => typeof window !== 'undefined'
+    && (window.__TAURI_INTERNALS__ !== undefined || window.__TAURI__ !== undefined);
 
 /**
  * Face ID, Touch ID, or a fingerprint reader — whatever this device has.
@@ -129,6 +139,15 @@ async function bindBiometric() {
         // Left hidden, and the explanation shown instead. A disabled toggle
         // invites people to keep trying it.
         absent?.removeAttribute('hidden');
+
+        // Said plainly when the app is present but the check failed: "this
+        // browser cannot offer it" is wrong and unactionable when the reason is
+        // that no face is enrolled, or that the shell refused the call.
+        if (isTauri() && absent) {
+            absent.textContent = status.reason
+                ? `Face ID is not available: ${status.reason}`
+                : 'This device has no enrolled biometrics, so Face ID cannot be used.';
+        }
 
         return;
     }

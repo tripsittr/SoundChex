@@ -19,7 +19,7 @@
 // content-hashed, which usually makes that harmless — but a stale stylesheet
 // kept serving alongside fresh HTML, so a page referencing new class names was
 // styled by a sheet that did not have them. The header disappeared.
-const VERSION = '57d63de82957';
+const VERSION = 'eb3e7ffb9e26';
 const ASSET_CACHE = `soundchex-assets-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
 const PROBE_URL = '/offline-probe.html';

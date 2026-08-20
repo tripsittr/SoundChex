@@ -27,7 +27,8 @@
       "capabilities": [
         "default"
       ]
-    }
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
