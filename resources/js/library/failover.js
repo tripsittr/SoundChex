@@ -36,6 +36,15 @@ const SEARCHING_INTERVAL = 5000;
 let timer = null;
 let switching = false;
 
+/**
+ * Consecutive probes the current address has failed.
+ *
+ * Reset the moment it answers. A phone loses a request to a passing lift or a
+ * moment of bad wifi, and treating the first miss as a dead route reloads the
+ * app — losing whatever page the user was on.
+ */
+let missedProbes = 0;
+
 function stored() {
     try {
         const raw = localStorage.getItem(CANDIDATES_KEY);
@@ -186,14 +195,30 @@ export async function check() {
     const current = results.find((result) => result.origin === here);
 
     if (best.origin === here) {
+        missedProbes = 0;
+
         return { status: 'healthy', origin: here, ms: best.ms };
     }
 
     // Only for a difference worth a page reload. Two addresses within a few
     // milliseconds of each other trade places on noise alone, and switching on
     // that would reload the app every half minute for nothing.
-    if (current?.ms !== null && current !== undefined && current.ms - best.ms < SWITCH_THRESHOLD) {
+    if (current?.ms != null && current.ms - best.ms < SWITCH_THRESHOLD) {
         return { status: 'healthy', origin: here, ms: current.ms };
+    }
+
+    // A single missed probe is not a dead address.
+    //
+    // Switching is a full page load — it discards whatever the user was doing
+    // and drops them back on the home screen — and a phone drops a request
+    // often enough that acting on the first one turns a moment of bad wifi into
+    // a lost page. Two in a row is a route that has actually gone.
+    if (current?.ms == null) {
+        missedProbes += 1;
+
+        if (missedProbes < 2) {
+            return { status: 'unsure', origin: here, missed: missedProbes };
+        }
     }
 
     switchTo(best.origin);

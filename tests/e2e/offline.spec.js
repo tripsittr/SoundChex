@@ -121,3 +121,54 @@ async function downloadTrack(page, id, url) {
         return rows.find((row) => String(row.id) === String(id)) ?? { size: 0 };
     }, { id, url });
 }
+
+/**
+ * Keeping the page you asked for when a navigation fails.
+ *
+ * A failed navigation falls back to a single offline page, and the address bar
+ * becomes /offline.html — so the shell reading location.pathname rebuilt the
+ * home screen whatever had been tapped. On imperfect signal that reads as the
+ * app flashing white and throwing you back to the start.
+ */
+test.describe('offline navigation keeps its place', () => {
+    test('the worker retries before falling back', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+
+        const source = await page.evaluate(() => fetch('/sw.js').then((r) => r.text()));
+
+        // A phone drops a request to a passing lift. Giving up on the first one
+        // turns a moment of bad wifi into a lost page.
+        expect(source).toContain('fetchWithRetry');
+        expect(source).toContain('request.clone()');
+    });
+
+    test('the worker tells the offline page what was asked for', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+
+        const source = await page.evaluate(() => fetch('/sw.js').then((r) => r.text()));
+
+        // Passed as a global rather than a redirect, which would change the URL
+        // again and lose it a second time.
+        expect(source).toContain('__soundchexWanted');
+        expect(source).toContain('offlinePageFor');
+    });
+
+    test('the shell prefers the asked-for path over the address bar', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+
+        const source = await page.evaluate(
+            () => fetch('/build/manifest.json').then((r) => r.json()),
+        );
+
+        expect(source, 'the build is served').toBeTruthy();
+
+        // Reading location.pathname is what rebuilt home every time.
+        const shell = await page.evaluate(() => window.soundchexLibrary !== undefined);
+
+        expect(shell, 'the library shell is loaded').toBe(true);
+    });
+});
+

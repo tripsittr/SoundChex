@@ -563,7 +563,14 @@ export async function takeOver() {
 
     if (!root) return false;
 
-    const path = window.location.pathname;
+    // What was actually asked for, which the service worker passes in — the
+    // address bar says /offline.html by the time this runs, so reading it
+    // rebuilt the home screen whatever page the user had tapped.
+    const wanted = typeof window.__soundchexWanted === 'string'
+        ? window.__soundchexWanted.split('?')[0]
+        : null;
+
+    const path = wanted ?? window.location.pathname;
     const screen = SCREENS.find((candidate) => candidate.match(path));
 
     if (!screen) return false;

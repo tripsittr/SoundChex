@@ -19,7 +19,7 @@
 // content-hashed, which usually makes that harmless — but a stale stylesheet
 // kept serving alongside fresh HTML, so a page referencing new class names was
 // styled by a sheet that did not have them. The header disappeared.
-const VERSION = 'b4480852e663';
+const VERSION = '9dc144aa0302';
 const ASSET_CACHE = `soundchex-assets-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
 const PROBE_URL = '/offline-probe.html';
@@ -89,7 +89,7 @@ self.addEventListener('fetch', (event) => {
         const isDownloadsPage = url.pathname === '/app/downloads';
 
         event.respondWith(
-            fetch(request)
+            fetchWithRetry(request)
                 .then((response) => {
                     if (isDownloadsPage && response.ok) {
                         const copy = response.clone();
@@ -99,8 +99,8 @@ self.addEventListener('fetch', (event) => {
                     return response;
                 })
                 .catch(() => (isDownloadsPage
-                    ? caches.match(request).then((hit) => hit ?? caches.match(OFFLINE_URL))
-                    : caches.match(OFFLINE_URL))),
+                    ? caches.match(request).then((hit) => hit ?? offlinePageFor(url))
+                    : offlinePageFor(url))),
         );
 
         return;
@@ -119,6 +119,58 @@ self.addEventListener('fetch', (event) => {
         );
     }
 });
+
+/**
+ * One retry before giving a navigation up.
+ *
+ * A phone loses a request to a passing lift or a moment of bad wifi, and a
+ * failed navigation falls back to the offline page — which renders as the home
+ * screen. Tapping through the app on imperfect signal would flash white and
+ * throw the user back to the start, for a request that would have succeeded on
+ * a second attempt.
+ *
+ * Only one retry, and only for navigations: a genuinely offline device should
+ * reach its downloaded music quickly rather than sitting through a series of
+ * timeouts.
+ */
+/**
+ * The offline page, told which page it is standing in for.
+ *
+ * The browser's address bar becomes /offline.html, so the shell reading
+ * location.pathname had no idea what was asked for and rebuilt the home screen
+ * every time. Tapping into an album while offline landed on the library, which
+ * reads as the app losing its place.
+ *
+ * Passed as a query parameter because a redirect would change the URL again and
+ * lose it a second time.
+ */
+async function offlinePageFor(url) {
+    const response = await caches.match(OFFLINE_URL);
+
+    if (!response) return response;
+
+    const body = await response.text();
+    const wanted = url.pathname + url.search;
+
+    return new Response(
+        body.replace('</head>', `<script>window.__soundchexWanted=${JSON.stringify(wanted)};</script></head>`),
+        { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+    );
+}
+
+async function fetchWithRetry(request) {
+    try {
+        return await fetch(request);
+    } catch (error) {
+        // A navigation body can only be read once, so the retry needs its own
+        // copy of the request.
+        try {
+            return await fetch(request.clone());
+        } catch {
+            throw error;
+        }
+    }
+}
 
 /**
  * Build output is content-hashed, and artwork is effectively immutable once
