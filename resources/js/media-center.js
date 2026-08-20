@@ -5,6 +5,7 @@ import * as downloadQueue from './download-queue.js';
 import {
     paintIconDownloadStates,
     setupBatchDownload,
+    setupBatchDownloads,
     setupDownloadButton,
     setupIconDownloads,
 } from './download-button.js';
@@ -115,6 +116,7 @@ function bindPageScripts() {
     setupDownloadButton();
     setupBatchDownload();
     setupIconDownloads();
+    setupBatchDownloads();
 
     // Face ID and notifications, where the shell can offer them.
     bindDeviceSettings();

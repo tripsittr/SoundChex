@@ -126,6 +126,11 @@ Route::middleware(['auth'])->group(function (): void {
             // so the page never has to hold every row to pick from.
             Route::get('/shuffle', [AlbumController::class, 'shuffleAll'])->name('shuffle');
 
+            // Every downloadable track, not just the page on screen: the songs
+            // list is paginated, so a button built from it would quietly take
+            // the first page and call it the library.
+            Route::get('/downloadable', [AlbumController::class, 'downloadableAll'])->name('downloadable');
+
             // A token for the device to sync with.
             //
             // The API needs a bearer token, but signing in through the web

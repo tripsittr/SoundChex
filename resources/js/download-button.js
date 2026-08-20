@@ -136,6 +136,165 @@ export function setupIconDownloads() {
 }
 
 /**
+ * Download several tracks at once.
+ *
+ * Album, playlist and the track menu all render a [data-download-batch] button
+ * carrying its tracks on the element — and nothing was bound to any of them.
+ * setupBatchDownload() binds a single element by id, so every one of these was
+ * inert: tapping "Download this album" did nothing and said nothing.
+ *
+ * Delegated on document, because these arrive with SPA navigation and the
+ * offline shell rebuilds them from the mirror.
+ */
+export function setupBatchDownloads() {
+    if (!window.indexedDB || window.__soundchexBatchBound) return;
+
+    window.__soundchexBatchBound = true;
+
+    document.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-download-batch]');
+
+        if (!button) return;
+
+        event.preventDefault();
+
+        if (button.dataset.state === 'downloading') return;
+
+        let tracks;
+
+        try {
+            tracks = JSON.parse(button.dataset.tracks ?? '[]');
+        } catch {
+            return;
+        }
+
+        if (!Array.isArray(tracks) || tracks.length === 0) return;
+
+        await runBatch(button, tracks, button.dataset.batchLabel ?? 'these tracks');
+    });
+
+    // The whole library, which is not on the page: the songs list is paginated,
+    // so the tracks have to be asked for rather than read from the DOM.
+    document.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-download-library]');
+
+        if (!button) return;
+
+        event.preventDefault();
+
+        if (button.dataset.state === 'downloading') return;
+
+        const label = button.querySelector('[data-download-label]');
+
+        if (label) label.textContent = 'Checking…';
+
+        try {
+            const { tracks } = await fetch('/app/downloadable', {
+                headers: { Accept: 'application/json' },
+            }).then((response) => response.json());
+
+            if (!tracks?.length) {
+                if (label) label.textContent = 'Download all';
+                toast('Nothing to download.');
+
+                return;
+            }
+
+            await runBatch(button, tracks, 'Your library');
+        } catch {
+            button.dataset.state = 'failed';
+
+            if (label) label.textContent = 'Download all';
+
+            toast('Could not reach the library.');
+        }
+    });
+}
+
+/**
+ * Queues a set of tracks, reporting progress on the button.
+ *
+ * Everything goes through the same serial queue as a single download, so a
+ * hundred tracks do not open a hundred connections — and a track already on the
+ * device is skipped rather than fetched again, which is what makes this safe to
+ * press twice.
+ */
+async function runBatch(button, tracks, label) {
+    const setBatchLabel = (text) => {
+        const el = button.querySelector('[data-download-label]');
+
+        if (el) el.textContent = text;
+
+        button.setAttribute('aria-label', text);
+    };
+
+    const stored = new Set((await list()).map((entry) => String(entry.id)));
+    const missing = tracks.filter((track) => !stored.has(String(track.id)));
+
+    if (missing.length === 0) {
+        toast(`${label} is already on this device.`);
+
+        button.dataset.state = 'stored';
+        setBatchLabel('Downloaded');
+
+        return;
+    }
+
+    // Asked before starting, not part way through. The estimate is what the
+    // server reported for each file, so it is a real total rather than a guess.
+    const bytes = missing.reduce((sum, track) => sum + (track.size ?? 0), 0);
+
+    if (bytes > 0) {
+        const space = await checkSpace(bytes);
+
+        if (space.known && !space.fits) {
+            const proceed = window.confirm(
+                `${label} is ${formatBytes(bytes)}, and this device has about `
+                + `${formatBytes(space.free)} free.\n\nTry anyway?`,
+            );
+
+            if (!proceed) return;
+        }
+    }
+
+    button.dataset.state = 'downloading';
+    toast(`Queued ${missing.length} track${missing.length === 1 ? '' : 's'}.`);
+
+    let done = 0;
+    let failed = 0;
+
+    const results = missing.map((track) => {
+        const { promise } = queue.enqueue(
+            { id: track.id, url: track.url, title: track.title, type: 'music' },
+            (item) => download({
+                id: item.id,
+                url: item.url,
+                meta: { title: item.title, type: 'music', url: item.url },
+            }),
+        );
+
+        return promise
+            .then(() => { done += 1; })
+            .catch(() => { failed += 1; })
+            .finally(() => {
+                setBatchLabel(`Downloading ${done + failed} of ${missing.length}`);
+                paintIconDownloadStates();
+            });
+    });
+
+    await Promise.allSettled(results);
+
+    button.dataset.state = failed === 0 ? 'stored' : 'failed';
+    setBatchLabel(failed === 0 ? 'Downloaded' : `${failed} failed`);
+
+    toast(failed === 0
+        ? `${label} is on this device.`
+        : `${done} downloaded, ${failed} failed.`);
+
+    paintIconDownloadStates();
+}
+
+/**
  * Marks buttons whose item is already on the device.
  *
  * Without this a stored track shows an idle download icon until it is tapped,

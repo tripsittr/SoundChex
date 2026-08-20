@@ -52,6 +52,36 @@ class AlbumController extends Controller
         ]);
     }
 
+    /**
+     * Every music file this profile may download.
+     *
+     * The songs page is paginated, so a "download all" built from what is on
+     * screen would silently take the first forty-eight tracks. This returns the
+     * whole library through the same gate, which is what the button actually
+     * means.
+     *
+     * Sizes come along so the client can total them and warn before starting
+     * rather than filling the device part way through.
+     */
+    public function downloadableAll(): JsonResponse
+    {
+        $items = $this->gate
+            ->apply(MediaItem::query())
+            ->where('media_items.type', MediaItemType::Music)
+            ->whereNotNull('media_items.file_path')
+            ->orderBy('media_items.title')
+            ->get();
+
+        return response()->json([
+            'tracks' => $items->map(fn (MediaItem $item) => [
+                'id' => $item->id,
+                'title' => $item->title,
+                'size' => $item->playbackSize() ?? 0,
+                'url' => route('media.stream', $item),
+            ])->values(),
+        ]);
+    }
+
     public function index(): View
     {
         return view('media.albums', [
