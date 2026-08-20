@@ -11,6 +11,71 @@
 const EVENTS_KEY = 'soundchex.diagnostics';
 const MAX_EVENTS = 40;
 
+/** This device, so one phone's reports can be told from another's. */
+const DEVICE_KEY = 'soundchex.device-id';
+
+/** Kinds worth telling the server about, unprompted. */
+const WORTH_REPORTING = new Set([
+    'served-offline-page',
+    'switching-address',
+    'error',
+    'rejection',
+]);
+
+/**
+ * A random id for this device.
+ *
+ * Not derived from anything about the person or the hardware: it exists to
+ * group one device's reports together, and a value that could identify someone
+ * would be a worse thing to store than the problem it helps diagnose.
+ */
+function deviceId() {
+    try {
+        const existing = localStorage.getItem(DEVICE_KEY);
+
+        if (existing) return existing;
+
+        const id = (crypto.randomUUID?.() ?? String(Math.random()).slice(2)).slice(0, 36);
+
+        localStorage.setItem(DEVICE_KEY, id);
+
+        return id;
+    } catch {
+        return 'unknown';
+    }
+}
+
+/**
+ * Sends what has been recorded to the server.
+ *
+ * Failures are swallowed: this reports problems, and a reporter that throws
+ * when the network is down is useless precisely when it is needed. The events
+ * stay in session storage either way, so nothing is lost by a send that failed.
+ */
+export async function sendReport() {
+    const log = load();
+
+    if (log.length === 0) return { sent: false };
+
+    try {
+        const response = await fetch('/api/v1/device-reports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+                device: deviceId(),
+                platform: navigator.userAgent.slice(0, 40),
+                build: window.soundchexBuild?.current?.() ?? null,
+                origin: window.location.origin,
+                events: log.slice(-MAX_EVENTS),
+            }),
+        });
+
+        return { sent: response.ok };
+    } catch {
+        return { sent: false };
+    }
+}
+
 function load() {
     try {
         const raw = sessionStorage.getItem(EVENTS_KEY);
@@ -31,6 +96,14 @@ function save(events) {
 
 export function record(kind, detail = {}) {
     const events = load();
+
+    // Reported without being asked, but only for the kinds that describe
+    // something going wrong. Sending every page load would be a stream of
+    // noise that buries the one event worth reading.
+    if (WORTH_REPORTING.has(kind)) {
+        // Deferred so recording never blocks whatever is failing.
+        setTimeout(() => sendReport(), 0);
+    }
 
     events.push({
         kind,
@@ -136,4 +209,4 @@ export function watchForProblems() {
     }
 }
 
-window.soundchexDiagnostics = { events, record, show: showDiagnostics };
+window.soundchexDiagnostics = { deviceId, events, record, sendReport, show: showDiagnostics };

@@ -70,3 +70,13 @@ Schedule::call(fn () => \App\Models\Notification::prune())
 Schedule::call(fn () => cache()->put('soundchex.scheduler.heartbeat', now()->timestamp, now()->addMinutes(10)))
     ->everyMinute()
     ->name('scheduler-heartbeat');
+
+/*
+| Device reports are for diagnosing something happening now. A fortnight-old
+| report from a build that no longer exists is noise, and an unbounded table fed
+| by every device grows without limit.
+*/
+Schedule::call(fn () => \App\Models\DeviceReport::prune())
+    ->daily()
+    ->name('prune-device-reports')
+    ->withoutOverlapping();

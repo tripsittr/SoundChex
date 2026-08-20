@@ -88,5 +88,35 @@ test.describe('profile settings', () => {
         expect(events.length).toBeGreaterThan(0);
         expect(events.some((event) => event.kind === 'page-load')).toBe(true);
     });
+
+    test('a failure reports itself to the server', async ({ page }) => {
+        const posted = [];
+
+        page.on('request', (request) => {
+            if (request.url().includes('device-reports')) posted.push(request.method());
+        });
+
+        await page.evaluate(
+            () => window.soundchexDiagnostics.record('served-offline-page', { wanted: '/app/albums' }),
+        );
+
+        // Reading a diagnostic panel aloud is a poor way to debug a phone.
+        await expect.poll(() => posted.length, { timeout: 8000 }).toBeGreaterThan(0);
+    });
+
+    test('an ordinary page load does not report itself', async ({ page }) => {
+        const posted = [];
+
+        page.on('request', (request) => {
+            if (request.url().includes('device-reports')) posted.push(request.method());
+        });
+
+        await page.evaluate(() => window.soundchexDiagnostics.record('page-load', {}));
+        await page.waitForTimeout(1000);
+
+        // Sending every page load would be a stream of noise that buries the
+        // one event worth reading.
+        expect(posted).toEqual([]);
+    });
 });
 

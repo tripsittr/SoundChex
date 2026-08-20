@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\LibraryController;
+use App\Http\Controllers\Api\DeviceReportController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ServerHealthController;
 use App\Http\Controllers\Api\UpdateController;
@@ -38,6 +39,18 @@ Route::prefix('v1')->group(function (): void {
         ->name('api.updates');
     Route::get('/updates/{target}/{arch}/download/{file}', [UpdateController::class, 'download'])
         ->name('api.updates.download');
+
+    /*
+    | Diagnostics from a device.
+    |
+    | Unauthenticated, because the failures worth reporting include the ones
+    | that stop a device signing in — a report needing a working session cannot
+    | describe a broken one. Rate-limited instead, since that makes it writable
+    | by anything that can reach the server.
+    */
+    Route::post('/device-reports', [DeviceReportController::class, 'store'])
+        ->middleware('throttle:12,1')
+        ->name('api.device-reports');
 
     Route::get('/server/health', [ServerHealthController::class, 'show'])
         ->middleware(LoopbackOnly::class)
