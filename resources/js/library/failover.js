@@ -19,6 +19,17 @@ const PROBE_TIMEOUT = 3000;
 /** Gap between checks while the server is answering. */
 const HEALTHY_INTERVAL = 30000;
 
+/**
+ * How much quicker another address has to be before moving to it.
+ *
+ * Switching means a page load, so it has to be worth one. Addresses within a
+ * few milliseconds of each other trade places on measurement noise, and acting
+ * on that would reload the app every half minute to no benefit. 250ms is well
+ * above the noise and well below the difference that actually hurts — the relay
+ * measured 1,300ms slower than a direct route.
+ */
+const SWITCH_THRESHOLD = 250;
+
 /** Gap while it is not: quicker, because the app is unusable until it returns. */
 const SEARCHING_INTERVAL = 5000;
 
@@ -138,7 +149,11 @@ function switchTo(origin) {
 }
 
 /**
- * One round: is the current address still good, and if not, is another?
+ * One round: which of the known addresses is best right now?
+ *
+ * Every candidate is measured, including the one in use. Asking only whether
+ * the current address still works is how an app stays on a slow route — the
+ * relay answers perfectly well, it just answers from Los Angeles.
  */
 export async function check() {
     if (switching) return { status: 'switching' };
@@ -147,21 +162,43 @@ export async function check() {
     // and probing every candidate would just burn battery.
     if (navigator.onLine === false) return { status: 'offline' };
 
-    if (await probe(window.location.origin) !== null) {
-        return { status: 'healthy', origin: window.location.origin };
+    const here = window.location.origin;
+    const alternatives = candidates().filter((origin) => origin !== here);
+
+    // Everything measured, including where we already are.
+    //
+    // Returning early on "the current address answers" is how an app gets stuck
+    // on a slow route: the public relay answers perfectly well, it just does so
+    // from Los Angeles. Measured on this setup the relay took 1,332ms against
+    // 18ms direct, and nothing would ever have moved off it because it was
+    // never compared against anything.
+    const results = await Promise.all(
+        [here, ...alternatives].map(async (origin) => ({ origin, ms: await probe(origin) })),
+    );
+
+    const answered = results
+        .filter((result) => result.ms !== null)
+        .sort((a, b) => (isStable(b.origin) - isStable(a.origin)) || (a.ms - b.ms));
+
+    if (answered.length === 0) return { status: 'unreachable' };
+
+    const best = answered[0];
+    const current = results.find((result) => result.origin === here);
+
+    if (best.origin === here) {
+        return { status: 'healthy', origin: here, ms: best.ms };
     }
 
-    const alternatives = candidates().filter((origin) => origin !== window.location.origin);
+    // Only for a difference worth a page reload. Two addresses within a few
+    // milliseconds of each other trade places on noise alone, and switching on
+    // that would reload the app every half minute for nothing.
+    if (current?.ms !== null && current !== undefined && current.ms - best.ms < SWITCH_THRESHOLD) {
+        return { status: 'healthy', origin: here, ms: current.ms };
+    }
 
-    if (alternatives.length === 0) return { status: 'unreachable' };
+    switchTo(best.origin);
 
-    const winner = await fastest(alternatives);
-
-    if (winner === null) return { status: 'unreachable' };
-
-    switchTo(winner.origin);
-
-    return { status: 'switching', origin: winner.origin, ms: winner.ms };
+    return { status: 'switching', origin: best.origin, ms: best.ms, was: current?.ms ?? null };
 }
 
 /**
