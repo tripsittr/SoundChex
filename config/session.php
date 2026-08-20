@@ -32,7 +32,12 @@ return [
     |
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 120),
+    // A year. This is a self-hosted media app on someone's own devices, not a
+    // bank: being signed out after two hours of not listening is a bug, and the
+    // profile PIN is what actually guards access day to day. The remember-me
+    // cookie would restore the session anyway, so a short lifetime only added a
+    // round trip and a chance to fail while offline.
+    'lifetime' => (int) env('SESSION_LIFETIME', 525_600),
 
     'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
 

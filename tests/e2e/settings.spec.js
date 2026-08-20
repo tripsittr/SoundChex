@@ -4,10 +4,13 @@ import { appReady, signIn } from './helpers.js';
 /**
  * The settings page for whoever is watching.
  *
- * Two of these preferences cannot be honoured by a web page alone: biometric
- * unlock needs Face ID and notifications need the OS to grant permission. Both
- * are Tauri plugins and absent in a browser, so the page must hide what it
- * cannot deliver rather than offer a toggle that silently does nothing.
+ * Notifications cannot be honoured by a web page alone — they need the OS to
+ * grant permission — so the page must say what it cannot deliver rather than
+ * offer a toggle that silently does nothing.
+ *
+ * Biometric unlock was here too and has been removed: Face ID cannot be reached
+ * from a page the webview loaded over the network, and a setting that never
+ * works is worse than one that is absent.
  */
 test.describe('profile settings', () => {
     test.beforeEach(async ({ page }) => {
@@ -18,7 +21,7 @@ test.describe('profile settings', () => {
     test('every group renders', async ({ page }) => {
         await expect(page.locator('h1')).toHaveText('Settings');
 
-        for (const group of ['Playback', 'Security', 'Notifications', 'Quality of life', 'Profile PIN']) {
+        for (const group of ['Playback', 'Notifications', 'Quality of life', 'Profile PIN']) {
             await expect(page.locator('.settings-group__title', { hasText: group })).toBeVisible();
         }
     });
@@ -48,13 +51,6 @@ test.describe('profile settings', () => {
         await toggle().setChecked(before);
         await page.locator('.settings-save').first().click();
         await expect(toggle()).toBeChecked({ checked: before });
-    });
-
-    test('biometric is hidden in a browser, with a reason', async ({ page }) => {
-        // A disabled toggle invites people to keep trying it; an explanation
-        // does not.
-        await expect(page.locator('[data-biometric-row]')).toBeHidden();
-        await expect(page.locator('[data-biometric-absent]')).toBeVisible();
     });
 
     test('turning notifications on in a browser explains rather than failing silently', async ({ page }) => {

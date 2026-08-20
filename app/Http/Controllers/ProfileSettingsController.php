@@ -53,7 +53,6 @@ class ProfileSettingsController extends Controller
             // Zero means off. Capped because a crossfade longer than the gap
             // between two short tracks would overlap a third.
             'crossfade_seconds' => ['integer', 'min:0', 'max:12'],
-            'biometric_unlock' => ['boolean'],
             'notifications_enabled' => ['boolean'],
             'notify_download_complete' => ['boolean'],
             'notify_scan_complete' => ['boolean'],

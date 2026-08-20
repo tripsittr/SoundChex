@@ -22,6 +22,25 @@ class CurrentProfile
 {
     private const SESSION_KEY = 'profile_id';
 
+    /**
+     * When the PIN on this profile was last proven.
+     *
+     * The session outlives the app being closed — deliberately, so nobody has
+     * to sign in again to play music — which means the profile alone is no
+     * longer evidence that the person holding the phone is the one who unlocked
+     * it. This is what the lock screen checks.
+     */
+    private const UNLOCKED_KEY = 'profile_unlocked_at';
+
+    /**
+     * How long a PIN entry lasts.
+     *
+     * Long enough that using the app is not an interrogation, short enough that
+     * a phone left on a table is not an open door. Twelve hours means one entry
+     * covers a day's listening and the next morning asks again.
+     */
+    private const UNLOCK_MINUTES = 720;
+
     private ?Profile $resolved = null;
 
     /**
@@ -112,6 +131,7 @@ class CurrentProfile
         }
 
         Session::put(self::SESSION_KEY, $profile->id);
+        Session::put(self::UNLOCKED_KEY, now()->timestamp);
 
         $profile->forceFill(['last_used_at' => now()])->saveQuietly();
 
@@ -126,9 +146,41 @@ class CurrentProfile
         return true;
     }
 
+    /**
+     * Whether this session still counts as unlocked.
+     *
+     * A profile with no PIN is always unlocked: there is nothing to prove. One
+     * with a PIN stays unlocked for a while after it was entered, so moving
+     * between pages does not ask repeatedly, but a phone picked up the next
+     * morning asks again.
+     */
+    public function isUnlocked(): bool
+    {
+        $profile = $this->get();
+
+        if ($profile === null || ! $profile->requiresPin()) {
+            return true;
+        }
+
+        $at = Session::get(self::UNLOCKED_KEY);
+
+        if (! is_int($at)) {
+            return false;
+        }
+
+        return $at > now()->subMinutes(self::UNLOCK_MINUTES)->timestamp;
+    }
+
+    /** Requires the PIN again on the next request. */
+    public function lock(): void
+    {
+        Session::forget(self::UNLOCKED_KEY);
+    }
+
     public function forget(): void
     {
         Session::forget(self::SESSION_KEY);
+        Session::forget(self::UNLOCKED_KEY);
 
         $this->resolved = null;
     }

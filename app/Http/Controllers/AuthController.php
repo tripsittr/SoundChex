@@ -24,7 +24,12 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+        // Always remembered, the way a media app behaves. Signing in is a
+        // one-off act of setting the device up, not something to repeat every
+        // couple of hours — and a phone that asks for a password on the train
+        // is a phone whose downloads may as well not exist. The PIN, not the
+        // password, is what guards a profile day to day.
+        if (! Auth::attempt($credentials, remember: true)) {
             return back()->withErrors([
                 'email' => 'The provided credentials are incorrect.',
             ])->onlyInput('email');

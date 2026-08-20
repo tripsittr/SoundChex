@@ -31,7 +31,14 @@ class ProfileSettingsTest extends TestCase
         ]);
 
         $this->actingAs($user);
-        $this->withSession(['profile_id' => $profile->id]);
+
+        // Unlocked, because these tests are about the settings themselves. A
+        // profile with a PIN is otherwise gated by RequireProfileUnlock, which
+        // is covered by its own tests.
+        $this->withSession([
+            'profile_id' => $profile->id,
+            'profile_unlocked_at' => now()->timestamp,
+        ]);
 
         return [$user, $profile];
     }
@@ -45,7 +52,6 @@ class ProfileSettingsTest extends TestCase
         // Off until asked for: the OS prompt is shown once per install, and
         // asking before anyone wants notifications gets them denied for good.
         $this->assertFalse($profile->preference('notifications_enabled'));
-        $this->assertFalse($profile->preference('biometric_unlock'));
     }
 
     public function test_a_preference_is_saved(): void

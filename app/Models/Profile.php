@@ -77,9 +77,6 @@ class Profile extends Model
         'remember_position' => true,
         'prefer_downloaded' => true,
 
-        // Security
-        'biometric_unlock' => false,
-
         // Notifications, all off until asked for.
         'notifications_enabled' => false,
         'notify_download_complete' => true,

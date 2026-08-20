@@ -19,57 +19,7 @@
 const isTauri = () => typeof window !== 'undefined'
     && (window.__TAURI_INTERNALS__ !== undefined || window.__TAURI__ !== undefined);
 
-/**
- * Face ID, Touch ID, or a fingerprint reader — whatever this device has.
- *
- * The plugin reports both whether hardware exists and whether anything is
- * enrolled. A phone with Face ID hardware but no face registered cannot
- * authenticate, and offering the toggle there would produce a setting that
- * fails every time it is used.
- */
-async function biometricStatus() {
-    if (!isTauri()) return { available: false, reason: 'not the app' };
 
-    try {
-        const { checkStatus } = await import('@tauri-apps/plugin-biometric');
-        const status = await checkStatus();
-
-        return {
-            available: status.isAvailable === true,
-            type: status.biometryType ?? null,
-            reason: status.error ?? null,
-        };
-    } catch (error) {
-        return { available: false, reason: String(error?.message ?? error) };
-    }
-}
-
-/**
- * Asks for a biometric check.
- *
- * Resolves true only on a successful authentication. Every other outcome —
- * cancelled, unavailable, too many failed attempts — is false, so a caller
- * cannot mistake an error for a pass.
- */
-export async function authenticate(reason = 'Unlock SoundChex') {
-    if (!isTauri()) return false;
-
-    try {
-        const { authenticate: prompt } = await import('@tauri-apps/plugin-biometric');
-
-        await prompt(reason, {
-            // No silent fallback to a device passcode: the point is to confirm
-            // this person, and a passcode anyone watching could have seen typed
-            // is a weaker claim than the one being asked for.
-            allowDeviceCredential: false,
-            cancelTitle: 'Cancel',
-        });
-
-        return true;
-    } catch {
-        return false;
-    }
-}
 
 /**
  * Notification permission, requested only when someone asks for it.
@@ -117,65 +67,14 @@ export async function notify(title, body) {
     }
 }
 
+
 /**
  * Wires the settings page to the device.
  *
  * Runs on every page, and does nothing where the markup is absent.
  */
 export function bindDeviceSettings() {
-    bindBiometric();
     bindNotifications();
-}
-
-async function bindBiometric() {
-    const row = document.querySelector('[data-biometric-row]');
-    const absent = document.querySelector('[data-biometric-absent]');
-
-    if (!row) return;
-
-    const status = await biometricStatus();
-
-    if (!status.available) {
-        // Left hidden, and the explanation shown instead. A disabled toggle
-        // invites people to keep trying it.
-        absent?.removeAttribute('hidden');
-
-        // Said plainly when the app is present but the check failed: "this
-        // browser cannot offer it" is wrong and unactionable when the reason is
-        // that no face is enrolled, or that the shell refused the call.
-        if (isTauri() && absent) {
-            absent.textContent = status.reason
-                ? `Face ID is not available: ${status.reason}`
-                : 'This device has no enrolled biometrics, so Face ID cannot be used.';
-        }
-
-        return;
-    }
-
-    row.removeAttribute('hidden');
-    absent?.setAttribute('hidden', '');
-
-    const note = row.querySelector('[data-biometric-note]');
-    const toggle = row.querySelector('input[type="checkbox"]');
-
-    if (note) {
-        note.textContent = status.type
-            ? `This device offers ${status.type}.`
-            : 'This device can ask for a biometric check.';
-    }
-
-    // Proven before it is stored. Turning this on without passing the check
-    // once would leave someone locked out of their own library by a setting
-    // that never worked.
-    toggle?.addEventListener('change', async (event) => {
-        if (!event.target.checked) return;
-
-        if (!await authenticate('Confirm it is you')) {
-            event.target.checked = false;
-
-            if (note) note.textContent = 'That did not authenticate, so this stays off.';
-        }
-    });
 }
 
 function bindNotifications() {
@@ -223,4 +122,4 @@ function bindNotifications() {
     });
 }
 
-window.soundchexDevice = { authenticate, biometricStatus, notify, requestNotificationPermission };
+window.soundchexDevice = { notify, requestNotificationPermission };

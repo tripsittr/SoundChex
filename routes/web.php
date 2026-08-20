@@ -12,6 +12,7 @@ use App\Http\Controllers\SubtitleController;
 use App\Http\Controllers\WatchController;
 use App\Http\Controllers\WatchlistController;
 use App\Http\Middleware\EnsureRegistrationIsOpen;
+use App\Http\Middleware\RequireProfileUnlock;
 use Illuminate\Support\Facades\Route;
 
 // The front door. Laravel's welcome page advertised the framework and told a
@@ -73,6 +74,10 @@ Route::middleware(['auth'])->group(function (): void {
     */
     Route::prefix('app')
         ->name('media.')
+        // Sign-in is long-lived, so the session survives the app closing and
+        // reopening — which means it is no longer evidence about who is holding
+        // the phone. A profile with a PIN asks for it again here.
+        ->middleware(RequireProfileUnlock::class)
         ->group(function (): void {
             Route::get('/', [MediaCenterController::class, 'home'])->name('home');
             Route::get('/search', [MediaCenterController::class, 'search'])->name('search');

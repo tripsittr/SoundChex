@@ -27,11 +27,10 @@
                 @enderror
             </div>
 
-            <label class="flex cursor-pointer items-center gap-2 text-sm text-ink-300">
-                <input type="checkbox" name="remember"
-                       class="size-4 rounded border-base-500 bg-base-900 text-accent focus:ring-accent">
-                Stay signed in
-            </label>
+            {{-- No "remember me" control: sign-in is always remembered. Offering the
+                     choice implies the alternative is useful, and a media app that
+                     signs you out on the train is one whose downloads may as well
+                     not be there. --}}
 
             <button type="submit" class="auth-submit">Sign in</button>
         </form>

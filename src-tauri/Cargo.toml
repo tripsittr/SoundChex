@@ -18,10 +18,6 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
 
-# Biometric is iOS and Android only — there is no desktop implementation, so a
-# plain dependency would fail the macOS, Windows and Linux builds.
-[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
-tauri-plugin-biometric = "2"
 
 [features]
 # Enabled by `tauri dev`; keeps devtools out of release builds.

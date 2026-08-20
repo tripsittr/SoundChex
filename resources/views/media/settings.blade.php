@@ -58,28 +58,6 @@
             </section>
 
             <section class="settings-group">
-                <h2 class="settings-group__title">Security</h2>
-
-                {{-- Rendered only where it can work. The plugin is iOS and
-                     Android only, and a toggle that does nothing on a desktop
-                     browser is worse than no toggle. --}}
-                <div data-biometric-row hidden>
-                    <x-media.setting-toggle
-                        name="biometric_unlock"
-                        label="Unlock with Face ID"
-                        hint="Ask for Face ID when opening the app on this device."
-                        :checked="$preferences['biometric_unlock']" />
-
-                    <p class="settings-note" data-biometric-note></p>
-                </div>
-
-                <p class="settings-note" data-biometric-absent>
-                    Face ID is available in the SoundChex app on a phone. This browser
-                    cannot offer it.
-                </p>
-            </section>
-
-            <section class="settings-group">
                 <h2 class="settings-group__title">Notifications</h2>
 
                 <x-media.setting-toggle
