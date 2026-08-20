@@ -59,3 +59,14 @@ Schedule::call(fn () => \App\Models\Notification::prune())
     ->daily()
     ->name('prune-notifications')
     ->withoutOverlapping();
+
+/*
+| Proof the scheduler is alive.
+|
+| Everything else here is periodic work; this is the scheduler saying it ran.
+| Without it the host application cannot tell a scheduler that is running from
+| one that died hours ago — both look like "no tasks due right now".
+*/
+Schedule::call(fn () => cache()->put('soundchex.scheduler.heartbeat', now()->timestamp, now()->addMinutes(10)))
+    ->everyMinute()
+    ->name('scheduler-heartbeat');

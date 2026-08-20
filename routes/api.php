@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\LibraryController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\ServerHealthController;
+use App\Http\Middleware\LoopbackOnly;
 use App\Http\Controllers\Api\TokenController;
 use Illuminate\Support\Facades\Route;
 
@@ -16,6 +18,18 @@ use Illuminate\Support\Facades\Route;
  * change has to be able to coexist with an older app that has not updated.
  */
 Route::prefix('v1')->group(function (): void {
+
+    /*
+    | What the host application shows: is this working?
+    |
+    | Unauthenticated but loopback-only. It reports on the machine rather than
+    | the library, and the server app has to reach it before anyone has signed
+    | in — but there is no reason for it to answer the network.
+    */
+    Route::get('/server/health', [ServerHealthController::class, 'show'])
+        ->middleware(LoopbackOnly::class)
+        ->name('api.server.health');
+
 
     // Issued with credentials and a profile; throttled in the controller as
     // well, because a token is longer-lived than a session and this endpoint

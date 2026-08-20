@@ -271,3 +271,90 @@ test.describe('identifying the server', () => {
         expect(new URL(page.url()).port).toBe('8111');
     });
 });
+
+/**
+ * The host application.
+ *
+ * A different window onto the same codebase, not a different application: the
+ * client app is 1.9 MB and the Laravel server is 134 MB of vendor code that
+ * never ships in it, so splitting the repository would remove nothing and
+ * double the maintenance.
+ *
+ * This page has to render before the Laravel server is running — it is what you
+ * open *because* it is not running — so it carries its own styling and depends
+ * on nothing served.
+ */
+test.describe('server app', () => {
+    test('it renders without the Laravel server', async ({ page }) => {
+        const failed = [];
+        page.on('requestfailed', (r) => failed.push(r.url()));
+
+        await page.goto('http://127.0.0.1:8199/server.html');
+
+        await expect(page.locator('h1')).toHaveText('SoundChex Server');
+
+        // Styled from its own <style> block. A stylesheet fetched from the
+        // server would leave this unreadable in the one case it exists for.
+        const styled = await page.evaluate(
+            () => getComputedStyle(document.body).backgroundColor,
+        );
+
+        expect(styled).not.toBe('rgba(0, 0, 0, 0)');
+    });
+
+    test('it names every service it manages', async ({ page }) => {
+        await page.goto('http://127.0.0.1:8199/server.html');
+
+        for (const service of ['Web server', 'Queue worker', 'Scheduler']) {
+            await expect(page.locator('.row__name', { hasText: service })).toBeVisible();
+        }
+    });
+
+    test('it says plainly when the web server is down', async ({ page }) => {
+        // The identity endpoint refused, which is what an absent server looks
+        // like. Blocked rather than assumed absent: a development machine
+        // usually has the real server running on that port, so asserting on its
+        // absence would pass or fail by accident.
+        await page.route('**/soundchex.json', (route) => route.abort());
+
+        await page.goto('http://127.0.0.1:8199/server.html');
+
+        // The state that presented as a white screen on a phone, with no
+        // explanation anywhere.
+        await expect(page.locator('[data-label="serve"]')).toHaveText(/not running/i, {
+            timeout: 15000,
+        });
+
+        await expect(page.locator('#status')).toHaveAttribute('data-error', 'true');
+        await expect(page.locator('#status')).toContainText(/not running/i);
+    });
+
+    test('it says the server is up when it is', async ({ page }) => {
+        await page.route('**/soundchex.json', (route) => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ app: 'soundchex', version: 1 }),
+        }));
+
+        await page.goto('http://127.0.0.1:8199/server.html');
+
+        await expect(page.locator('[data-label="serve"]')).toHaveText(/running/i, {
+            timeout: 15000,
+        });
+    });
+
+    test('something else on the port is not mistaken for the server', async ({ page }) => {
+        // Anything can answer on 8000. Only this application should count.
+        await page.route('**/soundchex.json', (route) => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ app: 'something-else' }),
+        }));
+
+        await page.goto('http://127.0.0.1:8199/server.html');
+
+        await expect(page.locator('[data-label="serve"]')).toHaveText(/not running/i, {
+            timeout: 15000,
+        });
+    });
+});

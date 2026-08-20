@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Keeps the queue worker running.
+
+  Metadata enrichment, subtitle imports, book asset extraction and transcodes
+  are all queued jobs, so without this they sit unprocessed: a scan finds new
+  media and nothing ever identifies it. It stopped as silently as the web server
+  did, and the symptom is subtler — the library appears to work while quietly
+  never finishing anything.
+
+  Install:
+    cp "Documentation & Planning/com.soundchex.queue.plist" ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.soundchex.queue.plist
+
+  Stop:
+    launchctl unload ~/Library/LaunchAgents/com.soundchex.queue.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.soundchex.queue</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/tripsittr/Library/Application Support/Herd/bin/php84</string>
+        <string>/Users/tripsittr/Documents/GitHub/SoundChex/artisan</string>
+        <string>queue:work</string>
+        <!-- One attempt. A metadata lookup that failed is better retried by the
+             next scan than hammered here, and an endlessly retried job blocks
+             everything behind it. -->
+        <string>--tries=1</string>
+        <!-- Long enough for a transcode of a feature film. -->
+        <string>--timeout=21900</string>
+        <string>--sleep=1</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/tripsittr/Documents/GitHub/SoundChex</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/tripsittr/Documents/GitHub/SoundChex/storage/logs/queue.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/tripsittr/Documents/GitHub/SoundChex/storage/logs/queue.log</string>
+</dict>
+</plist>

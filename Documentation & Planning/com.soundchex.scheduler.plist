@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Runs Laravel's scheduler.
+
+  Three things depend on it: the library scan that picks up new files, the
+  nightly database backup, and pruning old notifications. `schedule:work` is a
+  long-running process that fires due tasks every minute, so without it none of
+  them ever run — and the backup is the one that matters, because the media
+  survives a lost database but play history, watchlists and playlists do not.
+
+  Install:
+    cp "Documentation & Planning/com.soundchex.scheduler.plist" ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.soundchex.scheduler.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.soundchex.scheduler</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/tripsittr/Library/Application Support/Herd/bin/php84</string>
+        <string>/Users/tripsittr/Documents/GitHub/SoundChex/artisan</string>
+        <string>schedule:work</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/tripsittr/Documents/GitHub/SoundChex</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/tripsittr/Documents/GitHub/SoundChex/storage/logs/scheduler.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/tripsittr/Documents/GitHub/SoundChex/storage/logs/scheduler.log</string>
+</dict>
+</plist>
