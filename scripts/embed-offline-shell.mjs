@@ -78,13 +78,21 @@ for (const needed of NEEDED) {
 
 writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(local, null, 2));
 
+const swPath = join(root, 'public/sw.js');
+
 // Stamp the service worker with this build, so its activate handler has an
 // old cache key to delete. Without it the version stayed 'v1' forever and
 // nothing was ever evicted — a stale stylesheet served alongside fresh HTML,
 // which is how a page ends up referencing classes its CSS does not have.
-const swPath = join(root, 'public/sw.js');
+// The worker's own source is part of the stamp, not just the manifest it
+// serves. A change to caching strategy leaves the manifest identical, so the
+// version stayed put and the old worker kept running with its old caches —
+// which is exactly the case where a new worker is most needed.
+const swSource = readFileSync(swPath, 'utf8').replace(/const VERSION = '[^']*';/, '');
+
 const stamp = createHash('sha1')
     .update(JSON.stringify(manifest))
+    .update(swSource)
     .digest('hex')
     .slice(0, 12);
 

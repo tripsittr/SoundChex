@@ -172,3 +172,41 @@ test.describe('offline navigation keeps its place', () => {
     });
 });
 
+/**
+ * Artwork is fetched once, not on every page.
+ *
+ * stale-while-revalidate refreshes in the background, so a music page showing
+ * forty covers made forty requests whether or not they were cached — 6,958 in
+ * one afternoon on this server, peaking at 1,146 in a single minute. On a LAN
+ * that is wasteful; over a relayed connection at more than a second a request it
+ * is the difference between a page that loads and one that does not, which is
+ * what "music fails while books and films are fine" turned out to be.
+ */
+test.describe('artwork caching', () => {
+    test('cached artwork is answered without a network request', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+
+        const source = await page.evaluate(() => fetch('/sw.js').then((r) => r.text()));
+
+        // The filename carries the media item's id, so a different image is a
+        // different URL and there is nothing to refresh.
+        expect(source).toContain("url.pathname.startsWith('/storage/artwork/')");
+        expect(source).toContain('caches.match(request).then((hit) => hit ?? staleWhileRevalidate(request))');
+    });
+
+    test('the worker version changes when the worker does', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+
+        const source = await page.evaluate(() => fetch('/sw.js').then((r) => r.text()));
+        const version = source.match(/const VERSION = '([^']*)'/)?.[1];
+
+        // Stamped from the manifest alone, a change to caching strategy left the
+        // version identical — so the old worker kept running with its old
+        // caches, which is exactly when a new one is most needed.
+        expect(version).toBeTruthy();
+        expect(version).not.toBe('v1');
+    });
+});
+

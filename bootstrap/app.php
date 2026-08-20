@@ -24,6 +24,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(append: [
             \App\Http\Middleware\CompressJsonResponses::class,
         ]);
+
+        // Cover art was served with no caching headers, so a music page showing
+        // forty covers asked for forty files every time it opened — 6,958
+        // requests in one afternoon here. Over a relayed connection that is the
+        // difference between a page that loads and one that does not.
+        $middleware->web(append: [
+            \App\Http\Middleware\CacheStaticMedia::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

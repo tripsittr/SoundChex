@@ -19,7 +19,7 @@
 // content-hashed, which usually makes that harmless — but a stale stylesheet
 // kept serving alongside fresh HTML, so a page referencing new class names was
 // styled by a sheet that did not have them. The header disappeared.
-const VERSION = 'a4c5deee6dc2';
+const VERSION = '6f5525b158cc';
 const ASSET_CACHE = `soundchex-assets-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
 
@@ -129,6 +129,21 @@ self.addEventListener('fetch', (event) => {
                 .catch(() => (isDownloadsPage
                     ? caches.match(request).then((hit) => hit ?? offlinePageFor(url))
                     : offlinePageFor(url))),
+        );
+
+        return;
+    }
+
+    // Artwork is answered from cache alone when it is there.
+    //
+    // stale-while-revalidate still fetches every image in the background to
+    // refresh it, so a music page showing forty covers made forty requests
+    // whether or not they were cached — 6,958 in one afternoon here, peaking at
+    // 1,146 in a minute. The filename carries the media item's id, so a
+    // different image is a different URL and there is nothing to refresh.
+    if (url.pathname.startsWith('/storage/artwork/')) {
+        event.respondWith(
+            caches.match(request).then((hit) => hit ?? staleWhileRevalidate(request)),
         );
 
         return;
