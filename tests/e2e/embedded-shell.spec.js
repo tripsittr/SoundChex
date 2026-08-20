@@ -286,8 +286,10 @@ test.describe('identifying the server', () => {
  */
 test.describe('server app', () => {
     test('it renders without the Laravel server', async ({ page }) => {
-        const failed = [];
-        page.on('requestfailed', (r) => failed.push(r.url()));
+        // Held in the state it exists for. With the server up this page
+        // redirects straight to library management, so a test of the page
+        // itself has to keep the server down.
+        await page.route('**/soundchex.json', (route) => route.abort());
 
         await page.goto('http://127.0.0.1:8199/server.html');
 
@@ -303,10 +305,17 @@ test.describe('server app', () => {
     });
 
     test('it names every service it manages', async ({ page }) => {
+        await page.route('**/soundchex.json', (route) => route.abort());
+
         await page.goto('http://127.0.0.1:8199/server.html');
 
+        // Matched against the row's own text, not a substring search: the
+        // status line below each name repeats it, so hasText alone is
+        // ambiguous.
         for (const service of ['Web server', 'Queue worker', 'Scheduler']) {
-            await expect(page.locator('.row__name', { hasText: service })).toBeVisible();
+            await expect(
+                page.locator('.row__name').filter({ hasText: service }).first(),
+            ).toBeVisible();
         }
     });
 
@@ -329,18 +338,22 @@ test.describe('server app', () => {
         await expect(page.locator('#status')).toContainText(/not running/i);
     });
 
-    test('it says the server is up when it is', async ({ page }) => {
+    test('a running server sends it straight to library management', async ({ page }) => {
         await page.route('**/soundchex.json', (route) => route.fulfill({
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify({ app: 'soundchex', version: 1 }),
         }));
 
+        // The admin panel is where the server is administered, and it manages
+        // the services too — so this page is a fallback rather than a
+        // destination. Staying here when the panel is reachable would be a
+        // second place to look and a second place to forget.
         await page.goto('http://127.0.0.1:8199/server.html');
 
-        await expect(page.locator('[data-label="serve"]')).toHaveText(/running/i, {
-            timeout: 15000,
-        });
+        await page.waitForURL(/\/admin/, { timeout: 15000 });
+
+        expect(page.url()).toContain('/admin');
     });
 
     test('something else on the port is not mistaken for the server', async ({ page }) => {

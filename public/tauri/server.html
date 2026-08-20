@@ -141,6 +141,7 @@
 
         <div class="actions">
             <button type="button" class="primary" id="open-admin">Open library management</button>
+            <button type="button" id="open-library">Open the library</button>
             <button type="button" id="recheck">Recheck</button>
         </div>
 
@@ -244,8 +245,43 @@ document.getElementById('open-admin').addEventListener('click', () => {
     window.location.href = `${ORIGIN}/admin`;
 });
 
-refresh();
-setInterval(refresh, 15000);
+// The host is usually also a place someone watches from, so the library is one
+// click away rather than a reason to install the client app as well.
+document.getElementById('open-library').addEventListener('click', () => {
+    window.location.href = `${ORIGIN}/app`;
+});
+
+/**
+ * Straight to library management when the server is up.
+ *
+ * This page is a fallback, not a destination: the admin panel is where the
+ * server is administered, and it now manages the services too. But it is served
+ * *by* the thing being administered, so it cannot render when that is down —
+ * which is the one case this page exists for.
+ */
+async function openOrExplain() {
+    if (await checkServer()) {
+        window.location.replace(`${ORIGIN}/admin`);
+
+        return;
+    }
+
+    await refresh();
+}
+
+openOrExplain();
+
+// Kept checking, so starting the server elsewhere brings this window back to
+// the panel without anyone having to reopen it.
+setInterval(async () => {
+    if (await checkServer()) {
+        window.location.replace(`${ORIGIN}/admin`);
+
+        return;
+    }
+
+    refresh();
+}, 5000);
 </script>
 </body>
 </html>
