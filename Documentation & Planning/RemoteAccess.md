@@ -228,3 +228,40 @@ The stronger option is Cloudflare Tunnel with Cloudflare Access, which
 authenticates against Google or GitHub *before* a request reaches this machine.
 It needs a free Cloudflare account and is worth it if the library is ever
 exposed for long periods.
+
+## Keeping the address stable
+
+The tailnet IP and MagicDNS name belong to the machine rather than the network,
+so they follow a travelling laptop between home, office and a phone hotspot. On
+this setup the LAN address changed four times in one day while
+`100.106.62.120` and `macbookair.tail7e590c.ts.net` did not move.
+
+Two things would change that, and both are avoidable:
+
+- **Removing and re-adding the machine** in the Tailscale admin console. It
+  comes back as a new node with a new address, and every client that had the old
+  one is pointing at nothing.
+- **Key expiry.** A node's auth key expires — this one on 2027-02-09 — and the
+  machine drops off the tailnet until someone re-authenticates it. The address
+  survives, but the server is unreachable in the meantime, which on a phone
+  looks exactly like the server being down.
+
+Disable key expiry for the host machine in the admin console. It is the right
+call for a server that is meant to answer without anyone tending it, and the
+alternative is the library going dark on a date nobody has written down.
+
+## Which route to prefer
+
+Measured against this server, from the same room:
+
+| | |
+| --- | --- |
+| LAN | 37ms |
+| Tailscale direct | 18ms |
+| Funnel hostname | **1,332ms** |
+
+Funnel relays through Tailscale's public infrastructure — the nearest relay here
+is Los Angeles — so it is slow from anywhere, including the next room. It earns
+its place as the only route that works from outside the tailnet, and should
+never be preferred while a direct one answers. The clients measure every
+candidate and take the quickest rather than the first to reply.

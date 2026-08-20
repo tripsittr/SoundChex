@@ -62,4 +62,34 @@ class ServerHealthTest extends TestCase
         $this->getJson(route('api.server.health'))
             ->assertJsonPath('scheduler_running', false);
     }
+
+    public function test_it_reports_the_tailnet_address(): void
+    {
+        $response = $this->getJson(route('api.server.health'))->assertOk();
+
+        // Present whether or not Tailscale is installed: a client reading this
+        // should not have to guess whether a missing key means "no tailnet" or
+        // "an older server".
+        $response->assertJsonStructure([
+            'tailnet' => ['ip', 'name', 'expires', 'expiring_soon'],
+        ]);
+    }
+
+    public function test_an_expiring_key_is_flagged_before_it_bites(): void
+    {
+        $tailnet = $this->getJson(route('api.server.health'))->json('tailnet');
+
+        if (blank($tailnet['expires'] ?? null)) {
+            $this->markTestSkipped('No tailnet on this machine.');
+        }
+
+        // A node's key expires and the machine drops off the tailnet until
+        // someone re-authenticates it. The address survives but the server
+        // becomes unreachable, which on a phone looks exactly like the server
+        // being down — so the warning has to come first.
+        $this->assertSame(
+            strtotime((string) $tailnet['expires']) < now()->addWeeks(4)->timestamp,
+            $tailnet['expiring_soon'],
+        );
+    }
 }

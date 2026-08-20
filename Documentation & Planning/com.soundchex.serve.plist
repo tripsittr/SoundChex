@@ -10,8 +10,11 @@
   Stop:
     launchctl unload ~/Library/LaunchAgents/com.soundchex.serve.plist
 
-  Bound to 127.0.0.1 deliberately: Tailscale is the only thing that should
-  reach it, so the port is not exposed to the local network.
+  Bound to every interface so the LAN route works. A phone on the same wifi
+  reaches the server directly rather than through Tailscale, and the public
+  Funnel relay — measured at 1,332ms against 37ms — is never the fast path.
+  Access is controlled by sign-in and the machine's firewall rather than by
+  which interface the port listens on.
 -->
 <plist version="1.0">
 <dict>
@@ -25,7 +28,13 @@
         <string>/Users/tripsittr/Library/Application Support/Herd/bin/php84</string>
         <string>/Users/tripsittr/Documents/GitHub/SoundChex/artisan</string>
         <string>serve</string>
-        <string>--host=127.0.0.1</string>
+        <!-- Every interface, not just loopback.
+             Bound to 127.0.0.1 this is reachable only through a proxy, so the
+             LAN route disappears and a phone on the same wifi has to go via
+             Tailscale — or, worse, via the public relay, which measured 1,332ms
+             against 37ms on the LAN. The library is already behind sign-in, and
+             the machine's own firewall decides who may reach the port. -->
+        <string>--host=0.0.0.0</string>
         <string>--port=8000</string>
     </array>
 

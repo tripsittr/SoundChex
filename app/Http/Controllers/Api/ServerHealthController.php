@@ -43,6 +43,7 @@ class ServerHealthController extends Controller
 
             'addresses' => app(NetworkAddresses::class)->all(),
             'last_backup' => $this->lastBackup(),
+            'tailnet' => $this->tailnet(),
         ]);
     }
 
@@ -82,6 +83,47 @@ class ServerHealthController extends Controller
         } catch (\Throwable) {
             return 0;
         }
+    }
+
+    /**
+     * The tailnet address, and when it stops working.
+     *
+     * A node's auth key expires, and on that day the machine drops off the
+     * tailnet until someone re-authenticates it. The address survives but the
+     * server becomes unreachable, which on a phone looks exactly like the
+     * server being down — so it is worth saying before it happens rather than
+     * after.
+     *
+     * @return array{ip: string|null, name: string|null, expires: string|null, expiring_soon: bool}
+     */
+    private function tailnet(): array
+    {
+        $none = ['ip' => null, 'name' => null, 'expires' => null, 'expiring_soon' => false];
+
+        $json = @shell_exec('tailscale status --json 2>/dev/null');
+
+        if (! is_string($json) || blank($json)) {
+            return $none;
+        }
+
+        $status = json_decode($json, true);
+        $self = $status['Self'] ?? null;
+
+        if (! is_array($self)) {
+            return $none;
+        }
+
+        $expiry = $self['KeyExpiry'] ?? null;
+
+        return [
+            'ip' => $self['TailscaleIPs'][0] ?? null,
+            'name' => rtrim((string) ($self['DNSName'] ?? ''), '.') ?: null,
+            'expires' => $expiry,
+            // Four weeks, which is enough notice to act on without being a
+            // warning that sits there for months being ignored.
+            'expiring_soon' => filled($expiry)
+                && strtotime((string) $expiry) < now()->addWeeks(4)->timestamp,
+        ];
     }
 
     private function lastBackup(): ?string
