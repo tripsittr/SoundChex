@@ -196,6 +196,15 @@
     async function fastest(origins, timeout = 8000) {
         if (origins.length === 0) return null;
 
+        // A device with no connection at all does not need eight seconds to
+        // discover it. This covers every version of offline — airplane mode,
+        // wifi off, no signal, a cable pulled out — because the interface is
+        // reporting on itself rather than guessing at the network.
+        //
+        // It says nothing about whether the server is reachable, which is why
+        // the full race still runs when the interface claims to be online.
+        if (navigator.onLine === false) return null;
+
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeout);
 
@@ -574,6 +583,19 @@
 
     if (saved || known.length > 0) {
         field().value = saved ?? known[0];
+
+        // Airplane mode is known immediately, so there is nothing to wait for.
+        //
+        // Racing every address first meant sitting through the full timeout to
+        // be told the server was unreachable — which the device already knew.
+        // Going straight to what is stored is both faster and more honest.
+        if (navigator.onLine === false) {
+            say('No connection — opening what is on this device…');
+            offline(saved ?? known[0]);
+
+            return;
+        }
+
         say('Finding the fastest route…');
 
 

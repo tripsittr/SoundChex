@@ -15,6 +15,60 @@ const waiting = [];
 let active = null;
 let running = false;
 
+/**
+ * Whether the queue is waiting for a connection rather than working.
+ *
+ * Going offline mid-batch used to fail every remaining item in turn, each
+ * costing a timeout, and leave nothing to resume — so a download interrupted by
+ * a tunnel was a download that had to be started again from the beginning.
+ */
+let paused = false;
+
+/** Where the queue is kept, so it survives the app being closed. */
+const QUEUE_KEY = 'soundchex.download-queue';
+
+/**
+ * Writes the queue down.
+ *
+ * Only what is needed to resume: the item, not the function that fetches it.
+ * The runner is supplied again when the queue is picked up, because a function
+ * cannot be stored and should not be trusted from storage if it could.
+ */
+function persist() {
+    try {
+        const pendingItems = [
+            ...(active ? [active] : []),
+            ...waiting.map((entry) => entry.item),
+        ];
+
+        if (pendingItems.length === 0) {
+            localStorage.removeItem(QUEUE_KEY);
+
+            return;
+        }
+
+        localStorage.setItem(QUEUE_KEY, JSON.stringify(pendingItems));
+    } catch {
+        // Private browsing, or full. The queue still works for this session.
+    }
+}
+
+/** What was queued when the app last closed. */
+export function stored() {
+    try {
+        const raw = localStorage.getItem(QUEUE_KEY);
+        const items = raw ? JSON.parse(raw) : [];
+
+        return Array.isArray(items) ? items : [];
+    } catch {
+        return [];
+    }
+}
+
+export function isPaused() {
+    return paused;
+}
+
 /** How many are queued or in flight. */
 export function size() {
     return waiting.length + (active === null ? 0 : 1);
@@ -46,9 +100,22 @@ async function drain(run) {
     running = true;
 
     while (waiting.length > 0) {
+        // Paused rather than failed. Every remaining item would otherwise fail
+        // in turn, each costing its own timeout, and the queue would be gone by
+        // the time the connection came back.
+        if (navigator.onLine === false) {
+            paused = true;
+            running = false;
+            persist();
+            announce('paused', { remaining: waiting.length });
+
+            return;
+        }
+
         const entry = waiting.shift();
 
         active = entry.item;
+        persist();
         announce('started', { item: entry.item, remaining: waiting.length });
 
         try {
@@ -57,14 +124,30 @@ async function drain(run) {
             entry.resolve(result);
             announce('finished', { item: entry.item, remaining: waiting.length });
         } catch (error) {
+            // A failure while the connection is gone is not the item's fault:
+            // it goes back to the front of the queue rather than being counted
+            // as failed, so nothing is lost to a tunnel.
+            if (navigator.onLine === false) {
+                waiting.unshift(entry);
+                active = null;
+                paused = true;
+                running = false;
+                persist();
+                announce('paused', { remaining: waiting.length });
+
+                return;
+            }
+
             entry.reject(error);
             announce('failed', { item: entry.item, error, remaining: waiting.length });
         } finally {
             active = null;
+            persist();
         }
     }
 
     running = false;
+    persist();
     announce('idle', {});
 }
 
@@ -108,5 +191,42 @@ export function enqueue(item, run) {
 /** Empties the queue. The active download is left to finish. */
 export function clear() {
     waiting.splice(0).forEach((entry) => entry.resolve(null));
+    paused = false;
+    persist();
     announce('idle', {});
+}
+
+/**
+ * Picks the queue back up.
+ *
+ * Called when the connection returns and when the app opens, since a queue
+ * interrupted by closing the app is the same problem as one interrupted by a
+ * tunnel. The runner is supplied by the caller rather than stored.
+ */
+export function resume(run) {
+    paused = false;
+
+    // Anything written down but not in memory — the app was closed and
+    // reopened, so the queue exists only in storage.
+    if (waiting.length === 0 && active === null) {
+        stored().forEach((item) => {
+            let resolve;
+            let reject;
+            const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+
+            // Swallowed: nobody is waiting on a promise from a previous
+            // session, and an unhandled rejection would surface as an error the
+            // user cannot act on.
+            promise.catch(() => {});
+
+            waiting.push({ item, resolve, reject });
+        });
+    }
+
+    if (waiting.length === 0) return { resumed: 0 };
+
+    announce('resumed', { remaining: waiting.length });
+    queueMicrotask(() => drain(run));
+
+    return { resumed: waiting.length };
 }

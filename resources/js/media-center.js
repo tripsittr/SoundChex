@@ -7,6 +7,7 @@ import { bindDownloadQueueUi } from './download-queue-ui.js';
 import {
     paintIconDownloadStates,
     setupBatchDownload,
+    resumeDownloads,
     setupBatchDownloads,
     setupDownloadButton,
     setupIconDownloads,
@@ -120,6 +121,9 @@ function bindPageScripts() {
     setupIconDownloads();
     setupBatchDownloads();
     bindDownloadQueueUi();
+
+    // A queue interrupted by a tunnel or by closing the app.
+    resumeDownloads();
 
     // Face ID and notifications, where the shell can offer them.
     bindDeviceSettings();

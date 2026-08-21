@@ -262,6 +262,41 @@ function repaintDownloadStates() {
     document.dispatchEvent(new CustomEvent('soundchex:repaint-downloads'));
 }
 
+/**
+ * What is on this device, when the catalogue is not.
+ *
+ * Downloads live in their own store, so a device can hold music without holding
+ * a catalogue — after a fresh install, or when a sync has never completed. That
+ * is exactly when someone reaches for what they downloaded, and being told
+ * nothing is saved is both wrong and the least useful thing to say.
+ */
+async function renderDownloadsOnly(root) {
+    let stored = [];
+
+    try {
+        const { list } = await import('../downloads.js');
+
+        stored = await list();
+    } catch {
+        return false;
+    }
+
+    if (stored.length === 0) return false;
+
+    const items = stored.map((entry) => ({
+        id: entry.id,
+        title: entry.title ?? 'Untitled',
+        subtitle: entry.type === 'music' ? 'Downloaded' : entry.type,
+        type: entry.type ?? 'music',
+        artwork: null,
+        meta: {},
+    }));
+
+    renderSongs(root, items, 'On this device', items.length);
+
+    return items.length;
+}
+
 /** Whether a rebuilt screen is one of the music ones. */
 function isMusicPath(path) {
     return /^\/app\/(music|albums|artists|genres|playlists)\/?$/.test(path);
@@ -590,6 +625,17 @@ export async function takeOver() {
     const screen = SCREENS.find((candidate) => candidate.match(path));
 
     if (!screen) return false;
+
+    // Downloads are worth showing when the catalogue is not there.
+    //
+    // The mirror and the downloads are separate stores, and this only ever
+    // consulted the mirror — so a device holding music it had deliberately
+    // downloaded was told nothing was saved on it, which is the one moment that
+    // music exists for. Only when the mirror is genuinely empty: a synced
+    // library renders its own screens, which say more than a list of files.
+    if (await mirror.count() === 0) {
+        return renderDownloadsOnly(root);
+    }
 
     try {
         await screen.render(root, path);

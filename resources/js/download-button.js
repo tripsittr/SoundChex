@@ -79,11 +79,7 @@ export function setupIconDownloads() {
         // them in turn and makes a dropped connection take down all five.
         const { queued, position, promise } = queue.enqueue(
             { id, url, title, type },
-            (item) => download({
-                id: item.id,
-                url: item.url,
-                meta: { title: item.title, type: item.type, url: item.url },
-            }),
+            runDownload,
         );
 
         if (!queued) return;
@@ -146,6 +142,52 @@ export function setupIconDownloads() {
  * Delegated on document, because these arrive with SPA navigation and the
  * offline shell rebuilds them from the mirror.
  */
+/**
+ * The runner every queued download uses.
+ *
+ * Defined once so a queue picked up from storage — where the function could not
+ * be kept — is resumed with exactly what it was started with.
+ */
+function runDownload(item) {
+    return download({
+        id: item.id,
+        url: item.url,
+        meta: { title: item.title, type: item.type ?? 'music', url: item.url },
+    });
+}
+
+/**
+ * Picks up a queue interrupted by going offline or closing the app.
+ *
+ * Both are the same problem from the queue's point of view: work was left
+ * unfinished and the connection is back.
+ */
+export function resumeDownloads() {
+    if (!window.indexedDB || window.__soundchexResumeBound) return;
+
+    window.__soundchexResumeBound = true;
+
+    const pickUp = () => {
+        if (navigator.onLine === false) return;
+
+        const { resumed } = queue.resume(runDownload);
+
+        if (resumed > 0) {
+            toast(`Resuming ${resumed} download${resumed === 1 ? '' : 's'}.`);
+        }
+    };
+
+    window.addEventListener('online', pickUp);
+
+    // On returning to the app, which on a phone is when a connection most often
+    // comes back without an online event firing.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') pickUp();
+    });
+
+    pickUp();
+}
+
 export function setupBatchDownloads() {
     if (!window.indexedDB || window.__soundchexBatchBound) return;
 

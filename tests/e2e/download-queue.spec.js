@@ -285,3 +285,86 @@ test.describe('the download queue in the menu', () => {
     });
 });
 
+/**
+ * A queue interrupted by losing the connection.
+ *
+ * Going offline mid-batch failed every remaining item in turn, each costing its
+ * own timeout, and left nothing to resume — so a download interrupted by a
+ * tunnel had to be started again from the beginning.
+ */
+test.describe('pausing and resuming downloads', () => {
+    test.beforeEach(async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await appReady(page, { rows: true });
+        await page.evaluate(() => window.soundchexDownloadQueue.clear());
+    });
+
+    test('the queue is written down as it goes', async ({ page }) => {
+        await page.evaluate(() => {
+            const queue = window.soundchexDownloadQueue;
+            const slow = () => new Promise((resolve) => setTimeout(resolve, 800));
+
+            for (let index = 1; index <= 4; index += 1) {
+                queue.enqueue({ id: 800 + index, url: '/x', title: `T${index}` }, slow);
+            }
+        });
+
+        // Closing the app is the same problem as losing the connection: work
+        // left unfinished with nothing to pick it up from.
+        await expect.poll(
+            () => page.evaluate(() => window.soundchexDownloadQueue.stored().length),
+            { timeout: 5000 },
+        ).toBeGreaterThan(0);
+    });
+
+    test('losing the connection pauses rather than fails', async ({ page, context }) => {
+        await page.evaluate(() => {
+            const queue = window.soundchexDownloadQueue;
+            const slow = () => new Promise((resolve) => setTimeout(resolve, 600));
+
+            for (let index = 1; index <= 5; index += 1) {
+                queue.enqueue({ id: 810 + index, url: '/x', title: `T${index}` }, slow);
+            }
+        });
+
+        await context.setOffline(true);
+
+        await expect.poll(
+            () => page.evaluate(() => window.soundchexDownloadQueue.isPaused()),
+            { message: 'the queue pauses', timeout: 10000 },
+        ).toBe(true);
+
+        // Still there to be resumed, rather than failed away.
+        const remaining = await page.evaluate(() => window.soundchexDownloadQueue.stored().length);
+
+        expect(remaining).toBeGreaterThan(0);
+
+        await context.setOffline(false);
+    });
+
+    test('the connection returning picks it up again', async ({ page, context }) => {
+        await page.evaluate(() => {
+            const queue = window.soundchexDownloadQueue;
+            const quick = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+            for (let index = 1; index <= 4; index += 1) {
+                queue.enqueue({ id: 820 + index, url: '/x', title: `T${index}` }, quick);
+            }
+        });
+
+        await context.setOffline(true);
+        await expect.poll(
+            () => page.evaluate(() => window.soundchexDownloadQueue.isPaused()),
+            { timeout: 10000 },
+        ).toBe(true);
+
+        await context.setOffline(false);
+
+        await expect.poll(
+            () => page.evaluate(() => window.soundchexDownloadQueue.isPaused()),
+            { message: 'it resumes on its own', timeout: 15000 },
+        ).toBe(false);
+    });
+});
+
