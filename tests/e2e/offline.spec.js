@@ -323,3 +323,54 @@ test.describe('build reloads', () => {
     });
 });
 
+/**
+ * Downloads shown when the catalogue is not there.
+ *
+ * The mirror and the downloads are separate IndexedDB databases, and the
+ * offline shell consulted only the mirror — so a device holding music it had
+ * deliberately downloaded was told nothing was saved on it, at exactly the
+ * moment those downloads exist for.
+ */
+test.describe('downloads without a catalogue', () => {
+    test('a device with downloads and no mirror shows them', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await page.waitForFunction(() => window.soundchexLibrary !== undefined, null, { timeout: 20000 });
+
+        await page.evaluate(async () => {
+            await window.soundchexLibrary.mirror.clear();
+            await window.soundchexDownloads.download({
+                id: 1,
+                url: '/app/item/1/stream',
+                meta: { title: 'Saved Song', type: 'music' },
+            });
+        });
+
+        const drawn = await page.evaluate(() => window.soundchexLibrary.takeOver());
+
+        expect(drawn, 'something was rendered').toBeTruthy();
+        await expect(page.locator('main')).toContainText(/on this device/i);
+        await expect(page.locator('main')).toContainText('Saved Song');
+    });
+
+    test('a device with neither says so honestly', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await page.waitForFunction(() => window.soundchexLibrary !== undefined, null, { timeout: 20000 });
+
+        await page.evaluate(async () => {
+            await window.soundchexLibrary.mirror.clear();
+
+            for (const entry of await window.soundchexDownloads.list()) {
+                await window.soundchexDownloads.remove(entry.id);
+            }
+        });
+
+        // Nothing to show is a real answer, and declining lets the caller put
+        // the connect form back rather than blanking the page.
+        const drawn = await page.evaluate(() => window.soundchexLibrary.takeOver());
+
+        expect(drawn).toBeFalsy();
+    });
+});
+
