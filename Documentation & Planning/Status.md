@@ -62,7 +62,7 @@ library settings, profile management, dashboard widgets. Themed to match the
 media center, sharing one palette defined in `resources/css/tokens.css`. Every
 screen, the dashboard included, is gated on the current profile's permissions.
 
-**Tests** — 124 PHP, 25 Vitest, 17 Playwright, all green. Every guard was
+**Tests** — 266 PHP, 51 Vitest, 231 Playwright, all green. Every guard was
 verified by breaking it on purpose and confirming a test fails. Writing them
 found five silent bugs: profile permissions blocked at the panel door, music
 still stopping on navigation, episode codes stripped as file extensions, an
@@ -123,8 +123,12 @@ filtering would need a new column and a rule in the gate.
 - **No TV shows in the library**, so that path is largely unexercised. The
   schema, TMDB show source and `content_rating` column exist but have not run
   against real episodes.
-- **The test suite is minimal** — four files, mostly scaffolding. Verification
-  has been manual against real data.
+- **No TMDB key means no film metadata.** The key lives in settings, not env,
+  and the source skips itself silently when it is missing — so films are
+  "enriched" with nothing and no error is raised. Lost once already, when the
+  database was rebuilt. Every film added while it was empty has no year, and
+  without a year the conversion filer refuses to file rather than dropping a
+  film into the library root.
 - **Avatars are host-local.** They live on the public disk and are gitignored,
   so they don't travel with the repo.
 - **Herd may serve PHP 8.3** while dependencies need 8.4+. The CLI is 8.4.13;

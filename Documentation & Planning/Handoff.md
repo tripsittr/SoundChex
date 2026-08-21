@@ -32,9 +32,16 @@ server and prefer direct routes.
 
 ### Outstanding
 
-**`now-playing-sheet.spec.js` — "tapping the bar opens it without leaving the
-page"** fails roughly one run in twenty, and passes in isolation. It predates
-this session's work. Not diagnosed; a real flake rather than test pollution.
+**Metadata sources other than TMDB are unconfigured.** `musicbrainz_enabled`
+and `openlibrary_enabled` are both empty in settings. TMDB was too, until it was
+set on 21 August 2026, and the symptom is silent: a source with no key reports
+`supports() === false` and is skipped without a word, so items complete with no
+match and nothing indicates why. Worth an audit of every key in
+`config/metadata_sources.php` against what is actually stored.
+
+**Three songs match no provider** — items 1445, 2002 and 2473. They complete
+cleanly with `match_confidence = none`; the providers simply have no record.
+Not a fault, but they will never gain metadata without a manual match.
 
 **Tailnet key expires 2027-02-09.** The MacBook drops off the tailnet that day
 until re-authenticated, and on a phone that looks exactly like the server being
@@ -61,7 +68,24 @@ the fixable part is the remaining hardcoded `waitForTimeout` calls.
 **Windows and Linux client builds are untested.** The config approach carries
 over unchanged but neither has been built.
 
-### Fixed this session, worth re-testing on device
+### Fixed 21 August 2026
+
+**The now-playing sheet flake is diagnosed and fixed.** It was a lost-event
+race, not test pollution: the sheet's deferred wait for the player used
+`{ once: true }` on every call, and the function re-runs on every navigation, so
+a second deferral consumed the pending listener while the global bind-guard
+could mark the sheet bound anyway. Tapping the bar then followed the link and
+left the page. Covered by `tests/js/now-playing-sheet.test.js`, which fails
+against the previous code; the Playwright spec ran 70 times clean afterwards.
+
+**Enrichment jobs no longer drop under load.** Twelve had failed as "database is
+locked", all within a second of the five-minute scan cron. The scan is not slow —
+it imports files, and each import dispatches an enrichment job that then holds a
+connection through slow provider calls, up to 60s of Chromaprint fingerprinting
+for music. Against a 10s busy timeout they knocked each other over. Raised to
+120s; the twelve were retried and all twelve ran.
+
+### Fixed earlier, worth re-testing on device
 
 - Music page failing to load (artwork request flood — see below)
 - White flash returning to home during navigation
