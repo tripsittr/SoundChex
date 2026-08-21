@@ -239,7 +239,11 @@
    edge, so on a desktop window — where the inset is zero and there is no notch
    to hide it — content scrolled behind a transparent strip above the bar.
    Padding the header extends its background to the edge instead. */
-header.fixed {
+/* Scoped to the media centre's own header rather than any fixed one.
+   `header.fixed` also matched the reader's toolbar — the reader loads this
+   stylesheet but is a standalone document — and the inset pushed its PDF up out
+   of view on a notched phone. */
+header:has(> .media-header-nav) {
     padding-top: env(safe-area-inset-top);
 }
 
