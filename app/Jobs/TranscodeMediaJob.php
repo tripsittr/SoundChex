@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\MediaItem;
+use App\Services\ConversionFiler;
 use App\Services\MediaTranscoder;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -35,7 +36,7 @@ class TranscodeMediaJob implements ShouldQueue
         return (int) config('transcode.timeout_seconds', 21600) + 300;
     }
 
-    public function handle(MediaTranscoder $transcoder): void
+    public function handle(MediaTranscoder $transcoder, ConversionFiler $filer): void
     {
         $item = MediaItem::findOrFail($this->mediaItemId);
 
@@ -75,6 +76,21 @@ class TranscodeMediaJob implements ShouldQueue
             'transcode_status' => 'complete',
             'transcode_percent' => 100,
         ])->saveQuietly();
+
+        // A conversion parked in media/converted/ is reachable only through the
+        // column just written, and the scanner is told to skip that folder. Lose
+        // the column — a rebuilt catalogue, a restored backup — and a playable
+        // file becomes invisible while sitting safely on disk. That is exactly
+        // how one film became unplayable.
+        //
+        // So file it like anything else and archive the original beside it.
+        // Non-fatal: the transcode succeeded either way, and an unfiled
+        // conversion still plays through the column.
+        try {
+            $filer->promote($item->fresh());
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     public function failed(\Throwable $exception): void

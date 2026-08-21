@@ -27,6 +27,7 @@ class MediaItem extends Model
         'cover_image_url',
         'file_path',
         'converted_path',
+        'archived_path',
         'transcode_status',
         'transcode_percent',
         'processing_status',
@@ -423,6 +424,33 @@ class MediaItem extends Model
     {
         return filled($this->converted_path)
             && file_exists(Storage::path($this->converted_path));
+    }
+
+    /**
+     * The source this item was made from, if it was replaced by a conversion.
+     *
+     * A film whose playable version was filed in its place keeps its original
+     * in the archive — the better quality, and what makes a bad transcode
+     * recoverable. Downloads offer this when it exists.
+     */
+    public function originalPath(): ?string
+    {
+        if (blank($this->archived_path)) {
+            return $this->absoluteFilePath();
+        }
+
+        $path = Storage::path($this->archived_path);
+
+        // Falls back rather than returning a path to nothing: an archive
+        // someone has moved or pruned should not break the download button.
+        return file_exists($path) ? $path : $this->absoluteFilePath();
+    }
+
+    /** Whether an original is set aside in the archive. */
+    public function hasArchivedOriginal(): bool
+    {
+        return filled($this->archived_path)
+            && file_exists(Storage::path($this->archived_path));
     }
 
     /**

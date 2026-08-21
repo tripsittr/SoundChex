@@ -52,6 +52,9 @@ return [
 
     'scan_exclude' => [
         'media/library',
+        // Originals set aside once a playable version was filed. Excluded so a
+        // scan does not re-import them as duplicates of the film beside them.
+        'media/archive',
         // Converted copies belong to an item that's already catalogued.
         // Scanning them would catalogue each conversion as a second, separate
         // movie whose title is the generated filename.
@@ -119,6 +122,14 @@ return [
     */
 
     'library_root' => env('LIBRARY_ROOT', 'media/library'),
+
+    /*
+    | Where an original goes once a browser-playable version has been filed in
+    | its place. Kept whole rather than compressed: video is already compressed,
+    | and on this library the HEVC source is smaller than its H.264 conversion —
+    | so there is nothing to gain and playability to lose.
+    */
+    'archive_root' => env('ARCHIVE_ROOT', 'media/archive'),
 
     /*
     |--------------------------------------------------------------------------
