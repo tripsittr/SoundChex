@@ -42,7 +42,20 @@ return [
             // cache, sessions, and the queue all on SQLite, concurrent requests
             // (a multi-file upload, say) collide as "database is locked".
             // WAL lets readers and writers work simultaneously.
-            'busy_timeout' => env('DB_BUSY_TIMEOUT', 10000),
+            //
+            // The timeout is deliberately longer than the slowest thing that can
+            // hold a write open. A metadata source allows 10s per request with
+            // two retries, so an enrichment job can sit on a connection for the
+            // better part of half a minute while a provider is slow. At 10s a
+            // scan that imports several files would dispatch a burst of those
+            // jobs and they would fail each other off with "database is locked" —
+            // which is exactly what was happening, every five minutes, silently.
+            //
+            // Music is the slowest case by far: Chromaprint fingerprinting allows
+            // 60s on its own, before AcoustID is even asked. Two minutes clears
+            // that with room to spare. Waiting is always better than dropping the
+            // job — a lock that resolves late still does its work.
+            'busy_timeout' => env('DB_BUSY_TIMEOUT', 120000),
             'journal_mode' => env('DB_JOURNAL_MODE', 'WAL'),
             'synchronous' => env('DB_SYNCHRONOUS', 'NORMAL'),
             'transaction_mode' => 'DEFERRED',
