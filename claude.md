@@ -5,6 +5,13 @@ project is built — architecture, conventions, and the production workflow.
 
 This file exists only to point there, so the two can't drift apart.
 
+Two more, both worth reading before changing anything:
+
+- **[Documentation & Planning/Handoff.md](Documentation%20&%20Planning/Handoff.md)**
+  — where things stand, what is known broken, what was tried and abandoned.
+- **[docs/WorkingOnSoundChex.md](docs/WorkingOnSoundChex.md)** — what this
+  project has taught, mostly the hard way.
+
 ## The short version
 
 - **Start at `Documentation & Planning/Status.md`**, then the active plan. One

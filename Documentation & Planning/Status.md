@@ -9,6 +9,7 @@ Some files here are **reference**, not plans — they describe how something
 works rather than proposing work. Those are never prefixed:
 
 - `Status.md` — this file
+- `Handoff.md` — current state, known issues, and what was tried and abandoned
 - `UsersAndProfiles.md` — the account and profile model
 - `RemoteAccess.md` — reaching the server from outside the house
 

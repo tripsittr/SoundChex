@@ -1,0 +1,155 @@
+# Handoff
+
+Written 20 August 2026, at the end of a long session working against a real
+iPhone. This is the state of things, what was fixed, what is known to be broken,
+and what was tried and abandoned.
+
+Start with [Status.md](Status.md) for what the project is. This is about where
+it stands right now.
+
+---
+
+## Current state
+
+**Library:** 1,368 items, 1,363 with artwork. Rebuilt this session after a
+`migrate:fresh` destroyed the catalogue — see *Past incidents*.
+
+**Services:** all three launchd agents installed and running (`serve`, `queue`,
+`scheduler`). Verified to restart within ~5 seconds of being killed.
+
+**Apps installed:** iOS on "iPhone 3000" (iPhone 16 Pro), and SoundChex Server
+on this Mac. The iOS provisioning profile now expires **21 August 2027**.
+
+**Tests:** 252 PHP, ~180 Playwright across desktop, mobile and shell projects.
+
+**Addresses:** LAN (changes with the network), tailnet `100.106.62.120`, and the
+Funnel hostname `macbookair.tail7e590c.ts.net`. Clients learn all three from the
+server and prefer direct routes.
+
+---
+
+## Known issues
+
+### Outstanding
+
+**`now-playing-sheet.spec.js` — "tapping the bar opens it without leaving the
+page"** fails roughly one run in twenty, and passes in isolation. It predates
+this session's work. Not diagnosed; a real flake rather than test pollution.
+
+**Tailnet key expires 2027-02-09.** The MacBook drops off the tailnet that day
+until re-authenticated, and on a phone that looks exactly like the server being
+down. Disable key expiry for the machine in the Tailscale admin console. The
+server app warns four weeks ahead.
+
+**Updater endpoint is hardcoded** to `macbookair.tail7e590c.ts.net`. If the
+tailnet name ever changes, desktop apps stop finding updates.
+
+**The test suite is slow** — `workers: 1` and `fullyParallel: false`, because
+tests share one SQLite database and one seeded library. That constraint is real;
+the fixable part is the remaining hardcoded `waitForTimeout` calls.
+
+**Windows and Linux client builds are untested.** The config approach carries
+over unchanged but neither has been built.
+
+### Fixed this session, worth re-testing on device
+
+- Music page failing to load (artwork request flood — see below)
+- White flash returning to home during navigation
+- Connect screen showing false errors before connecting
+- Connect screen entirely dead — a top-level `return` killed the script
+- "Nothing saved on this device" while holding downloads
+- Download queue losing its place when going offline
+- Both navigation bars showing in the desktop app
+- Transparent strip above the desktop header
+
+---
+
+## What was fixed, and why it was hard to find
+
+**The music page.** The offline shell pre-renders every destination from the
+device's mirror before the server's page arrives. It drew *every* item — 1,356
+rows, each with an artwork image — so one tap requested over a thousand files.
+The server log showed 6,958 artwork requests in an afternoon, peaking at 1,146
+in a minute, while books and films answered in 0.07ms. Now capped at 60 rows,
+and artwork is served from cache without background revalidation.
+
+**Routing through Los Angeles.** The app connected via the Funnel hostname,
+which relays through Tailscale's infrastructure: 1,332ms against 18ms direct.
+Three compounding causes — the client knew only the address it arrived on, the
+server was not advertising its tailnet address because `tailscale` was not on a
+launchd agent's `PATH`, and the ranking treated a relay as merely another stable
+address.
+
+**Services that would not start.** `serve` and `queue` exited with `EX_CONFIG`
+while `scheduler` ran on identical configuration. macOS gates `~/Documents`
+behind TCC, and a launchd agent told to write its log there is dropped before
+its program runs — so the log that would have explained it was the thing causing
+it. Logs moved to `~/Library/Logs/SoundChex/`.
+
+**Face ID.** Abandoned. Tauri refuses plugin calls from pages the shell did not
+serve, and the media centre is served by Laravel. Four fixes were made chasing
+it — wrong global name, `withGlobalTauri` unset, URLPattern syntax, window
+scoping — all genuine bugs, none of them the blocker. Removed rather than left
+as a setting that never works.
+
+---
+
+## Past incidents
+
+**The database was destroyed.** `migrate:fresh` was run on the development
+database to drop a column. It dropped every table: 1,458 media items, play
+history, watchlists, playlists, profiles. No WAL file, nothing recoverable.
+
+The media survived — the database is only a catalogue — and was recovered with a
+new `library:recover` command that rebuilds rows from already-filed media
+without moving a file. Play history and playlists are gone permanently.
+
+Two things came out of it: `db:backup` (compressed, nightly, restore-verified)
+and a standing rule that no schema or seed command runs without asking.
+
+**The e2e environment was silently broken.** `.env.e2e` had two variables
+concatenated onto one line, so `LOCAL_DISK_ROOT` was read as part of
+`TELESCOPE_ENABLED`. Download tests failed with 404s that looked like code bugs.
+
+---
+
+## Tried and abandoned
+
+**Biometric unlock.** See above. `NativeOfflineBridge.md` scopes the native path
+if it is ever worth revisiting.
+
+**Baking the server URL into `frontendDist`.** Prototyped to fix the Face ID ACL
+problem — it makes the server's pages the app's own frontend, which would have
+made them local. Reverted: it bakes the address into the build, so changing
+servers means a rebuild, and it removes the connect screen's recovery path.
+
+**Splitting server and client into separate repositories.** Measured instead:
+the iOS client is 1.9 MB and the Laravel vendor directory alone is 134 MB, none
+of which ships. Two products now come from one config override.
+
+---
+
+## Next steps, in the order I would take them
+
+1. **Re-test on device.** Music, offline mode, the download queue pausing and
+   resuming, and the desktop navigation. Several fixes landed together and only
+   the music page has been confirmed working.
+2. **Fix the flaky now-playing-sheet test.** An intermittently red suite trains
+   people to ignore failures.
+3. **Device and session tracking** — the user asked for a view of which devices
+   are online and what they are doing. `device_reports` is a starting point;
+   this needs a sessions table and heartbeats.
+4. **APNs push.** The paid account makes it possible and the payload already
+   exists — `notifications.js` sends what push would carry. Needs a certificate,
+   token registration, and a server-side sender.
+5. **Speed up the test suite.**
+6. **Windows client build**, when there is a machine for it.
+
+---
+
+## Things worth knowing before changing anything
+
+Read [../docs/WorkingOnSoundChex.md](../docs/WorkingOnSoundChex.md). It is the
+accumulated lessons of this session — the database rule, why tests here have a
+habit of passing without testing anything, and the platform behaviours that
+caused most of the hard bugs.
