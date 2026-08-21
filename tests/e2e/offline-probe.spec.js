@@ -73,4 +73,45 @@ test.describe('finding a synced library on the server origin', () => {
 
         expect(reported).toBe(0);
     });
+
+    test('downloads count even with no catalogue', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await page.waitForFunction(() => window.soundchexLibrary !== undefined, null, { timeout: 20000 });
+
+        await page.evaluate(async () => {
+            await window.soundchexLibrary.mirror.clear();
+            await window.soundchexDownloads.download({
+                id: 1,
+                url: '/app/item/1/stream',
+                meta: { title: 'Saved', type: 'music' },
+            });
+        });
+
+        const reported = await page.evaluate(() => new Promise((resolve) => {
+            const frame = document.createElement('iframe');
+
+            window.addEventListener('message', function handler(event) {
+                if (event.data?.type !== 'soundchex:mirror-count') return;
+
+                window.removeEventListener('message', handler);
+                frame.remove();
+                resolve(event.data);
+            });
+
+            frame.style.display = 'none';
+            frame.src = '/offline-probe.html';
+            document.body.append(frame);
+
+            setTimeout(() => resolve('timed out'), 8000);
+        }));
+
+        // Downloads are their own database, and counting only the catalogue
+        // meant a device full of deliberately downloaded music reported nothing
+        // — at exactly the moment that music exists for.
+        expect(reported.downloads).toBe(1);
+        expect(reported.mirror).toBe(0);
+        expect(reported.count, 'either store counts').toBeGreaterThan(0);
+    });
 });
+

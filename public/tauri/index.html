@@ -536,8 +536,20 @@
             document.body.replaceChildren(document.createElement('main'));
             document.body.classList.add('offline-standalone');
 
-            const drawn = await (window.soundchexLibrary ?? library.default)
-                ?.preRender?.(document.querySelector('main'), '/app');
+            // takeOver rather than preRender.
+            //
+            // preRender declines when the catalogue is empty, by design: it runs
+            // on every tap while the server is answering, and must never replace
+            // a working page with an offline one. takeOver is the deliberate
+            // fallback, and it is the one that lists downloads when there is no
+            // catalogue — which is the case this screen exists for.
+            const shell = window.soundchexLibrary ?? library.default;
+
+            window.__soundchexWanted = '/app';
+
+            const drawn = await (shell?.takeOver?.() ?? shell?.preRender?.(
+                document.querySelector('main'), '/app',
+            ));
 
             if (!drawn) throw new Error('nothing stored');
         } catch (error) {

@@ -15,10 +15,16 @@
     anything it imported would have to be cached too.
 -->
 <script>
-    const DB_NAME = 'soundchex-library';
-    const STORE = 'items';
+    // Both stores. Downloads live in their own database, so a device holding
+    // music it deliberately downloaded — but which has never finished a sync —
+    // reported nothing at all, at exactly the moment those downloads exist for.
+    const DATABASES = [
+        { name: 'soundchex-library', store: 'items' },
+        { name: 'soundchex-downloads', store: 'meta' },
+    ];
 
-    function count() {
+    /** Rows in one store, or zero for anything that is not there. */
+    function countIn(dbName, storeName) {
         return new Promise((resolve) => {
             let settled = false;
             const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
@@ -30,7 +36,7 @@
             let request;
 
             try {
-                request = indexedDB.open(DB_NAME);
+                request = indexedDB.open(dbName);
             } catch {
                 return finish(0);
             }
@@ -44,11 +50,11 @@
             request.onsuccess = () => {
                 const db = request.result;
 
-                if (!db.objectStoreNames.contains(STORE)) return finish(0);
+                if (!db.objectStoreNames.contains(storeName)) return finish(0);
 
                 try {
-                    const tx = db.transaction(STORE, 'readonly');
-                    const counted = tx.objectStore(STORE).count();
+                    const tx = db.transaction(storeName, 'readonly');
+                    const counted = tx.objectStore(storeName).count();
 
                     counted.onsuccess = () => finish(counted.result ?? 0);
                     counted.onerror = () => finish(0);
@@ -59,7 +65,15 @@
         });
     }
 
-    count().then((value) => {
-        parent.postMessage({ type: 'soundchex:mirror-count', count: value }, '*');
+    // The answer is "is there anything worth opening", so either store counts.
+    Promise.all(DATABASES.map((db) => countIn(db.name, db.store))).then((counts) => {
+        const total = counts.reduce((sum, value) => sum + value, 0);
+
+        parent.postMessage({
+            type: 'soundchex:mirror-count',
+            count: total,
+            mirror: counts[0],
+            downloads: counts[1],
+        }, '*');
     });
 </script>
