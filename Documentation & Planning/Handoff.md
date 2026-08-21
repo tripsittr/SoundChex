@@ -182,16 +182,42 @@ of which ships. Two products now come from one config override.
 1. **Re-test on device.** Music, offline mode, the download queue pausing and
    resuming, and the desktop navigation. Several fixes landed together and only
    the music page has been confirmed working.
-2. **Fix the flaky now-playing-sheet test.** An intermittently red suite trains
+2. **Group songs under a primary artist.** Reported 21 August 2026:
+   `$uicideboy$`, Alan Jackson, America and Avicii each appear as several
+   artists because collaborations are stored as one combined string.
+
+   Measured: **233 of 1,034 distinct artists contain a comma**, 8 contain a
+   slash. Deriving the primary from the first name before a `,` or `/` would
+   take the list from 1,034 to 883 — 151 fragments merged — and resolves all
+   four reported cases.
+
+   Two things it must not break, both found by looking:
+
+   - **`Hank Williams, Jr.`** is one artist. A suffix guard for
+     Jr/Sr/II/III/IV handles it, and it is already in the library.
+   - **`Earth, Wind & Fire`**, `Crosby, Stills & Nash` — bands whose own name
+     contains a comma, which the rule would split at the first one. None are in
+     the library today, so this is safe now and silently wrong the day one is
+     added. Needs an exception list, not just a regex.
+
+   The tags cannot help: **zero of 40 sampled multi-artist files carry an
+   `album_artist` tag**, so the primary has to be derived rather than read.
+   `FileTagger` prefers `artist` over `album_artist` anyway, which is backwards
+   for grouping and worth flipping for the files that do have one.
+
+   Not started — it rewrites metadata across a quarter of the library, so it
+   wants a dry run and the user's sign-off before it touches anything.
+
+3. **Fix the flaky now-playing-sheet test.** An intermittently red suite trains
    people to ignore failures.
-3. **Device and session tracking** — the user asked for a view of which devices
+4. **Device and session tracking** — the user asked for a view of which devices
    are online and what they are doing. `device_reports` is a starting point;
    this needs a sessions table and heartbeats.
-4. **APNs push.** The paid account makes it possible and the payload already
+5. **APNs push.** The paid account makes it possible and the payload already
    exists — `notifications.js` sends what push would carry. Needs a certificate,
    token registration, and a server-side sender.
-5. **Speed up the test suite.**
-6. **Windows client build**, when there is a machine for it.
+6. **Speed up the test suite.**
+7. **Windows client build**, when there is a machine for it.
 
 ---
 
