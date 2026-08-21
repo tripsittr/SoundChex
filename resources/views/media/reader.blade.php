@@ -59,6 +59,12 @@
             background: var(--reader-page);
             color: var(--reader-ink);
             transition: background-color 0.3s ease, color 0.3s ease;
+            /* The chrome floats above this rather than sitting beside it, so
+               the page fills the whole window — including the strip under the
+               notch, where the first inch of every book was hidden behind the
+               status bar. */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
         }
 
         .reader-bar {
@@ -178,7 +184,11 @@
             left: 0;
             right: 0;
             bottom: 0;
-            max-height: 85vh;
+            /* Leaves the notch clear. At 85vh a tall sheet reached past the top
+               edge on a notched phone, putting its own close button under the
+               status bar where it could not be tapped — so the sheet could be
+               opened and not closed. */
+            max-height: calc(85vh - env(safe-area-inset-top));
             border-radius: 1rem 1rem 0 0;
             padding-bottom: env(safe-area-inset-bottom);
         }
@@ -202,6 +212,15 @@
             justify-content: space-between;
             padding: 0.875rem 1rem 0.5rem;
             flex: none;
+        }
+
+        /* Belt and braces with the max-height above: if the sheet does reach the
+           top, its header still clears the status bar rather than hiding the
+           control that closes it. */
+        @media (max-width: 639px) {
+            .reader-sheet-header {
+                padding-top: max(0.875rem, env(safe-area-inset-top));
+            }
         }
 
         .reader-sheet-body {
@@ -567,6 +586,13 @@
             justify-content: center;
             align-items: flex-start;
             padding: 16px;
+            /* The chrome is an absolute overlay, so the page renders full
+               height beneath it — including under the notch, where the first
+               inch was hidden by the status bar. The insets are added to the
+               padding rather than the height so scrolling still reaches the
+               whole page. */
+            padding-top: calc(16px + env(safe-area-inset-top));
+            padding-bottom: calc(16px + env(safe-area-inset-bottom));
             /* Momentum scrolling on iOS, and no browser-native pan gesture
                fighting the drag-to-pan below. */
             -webkit-overflow-scrolling: touch;
