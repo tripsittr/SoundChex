@@ -24,7 +24,23 @@ export function bindNowPlayingSheet() {
     const player = window.soundchexPlayer;
 
     if (!player) {
-        document.addEventListener('soundchex:player-ready', () => bindNowPlayingSheet(), { once: true });
+        // Registered once for the lifetime of the page, not once per call.
+        //
+        // This function also runs on every livewire:navigated, so with
+        // `{ once: true }` a second call while the player was still missing
+        // would consume the pending listener and add another — and the flag
+        // that guards the click binding below is global, so whichever call
+        // eventually wins may find the sheet "already bound" and skip it. The
+        // result is a sheet whose bar click falls through to the underlying
+        // <a> and navigates away, which is the intermittent failure.
+        if (!window.soundchexSheetWaiting) {
+            window.soundchexSheetWaiting = true;
+
+            document.addEventListener('soundchex:player-ready', () => {
+                window.soundchexSheetWaiting = false;
+                bindNowPlayingSheet();
+            }, { once: true });
+        }
 
         return;
     }

@@ -41,8 +41,18 @@ until re-authenticated, and on a phone that looks exactly like the server being
 down. Disable key expiry for the machine in the Tailscale admin console. The
 server app warns four weeks ahead.
 
-**Updater endpoint is hardcoded** to `macbookair.tail7e590c.ts.net`. If the
-tailnet name ever changes, desktop apps stop finding updates.
+**Updater endpoint is hardcoded** to `macbookair.tail7e590c.ts.net` in
+`src-tauri/tauri.conf.json`. If the tailnet name ever changes, desktop apps stop
+finding updates, and the only fix is a rebuild — the endpoint is baked in at
+build time and cannot be learned at runtime the way server addresses are.
+
+A second endpoint was tried as redundancy and removed: the tailnet IP
+`100.106.62.120` serves `301` to `https://` on port 80, and the certificate
+covers the MagicDNS name rather than the bare IP, so the HTTPS hop fails TLS
+(`curl` exit 35). Any fallback needs a name the certificate actually covers, so
+adding one means adding a certificate, not an array entry. Left as a single
+documented point of change rather than shipping something that looks like
+redundancy and is not.
 
 **The test suite is slow** — `workers: 1` and `fullyParallel: false`, because
 tests share one SQLite database and one seeded library. That constraint is real;
