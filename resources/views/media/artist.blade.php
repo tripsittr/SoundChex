@@ -6,6 +6,7 @@
      * queues the rest behind it rather than playing in isolation.
      */
     $queue = $singles->map(fn ($track) => $track->playerPayload())->values();
+    $appearsOnQueue = $appearsOn->map(fn ($track) => $track->playerPayload())->values();
 @endphp
 
 <x-media.layout :title="$artist">
@@ -70,6 +71,50 @@
                            class="min-w-0 flex-1 truncate text-sm text-ink-100 hover:underline">
                             {{ $track->title }}
                         </a>
+
+                        <x-media.track-menu :items="collect([$track])" :label="$track->title" />
+                    </li>
+                @endforeach
+            </ol>
+        @endif
+
+        @if ($appearsOn->isNotEmpty())
+            {{-- Tracks credited to this artist but led by someone else.
+                 Without this an artist page showed only the records they made
+                 alone, and every collaboration was invisible. --}}
+            <h2 class="mb-2 mt-12 text-lg font-semibold text-ink-100">Appears on</h2>
+
+            <ol class="divide-y divide-base-700/60">
+                @foreach ($appearsOn as $index => $track)
+                    <li data-long-press-menu class="group flex items-center gap-3 py-2.5">
+                        <button type="button"
+                                data-play="{{ $appearsOnQueue->toJson() }}"
+                                data-play-index="{{ $index }}"
+                                class="relative flex size-8 shrink-0 items-center justify-center rounded text-sm tabular-nums text-ink-500 transition hover:bg-base-700 hover:text-ink-100"
+                                aria-label="Play {{ $track->title }}">
+                            <span class="group-hover:opacity-0">{{ $index + 1 }}</span>
+                            <svg class="absolute size-4 opacity-0 transition group-hover:opacity-100" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                        </button>
+
+                        <div class="min-w-0 flex-1">
+                            <a href="{{ route('media.show', $track) }}"
+                               class="block truncate text-sm text-ink-100 hover:underline">
+                                {{ $track->title }}
+                            </a>
+
+                            {{-- Whose record it is. The point of the section is
+                                 that these belong to someone else. --}}
+                            @php($lead = $track->musicMetadata?->primary_artist ?: $track->musicMetadata?->artist)
+
+                            @if (filled($lead))
+                                <a href="{{ route('media.artist', ['name' => $lead]) }}"
+                                   class="block truncate text-xs text-ink-500 hover:underline">
+                                    {{ $lead }}
+                                </a>
+                            @endif
+                        </div>
 
                         <x-media.track-menu :items="collect([$track])" :label="$track->title" />
                     </li>

@@ -57,14 +57,10 @@ class ArtistCredits
             return null;
         }
 
-        if ($this->isIndivisible($credit)) {
-            return $credit;
-        }
-
-        if ($this->endsWithSuffix($credit)) {
-            return $credit;
-        }
-
+        // One code path. The splitter already keeps known names and
+        // generational suffixes whole, and a second set of guards here could
+        // disagree with it — which is how "Earth, Wind & Fire" came to be
+        // protected by primary() and shattered by all().
         $first = trim($this->split($credit)[0] ?? $credit);
 
         // A credit that begins with its own separator — ", Pouya" — would
@@ -83,10 +79,6 @@ class ArtistCredits
 
         if ($credit === '') {
             return [];
-        }
-
-        if ($this->isIndivisible($credit) || $this->endsWithSuffix($credit)) {
-            return [$credit];
         }
 
         $parts = $this->split($credit);
@@ -114,48 +106,128 @@ class ArtistCredits
      */
     private function split(string $credit): array
     {
-        // A known name is taken off the front whole, before any splitting, so
-        // its own commas are never treated as separators.
-        $prefix = $this->indivisiblePrefix($credit);
-        $rest = $credit;
+        $credit = trim($credit);
 
-        if ($prefix !== null) {
-            $rest = ltrim(mb_substr($credit, mb_strlen($prefix)), " \t,/");
+        if ($credit === '') {
+            return [];
         }
 
-        $parts = $rest === '' ? [] : (preg_split('/\s*[,\/]\s*/u', $rest) ?: []);
-        $parts = array_values(array_filter(array_map('trim', $parts), fn (string $p) => $p !== ''));
+        // Known names are taken out wherever they appear, not only at the
+        // front. A band billed second — "Santana, Earth, Wind & Fire" — would
+        // otherwise be shattered into "Earth" and "Wind & Fire", inventing two
+        // artists who do not exist.
+        $names = [];
+        $offset = 0;
+        $length = mb_strlen($credit);
 
-        if ($prefix !== null) {
-            array_unshift($parts, $prefix);
-        }
+        while ($offset < $length) {
+            $match = $this->indivisibleAt($credit, $offset);
 
-        $joined = [];
-
-        foreach ($parts as $part) {
-            $bare = rtrim($part, '.');
-
-            // A fragment that is only a suffix belongs to the name before it.
-            if ($joined !== [] && in_array(ucfirst(mb_strtolower($bare)), array_map('ucfirst', array_map('mb_strtolower', self::SUFFIXES)), true)) {
-                $joined[count($joined) - 1] .= ', ' . $part;
+            if ($match !== null) {
+                $names[] = $match;
+                $offset += mb_strlen($match);
+                $offset += $this->separatorLength($credit, $offset);
 
                 continue;
             }
 
-            $joined[] = $part;
+            // Read up to the next separator.
+            $next = $this->nextSeparator($credit, $offset);
+            $piece = trim(mb_substr($credit, $offset, $next - $offset));
+
+            if ($piece !== '') {
+                $names[] = $piece;
+            }
+
+            $offset = $next + $this->separatorLength($credit, $next);
+        }
+
+        // A fragment that is only a generational suffix belongs to the name
+        // before it — "Hank Williams" + "Jr." is one artist, in any position.
+        $joined = [];
+
+        foreach ($names as $name) {
+            if ($joined !== [] && $this->isSuffix($name)) {
+                $joined[count($joined) - 1] .= ', ' . $name;
+
+                continue;
+            }
+
+            $joined[] = $name;
         }
 
         return $joined;
     }
 
     /**
-     * The known name this credit begins with, if any.
+     * A known name starting exactly at this offset, if any.
      *
-     * Matching the whole string is not enough: "Earth, Wind & Fire" alone was
-     * protected, while "Earth, Wind & Fire, Santana" split at the first comma
-     * and filed the track under "Earth". A guard that only works when the band
-     * plays alone is not a guard.
+     * Longest wins, so "Crosby, Stills, Nash & Young" is not read as the
+     * shorter "Crosby, Stills & Nash".
      */
+    private function indivisibleAt(string $credit, int $offset): ?string
+    {
+        $found = null;
+
+        foreach (self::INDIVISIBLE as $name) {
+            $candidate = mb_substr($credit, $offset, mb_strlen($name));
+
+            if (mb_strtolower($candidate) !== mb_strtolower($name)) {
+                continue;
+            }
+
+            // The match has to end the string or be followed by a separator,
+            // or "America" swallows the start of "American Authors".
+            $after = mb_substr($credit, $offset + mb_strlen($name));
+
+            if ($after !== '' && ! preg_match('/^\s*[,\/]/u', $after)) {
+                continue;
+            }
+
+            if ($found === null || mb_strlen($name) > mb_strlen($found)) {
+                $found = $name;
+            }
+        }
+
+        return $found;
+    }
+
+    private function nextSeparator(string $credit, int $offset): int
+    {
+        $length = mb_strlen($credit);
+
+        for ($i = $offset; $i < $length; $i++) {
+            if (in_array(mb_substr($credit, $i, 1), [',', '/'], true)) {
+                return $i;
+            }
+        }
+
+        return $length;
+    }
+
+    /**
+     * How much separator and whitespace sits at this offset.
+     */
+    private function separatorLength(string $credit, int $offset): int
+    {
+        $rest = mb_substr($credit, $offset);
+
+        return preg_match('/^\s*[,\/]\s*/u', $rest, $m) ? mb_strlen($m[0]) : 0;
+    }
+
+    private function isSuffix(string $part): bool
+    {
+        $bare = mb_strtolower(rtrim(trim($part), '.'));
+
+        foreach (self::SUFFIXES as $suffix) {
+            if ($bare === mb_strtolower($suffix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function indivisiblePrefix(string $credit): ?string
     {
         $credit = trim($credit);

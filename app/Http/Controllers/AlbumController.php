@@ -123,15 +123,18 @@ class AlbumController extends Controller
 
         $albums = $this->albums->forArtist($data['name']);
         $singles = $this->albums->singlesForArtist($data['name']);
+        $appearsOn = $this->albums->appearsOn($data['name']);
 
         // Nothing visible under this name means it does not exist as far as
-        // this profile is concerned.
-        abort_if($albums->isEmpty() && $singles->isEmpty(), 404);
+        // this profile is concerned. A guest artist with no records of their
+        // own still has a page, because appearances are records too.
+        abort_if($albums->isEmpty() && $singles->isEmpty() && $appearsOn->isEmpty(), 404);
 
         return view('media.artist', [
             'artist' => $data['name'],
             'albums' => $albums,
             'singles' => $singles,
+            'appearsOn' => $appearsOn,
         ]);
     }
 

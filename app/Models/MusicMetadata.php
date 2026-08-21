@@ -48,6 +48,7 @@ class MusicMetadata extends Model
     protected $fillable = [
         'media_item_id',
         'artist',
+        'primary_artist',
         'album',
         'track_number',
         'disc_number',

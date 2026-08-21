@@ -102,6 +102,37 @@ class ArtistCreditsTest extends TestCase
         );
     }
 
+    public function test_a_known_name_billed_second_is_not_shattered(): void
+    {
+        // The guard first protected only a prefix. Billed second, the band was
+        // split into two artists who do not exist — "Earth" and "Wind & Fire" —
+        // and primary() still looked right, so only all() showed the damage.
+        $this->assertSame(
+            ['Santana', 'Earth, Wind & Fire'],
+            $this->credits->all('Santana, Earth, Wind & Fire'),
+        );
+
+        $this->assertSame(
+            ['Florence + The Machine', 'Earth, Wind & Fire'],
+            $this->credits->all('Florence + The Machine, Earth, Wind & Fire'),
+        );
+    }
+
+    public function test_a_suffix_attaches_to_its_own_name_not_the_one_before(): void
+    {
+        // "Willie Nelson, Hank Williams, Jr." glued both names into one person
+        // when the suffix rule ran against the wrong fragment.
+        $this->assertSame(
+            ['Willie Nelson', 'Hank Williams, Jr.'],
+            $this->credits->all('Willie Nelson, Hank Williams, Jr.'),
+        );
+
+        $this->assertSame(
+            ['Reba McEntire', 'Hank Williams, Jr.', 'Tom Petty'],
+            $this->credits->all('Reba McEntire, Hank Williams, Jr., Tom Petty'),
+        );
+    }
+
     public function test_the_longest_matching_name_wins(): void
     {
         // Both "Crosby, Stills & Nash" and "Crosby, Stills, Nash & Young" are
@@ -121,9 +152,13 @@ class ArtistCreditsTest extends TestCase
         $this->assertSame('America', $this->credits->primary('America, George Martin'));
     }
 
-    public function test_the_exception_list_ignores_case(): void
+    public function test_a_known_name_is_normalised_to_its_canonical_spelling(): void
     {
-        $this->assertSame('earth, wind & fire', $this->credits->primary('earth, wind & fire'));
+        // Matching ignores case, and the list's spelling is the one kept — so
+        // a badly-tagged file groups with the correctly-tagged ones rather
+        // than becoming a second artist with the same name.
+        $this->assertSame('Earth, Wind & Fire', $this->credits->primary('earth, wind & fire'));
+        $this->assertSame('Earth, Wind & Fire', $this->credits->primary('EARTH, WIND & FIRE, Santana'));
     }
 
     /* ---------------------------------------------------- odd input ------- */

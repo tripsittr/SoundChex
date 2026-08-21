@@ -4,9 +4,12 @@ namespace App\Services;
 
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
+use App\Models\Person;
+use App\Services\MusicCredits;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Albums, derived from track metadata rather than stored as rows.
@@ -50,6 +53,16 @@ class AlbumBrowser
      *
      * @return LengthAwarePaginator<int, object>
      */
+    /**
+     * The artist a track is browsed under.
+     *
+     * The credits in `media_item_person` are the truth; `primary_artist` is
+     * the denormalised index into them, because grouping and pagination happen
+     * in SQL. Falls back to the raw credit for anything enrichment has not
+     * reached, so a new file is listed under what it says rather than missing.
+     */
+    private const PRIMARY = "COALESCE(NULLIF(music_metadata.primary_artist, ''), music_metadata.artist)";
+
     public function artists(int $perPage = 100): LengthAwarePaginator
     {
         return $this->gate->apply(MediaItem::query())
@@ -57,12 +70,20 @@ class AlbumBrowser
             ->where('media_items.type', MediaItemType::Music)
             ->whereNotNull('music_metadata.artist')
             ->where('music_metadata.artist', '!=', '')
-            ->selectRaw('music_metadata.artist as artist')
+            // Grouped on the primary rather than the raw credit, or one artist
+            // appears once per collaborator they have ever recorded with:
+            // "$uicideboy$", "$uicideboy$, Pouya", "$uicideboy$/Shakewell" and
+            // so on, each a separate entry in the index.
+            //
+            // COALESCE rather than a plain column, so a track enrichment has
+            // not reached yet still lists under what its file says instead of
+            // vanishing from the index entirely.
+            ->selectRaw(self::PRIMARY . ' as artist')
             ->selectRaw('COUNT(*) as track_count')
             ->selectRaw('COUNT(DISTINCT music_metadata.album) as album_count')
             ->selectRaw('MIN(media_items.id) as sample_item_id')
-            ->groupBy('music_metadata.artist')
-            ->orderByRaw('LOWER(music_metadata.artist)')
+            ->groupBy(DB::raw(self::PRIMARY))
+            ->orderByRaw('LOWER(' . self::PRIMARY . ')')
             ->paginate($perPage);
     }
 
@@ -75,11 +96,11 @@ class AlbumBrowser
     {
         return $this->baseQuery()
             ->selectRaw('music_metadata.album as album')
-            ->selectRaw('music_metadata.artist as artist')
+            ->selectRaw(self::PRIMARY . ' as artist')
             ->selectRaw('COUNT(*) as track_count')
             ->selectRaw('MIN(media_items.id) as sample_item_id')
-            ->where('music_metadata.artist', $artist)
-            ->groupBy('music_metadata.album', 'music_metadata.artist')
+            ->whereRaw(self::PRIMARY . ' = ?', [$artist])
+            ->groupBy('music_metadata.album', DB::raw(self::PRIMARY))
             ->orderByRaw('LOWER(music_metadata.album)')
             ->get();
     }
@@ -139,10 +160,46 @@ class AlbumBrowser
         return $this->gate->apply(MediaItem::query())
             ->where('media_items.type', MediaItemType::Music)
             ->whereHas('musicMetadata', fn (Builder $q) => $q
-                ->where('artist', $artist)
+                ->whereRaw(self::PRIMARY . ' = ?', [$artist])
                 ->where(fn (Builder $inner) => $inner
                     ->whereNull('album')
                     ->orWhere('album', '')))
+            ->with('musicMetadata')
+            ->orderBy('title')
+            ->get();
+    }
+
+    /**
+     * Tracks this artist is credited on but did not lead.
+     *
+     * The collaborations. An artist page matching the credit string exactly
+     * showed only the tracks where they recorded alone — $uicideboy$ had 342
+     * of those and appears on 446, so 104 were invisible on their own page.
+     *
+     * Read from the credits rather than by matching the string again: that is
+     * what the credits are for, and a LIKE on the artist column would match
+     * "The Beatles" inside "The Beatles Tribute Band".
+     *
+     * @return Collection<int, MediaItem>
+     */
+    public function appearsOn(string $artist): Collection
+    {
+        $person = Person::where('name', $artist)->pluck('id');
+
+        if ($person->isEmpty()) {
+            return collect();
+        }
+
+        return $this->gate->apply(MediaItem::query())
+            ->where('media_items.type', MediaItemType::Music)
+            // Credited on the track...
+            ->whereHas('people', fn (Builder $q) => $q
+                ->whereIn('people.id', $person)
+                ->where('media_item_person.role', MusicCredits::FEATURED))
+            // ...but not the one it is filed under, or the album grid above
+            // would list it twice.
+            ->whereHas('musicMetadata', fn (Builder $q) => $q
+                ->whereRaw(self::PRIMARY . ' != ?', [$artist]))
             ->with('musicMetadata')
             ->orderBy('title')
             ->get();
