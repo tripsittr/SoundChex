@@ -37,18 +37,33 @@ test.describe('service worker cache versioning', () => {
         // key proves only that activate works; it passes even when the version
         // is hardcoded. What matters is that the key is derived from the build
         // manifest, so shipping different assets yields a different cache.
-        const [version, manifest] = await page.evaluate(async () => [
-            (await fetch('/sw.js').then((r) => r.text())).match(/const VERSION = '([^']*)'/)?.[1],
-            await fetch('/build/manifest.json').then((r) => r.text()),
+        const [version, manifest, swSource] = await page.evaluate(async () => {
+            const source = await fetch('/sw.js').then((r) => r.text());
+
+            return [
+                source.match(/const VERSION = '([^']*)'/)?.[1],
+                await fetch('/build/manifest.json').then((r) => r.text()),
+                source,
+            ];
+        });
+
+        // The worker's own source is part of the stamp too, not just the
+        // manifest it serves: a change to caching strategy leaves the manifest
+        // identical, and the version would otherwise stay put while the old
+        // worker kept running with its old caches. Recomputed here the same way
+        // `scripts/embed-offline-shell.mjs` builds it, with the VERSION line
+        // itself removed — it cannot be an input to its own hash.
+        const digest = await page.evaluate(async ([manifestText, source]) => {
+            const bytes = new TextEncoder().encode(manifestText + source);
+            const hash = await crypto.subtle.digest('SHA-1', bytes);
+
+            return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+        }, [
+            JSON.stringify(JSON.parse(manifest)),
+            swSource.replace(/const VERSION = '[^']*';/, ''),
         ]);
 
-        const digest = await page.evaluate(async (text) => {
-            const bytes = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(text));
-
-            return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
-        }, JSON.stringify(JSON.parse(manifest)));
-
-        expect(version, 'the cache key is the manifest digest').toBe(digest);
+        expect(version, 'the cache key is the manifest and worker digest').toBe(digest);
     });
 
     test('a cache from an older build is deleted on activation', async ({ page }) => {
