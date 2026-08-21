@@ -83,8 +83,11 @@ fix. `NativeOfflineBridge.md` keeps the Tauri UI and moves only those three
 things into a native plugin, rather than rewriting every screen in Swift.
 Depends on `NativeDownloads.md` for where the bytes land.
 
-**Blocked on diagnosing the current offline failures first**, since if those
-are application logic then none of this addresses them.
+**No longer blocked.** The offline failures were diagnosed and fixed on
+21 August 2026 — an artwork request flood, a dead connect screen, and a
+downloads view reading the wrong IndexedDB store. All application logic, none of
+it what this plan addresses, which means the three platform limits it targets
+are still real and still unaddressed.
 
 ### Cross-media links
 

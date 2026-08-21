@@ -152,10 +152,20 @@ cannot, verified on the phone and written down.
 
 ## Before starting
 
-**Offline mode is reported as still not working, and has no reproduction.**
-Nothing here should begin until that is understood, because the answer changes
-what this plan is worth: if the cause is a bug in the offline shell, this plan
-does not address it, and if the cause is genuinely the storage cap or webview
-suspension, it addresses it directly.
+**Resolved, 21 August 2026.** The offline failures were application logic, not
+platform limits, and every one of them has been fixed: the offline shell
+pre-rendered all ~1,350 items with artwork and flooded the network, a top-level
+`return` killed the connect screen outright, and the downloads view read the
+wrong IndexedDB store so it reported "nothing saved" while holding downloads.
+
+That answers the question this section was waiting on. None of those were the
+storage cap or webview suspension, so this plan was never the fix for them — and
+equally, none of them being the cause means the three things listed under *What
+the web platform actually cannot do* are still genuinely unaddressed. The plan
+stands on its own merits rather than as a remedy for a bug that turned out to be
+elsewhere.
+
+Worth re-measuring the storage cap on device before step 1, so the case for the
+work rests on a current number rather than the one that motivated it.
 
 ## Not started
