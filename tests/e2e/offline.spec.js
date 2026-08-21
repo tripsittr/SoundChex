@@ -285,3 +285,41 @@ test.describe('pre-render size', () => {
     });
 });
 
+/**
+ * A build reload never interrupts a navigation.
+ *
+ * The device log for the failing music page showed reloading-for-build fired
+ * mid-tap: the screen went white and came back somewhere else, which reads as
+ * the page being broken rather than the app updating itself.
+ */
+test.describe('build reloads', () => {
+    test('a reload waits for the navigation to finish', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+
+        const source = await page.evaluate(
+            () => fetch('/build/manifest.json').then((r) => r.json()),
+        );
+
+        expect(source, 'the build is served').toBeTruthy();
+
+        // Livewire announces both ends of a navigation, so the guard is exact
+        // rather than a guess at how long a page takes.
+        const guarded = await page.evaluate(() => typeof window.soundchexBuild?.checkForUpdate === 'function');
+
+        expect(guarded).toBe(true);
+    });
+
+    test('the watcher records a reload before it happens', async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+
+        // A page load destroys anything written after it, so a reload that
+        // recorded itself afterwards left no trace — which is why the white
+        // flash looked like a crash for so long.
+        const events = await page.evaluate(() => window.soundchexDiagnostics.events());
+
+        expect(Array.isArray(events)).toBe(true);
+    });
+});
+

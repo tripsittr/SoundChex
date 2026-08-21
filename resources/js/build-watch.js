@@ -17,6 +17,17 @@ let loadedBuild = null;
 /** Set once a reload is committed, so it cannot fire twice. */
 let reloading = false;
 
+/**
+ * Whether a navigation is in flight.
+ *
+ * Livewire announces both ends, so this is exact rather than a guess at how
+ * long a page takes.
+ */
+let navigating = false;
+
+document.addEventListener('livewire:navigate', () => { navigating = true; });
+document.addEventListener('livewire:navigated', () => { navigating = false; });
+
 async function currentBuild() {
     try {
         const response = await fetch('/soundchex.json', { cache: 'no-store' });
@@ -49,6 +60,18 @@ function reloadWhenIdle() {
     if (playing) {
         // Deferred rather than dropped: the next check will catch it, and the
         // one after that, until nothing is playing.
+        return;
+    }
+
+    // Not while a page is being asked for.
+    //
+    // A reload during a navigation looks exactly like the app failing: the
+    // screen goes white and comes back somewhere else. The device log for the
+    // music page showed precisely this — reloading-for-build, mid-tap — and it
+    // was mistaken for the page being broken.
+    //
+    // The next check catches it once the page has settled.
+    if (document.visibilityState !== 'visible' || navigating) {
         return;
     }
 
