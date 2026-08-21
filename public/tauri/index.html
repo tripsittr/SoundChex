@@ -244,9 +244,17 @@
                 origins.map(async (origin) => ({ origin, ms: await measure(origin) })),
             );
 
+            // A relay is ranked last whatever it measures. Sorting on time
+            // alone let the Funnel win a race it should never win: it is a
+            // `.ts.net` name served from Tailscale's own infrastructure, and a
+            // single probe that happens to look acceptable is still a relay for
+            // every request afterwards. Measured here: 843ms relayed against
+            // 92ms on the same Wi-Fi.
+            const relayed = (origin) => /\.ts\.net(:|\/|$)/.test(origin);
+
             const answered = results
                 .filter((result) => result.ms !== null)
-                .sort((a, b) => a.ms - b.ms);
+                .sort((a, b) => (relayed(a.origin) - relayed(b.origin)) || (a.ms - b.ms));
 
             return answered[0]?.origin ?? null;
         } finally {

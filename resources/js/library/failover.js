@@ -177,10 +177,21 @@ function isRelayed(origin) {
  * walking a list of four in sequence would take twelve seconds to find one that
  * was available immediately.
  *
- * Ranked by stability first and speed second. Picking purely on speed is what
- * put the app on a LAN address that was momentarily quickest and then stopped
- * existing when the server moved networks — a route that survives the change is
- * worth more than one that shaves a few milliseconds off each request.
+ * Ranked the same way the background re-check ranks: a relay last whatever it
+ * measures, then stability, then speed.
+ *
+ * Relay-last matters most here, because this is the choice made at launch and
+ * the app lives with it. The Funnel hostname is a `.ts.net` name, so the
+ * stability test says yes to it — and stability outranked speed, which meant a
+ * 843ms relay beat a 92ms address on the same Wi-Fi, every single launch. The
+ * background check would eventually move off it, but only after the user had
+ * already paid a second a page for however long that took.
+ *
+ * Picking purely on speed is the opposite mistake: it put the app on a LAN
+ * address that was momentarily quickest and then stopped existing when the
+ * server moved networks. A route that survives the change is worth more than
+ * one that shaves a few milliseconds — but not more than one that is forty
+ * times quicker.
  */
 export async function fastest(origins = candidates(), timeout = PROBE_TIMEOUT) {
     const results = await Promise.all(
@@ -189,12 +200,14 @@ export async function fastest(origins = candidates(), timeout = PROBE_TIMEOUT) {
 
     const answered = results
         .filter((result) => result.ms !== null)
-        .sort((a, b) => (isStable(b.origin) - isStable(a.origin)) || (a.ms - b.ms));
+        .sort((a, b) => (isRelayed(a.origin) - isRelayed(b.origin))
+            || (isStable(b.origin) - isStable(a.origin))
+            || (a.ms - b.ms));
 
     return answered[0] ?? null;
 }
 
-export { isStable };
+export { isRelayed, isStable };
 
 /**
  * Moves the app to another address.
