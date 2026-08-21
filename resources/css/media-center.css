@@ -234,8 +234,17 @@
 
    max() rather than a bare env(): the inset is 0 on a device without a notch
    and on desktop, where the existing padding should stand. */
+/* The inset goes on the header, not the nav inside it.
+   Padding the nav left the header's own background stopping short of the top
+   edge, so on a desktop window — where the inset is zero and there is no notch
+   to hide it — content scrolled behind a transparent strip above the bar.
+   Padding the header extends its background to the edge instead. */
+header.fixed {
+    padding-top: env(safe-area-inset-top);
+}
+
 .media-header-nav {
-    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-top: 0.75rem;
 }
 
 /* Clearance for the fixed header, on any page that starts with content rather
@@ -335,6 +344,15 @@
     body:has(#now-playing:not(.translate-y-full)) {
         padding-bottom: calc(3.25rem + 4.5rem + env(safe-area-inset-bottom));
     }
+}
+
+/* Phones only.
+   The markup carries md:hidden, but Tailwind's utilities are emitted in their
+   own layer and this file's rules win against them — so display:grid held at
+   every width and the desktop app showed both navigations at once. Declared
+   after the base rule, since they have the same specificity and order decides. */
+@media (min-width: 768px) {
+    .mobile-tabs { display: none; }
 }
 
 /* On desktop there is no tab bar, so the player keeps the bottom edge and

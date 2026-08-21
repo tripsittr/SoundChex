@@ -242,3 +242,47 @@ test.describe('playing from a row', () => {
         await expect(row.getByRole('menuitem', { name: /more info/i })).toBeVisible();
     });
 });
+
+/**
+ * One navigation per platform.
+ *
+ * A phone gets the bottom tab bar; a desktop window gets the top one. Both
+ * appeared at once in the desktop app, because the markup's md:hidden is a
+ * Tailwind utility and this project's own stylesheet wins against those — so
+ * display:grid held at every width.
+ */
+test.describe('navigation per platform', () => {
+    test('a desktop window shows only the top bar', async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await signIn(page);
+        await page.goto('/app/music');
+
+        await expect(page.locator('.mobile-tabs')).toBeHidden();
+        await expect(page.locator('header')).toBeVisible();
+    });
+
+    test('a phone keeps the bottom bar', async ({ page }) => {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await signIn(page);
+        await page.goto('/app/music');
+
+        await expect(page.locator('.mobile-tabs')).toBeVisible();
+    });
+
+    test('the header reaches the top edge', async ({ page }) => {
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await signIn(page);
+        await page.goto('/app/music');
+
+        // The safe-area inset was padding the nav inside the header rather than
+        // the header itself, so its background stopped short of the top edge —
+        // and on a desktop window, where the inset is zero and there is no notch
+        // to hide it, content scrolled behind a transparent strip.
+        const top = await page.evaluate(
+            () => Math.round(document.querySelector('header').getBoundingClientRect().top),
+        );
+
+        expect(top).toBe(0);
+    });
+});
+
