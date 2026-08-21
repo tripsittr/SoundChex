@@ -81,6 +81,46 @@ class ArtistCreditsTest extends TestCase
         $this->assertSame('Tyler, The Creator', $this->credits->primary('Tyler, The Creator'));
     }
 
+    public function test_a_band_with_a_comma_stays_whole_when_it_collaborates(): void
+    {
+        // The first version of the guard only matched the whole string, so the
+        // band was protected alone and split the moment anyone joined them —
+        // "Earth, Wind & Fire, Santana" filed the track under "Earth".
+        $this->assertSame(
+            'Earth, Wind & Fire',
+            $this->credits->primary('Earth, Wind & Fire, Santana'),
+        );
+
+        $this->assertSame(
+            ['Earth, Wind & Fire', 'Santana'],
+            $this->credits->all('Earth, Wind & Fire, Santana'),
+        );
+
+        $this->assertSame(
+            'Tyler, The Creator',
+            $this->credits->primary('Tyler, The Creator/Frank Ocean'),
+        );
+    }
+
+    public function test_the_longest_matching_name_wins(): void
+    {
+        // Both "Crosby, Stills & Nash" and "Crosby, Stills, Nash & Young" are
+        // on the list, and the shorter one is a prefix of neither — but the
+        // credit has to resolve to the band that actually made the record.
+        $this->assertSame(
+            'Crosby, Stills, Nash & Young',
+            $this->credits->primary('Crosby, Stills, Nash & Young, Neil Young'),
+        );
+    }
+
+    public function test_a_known_name_is_not_matched_inside_a_longer_one(): void
+    {
+        // "America" must not swallow "American Authors", which is in the
+        // library and is a different band entirely.
+        $this->assertSame('American Authors', $this->credits->primary('American Authors'));
+        $this->assertSame('America', $this->credits->primary('America, George Martin'));
+    }
+
     public function test_the_exception_list_ignores_case(): void
     {
         $this->assertSame('earth, wind & fire', $this->credits->primary('earth, wind & fire'));

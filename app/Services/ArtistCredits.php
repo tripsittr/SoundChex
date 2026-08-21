@@ -114,8 +114,21 @@ class ArtistCredits
      */
     private function split(string $credit): array
     {
-        $parts = preg_split('/\s*[,\/]\s*/u', $credit) ?: [];
+        // A known name is taken off the front whole, before any splitting, so
+        // its own commas are never treated as separators.
+        $prefix = $this->indivisiblePrefix($credit);
+        $rest = $credit;
+
+        if ($prefix !== null) {
+            $rest = ltrim(mb_substr($credit, mb_strlen($prefix)), " \t,/");
+        }
+
+        $parts = $rest === '' ? [] : (preg_split('/\s*[,\/]\s*/u', $rest) ?: []);
         $parts = array_values(array_filter(array_map('trim', $parts), fn (string $p) => $p !== ''));
+
+        if ($prefix !== null) {
+            array_unshift($parts, $prefix);
+        }
 
         $joined = [];
 
@@ -135,15 +148,46 @@ class ArtistCredits
         return $joined;
     }
 
-    private function isIndivisible(string $credit): bool
+    /**
+     * The known name this credit begins with, if any.
+     *
+     * Matching the whole string is not enough: "Earth, Wind & Fire" alone was
+     * protected, while "Earth, Wind & Fire, Santana" split at the first comma
+     * and filed the track under "Earth". A guard that only works when the band
+     * plays alone is not a guard.
+     */
+    private function indivisiblePrefix(string $credit): ?string
     {
+        $credit = trim($credit);
+        $lower = mb_strtolower($credit);
+
+        $found = null;
+
         foreach (self::INDIVISIBLE as $name) {
-            if (mb_strtolower($credit) === mb_strtolower($name)) {
-                return true;
+            $needle = mb_strtolower($name);
+
+            if ($lower === $needle) {
+                return $name;
+            }
+
+            // A separator has to follow, or "America" would match inside
+            // "American Authors".
+            if (str_starts_with($lower, $needle) && preg_match('/^\s*[,\/]/u', mb_substr($credit, mb_strlen($name)))) {
+                // Longest wins: "Crosby, Stills, Nash & Young" over
+                // "Crosby, Stills & Nash" where both could match.
+                if ($found === null || mb_strlen($name) > mb_strlen($found)) {
+                    $found = $name;
+                }
             }
         }
 
-        return false;
+        return $found;
+    }
+
+    private function isIndivisible(string $credit): bool
+    {
+        return $this->indivisiblePrefix($credit) !== null
+            && mb_strtolower($this->indivisiblePrefix($credit)) === mb_strtolower(trim($credit));
     }
 
     /**
