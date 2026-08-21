@@ -32,12 +32,26 @@ server and prefer direct routes.
 
 ### Outstanding
 
-**Metadata sources other than TMDB are unconfigured.** `musicbrainz_enabled`
-and `openlibrary_enabled` are both empty in settings. TMDB was too, until it was
-set on 21 August 2026, and the symptom is silent: a source with no key reports
-`supports() === false` and is skipped without a word, so items complete with no
-match and nothing indicates why. Worth an audit of every key in
-`config/metadata_sources.php` against what is actually stored.
+**Two metadata sources are key-gated and have no key.** Audited 21 August 2026;
+all nine registered sources are written, and most need no credential at all:
+
+| Source | Needs a key | Key present |
+|---|---|---|
+| FileTagger, MusicBrainz, iTunes, Open Library | no | — |
+| TMDB (film and TV) | yes | set 21 Aug 2026 |
+| AcoustID | yes | **empty** |
+| Spotify | yes | **empty** |
+| OpenSubtitles | yes | **empty** |
+
+The `musicbrainz_enabled` and `openlibrary_enabled` settings are empty but gate
+nothing — those two check only the media type, so they run regardless.
+
+The failure mode is silence: a key-gated source with no key returns
+`supports() === false` and is skipped without a word, so an item completes
+"enriched" with nothing and no error is raised anywhere. That is how every film
+in the library ended up with no year after the database was rebuilt, unnoticed
+until the conversion filer refused to file one. Worth a visible warning when a
+registered source is skipped for want of a credential.
 
 **Three songs match no provider** — items 1445, 2002 and 2473. They complete
 cleanly with `match_confidence = none`; the providers simply have no record.
