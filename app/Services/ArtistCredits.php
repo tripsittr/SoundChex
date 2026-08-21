@@ -65,8 +65,7 @@ class ArtistCredits
             return $credit;
         }
 
-        $first = preg_split('/\s*[,\/]\s*/u', $credit)[0] ?? $credit;
-        $first = trim($first);
+        $first = trim($this->split($credit)[0] ?? $credit);
 
         // A credit that begins with its own separator — ", Pouya" — would
         // otherwise reduce to nothing at all.
@@ -90,8 +89,7 @@ class ArtistCredits
             return [$credit];
         }
 
-        $parts = preg_split('/\s*[,\/]\s*/u', $credit) ?: [];
-        $parts = array_values(array_filter(array_map('trim', $parts), fn (string $p) => $p !== ''));
+        $parts = $this->split($credit);
 
         return $parts === [] ? [$credit] : $parts;
     }
@@ -102,6 +100,39 @@ class ArtistCredits
     public function isCollaboration(?string $credit): bool
     {
         return count($this->all($credit)) > 1;
+    }
+
+    /**
+     * Splits a credit, keeping generational suffixes attached.
+     *
+     * The suffix guard above only catches a name at the end of the string.
+     * "Hank Williams, Jr., Reba McEntire, Willie Nelson" is a real credit in
+     * the library, and splitting it naively files his work under two artists —
+     * "Hank Williams, Jr." for one track and "Hank Williams" for another.
+     *
+     * @return list<string>
+     */
+    private function split(string $credit): array
+    {
+        $parts = preg_split('/\s*[,\/]\s*/u', $credit) ?: [];
+        $parts = array_values(array_filter(array_map('trim', $parts), fn (string $p) => $p !== ''));
+
+        $joined = [];
+
+        foreach ($parts as $part) {
+            $bare = rtrim($part, '.');
+
+            // A fragment that is only a suffix belongs to the name before it.
+            if ($joined !== [] && in_array(ucfirst(mb_strtolower($bare)), array_map('ucfirst', array_map('mb_strtolower', self::SUFFIXES)), true)) {
+                $joined[count($joined) - 1] .= ', ' . $part;
+
+                continue;
+            }
+
+            $joined[] = $part;
+        }
+
+        return $joined;
     }
 
     private function isIndivisible(string $credit): bool

@@ -2,12 +2,14 @@
 
 namespace App\Jobs;
 
+use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
 use App\Models\MetadataVersion;
 use App\Services\LibraryOrganizer;
 use App\Services\MetadataHistory;
 use App\Services\Metadata\MetadataPipeline;
+use App\Services\MusicCredits;
 use App\Services\WatchProviders;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -50,6 +52,7 @@ class EnrichMediaItemJob implements ShouldQueue
 
             $this->recordHistory($item, $history, $before);
 
+            $this->writeCredits($item);
             $this->refreshAvailability($item);
             $this->fileIntoLibrary($item, $organizer);
         } catch (\Throwable $e) {
@@ -100,6 +103,47 @@ class EnrichMediaItemJob implements ShouldQueue
      * TMDB outage or a missing key shouldn't fail the job and re-run the whole
      * pipeline. Availability simply stays as it was until the next pass.
      */
+    /**
+     * Records who is credited on a track.
+     *
+     * After the pipeline, so it reads whatever artist the sources settled on
+     * rather than the filename's guess. Music only — books and film write
+     * their own credits from their own sources.
+     *
+     * Non-fatal. Enrichment has already saved the metadata that matters, and
+     * losing a credit is not worth re-running the whole pipeline for.
+     */
+    private function writeCredits(MediaItem $item): void
+    {
+        if ($item->type !== MediaItemType::Music) {
+            return;
+        }
+
+        try {
+            $item->refresh()->load('musicMetadata');
+
+            $artist = $item->musicMetadata?->artist;
+
+            if (blank($artist)) {
+                return;
+            }
+
+            $credits = app(MusicCredits::class);
+            $credits->fromCreditString($item, $artist);
+
+            // The column browsing groups on. Kept in step here rather than by
+            // a separate pass, so a track uploaded today is grouped correctly
+            // the moment it is catalogued.
+            $primary = $credits->primaryFor($artist);
+
+            if ($primary !== null && $item->musicMetadata?->primary_artist !== $primary) {
+                $item->musicMetadata->forceFill(['primary_artist' => $primary])->saveQuietly();
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
     private function refreshAvailability(MediaItem $item): void
     {
         try {

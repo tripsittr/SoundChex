@@ -56,6 +56,22 @@ class ArtistCreditsTest extends TestCase
         $this->assertSame('Harry Connick, Jr.', $this->credits->primary('Harry Connick, Jr.'));
     }
 
+    public function test_a_suffix_in_the_middle_of_a_credit_stays_attached(): void
+    {
+        // A real credit in the library. Splitting it naively files his work
+        // under two artists — "Hank Williams, Jr." for one track and
+        // "Hank Williams" for another.
+        $this->assertSame(
+            'Hank Williams, Jr.',
+            $this->credits->primary('Hank Williams, Jr., Reba McEntire, Willie Nelson, Tom Petty'),
+        );
+
+        $this->assertSame(
+            ['Hank Williams, Jr.', 'Reba McEntire', 'Willie Nelson'],
+            $this->credits->all('Hank Williams, Jr., Reba McEntire, Willie Nelson'),
+        );
+    }
+
     public function test_a_band_whose_name_contains_a_comma_stays_whole(): void
     {
         // Not in the library today. That is the point: the rule has to be
@@ -82,8 +98,12 @@ class ArtistCreditsTest extends TestCase
 
     public function test_a_credit_that_begins_with_a_separator_does_not_vanish(): void
     {
-        // Reducing this to an empty string would silently unfile the track.
-        $this->assertSame(', Pouya', $this->credits->primary(', Pouya'));
+        // A leading separator is malformed, and the name after it is the real
+        // artist. Recovering it beats preserving the punctuation, and either
+        // beats reducing the whole thing to an empty string, which would
+        // silently unfile the track.
+        $this->assertSame('Pouya', $this->credits->primary(', Pouya'));
+        $this->assertNotSame('', $this->credits->primary(', Pouya'));
     }
 
     /* ------------------------------------------------------ everyone ------ */
