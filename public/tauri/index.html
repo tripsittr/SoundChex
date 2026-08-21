@@ -584,19 +584,21 @@
     if (saved || known.length > 0) {
         field().value = saved ?? known[0];
 
-        // Airplane mode is known immediately, so there is nothing to wait for.
+        // Offline is known immediately, so there is nothing to wait for.
         //
         // Racing every address first meant sitting through the full timeout to
         // be told the server was unreachable — which the device already knew.
         // Going straight to what is stored is both faster and more honest.
+        //
+        // Written as a branch rather than an early return: this runs at the top
+        // level of the module, where `return` is a syntax error that takes the
+        // whole script with it — the screen then autofills nothing and its
+        // buttons do nothing, which is exactly what it did.
         if (navigator.onLine === false) {
             say('No connection — opening what is on this device…');
             offline(saved ?? known[0]);
-
-            return;
-        }
-
-        say('Finding the fastest route…');
+        } else {
+            say('Finding the fastest route…');
 
 
 
@@ -667,7 +669,8 @@
             }
 
             offline(host);
-        });
+            });
+        }
     } else {
         // Nothing saved, so this is a first launch and the form is the point.
         revealForm();
