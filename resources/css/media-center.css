@@ -432,6 +432,45 @@
     .download-spinner { animation: none; }
 }
 
+/* Actions beside the Songs heading: shuffle the library, download it all.
+   Sized down from the sub-nav's buttons, since they sit next to a heading
+   rather than in a row of their own. */
+.songs-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    /* 36px rather than 44: these sit beside a heading, and a full touch target
+       there would tower over it. Still comfortably tappable. */
+    min-height: 2.25rem;
+    padding: 0 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-base-600);
+    background: var(--color-base-800);
+    color: var(--color-ink-300);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.songs-action:hover {
+    border-color: var(--color-ink-500);
+    color: var(--color-ink-100);
+    background: var(--color-base-700);
+}
+
+.songs-action[data-state='downloading'] { color: var(--color-ink-100); }
+.songs-action[data-state='stored'] { color: #34d399; border-color: color-mix(in srgb, #34d399 40%, transparent); }
+.songs-action[data-state='failed'] { color: #fca5a5; }
+
+/* On a narrow phone the label is the first thing worth losing: the icon says
+   what each does, and the heading beside them needs the room. */
+@media (max-width: 400px) {
+    .songs-action span { display: none; }
+    .songs-action { padding: 0 0.55rem; }
+}
+
 /* ----------------------------------------------------------------- toast */
 
 /* Sits above the tab bar and the now-playing bar, both of which are fixed to

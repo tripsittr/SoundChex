@@ -43,12 +43,34 @@
                     <span class="ml-1 text-sm font-normal text-ink-500">{{ $items->total() }}</span>
                 </h2>
 
-                @if ($isFiltered)
-                    <a href="{{ route('media.browse', $type->value) }}"
-                       class="shrink-0 text-sm text-ink-500 transition hover:text-ink-100">
-                        Clear filters
-                    </a>
-                @endif
+                <div class="flex shrink-0 items-center gap-2">
+                    @if ($isFiltered)
+                        <a href="{{ route('media.browse', $type->value) }}"
+                           class="text-sm text-ink-500 transition hover:text-ink-100">
+                            Clear filters
+                        </a>
+                    @endif
+
+                    {{-- Beside the heading they act on, rather than in the
+                         sub-navigation: those tabs move between groupings, and a
+                         control that plays or downloads is a different kind of
+                         thing sitting in the same row. --}}
+                    @if ($type === \App\Enums\MediaItemType::Music && ! $isFiltered)
+                        <button type="button" data-shuffle-library class="songs-action">
+                            <svg class="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <span data-shuffle-label>Shuffle</span>
+                        </button>
+
+                        <button type="button" data-download-library data-state="idle" class="songs-action">
+                            <svg class="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <span data-download-label>Download all</span>
+                        </button>
+                    @endif
+                </div>
             </div>
 
             {{-- Filters.

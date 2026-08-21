@@ -226,22 +226,8 @@ function musicSubnav(path) {
         nav.append(link);
     });
 
-    // Shuffle belongs with the groupings, and the server's subnav carries it —
-    // leaving it out here meant it vanished on every pre-render, which is every
-    // tap while online.
-    const shuffle = document.createElement('button');
+    // Shuffle and Download all live beside the Songs heading now, not here.
 
-    shuffle.type = 'button';
-    shuffle.className = 'music-subnav__shuffle';
-    shuffle.dataset.shuffleLibrary = '';
-    shuffle.innerHTML = `
-        <svg class="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <span data-shuffle-label>Shuffle all</span>
-    `;
-
-    nav.append(shuffle);
     wrap.append(nav);
 
     return wrap;

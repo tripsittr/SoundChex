@@ -48,29 +48,6 @@
         </a>
     @endforeach
 
-    {{-- Shuffle belongs with the groupings: it is another way into the same
-         library, and it is wanted from any of these pages rather than only
-         from the songs list. --}}
-    <button type="button"
-            data-shuffle-library
-            class="music-subnav__shuffle">
-        <svg class="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <span data-shuffle-label>Shuffle all</span>
-    </button>
 
-    {{-- Fetches the whole library rather than the page on screen: the songs
-         list is paginated, so a button built from what is rendered would
-         quietly download the first forty-eight tracks and stop. --}}
-    <button type="button"
-            data-download-library
-            data-state="idle"
-            class="music-subnav__shuffle">
-        <svg class="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <span data-download-label>Download all</span>
-    </button>
 </nav>
 </div>
