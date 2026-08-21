@@ -273,3 +273,87 @@ test.describe('download state on rebuilt rows', () => {
             .toHaveAttribute('data-state', 'stored', { timeout: 10000 });
     });
 });
+
+/**
+ * Downloading something twice.
+ *
+ * The stores are keyed by media item id and written with put(), so a repeat
+ * never produced a second copy — but it did transfer the whole file again,
+ * which on a metered connection is the part that costs.
+ */
+test.describe('downloading the same track twice', () => {
+    test.beforeEach(async ({ page }) => {
+        await signIn(page);
+        await page.goto('/app/music');
+        await appReady(page, { rows: true });
+    });
+
+    test('it is stored once and fetched once', async ({ page }) => {
+        const result = await page.evaluate(async () => {
+            const downloads = window.soundchexDownloads;
+            let fetches = 0;
+
+            const realFetch = window.fetch;
+
+            window.fetch = (...args) => {
+                if (String(args[0]).includes('/stream')) fetches += 1;
+
+                return realFetch(...args);
+            };
+
+            await downloads.download({
+                id: 1, url: '/app/item/1/stream', meta: { title: 'T', type: 'music' },
+            });
+
+            const stamp = (await downloads.list())[0].downloadedAt;
+
+            await new Promise((resolve) => setTimeout(resolve, 30));
+
+            await downloads.download({
+                id: 1, url: '/app/item/1/stream', meta: { title: 'T', type: 'music' },
+            });
+
+            window.fetch = realFetch;
+
+            const entries = await downloads.list();
+
+            return {
+                entries: entries.length,
+                fetches,
+                // An overwrite would stamp a new time; skipping leaves it.
+                untouched: entries[0].downloadedAt === stamp,
+            };
+        });
+
+        expect(result.entries, 'stored once').toBe(1);
+        expect(result.fetches, 'fetched once').toBe(1);
+        expect(result.untouched, 'the stored file is left alone').toBe(true);
+    });
+
+    test('a forced download fetches again', async ({ page }) => {
+        // The escape hatch, for a file that needs replacing rather than
+        // keeping — a truncated download, or one stored before a re-encode.
+        const fetches = await page.evaluate(async () => {
+            const downloads = window.soundchexDownloads;
+            let count = 0;
+
+            const realFetch = window.fetch;
+
+            window.fetch = (...args) => {
+                if (String(args[0]).includes('/stream')) count += 1;
+
+                return realFetch(...args);
+            };
+
+            await downloads.download({ id: 1, url: '/app/item/1/stream', meta: { title: 'T' } });
+            await downloads.download({ id: 1, url: '/app/item/1/stream', meta: { title: 'T' }, force: true });
+
+            window.fetch = realFetch;
+
+            return count;
+        });
+
+        expect(fetches).toBe(2);
+    });
+});
+

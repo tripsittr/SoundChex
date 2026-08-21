@@ -140,8 +140,25 @@ export async function checkSpace(bytes) {
  * @param {(loaded: number, total: number) => void} [options.onProgress]
  * @param {AbortSignal} [options.signal]
  */
-export async function download({ id, url, meta = {}, onProgress, signal }) {
+export async function download({ id, url, meta = {}, onProgress, signal, force = false }) {
     await requestPersistence();
+
+    // Already here, so there is nothing to fetch.
+    //
+    // The stores are keyed by id and written with put(), so a second download
+    // overwrote the first rather than duplicating it — but it still transferred
+    // the whole file again, which on a metered connection is the part that
+    // costs. The callers that guard against this do so individually; doing it
+    // here means none of them can forget.
+    if (! force) {
+        const existing = await transaction(META_STORE, 'readonly', (store) => store.get(String(id)));
+
+        if (existing?.size > 0) {
+            onProgress?.(existing.size, existing.size);
+
+            return { id: String(id), size: existing.size, alreadyStored: true };
+        }
+    }
 
     const response = await fetch(url, { signal });
 
