@@ -44,6 +44,10 @@ not that a test passed. Both are noted where they differ.
 | S-16 | Test suite is slow | `workers: 1`, one SQLite database and one seeded library. The fixable part is the remaining hardcoded `waitForTimeout` calls |
 | S-17 | Device and session tracking | "What devices are online, using the server, and what they are doing." `device_reports` is a starting point |
 | S-18 | APNs push notifications | Paid account makes it possible; `notifications.js` already sends what push would carry |
+| S-37 | `MusicCredits::fromMusicBrainz()` is never called in production | Written and tested, but only tests call it. Enrichment always parses the credit string, so credits never get MusicBrainz's stable artist ids even when a recording matched. The better source is built and unused |
+| S-38 | `useLocalSource()` in `download-button.js` is dead code | Nothing references it. The player and video use `localUrl()` directly, so it is superseded rather than missing — but it should go before someone wires it up in parallel |
+| S-39 | 11 metadata sources registered but commented out | Discogs, Last.fm, Genius, Deezer, OMDb, Trakt, TVMaze, TVDB, Google Books, LibraryThing, Fanart.tv. Nothing breaks by their absence |
+| S-40 | Playlist rows have long press but no track menu | `playlist.blade.php` carries `data-long-press-menu` with no `.track-menu` inside it, so the gesture opens nothing |
 
 ## Done
 
@@ -74,6 +78,16 @@ not that a test passed. Both are noted where they differ.
 | S-36 | Splitting `music_metadata.artist` itself | It is what the file says, and `LibraryOrganizer` builds `Artist/Album/` from it. Changing it moves files on disk |
 
 ---
+
+## Audit notes
+
+Searched 22 August 2026 for unfinished work: TODO/FIXME/HACK markers (**none**
+in `app/`, `resources/` or `src-tauri/src/`), skipped tests (three, all
+environment-conditional and legitimate), unreferenced views (none), pending
+migrations (none), registered-but-missing classes (none).
+
+What it did turn up is S-37 through S-40 above. S-37 is the one that matters:
+the better credit source is built, tested, and never reached.
 
 ## Under discussion
 
