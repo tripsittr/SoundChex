@@ -102,7 +102,7 @@ export function setupIconDownloads() {
         // Only worth saying when something is actually waiting behind another
         // download — a toast for every single tap is noise.
         if (position > 1) {
-            toast(`Added to download queue — ${position} waiting`);
+            toast(`Added to the download queue — ${position - 1} ahead`);
         }
 
         try {
@@ -307,6 +307,34 @@ export function setupBatchDownloads() {
  * device is skipped rather than fetched again, which is what makes this safe to
  * press twice.
  */
+/**
+ * A batch label as the subject of a sentence.
+ *
+ * The label reaches three messages as a subject — "… is already on this
+ * device", "… is 4.2 GB", "… is on this device" — and the fallback for a set
+ * of tracks is the plural "these tracks", which made all three read "these
+ * tracks is". It also began a sentence in lower case.
+ *
+ * Returns the label with its first letter raised and the verb that agrees with
+ * it, rather than rewording each message: the label is the only part that
+ * varies, so the agreement belongs with it.
+ */
+function subject(label) {
+    const text = String(label ?? '').trim() || 'these tracks';
+
+    // Plural only when we chose the wording, not by guessing at an album or
+    // artist name — "The Beatles is" is wrong but "Abbey Road are" is worse,
+    // and a title ending in s is no guide to either.
+    const plural = text === 'these tracks';
+
+    return {
+        text: text.charAt(0).toUpperCase() + text.slice(1),
+        // Lower case for the middle of a sentence.
+        inline: text,
+        verb: plural ? 'are' : 'is',
+    };
+}
+
 async function runBatch(button, tracks, label) {
     const setBatchLabel = (text) => {
         const el = button.querySelector('[data-download-label]');
@@ -320,7 +348,9 @@ async function runBatch(button, tracks, label) {
     const missing = tracks.filter((track) => !stored.has(String(track.id)));
 
     if (missing.length === 0) {
-        toast(`${label} is already on this device.`);
+        const { text, verb } = subject(label);
+
+        toast(`${text} ${verb} already on this device.`);
 
         button.dataset.state = 'stored';
         setBatchLabel('Downloaded');
@@ -337,7 +367,7 @@ async function runBatch(button, tracks, label) {
 
         if (space.known && !space.fits) {
             const proceed = window.confirm(
-                `${label} is ${formatBytes(bytes)}, and this device has about `
+                `${subject(label).text} ${subject(label).verb} ${formatBytes(bytes)}, and this device has about `
                 + `${formatBytes(space.free)} free.\n\nTry anyway?`,
             );
 
@@ -376,7 +406,7 @@ async function runBatch(button, tracks, label) {
     setBatchLabel(failed === 0 ? 'Downloaded' : `${failed} failed`);
 
     toast(failed === 0
-        ? `${label} is on this device.`
+        ? `${subject(label).text} ${subject(label).verb} on this device.`
         : `${done} downloaded, ${failed} failed.`);
 
     paintIconDownloadStates();
