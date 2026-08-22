@@ -45,7 +45,7 @@ export default defineConfig({
             name: 'reseed',
             testMatch: /reseed\.teardown\.js/,
         },
-        { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: /(mobile|phone|phone-dl|download-queue|downloads-remove|downloads-batch|player-session|failover)\.spec\.js/ },
+        { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: /(mobile|phone|phone-dl|download-queue|downloads-remove|downloads-batch|mobile-touch|player-session|failover)\.spec\.js/ },
     ],
     // Two servers: the Laravel app, and a static one for the Tauri shell.
     // The shell's tests prove it works *without* the Laravel one, so it cannot

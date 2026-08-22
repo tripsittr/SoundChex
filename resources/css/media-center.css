@@ -1042,3 +1042,56 @@ header:has(> .media-header-nav) {
     border-radius: 999px;
     background: var(--color-accent);
 }
+
+/*
+ * Rows that answer a long press.
+ *
+ * iOS treats a held finger on text as the start of a selection: it shows the
+ * magnifier, the selection handles and the copy/share callout, and the app's
+ * own menu never gets a look in. The handler was firing all along — it was
+ * competing with the platform and losing.
+ *
+ * Applied to the row rather than globally. Text elsewhere stays selectable,
+ * because a library is full of names worth copying.
+ */
+[data-long-press-menu] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/*
+ * The controls inside are exempt from the tap highlight, not from selection:
+ * a grey flash on a row that is opening a menu reads as a mis-tap.
+ */
+[data-long-press-menu] {
+    -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * Links inside the app, held rather than tapped.
+ *
+ * iOS answers a long press on an anchor with its own preview sheet — a
+ * thumbnail of the destination and "Open in Safari", "Add to Reading List",
+ * "Copy Link". Reasonable on a web page, wrong in an app: the destination is
+ * this app, and offering to open it somewhere else is offering to leave.
+ *
+ * Scoped to the app's own chrome so a link in a book's text, or anything the
+ * user might genuinely want to share, keeps the platform behaviour.
+ */
+#main a,
+nav a,
+header a {
+    -webkit-touch-callout: none;
+}
+
+/*
+ * The reader is the exception. A long press on a link in a book, or on the
+ * text itself, is the reader's own gesture — selecting a passage to highlight
+ * or annotate — and suppressing the callout there would break the feature the
+ * page exists for.
+ */
+#reader-page a,
+.reader-pdf-scroller a {
+    -webkit-touch-callout: default;
+}
