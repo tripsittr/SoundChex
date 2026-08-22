@@ -13,6 +13,17 @@
 const waiting = [];
 
 let active = null;
+
+/**
+ * How many times an item is tried before it counts as failed.
+ *
+ * Three is enough to ride out a blip without holding a batch up for minutes
+ * when something is genuinely wrong.
+ */
+const MAX_ATTEMPTS = 3;
+
+/** Multiplied by the attempt number, so retries space out rather than repeat. */
+const RETRY_DELAY = 1500;
 let running = false;
 
 /**
@@ -138,8 +149,36 @@ async function drain(run) {
                 return;
             }
 
+            // A failure with the connection apparently up is usually still the
+            // network: a dropped packet, a moment of bad signal, the server
+            // restarting. `navigator.onLine` only knows about the interface,
+            // not whether anything is reachable through it, so the offline
+            // branch above catches fewer cases than it appears to.
+            //
+            // Retried a few times before it counts as failed, so one blip in a
+            // batch of 400 does not silently lose a track. Abort is not
+            // retried: the user asked for it to stop.
+            const attempts = (entry.attempts ?? 0) + 1;
+
+            if (error?.name !== 'AbortError' && attempts < MAX_ATTEMPTS) {
+                entry.attempts = attempts;
+
+                // Back of the queue, not the front: the rest of the batch
+                // should not wait behind one item that is struggling.
+                waiting.push(entry);
+                active = null;
+                persist();
+                announce('retrying', { item: entry.item, attempt: attempts, remaining: waiting.length });
+
+                // Widening pause, so a genuinely dead server is not hammered.
+                // eslint-disable-next-line no-await-in-loop
+                await new Promise((wait) => { setTimeout(wait, RETRY_DELAY * attempts); });
+
+                continue;
+            }
+
             entry.reject(error);
-            announce('failed', { item: entry.item, error, remaining: waiting.length });
+            announce('failed', { item: entry.item, error, attempts, remaining: waiting.length });
         } finally {
             active = null;
             persist();
