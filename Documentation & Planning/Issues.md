@@ -30,12 +30,10 @@ not that a test passed. Both are noted where they differ.
 | S-02 | Reader is slow to open and to turn pages | Not diagnosed. Page content, OCR text and images all stream per page; the mirror does not cover the reader at all |
 | S-03 | Artist, album and item pages are not in the device mirror | Six list screens are; these three are pure server round-trips, ~900ms each over the relay |
 | S-04 | `phone-dl.spec.js` "a stored track stays marked through a pre-render" | Passes alone and with all four download specs; fails in the full 231-test run on both projects. Not explained |
-| S-05 | iPhone was not on the tailnet | Tailscale now installed. Confirm the app actually settles on `100.106.62.120:8000` rather than the Funnel |
 | S-06 | Native downloads: IndexedDB caps the library at ~1 GB | Plan written: `NativeDownloads.md`. Music alone is 7.71 GB |
 | S-07 | Background downloads and audio stop when the app is backgrounded | Plan written: `NativeOfflineBridge.md`. Unblocked, since the offline failures turned out to be application logic |
 | S-08 | HLS adaptive streaming | Largest remaining item. No plan written |
 | S-09 | Direct route in from outside the house | Plan written: `DirectRemoteAccess.md`. Needs router and DNS work that is not code |
-| S-10 | `/login` has no rate limiting | Theoretical today; load-bearing the moment a port is forwarded. Blocks S-09 |
 | S-11 | `soundchex.json` and `soundchex-addresses.json` are unauthenticated | Deliberate on a tailnet, an information leak on the open internet. They name every address the server answers on. Blocks S-09 |
 | S-12 | AcoustID, Spotify and OpenSubtitles have no API key | Sources skip themselves silently. Now logged, not yet fixed |
 | S-13 | Three songs match no metadata provider | Items 1445, 2002, 2473. Complete with `match_confidence = none`; will never gain metadata without a manual match |
@@ -47,7 +45,7 @@ not that a test passed. Both are noted where they differ.
 | S-37 | `MusicCredits::fromMusicBrainz()` is never called in production | Written and tested, but only tests call it. Enrichment always parses the credit string, so credits never get MusicBrainz's stable artist ids even when a recording matched. The better source is built and unused |
 | S-38 | `useLocalSource()` in `download-button.js` is dead code | Nothing references it. The player and video use `localUrl()` directly, so it is superseded rather than missing — but it should go before someone wires it up in parallel |
 | S-39 | 11 metadata sources registered but commented out | Discogs, Last.fm, Genius, Deezer, OMDb, Trakt, TVMaze, TVDB, Google Books, LibraryThing, Fanart.tv. Nothing breaks by their absence |
-| S-40 | Playlist rows have long press but no track menu | `playlist.blade.php` carries `data-long-press-menu` with no `.track-menu` inside it, so the gesture opens nothing |
+
 
 ## Done
 
@@ -67,6 +65,9 @@ not that a test passed. Both are noted where they differ.
 | S-30 | Scan knocks over its own enrichment jobs | `4e02ca8` | 12 dropped jobs retried, all 12 ran |
 | S-31 | now-playing sheet flake, ~1 run in 20 | `75c2d20` | 70 consecutive passes |
 | S-32 | Converted film unplayable after a catalogue rebuild | `603427a` | Backrooms plays; original archived, not deleted |
+| S-40 | Playlist rows have long press but no menu to open | this commit | `track-menu` added; every song surface now has one |
+| S-05 | iPhone not on the tailnet | — | Phone is on it as `100.77.35.44`; server answers in 77ms. Confirm the app settles there rather than the Funnel |
+| S-10 | `/login` rate limiting | already built | 5/min by IP **and** by email, so spraying addresses does not defeat it. Listed in error |
 
 ## Deferred
 
@@ -80,6 +81,20 @@ not that a test passed. Both are noted where they differ.
 ---
 
 ## Audit notes
+
+**Statuses verified 22 August 2026** against the code and the live database
+rather than against what the entries claimed. Three moved:
+
+- **S-05** — the iPhone is on the tailnet now (`100.77.35.44`), and the server
+  answers it in 77ms against the Funnel's 843ms.
+- **S-10** — listed in error. `/login` has had rate limiting all along: 5 a
+  minute by IP *and* by email, so spraying addresses does not defeat it.
+- **S-40** — fixed while auditing, since it was a one-line omission.
+
+Everything else was confirmed still true: S-11 (both identity endpoints answer
+unauthenticated), S-12 (AcoustID, Spotify and OpenSubtitles still empty), S-13
+(all three songs still unmatched), S-16 (45 `waitForTimeout` calls across 14
+files), S-37 (`fromMusicBrainz` still called only from tests).
 
 Searched 22 August 2026 for unfinished work: TODO/FIXME/HACK markers (**none**
 in `app/`, `resources/` or `src-tauri/src/`), skipped tests (three, all

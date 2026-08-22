@@ -130,6 +130,11 @@
                                 </svg>
                             </button>
                         </form>
+
+                        {{-- The row carries data-long-press-menu, and a held
+                             finger looked for a menu that was not there. Every
+                             other place a song appears has one. --}}
+                        <x-media.track-menu :items="collect([$track])" :label="$track->title" />
                     </li>
                 @endforeach
             </ol>
