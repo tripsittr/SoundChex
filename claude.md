@@ -28,6 +28,9 @@ Three more, all worth reading before changing anything:
 - **Log anything that can fail.** Network calls, batch work, storage writes,
   background jobs. A `catch` that only shows a toast says something broke and
   not what — and the phone that hit it is not in the room.
+- **Everything reaches `main` through a pull request**, and every PR gets a
+  changelog in `changelog/NNN-name.md`, written when the PR is opened. Say what
+  is still broken as well as what was fixed.
 - **Never commit media.** The library is the user's own films, music and books.
 - **This code moves and deletes real files.** Verify before destroying.
 - **Verify, don't assume.** Every claim in a summary must be backed by
