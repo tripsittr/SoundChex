@@ -74,6 +74,45 @@ class EnrichmentWritesCreditsTest extends TestCase
             ->count());
     }
 
+    public function test_a_title_holding_its_artist_is_tidied_before_filing(): void
+    {
+        // The case FileTagger cannot catch: the file's *tag* is
+        // "Gold - Imagine Dragons", so there is no disagreement to promote
+        // over. Checked at the end of enrichment instead, before filing names
+        // the file after the title.
+        $item = $this->track('Imagine Dragons');
+        $item->forceFill(['title' => 'Gold - Imagine Dragons'])->save();
+
+        app(EnrichMediaItemJob::class, ['mediaItemId' => $item->id])
+            ->handle(...$this->dependencies());
+
+        $this->assertSame('Gold', $item->fresh()->title);
+    }
+
+    public function test_a_hyphen_belonging_to_the_title_survives_enrichment(): void
+    {
+        $item = $this->track('Benny Goodman');
+        $item->forceFill(['title' => 'Sing - Sing - Sing'])->save();
+
+        app(EnrichMediaItemJob::class, ['mediaItemId' => $item->id])
+            ->handle(...$this->dependencies());
+
+        $this->assertSame('Sing - Sing - Sing', $item->fresh()->title);
+    }
+
+    public function test_a_title_that_is_only_an_artist_is_left_alone(): void
+    {
+        // Stripping would leave nothing, and a track with no title is worse
+        // than one with a clumsy title.
+        $item = $this->track('Imagine Dragons');
+        $item->forceFill(['title' => ' - Imagine Dragons'])->save();
+
+        app(EnrichMediaItemJob::class, ['mediaItemId' => $item->id])
+            ->handle(...$this->dependencies());
+
+        $this->assertNotSame('', $item->fresh()->title);
+    }
+
     /** @return array<int, object> */
     private function dependencies(): array
     {

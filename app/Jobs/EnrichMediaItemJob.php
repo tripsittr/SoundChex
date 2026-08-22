@@ -13,6 +13,7 @@ use App\Services\MusicCredits;
 use App\Services\WatchProviders;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 
 class EnrichMediaItemJob implements ShouldQueue
 {
@@ -53,6 +54,7 @@ class EnrichMediaItemJob implements ShouldQueue
             $this->recordHistory($item, $history, $before);
 
             $this->writeCredits($item);
+            $this->tidyTitle($item);
             $this->refreshAvailability($item);
             $this->fileIntoLibrary($item, $organizer);
         } catch (\Throwable $e) {
@@ -140,6 +142,68 @@ class EnrichMediaItemJob implements ShouldQueue
                 $item->musicMetadata->forceFill(['primary_artist' => $primary])->saveQuietly();
             }
         } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Last look at the title before the file is named after it.
+     *
+     * Every source has had its say by now, and any of them can leave a title
+     * holding its own artist — a tag written that way, a filename read back as
+     * a title, a provider returning "Song - Artist" as the track name. The
+     * promotion in FileTagger only fires when a tag disagrees, so a file whose
+     * tag *is* "Gold - Imagine Dragons" keeps it.
+     *
+     * Checked here because it is the last step before filing, and filing names
+     * the file after the title: left until afterwards, the bad name is already
+     * on disk and the scanner will read it back as a title next time round.
+     *
+     * Deliberately narrow, the same way the other two guards are: only this
+     * track's own artist, only at the end, and never to an empty title.
+     */
+    private function tidyTitle(MediaItem $item): void
+    {
+        if ($item->type !== MediaItemType::Music) {
+            return;
+        }
+
+        try {
+            $item->refresh()->load('musicMetadata');
+
+            $artist = trim((string) $item->musicMetadata?->artist);
+            $title = trim((string) $item->title);
+
+            if ($artist === '' || $title === '') {
+                return;
+            }
+
+            foreach ([' - ', ' — ', ' – '] as $separator) {
+                $suffix = $separator . $artist;
+
+                if (! str_ends_with($title, $suffix)) {
+                    continue;
+                }
+
+                $stripped = trim(mb_substr($title, 0, -mb_strlen($suffix)));
+
+                if ($stripped === '' || $stripped === $title) {
+                    return;
+                }
+
+                Log::info('Trimmed an artist from a track title', [
+                    'item' => $item->id,
+                    'was' => $title,
+                    'now' => $stripped,
+                ]);
+
+                $item->forceFill(['title' => $stripped])->saveQuietly();
+
+                return;
+            }
+        } catch (\Throwable $e) {
+            // The metadata is already saved; a clumsy title is not worth
+            // failing the run and re-fetching everything.
             report($e);
         }
     }
