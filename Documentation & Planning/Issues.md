@@ -1,13 +1,19 @@
 # Issues
 
-Everything reported, and where it got to. One line per thing, newest first
-within each section.
+Every piece of tracked work, and where it got to. One line each.
 
-**How this works.** Report something in any form — a sentence is enough — and
-it gets an entry here before anything else happens. Entries move down the file
-as they resolve: **Open** → **In progress** → **Done** or **Deferred**. Nothing
-is deleted, because "we looked at this and decided not to" is worth as much as
-a fix and is otherwise rediscovered every few months.
+An "issue" here is **anything we decide to build or change** — a feature, an
+improvement, a bug, a piece of cleanup. A feature request gets an entry exactly
+as a defect does, because the question being answered is the same: what are we
+doing, what is waiting, and what did we decide against.
+
+**How this works.** Say what you want in any form — a sentence is enough — and
+it gets an entry here before any work starts. Entries move down the file as
+they resolve: **In progress** → **Open** → **Deferred** → **Done**.
+
+Done sits at the bottom because it is the section least often read. Deferred
+sits above it because a decision not to do something is still live: it is worth
+as much as a fix, and is otherwise rediscovered every few months.
 
 **IDs** are `S-nn` and never reused. Reference one and I will know exactly what
 you mean.
@@ -47,6 +53,16 @@ not that a test passed. Both are noted where they differ.
 | S-38 | `useLocalSource()` in `download-button.js` is dead code | Nothing references it. The player and video use `localUrl()` directly, so it is superseded rather than missing — but it should go before someone wires it up in parallel |
 | S-39 | 11 metadata sources registered but commented out | Discogs, Last.fm, Genius, Deezer, OMDb, Trakt, TVMaze, TVDB, Google Books, LibraryThing, Fanart.tv. Nothing breaks by their absence |
 
+## Deferred
+
+| ID | What | Why |
+| --- | --- | --- |
+| S-33 | Bundle Tailscale into the app | On iOS a real tunnel needs a Network Extension entitlement and its own process; the userspace version would not carry WebView traffic, which is all the traffic. Three to four weeks to match what installing Tailscale does in ten minutes. Worth revisiting if the app is ever distributed to other people |
+| S-34 | Build a Tailscale equivalent | NAT traversal and a relay network are the expensive parts, and a routable public IP means they can be skipped entirely. 6–12 months to own something that already works |
+| S-35 | A second updater endpoint for redundancy | The tailnet IP serves 301 to HTTPS and the certificate covers the MagicDNS name, so the hop fails TLS. A fallback needs a certificate, not an array entry |
+| S-36 | Splitting `music_metadata.artist` itself | It is what the file says, and `LibraryOrganizer` builds `Artist/Album/` from it. Changing it moves files on disk |
+
+---
 
 ## Done
 
@@ -70,15 +86,6 @@ not that a test passed. Both are noted where they differ.
 | S-40 | Playlist rows have long press but no menu to open | this commit | `track-menu` added; every song surface now has one |
 | S-05 | iPhone not on the tailnet | — | Phone is on it as `100.77.35.44`; server answers in 77ms. Confirm the app settles there rather than the Funnel |
 | S-10 | `/login` rate limiting | already built | 5/min by IP **and** by email, so spraying addresses does not defeat it. Listed in error |
-
-## Deferred
-
-| ID | What | Why |
-| --- | --- | --- |
-| S-33 | Bundle Tailscale into the app | On iOS a real tunnel needs a Network Extension entitlement and its own process; the userspace version would not carry WebView traffic, which is all the traffic. Three to four weeks to match what installing Tailscale does in ten minutes. Worth revisiting if the app is ever distributed to other people |
-| S-34 | Build a Tailscale equivalent | NAT traversal and a relay network are the expensive parts, and a routable public IP means they can be skipped entirely. 6–12 months to own something that already works |
-| S-35 | A second updater endpoint for redundancy | The tailnet IP serves 301 to HTTPS and the certificate covers the MagicDNS name, so the hop fails TLS. A fallback needs a certificate, not an array entry |
-| S-36 | Splitting `music_metadata.artist` itself | It is what the file says, and `LibraryOrganizer` builds `Artist/Album/` from it. Changing it moves files on disk |
 
 ---
 
