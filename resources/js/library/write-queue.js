@@ -20,7 +20,12 @@ const MAX_ATTEMPTS = 5;
 let dbPromise = null;
 
 function openDatabase() {
-    dbPromise ??= new Promise((resolve, reject) => {
+    if (dbPromise) return dbPromise;
+
+    // Captured so a close event from an old connection cannot drop a newer one.
+    let pending;
+
+    pending = dbPromise = new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onupgradeneeded = () => {
@@ -31,16 +36,67 @@ function openDatabase() {
             }
         };
 
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            const db = request.result;
+
+            // iOS closes an IndexedDB connection out from under the page when
+            // it is backgrounded or memory is tight, and a cached handle then
+            // throws "the database connection is closing" on every transaction
+            // for the rest of the session.
+            //
+            // The downloads and mirror databases were given this treatment when
+            // the phone first reported it; this one was missed, and kept
+            // producing the same unhandled rejection from a third database
+            // nobody had looked at.
+            db.onclose = () => {
+                if (dbPromise === pending) dbPromise = null;
+            };
+
+            db.onversionchange = () => {
+                db.close();
+
+                if (dbPromise === pending) dbPromise = null;
+            };
+
+            resolve(db);
+        };
+
+        request.onerror = () => {
+            if (dbPromise === pending) dbPromise = null;
+
+            reject(request.error);
+        };
     });
 
     return dbPromise;
 }
 
-async function transaction(mode, fn) {
+async function transaction(mode, fn, retrying = false) {
     const db = await openDatabase();
 
+    if (! retrying) {
+        try {
+            return await runTransaction(db, mode, fn);
+        } catch (error) {
+            // A connection that died between opening and using it, which no
+            // close handler can catch: nothing has told the page yet.
+            const name = error?.name ?? '';
+
+            if (name === 'InvalidStateError' || name === 'UnknownError'
+                || String(error?.message ?? '').includes('connection is closing')) {
+                dbPromise = null;
+
+                return transaction(mode, fn, true);
+            }
+
+            throw error;
+        }
+    }
+
+    return runTransaction(db, mode, fn);
+}
+
+function runTransaction(db, mode, fn) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE, mode);
         const result = fn(tx.objectStore(STORE));

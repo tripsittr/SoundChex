@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 /**
@@ -22,6 +22,9 @@ import { resolve } from 'node:path';
 describe.each([
     ['downloads', 'resources/js/downloads.js'],
     ['library mirror', 'resources/js/library/mirror.js'],
+    // Missed the first time, and kept producing the same unhandled rejection
+    // from a third database nobody had looked at.
+    ['write queue', 'resources/js/library/write-queue.js'],
 ])('%s database', (_name, path) => {
     const source = readFileSync(resolve(__dirname, '../..', path), 'utf8');
 
@@ -50,5 +53,39 @@ describe.each([
         // different coat: every later call awaits a failure that already
         // happened.
         expect(source).toMatch(/onerror\s*=\s*\(\)\s*=>\s*\{[\s\S]{0,200}dbPromise\s*=\s*null/);
+    });
+});
+
+/**
+ * Every IndexedDB database, so a fourth cannot be added without this treatment.
+ *
+ * The fix was applied to two databases and the bug went on being reported,
+ * because there was a third. Enumerating them here means the next one is
+ * caught by a failing test rather than by reading a device report.
+ */
+describe('every database', () => {
+    it('is covered by the recovery tests above', () => {
+        const roots = ['resources/js', 'resources/js/library'];
+        const found = [];
+
+        for (const dir of roots) {
+            for (const file of readdirSync(resolve(__dirname, '../..', dir))) {
+                if (! file.endsWith('.js')) continue;
+
+                const path = `${dir}/${file}`;
+                const source = readFileSync(resolve(__dirname, '../..', path), 'utf8');
+
+                // A one-shot open that never caches a handle cannot go stale.
+                if (source.includes('indexedDB.open') && source.includes('dbPromise')) {
+                    found.push(path);
+                }
+            }
+        }
+
+        expect(found.sort()).toEqual([
+            'resources/js/downloads.js',
+            'resources/js/library/mirror.js',
+            'resources/js/library/write-queue.js',
+        ]);
     });
 });
