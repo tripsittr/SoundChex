@@ -31,7 +31,7 @@ class TransferReceiver
     public function request(Transfer $transfer): bool
     {
         try {
-            $response = Http::acceptJson()->timeout(20)->post(
+            $response = $this->http()->acceptJson()->timeout(20)->post(
                 $this->url($transfer, 'transfer/requests'),
                 [
                     'device_name' => gethostname() ?: null,
@@ -116,7 +116,7 @@ class TransferReceiver
     public function poll(Transfer $transfer): string
     {
         try {
-            $response = Http::acceptJson()->timeout(15)->get(
+            $response = $this->http()->acceptJson()->timeout(15)->get(
                 $this->url($transfer, 'transfer/requests/' . $transfer->remote_request_id),
             );
 
@@ -226,7 +226,7 @@ class TransferReceiver
             // film continues where it stopped.
             $from = is_file($temporary) ? filesize($temporary) : 0;
 
-            $response = Http::withToken($transfer->token)
+            $response = $this->http()->withToken($transfer->token)
                 ->withHeaders($from > 0 ? ['Range' => "bytes={$from}-"] : [])
                 ->timeout(600)
                 ->sink($from > 0 ? fopen($temporary, 'ab') : $temporary)
@@ -273,7 +273,7 @@ class TransferReceiver
         $temporary = storage_path('app/transfer-incoming.sqlite.gz');
 
         try {
-            $response = Http::withToken($transfer->token)
+            $response = $this->http()->withToken($transfer->token)
                 ->timeout(300)
                 ->sink($temporary)
                 ->get($this->url($transfer, 'transfer/database'));
@@ -481,7 +481,7 @@ class TransferReceiver
     private function get(Transfer $transfer, string $path, array $query = []): ?\Illuminate\Http\Client\Response
     {
         try {
-            $response = Http::withToken($transfer->token)
+            $response = $this->http()->withToken($transfer->token)
                 ->acceptJson()
                 ->timeout(60)
                 ->get($this->url($transfer, $path), $query);
@@ -511,5 +511,39 @@ class TransferReceiver
     private function url(Transfer $transfer, string $path): string
     {
         return rtrim($transfer->source_url, '/') . '/api/v1/' . $path;
+    }
+
+    /**
+     * HTTP client for transfer calls.
+     *
+     * cURL/OpenSSL trust can differ between long-running PHP processes on
+     * Windows. When a CA bundle is configured or found beside the running PHP
+     * binary, force that bundle so transfer requests do not fail with
+     * "unable to get local issuer certificate".
+     */
+    private function http(): \Illuminate\Http\Client\PendingRequest
+    {
+        $ca = $this->caBundlePath();
+
+        if (filled($ca)) {
+            return Http::withOptions(['verify' => $ca]);
+        }
+
+        return Http::withOptions(['verify' => true]);
+    }
+
+    private function caBundlePath(): ?string
+    {
+        $configured = config('services.transfer.ca_bundle');
+        if (is_string($configured) && $configured !== '' && is_file($configured)) {
+            return $configured;
+        }
+
+        $nextToPhp = dirname(PHP_BINARY) . DIRECTORY_SEPARATOR . 'cacert.pem';
+        if (is_file($nextToPhp)) {
+            return $nextToPhp;
+        }
+
+        return null;
     }
 }

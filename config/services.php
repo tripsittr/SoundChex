@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'transfer' => [
+        'ca_bundle' => env('TRANSFER_CA_BUNDLE'),
+    ],
+
 ];
