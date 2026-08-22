@@ -25,3 +25,102 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Docs / markdown — ignore all except README, agent instructions, and
+# app-rendered content. AGENTS.md and CLAUDE.md are how the project is built;
+# leaving them untracked meant every contributor started from scratch.
+*.md
+*.MD
+!README.md
+!AGENTS.md
+!CLAUDE.md
+!resources/markdown/
+!resources/markdown/**
+# Plans are the record of what was built and why. Versioning them is the
+# whole point — a plan marked DONE_ is history, not scratch.
+!Documentation & Planning/
+!Documentation & Planning/**
+
+# ---------------------------------------------------------------------------
+# Media — never commit the library
+# ---------------------------------------------------------------------------
+#
+# Laravel's nested storage/.gitignore files already cover the default paths,
+# but the library is the user's own films, music and books: a single misplaced
+# folder pushed to a remote is expensive to undo and impossible to fully
+# retract. These rules are deliberately redundant so that stays true even if a
+# watch folder, an export, or a converted copy lands somewhere unexpected.
+
+/storage/app/private/
+
+# Database snapshots. These hold the whole catalogue — every title, every play,
+# every profile — so committing one would publish the library.
+/storage/backups/
+
+# Published release bundles. Large binaries, rebuildable, and signed with a key
+# that is deliberately not in this repository.
+/storage/app/updates/
+/storage/app/public/
+/media/
+/library/
+/uploads/
+/downloads/
+
+# Anywhere a media folder might be created by hand or by config.
+**/media/library/
+**/media/unsorted/
+**/media/converted/
+**/media/subtitles/
+**/media/book-assets/
+
+# Media and subtitle files, wherever they appear.
+*.mp3
+*.flac
+*.m4a
+*.aac
+*.wav
+*.aiff
+*.aif
+*.ogg
+*.oga
+*.opus
+*.wma
+*.alac
+*.ape
+*.wv
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.m4v
+*.webm
+*.wmv
+*.mpg
+*.mpeg
+*.epub
+*.mobi
+*.azw3
+*.cbz
+*.cbr
+*.srt
+*.ass
+*.ssa
+*.vtt
+
+# PDFs are media here (the book library), but documentation may need one.
+*.pdf
+!docs/**/*.pdf
+
+# Databases and their journals — a SQLite file holds the whole catalog.
+*.sqlite
+*.sqlite-*
+*.db
+.env.e2e
+
+# Playwright output
+/test-results
+/playwright-report
+
+# Tauri build output
+/src-tauri/target
+/src-tauri/gen

@@ -1,0 +1,79 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SoundChex</title>
+<!--
+    Answers one question for the app shell: is there anything stored here?
+
+    IndexedDB is partitioned per origin. The app syncs the catalogue while
+    running on the server's origin; the connect screen runs on tauri://localhost
+    and cannot see that database at all. So a device with a fully synced library
+    was told there was nothing saved on it.
+
+    This page is same-origin with the data, so it can read the count and post it
+    back to the shell that framed it. Deliberately tiny and dependency-free: it
+    is fetched with the network down, from the service worker's cache, and
+    anything it imported would have to be cached too.
+-->
+<script>
+    // Both stores. Downloads live in their own database, so a device holding
+    // music it deliberately downloaded — but which has never finished a sync —
+    // reported nothing at all, at exactly the moment those downloads exist for.
+    const DATABASES = [
+        { name: 'soundchex-library', store: 'items' },
+        { name: 'soundchex-downloads', store: 'meta' },
+    ];
+
+    /** Rows in one store, or zero for anything that is not there. */
+    function countIn(dbName, storeName) {
+        return new Promise((resolve) => {
+            let settled = false;
+            const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+
+            // An open() that never fires either handler leaves the shell
+            // waiting, so the answer is bounded here as well.
+            setTimeout(() => finish(0), 2500);
+
+            let request;
+
+            try {
+                request = indexedDB.open(dbName);
+            } catch {
+                return finish(0);
+            }
+
+            request.onerror = () => finish(0);
+            request.onblocked = () => finish(0);
+
+            // No upgrade handler: opening without a version must not create the
+            // store. If it is missing then nothing was ever synced, which is
+            // the answer rather than an error.
+            request.onsuccess = () => {
+                const db = request.result;
+
+                if (!db.objectStoreNames.contains(storeName)) return finish(0);
+
+                try {
+                    const tx = db.transaction(storeName, 'readonly');
+                    const counted = tx.objectStore(storeName).count();
+
+                    counted.onsuccess = () => finish(counted.result ?? 0);
+                    counted.onerror = () => finish(0);
+                } catch {
+                    finish(0);
+                }
+            };
+        });
+    }
+
+    // The answer is "is there anything worth opening", so either store counts.
+    Promise.all(DATABASES.map((db) => countIn(db.name, db.store))).then((counts) => {
+        const total = counts.reduce((sum, value) => sum + value, 0);
+
+        parent.postMessage({
+            type: 'soundchex:mirror-count',
+            count: total,
+            mirror: counts[0],
+            downloads: counts[1],
+        }, '*');
+    });
+</script>

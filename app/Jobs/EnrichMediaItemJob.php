@@ -1,0 +1,247 @@
+<?php
+
+namespace App\Jobs;
+
+use App\Enums\MediaItemType;
+use App\Enums\ProcessingStatus;
+use App\Models\MediaItem;
+use App\Models\MetadataVersion;
+use App\Services\LibraryOrganizer;
+use App\Services\MetadataHistory;
+use App\Services\Metadata\MetadataPipeline;
+use App\Services\MusicCredits;
+use App\Services\WatchProviders;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
+
+class EnrichMediaItemJob implements ShouldQueue
+{
+    use Queueable;
+
+    public int $tries = 3;
+    public int $backoff = 60;
+
+    public function __construct(public readonly int $mediaItemId) {}
+
+    public function handle(
+        MetadataPipeline $pipeline,
+        LibraryOrganizer $organizer,
+        MetadataHistory $history,
+    ): void {
+        $item = MediaItem::with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata'])
+            ->findOrFail($this->mediaItemId);
+
+        $item->update(['processing_status' => ProcessingStatus::Processing]);
+
+        // Taken before the pipeline runs, so whatever it overwrites is
+        // recoverable. Providers revise their own records — a corrected title,
+        // a re-dated release, an entry merged into another — and without this
+        // the previous values are simply gone.
+        $before = $history->snapshot($item);
+
+        try {
+            $pipeline->run($item);
+
+            // A source may have flagged an ambiguous match mid-run. That verdict
+            // outranks a blanket "complete" — don't bury it.
+            $item->refresh();
+
+            if ($item->processing_status !== ProcessingStatus::NeedsReview) {
+                $item->update(['processing_status' => ProcessingStatus::Complete]);
+            }
+
+            $this->recordHistory($item, $history, $before);
+
+            $this->writeCredits($item);
+            $this->tidyTitle($item);
+            $this->refreshAvailability($item);
+            $this->fileIntoLibrary($item, $organizer);
+        } catch (\Throwable $e) {
+            $item->update(['processing_status' => ProcessingStatus::Failed]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Records what this run changed.
+     *
+     * The pre-run snapshot is stored rather than the post-run one: a version
+     * represents the state *before* the change it's attached to, which is what
+     * makes "restore this version" mean going back to it.
+     *
+     * Non-fatal — the metadata is already saved, and losing one history entry
+     * is not worth failing the job and re-running the whole pipeline.
+     */
+    private function recordHistory(MediaItem $item, MetadataHistory $history, array $before): void
+    {
+        try {
+            $item->load(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata', 'tags']);
+
+            $after = $history->snapshot($item);
+            $changed = $history->changedFields($before, $after);
+
+            // A run that found the same data has nothing to record.
+            if ($changed === []) {
+                return;
+            }
+
+            MetadataVersion::create([
+                'media_item_id' => $item->id,
+                'snapshot' => $before,
+                'reason' => MetadataVersion::REASON_ENRICHMENT,
+                'source' => $item->matched_by,
+                'changed_fields' => $changed,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Refreshes where this title can currently be streamed.
+     *
+     * Non-fatal like the organizer below: metadata is already saved, and a
+     * TMDB outage or a missing key shouldn't fail the job and re-run the whole
+     * pipeline. Availability simply stays as it was until the next pass.
+     */
+    /**
+     * Records who is credited on a track.
+     *
+     * After the pipeline, so it reads whatever artist the sources settled on
+     * rather than the filename's guess. Music only — books and film write
+     * their own credits from their own sources.
+     *
+     * Non-fatal. Enrichment has already saved the metadata that matters, and
+     * losing a credit is not worth re-running the whole pipeline for.
+     */
+    private function writeCredits(MediaItem $item): void
+    {
+        if ($item->type !== MediaItemType::Music) {
+            return;
+        }
+
+        try {
+            $item->refresh()->load('musicMetadata');
+
+            $artist = $item->musicMetadata?->artist;
+
+            if (blank($artist)) {
+                return;
+            }
+
+            $credits = app(MusicCredits::class);
+            $credits->fromCreditString($item, $artist);
+
+            // The column browsing groups on. Kept in step here rather than by
+            // a separate pass, so a track uploaded today is grouped correctly
+            // the moment it is catalogued.
+            $primary = $credits->primaryFor($artist);
+
+            if ($primary !== null && $item->musicMetadata?->primary_artist !== $primary) {
+                $item->musicMetadata->forceFill(['primary_artist' => $primary])->saveQuietly();
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Last look at the title before the file is named after it.
+     *
+     * Every source has had its say by now, and any of them can leave a title
+     * holding its own artist — a tag written that way, a filename read back as
+     * a title, a provider returning "Song - Artist" as the track name. The
+     * promotion in FileTagger only fires when a tag disagrees, so a file whose
+     * tag *is* "Gold - Imagine Dragons" keeps it.
+     *
+     * Checked here because it is the last step before filing, and filing names
+     * the file after the title: left until afterwards, the bad name is already
+     * on disk and the scanner will read it back as a title next time round.
+     *
+     * Deliberately narrow, the same way the other two guards are: only this
+     * track's own artist, only at the end, and never to an empty title.
+     */
+    private function tidyTitle(MediaItem $item): void
+    {
+        if ($item->type !== MediaItemType::Music) {
+            return;
+        }
+
+        try {
+            $item->refresh()->load('musicMetadata');
+
+            $artist = trim((string) $item->musicMetadata?->artist);
+            $title = trim((string) $item->title);
+
+            if ($artist === '' || $title === '') {
+                return;
+            }
+
+            foreach ([' - ', ' — ', ' – '] as $separator) {
+                $suffix = $separator . $artist;
+
+                if (! str_ends_with($title, $suffix)) {
+                    continue;
+                }
+
+                $stripped = trim(mb_substr($title, 0, -mb_strlen($suffix)));
+
+                if ($stripped === '' || $stripped === $title) {
+                    return;
+                }
+
+                Log::info('Trimmed an artist from a track title', [
+                    'item' => $item->id,
+                    'was' => $title,
+                    'now' => $stripped,
+                ]);
+
+                $item->forceFill(['title' => $stripped])->saveQuietly();
+
+                return;
+            }
+        } catch (\Throwable $e) {
+            // The metadata is already saved; a clumsy title is not worth
+            // failing the run and re-fetching everything.
+            report($e);
+        }
+    }
+
+    private function refreshAvailability(MediaItem $item): void
+    {
+        try {
+            app(WatchProviders::class)->refresh($item);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Moves the file into the Artist/Album tree now that enrichment has
+     * resolved real tags.
+     *
+     * Deliberately non-fatal: the metadata is already saved, so a file that
+     * can't be moved (permissions, a full disk, a disconnected drive) should
+     * not fail the job and re-run the whole pipeline. The item simply stays
+     * where it is and `library:organize` can retry later.
+     */
+    private function fileIntoLibrary(MediaItem $item, LibraryOrganizer $organizer): void
+    {
+        if (! config('library.auto_organize', true)) {
+            return;
+        }
+
+        try {
+            $organizer->organize($item->refresh());
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        MediaItem::where('id', $this->mediaItemId)
+            ->update(['processing_status' => ProcessingStatus::Failed->value]);
+    }
+}

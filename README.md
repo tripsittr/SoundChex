@@ -1,58 +1,167 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# SoundChex
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A self-hosted media library for music, films, television and books — one
+catalogue, one player, on every device you own.
 
-## About Laravel
+It runs on your own machine. The files stay yours, nothing is uploaded
+anywhere, and the only thing between you and your library is a network you
+control.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## What it does
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+**One catalogue across four media types.** Music, films, TV and books share a
+schema, a search box and a player. A song, an episode and a chapter are all
+things you were part-way through, and the app treats them that way.
 
-## Learning Laravel
+**Metadata that fills itself in.** Watch folders are scanned, files are
+identified, and nine sources are asked in turn — TMDB, MusicBrainz, AcoustID,
+Open Library, iTunes, Spotify, OpenSubtitles and the files' own tags. Every run
+snapshots what it replaced, so a provider revising its own record is
+recoverable rather than merely regrettable.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+**Files organised the way other tools expect.** `Artist/Album/`,
+`Title (Year)/`, `Series/Season 01/` — the conventions Plex, Jellyfin and Emby
+already read, so the library stays legible to anything else you point at it.
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+**Reading and watching, not just listening.** EPUB, PDF and CBZ with
+highlights, private notes and OCR of scanned pages so the text is selectable.
+Video with hardware transcoding, caption tracks, skip markers and a full-screen
+player.
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+**Search that reaches inside things.** One query across titles, metadata, cast,
+film dialogue and the text of books. A dialogue hit jumps to the moment it is
+spoken; a book hit opens at the page.
 
-## Agentic Development
+**Profiles.** Per-person history, resume points and watchlists, with a kids
+mode that caps ratings across browsing, search and direct links.
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+**Offline.** The whole catalogue mirrors to the device as JSON — a fraction of
+a megabyte gzipped — so browsing, search and playback of downloaded files work
+with no network at all. Downloads survive the app closing and resume when it
+comes back.
+
+---
+
+## How it is put together
+
+| | |
+| --- | --- |
+| **Server** | Laravel 13, PHP 8.4, SQLite |
+| **Admin** | Filament 5 |
+| **Frontend** | Blade, Tailwind v4, Alpine, vanilla ES modules |
+| **Apps** | Tauri 2 — macOS, Windows, Linux, iOS |
+| **Media** | FFmpeg for transcoding, Chromaprint for fingerprinting |
+
+SQLite rather than MySQL on purpose: one file to back up, no service to keep
+running, and a library of a few thousand items never gets near its limits.
+
+The web app is served rather than compiled into the native apps, so a deploy
+reaches every device on the next page load. Only the connect screen and the
+offline shell live inside the binary, and those need a reinstall.
+
+---
+
+## Getting it running
+
+Requires PHP 8.4+, Node 22+, Composer, and FFmpeg on the path.
 
 ```bash
-composer require laravel/boost --dev
+git clone https://github.com/tripsittr/SoundChex.git
+cd SoundChex
 
-php artisan boost:install
+composer install
+npm install
+
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+
+npm run build
+php artisan serve
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Then point it at your media: **Admin → Library settings → watch folders**, and
+run a scan.
 
-## Contributing
+```bash
+php artisan library:scan
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Metadata sources that need a key — TMDB, AcoustID, Spotify, OpenSubtitles — are
+entered under **Admin → Metadata sources**. The rest work without one. A source
+with no key skips itself and says so in the log rather than silently returning
+nothing.
 
-## Code of Conduct
+### The background workers
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+php artisan queue:work        # enrichment, transcoding, downloads
+php artisan schedule:work     # scanning, backups, pruning
+```
 
-## Security Vulnerabilities
+Both ship as launchd plists in `Documentation & Planning/` for running them at
+login on macOS.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+---
 
-## License
+## The native apps
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```bash
+npm run tauri ios build -- --export-method debugging
+npm run tauri build                    # desktop
+npm run build:server                   # the host app, with service controls
+```
+
+iOS needs a paid Apple developer account for a profile that lasts a year; a
+free one expires in seven days.
+
+---
+
+## Reaching it from elsewhere
+
+The app races every address it knows and takes the fastest that answers,
+re-checking every thirty seconds and whenever the device wakes. A relay is
+ranked last however well it measures — it works from anywhere, and it is
+twenty times slower than a direct route.
+
+`Documentation & Planning/RemoteAccess.md` covers the options and what each
+one measured.
+
+---
+
+## Tests
+
+```bash
+php artisan test     # 289 PHP
+npx vitest run       # 87 unit
+npx playwright test  # 282 browser, across desktop, mobile and shell
+```
+
+The browser tests run against an isolated database and generated media in a
+scratch directory. They never touch a real library — the bootstrap refuses to
+run if its paths are not scratch paths.
+
+---
+
+## Documentation
+
+- **[AGENTS.md](AGENTS.md)** — architecture, conventions and the rules that
+  matter, including the two about never committing media and verifying before
+  destroying.
+- **[Documentation & Planning/Issues.md](Documentation%20&%20Planning/Issues.md)**
+  — every feature, fix and bug being tracked, and where each got to.
+- **[Documentation & Planning/Status.md](Documentation%20&%20Planning/Status.md)**
+  — what exists, what does not, and what is next.
+- **[docs/WorkingOnSoundChex.md](docs/WorkingOnSoundChex.md)** — what this
+  project has taught, mostly the hard way.
+
+---
+
+## Licence
+
+MIT.
+
+Your media is not. SoundChex is a library for files you already have; it
+neither acquires them nor helps you to.

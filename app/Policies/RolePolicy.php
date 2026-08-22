@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Policies;
 
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Auth\User as AuthUser;
 use Spatie\Permission\Models\Role;
 use Illuminate\Auth\Access\HandlesAuthorization;
@@ -11,6 +12,15 @@ use Illuminate\Auth\Access\HandlesAuthorization;
 class RolePolicy
 {
     use HandlesAuthorization;
+
+    public function before(AuthUser $authUser, string $ability): bool | null
+    {
+        if (method_exists($authUser, 'hasRole') && $authUser->hasRole('super_admin')) {
+            return true;
+        }
+
+        return null;
+    }
     
     public function viewAny(AuthUser $authUser): bool
     {
@@ -19,7 +29,7 @@ class RolePolicy
 
     public function view(AuthUser $authUser, Role $role): bool
     {
-        return $authUser->can('View:Role');
+        return $authUser->can('View:Role') && $this->canAccessRoleInCurrentTenant($role);
     }
 
     public function create(AuthUser $authUser): bool
@@ -29,12 +39,12 @@ class RolePolicy
 
     public function update(AuthUser $authUser, Role $role): bool
     {
-        return $authUser->can('Update:Role');
+        return $authUser->can('Update:Role') && $this->canAccessRoleInCurrentTenant($role, allowGlobal: false);
     }
 
     public function delete(AuthUser $authUser, Role $role): bool
     {
-        return $authUser->can('Delete:Role');
+        return $authUser->can('Delete:Role') && $this->canAccessRoleInCurrentTenant($role, allowGlobal: false);
     }
 
     public function deleteAny(AuthUser $authUser): bool
@@ -70,6 +80,23 @@ class RolePolicy
     public function reorder(AuthUser $authUser): bool
     {
         return $authUser->can('Reorder:Role');
+    }
+
+    protected function canAccessRoleInCurrentTenant(Role $role, bool $allowGlobal = true): bool
+    {
+        if (! Filament::hasTenancy()) {
+            return true;
+        }
+
+        $tenantId = Filament::getTenant()?->getKey();
+        $teamForeignKey = config('permission.column_names.team_foreign_key', 'team_id');
+        $roleTeamId = $role->getAttribute($teamForeignKey);
+
+        if ($allowGlobal && ($roleTeamId === null)) {
+            return true;
+        }
+
+        return (string) $roleTeamId === (string) $tenantId;
     }
 
 }

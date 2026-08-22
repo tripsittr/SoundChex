@@ -1,0 +1,44 @@
+/**
+ * The global upload indicator, as its own stylesheet.
+ *
+ * The media center gets these rules through media-center.css; the admin panel
+ * has no shared stylesheet with it, so the same rules ship separately rather
+ * than the panel importing a file built for a different design system.
+ *
+ * Colours are literal here for the same reason: the panel does not define the
+ * media center's custom properties.
+ */
+.sc-upload-progress {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 60;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: rgb(24 24 27 / 0.97);
+    border-top: 1px solid rgb(63 63 70);
+    backdrop-filter: blur(12px);
+}
+
+.sc-upload-progress__track {
+    height: 3px;
+    border-radius: 999px;
+    background: rgb(63 63 70);
+    overflow: hidden;
+}
+
+.sc-upload-progress__fill {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: #e11d3a;
+    transition: width 0.2s ease;
+}
+
+.sc-upload-progress__label {
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+    color: rgb(212 212 216);
+}
+
+.sc-upload-progress[data-state='error'] .sc-upload-progress__fill { background: #f43f5e; }
+.sc-upload-progress[data-state='error'] .sc-upload-progress__label { color: #fda4af; }

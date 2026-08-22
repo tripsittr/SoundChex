@@ -1,0 +1,31 @@
+/**
+ * Design tokens shared by both surfaces.
+ *
+ * The media center and the admin panel are separate Vite entries with separate
+ * stylesheets, but they are one product. Defining the palette twice is how
+ * they drifted apart — the panel ended up with a blue primary and a third red
+ * that matched neither.
+ *
+ * Plain custom properties rather than Tailwind's `@theme`, because this file
+ * is imported by both a Tailwind v4 stylesheet and a Filament theme, and only
+ * the former understands `@theme`. Each importer maps these into whatever its
+ * own system expects.
+ */
+
+:root {
+    /* Near-black, slightly blue — pure #000 makes artwork edges disappear. */
+    --sc-base-900: #08080b;
+    --sc-base-800: #0f0f14;
+    --sc-base-700: #16161d;
+    --sc-base-600: #1f1f28;
+    --sc-base-500: #2a2a35;
+
+    --sc-ink-100: #f4f4f5;
+    --sc-ink-300: #b8b8c0;
+    --sc-ink-500: #8a8a96;
+
+    --sc-accent: #e11d3a;
+    --sc-accent-hot: #ff2a4a;
+
+    --sc-ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+}

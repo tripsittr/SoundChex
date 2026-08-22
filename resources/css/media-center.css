@@ -1,0 +1,1112 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+@source '../views/media';
+@source '../views/components/media';
+
+/*
+|--------------------------------------------------------------------------
+| Media Center Theme
+|--------------------------------------------------------------------------
+|
+| The customer-facing catalog at /app. Deliberately dark and cinematic:
+| artwork is the content, so the chrome stays out of its way.
+|
+*/
+
+@theme {
+    --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+
+    /* Defined once in tokens.css so the admin panel shares them. Repeating
+       the palette here is how the two surfaces drifted apart. */
+    --color-base-900: var(--sc-base-900);
+    --color-base-800: var(--sc-base-800);
+    --color-base-700: var(--sc-base-700);
+    --color-base-600: var(--sc-base-600);
+    --color-base-500: var(--sc-base-500);
+
+    --color-ink-100: var(--sc-ink-100);
+    --color-ink-300: var(--sc-ink-300);
+    --color-ink-500: var(--sc-ink-500);
+
+    --color-accent: var(--sc-accent);
+    --color-accent-hot: var(--sc-accent-hot);
+
+    --ease-out-soft: var(--sc-ease-out-soft);
+}
+
+@layer base {
+    html {
+        scrollbar-color: var(--color-base-500) transparent;
+    }
+
+    body {
+        background-color: var(--color-base-900);
+        color: var(--color-ink-100);
+        -webkit-font-smoothing: antialiased;
+    }
+
+    /* Artwork is the interface — never let a broken image show alt sprawl. */
+    img {
+        object-fit: cover;
+    }
+}
+
+@layer components {
+    /* Horizontal rail. Scroll snapping makes flick-scrolling land cleanly
+       on a card instead of stopping mid-poster. */
+    .rail {
+        display: grid;
+        grid-auto-flow: column;
+        /* A fixed track width, not `1fr`: fractional columns stretch to fill
+           the row, so a rail holding two items would render two enormous
+           posters instead of two normal ones. */
+        grid-auto-columns: 9rem;
+        justify-content: start;
+        gap: 0.75rem;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        scroll-padding-left: 1rem;
+        scrollbar-width: none;
+        padding-block: 0.25rem;
+    }
+
+    .rail::-webkit-scrollbar {
+        display: none;
+    }
+
+    .rail > * {
+        scroll-snap-align: start;
+    }
+
+    @media (min-width: 640px) {
+        .rail {
+            grid-auto-columns: 11rem;
+            gap: 1rem;
+        }
+    }
+
+    /* Poster tile. Hover lift is desktop-only — on touch it would fire on tap
+       and leave the card stuck in a hovered state. */
+    .poster {
+        position: relative;
+        display: block;
+        overflow: hidden;
+        border-radius: 0.5rem;
+        background-color: var(--color-base-700);
+        transition: transform 0.28s var(--ease-out-soft),
+                    box-shadow 0.28s var(--ease-out-soft);
+    }
+
+    @media (hover: hover) and (min-width: 768px) {
+        .poster:hover {
+            transform: scale(1.06);
+            box-shadow: 0 1.25rem 2.5rem -0.5rem rgb(0 0 0 / 0.75);
+            z-index: 10;
+        }
+    }
+
+    .poster:focus-visible {
+        outline: 2px solid var(--color-accent-hot);
+        outline-offset: 3px;
+    }
+
+    /* Gradient scrim so title text stays legible over bright artwork. */
+    .scrim {
+        background-image: linear-gradient(
+            to top,
+            rgb(8 8 11 / 0.95) 0%,
+            rgb(8 8 11 / 0.6) 35%,
+            transparent 75%
+        );
+    }
+
+    .hero-fade-bottom {
+        background-image: linear-gradient(
+            to top,
+            var(--color-base-900) 0%,
+            rgb(8 8 11 / 0.55) 45%,
+            transparent 100%
+        );
+    }
+
+    .hero-fade-left {
+        background-image: linear-gradient(
+            to right,
+            rgb(8 8 11 / 0.92) 0%,
+            rgb(8 8 11 / 0.55) 45%,
+            transparent 100%
+        );
+    }
+
+    /* Placeholder artwork for items with no cover — a flat grey box reads as
+       broken, so give it depth and a type glyph instead. */
+    .art-placeholder {
+        background-image:
+            radial-gradient(circle at 30% 20%, var(--color-base-500), transparent 60%),
+            linear-gradient(145deg, var(--color-base-600), var(--color-base-800));
+    }
+}
+
+@layer utilities {
+    .text-shadow-hero {
+        text-shadow: 0 2px 12px rgb(0 0 0 / 0.85);
+    }
+
+    /* Fixed-ratio art boxes keep rails from reflowing as images load. */
+    .aspect-poster {
+        aspect-ratio: 2 / 3;
+    }
+
+    .aspect-square-art {
+        aspect-ratio: 1 / 1;
+    }
+
+    .aspect-backdrop {
+        aspect-ratio: 16 / 9;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .poster,
+    .poster:hover {
+        transition: none;
+        transform: none;
+    }
+}
+
+/* ------------------------------------------------------------- downloads */
+
+/* State lives on data-state rather than swapped classes, so the button reads
+   as one control changing rather than several controls replacing each other. */
+/* The full-width variant, used on a detail page where it is the primary
+   action. A compact icon-only button must not inherit width:100% — inside a
+   flex row with shrink-0 it forces the row wider than the viewport, which is
+   what pushed the song list off the side of a phone. */
+.download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    border-radius: 0.375rem;
+    border: 1px solid var(--color-base-500);
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-ink-300);
+    background: transparent;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.download-btn:hover {
+    border-color: var(--color-ink-500);
+    color: var(--color-ink-100);
+}
+
+.download-btn[data-state='downloading'] {
+    border-color: var(--color-accent);
+    color: var(--color-ink-100);
+}
+
+.download-btn[data-state='stored'] {
+    border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+    color: var(--color-ink-100);
+}
+
+.download-status {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--color-ink-500);
+}
+
+.download-status[data-tone='good'] { color: #6ee7b7; }
+.download-status[data-tone='bad'] { color: #fca5a5; }
+
+/* --------------------------------------------------------- safe areas */
+
+/* The fixed header sits under the status bar on a notched phone, so the clock
+   overlaps the logo. Only the inner nav is padded: the header keeps its
+   background running to the very top edge, so the inset reads as deliberate
+   rather than as a gap above the bar.
+
+   max() rather than a bare env(): the inset is 0 on a device without a notch
+   and on desktop, where the existing padding should stand. */
+/* The inset goes on the header, not the nav inside it.
+   Padding the nav left the header's own background stopping short of the top
+   edge, so on a desktop window — where the inset is zero and there is no notch
+   to hide it — content scrolled behind a transparent strip above the bar.
+   Padding the header extends its background to the edge instead. */
+/* Scoped to the media centre's own header rather than any fixed one.
+   `header.fixed` also matched the reader's toolbar — the reader loads this
+   stylesheet but is a standalone document — and the inset pushed its PDF up out
+   of view on a notched phone. */
+header:has(> .media-header-nav) {
+    padding-top: env(safe-area-inset-top);
+}
+
+.media-header-nav {
+    padding-top: 0.75rem;
+}
+
+/* Clearance for the fixed header, on any page that starts with content rather
+   than a hero. The header's height varies with the safe-area inset, so a flat
+   padding either overlaps on a notched phone or leaves a gap on one without a
+   notch — adding the inset tracks the header instead of guessing at it. */
+.clears-header {
+    padding-top: calc(8rem + env(safe-area-inset-top));
+}
+
+/* ---------------------------------------------------------- mobile tabs */
+
+/* Bottom navigation on phones, sitting above the home indicator. Fixed rather
+   than sticky so it survives the address bar collapsing during a scroll. */
+.mobile-tabs {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 40;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    background: color-mix(in srgb, var(--color-base-800) 94%, transparent);
+    border-top: 1px solid var(--color-base-600);
+    backdrop-filter: blur(12px);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.mobile-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    /* 44px is the smallest target that is reliably hittable with a thumb. */
+    min-height: 3.25rem;
+    padding: 0.4rem 0.25rem;
+    color: var(--color-ink-500);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.mobile-tab.is-active { color: var(--color-ink-100); }
+
+.mobile-tab-icon { display: block; width: 1.375rem; height: 1.375rem; }
+.mobile-tab-icon svg { width: 100%; height: 100%; }
+
+.mobile-tab-label {
+    font-size: 0.625rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+}
+
+/* The active tab is marked at the top edge, where the eye already is after
+   the icon — an underline at the bottom would sit under the home indicator. */
+.mobile-tab.is-active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 1.75rem;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    background: var(--color-accent);
+}
+
+.mobile-tab { position: relative; }
+
+/* The tab bar covers the foot of the page, so content clears it.
+   The now-playing bar has to clear the tab bar as well: both were pinned to
+   bottom: 0 at the same z-index, so the player covered the tabs entirely and
+   there was no way to navigate while something was playing. */
+@media (max-width: 767px) {
+    body { padding-bottom: calc(3.25rem + env(safe-area-inset-bottom)); }
+
+    /* Lifted by exactly the tab bar's height plus the home indicator. The
+       tab bar carries its own safe-area padding, so that inset is counted
+       here too or the player would sit on top of the indicator. */
+    /* Anchored to the tab bar's real height rather than a guess at it.
+       The bar renders at 53.97px while CSS rounds any equivalent length to
+       53px, so a hand-calculated offset is always a fraction out and the two
+       overlap by a pixel. anchor() is not available here, so the offset is
+       rounded *up* — a hair of clearance beats a hair of overlap. */
+    #now-playing {
+        bottom: calc(3.25rem + 2px + env(safe-area-inset-bottom));
+    }
+
+    /* Hidden means gone, not translated to somewhere it can still cover the
+       navigation. `translate-y-full` moves the bar down by its own height,
+       which was enough when it sat on the bottom edge — raised above the tab
+       bar it left the bar sitting directly over the tabs before anything had
+       played. */
+    #now-playing.translate-y-full {
+        display: none;
+    }
+
+    /* With the player showing, content must clear both bars. */
+    body:has(#now-playing:not(.translate-y-full)) {
+        padding-bottom: calc(3.25rem + 4.5rem + env(safe-area-inset-bottom));
+    }
+}
+
+/* Phones only.
+   The markup carries md:hidden, but Tailwind's utilities are emitted in their
+   own layer and this file's rules win against them — so display:grid held at
+   every width and the desktop app showed both navigations at once. Declared
+   after the base rule, since they have the same specificity and order decides. */
+@media (min-width: 768px) {
+    .mobile-tabs { display: none; }
+}
+
+/* On desktop there is no tab bar, so the player keeps the bottom edge and
+   only needs to clear the home indicator on a tablet. */
+@media (min-width: 768px) {
+    #now-playing { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* Playing from a downloaded copy rather than the network. Worth saying: a
+   spinner on a train should be distinguishable from a file that never
+   finished downloading. */
+.offline-badge.hidden { display: none; }
+
+.offline-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 9999px;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    padding: 0.1rem 0.5rem;
+    font-size: 0.6875rem;
+    color: var(--color-ink-100);
+}
+
+/* Icon-only download, for list rows. Overrides the width and padding the
+   full-width variant sets, so the two can share state styling. */
+.download-btn--icon {
+    width: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+/* The same icon-only sizing, but keeping a border — for a header action that
+   sits beside Play and Shuffle and should read as one of a set, rather than
+   inside a list row where a border would be noise. */
+.download-btn--circle {
+    width: auto;
+    padding: 0;
+    background: transparent;
+}
+
+/* One glyph at a time, chosen by the state the handler writes. Driven by CSS
+   rather than JS so the icon cannot fall out of step with data-state — they are
+   the same fact, and keeping two copies is how they diverge. */
+.download-btn [data-icon] { display: none; }
+.download-btn[data-state='idle'] [data-icon='idle'],
+.download-btn[data-state='downloading'] [data-icon='downloading'],
+.download-btn[data-state='stored'] [data-icon='stored'],
+.download-btn[data-state='failed'] [data-icon='failed'] { display: block; }
+
+/* No state yet — the server renders data-state="idle", but a button the JS has
+   not painted should still show something rather than an empty box. */
+.download-btn:not([data-state]) [data-icon='idle'] { display: block; }
+
+/* Green once stored: the one state worth spotting while scrolling a list. The
+   icon buttons are deliberately low-contrast until hovered, so this overrides
+   that — a download that finished should not need a hover to be seen. */
+/* Scoped to the icon variant, and to both states, so these beat the Tailwind
+   text colour on the element and the full-width button's own state styling
+   further up — that one is a bordered control with a label and should keep its
+   existing treatment. */
+/* No plate behind an icon. The bordered full-width button tints its background
+   when stored, and that rule sits later in this file with the same specificity
+   as .download-btn--icon's background reset — so it won, and a list row showed
+   a filled rectangle behind the tick instead of a bare icon. */
+.download-btn--icon[data-state],
+.download-btn--icon[data-state]:hover {
+    background: transparent;
+    border-color: transparent;
+}
+
+.download-btn--icon[data-state='stored'],
+.download-btn--icon[data-state='stored']:hover { color: #34d399; opacity: 1; }
+
+.download-btn--icon[data-state='failed'],
+.download-btn--icon[data-state='failed']:hover { color: #fca5a5; opacity: 1; }
+
+/* The transfer is running, so the button should not read as tappable-idle.
+   Kept at full opacity on a phone too, where the row's hover-reveal never
+   fires and an in-flight download would otherwise stay invisible. */
+.download-btn--icon[data-state='downloading'],
+.download-btn--icon[data-state='downloading']:hover { color: var(--color-ink-100); opacity: 1; }
+
+.download-spinner { animation: download-spin 0.9s linear infinite; }
+
+@keyframes download-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Respects a system preference for less motion: a spinner is decorative, and
+   the state is already carried by the glyph itself. */
+@media (prefers-reduced-motion: reduce) {
+    .download-spinner { animation: none; }
+}
+
+/* Actions beside the Songs heading: shuffle the library, download it all.
+   Sized down from the sub-nav's buttons, since they sit next to a heading
+   rather than in a row of their own. */
+.songs-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    /* 36px rather than 44: these sit beside a heading, and a full touch target
+       there would tower over it. Still comfortably tappable. */
+    min-height: 2.25rem;
+    padding: 0 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-base-600);
+    background: var(--color-base-800);
+    color: var(--color-ink-300);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.songs-action:hover {
+    border-color: var(--color-ink-500);
+    color: var(--color-ink-100);
+    background: var(--color-base-700);
+}
+
+.songs-action[data-state='downloading'] { color: var(--color-ink-100); }
+.songs-action[data-state='stored'] { color: #34d399; border-color: color-mix(in srgb, #34d399 40%, transparent); }
+.songs-action[data-state='failed'] { color: #fca5a5; }
+
+/* On a narrow phone the label is the first thing worth losing: the icon says
+   what each does, and the heading beside them needs the room. */
+@media (max-width: 400px) {
+    .songs-action span { display: none; }
+    .songs-action { padding: 0 0.55rem; }
+}
+
+/* ----------------------------------------------------------------- toast */
+
+/* Sits above the tab bar and the now-playing bar, both of which are fixed to
+   the bottom — a toast underneath either is invisible on the screen where it
+   matters most. */
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(9rem + env(safe-area-inset-bottom));
+    z-index: 60;
+    transform: translate(-50%, 0.5rem);
+    max-width: min(22rem, calc(100vw - 2rem));
+    padding: 0.625rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-base-600);
+    background: color-mix(in srgb, var(--color-base-800) 96%, transparent);
+    backdrop-filter: blur(12px);
+    color: var(--color-ink-100);
+    font-size: 0.8125rem;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast[data-visible='true'] {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toast { transition: opacity 0.2s ease; }
+}
+
+/* -------------------------------------------------------------- settings */
+
+.settings-group {
+    border: 1px solid var(--color-base-600);
+    border-radius: 0.75rem;
+    background: var(--color-base-800);
+    padding: 0.25rem 1rem 0.75rem;
+}
+
+.settings-group__title {
+    padding: 0.875rem 0 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-500);
+}
+
+.settings-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 0.875rem 0;
+    border-top: 1px solid var(--color-base-700);
+    cursor: pointer;
+}
+
+.settings-group__title + .settings-row,
+.settings-row:first-of-type { border-top: 0; }
+
+.settings-row__text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.settings-row__label {
+    font-size: 0.875rem;
+    color: var(--color-ink-100);
+}
+
+.settings-row__hint {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--color-ink-500);
+}
+
+/* A real checkbox, restyled. Keeping the native control means the label, the
+   keyboard and assistive technology all work without being reimplemented. */
+.settings-switch {
+    appearance: none;
+    flex-shrink: 0;
+    /* 44px of hit area around a 28px switch: the row is tappable anyway via the
+       label, but the control itself has to be too. */
+    width: 2.75rem;
+    height: 1.6rem;
+    margin-top: 0.1rem;
+    border-radius: 999px;
+    background: var(--color-base-600);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.settings-switch::after {
+    content: '';
+    position: absolute;
+    top: 0.2rem;
+    left: 0.2rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 999px;
+    background: var(--color-ink-100);
+    transition: transform 0.15s ease;
+}
+
+.settings-switch:checked { background: var(--color-accent); }
+.settings-switch:checked::after { transform: translateX(1.15rem); }
+
+.settings-switch:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+.settings-number,
+.settings-input {
+    border: 1px solid var(--color-base-600);
+    border-radius: 0.375rem;
+    background: var(--color-base-900);
+    padding: 0.5rem 0.75rem;
+    color: var(--color-ink-100);
+    font-size: 0.875rem;
+}
+
+.settings-number { width: 4.5rem; text-align: center; }
+.settings-input { width: 100%; }
+
+.settings-number:focus,
+.settings-input:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+}
+
+.settings-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.settings-note {
+    padding: 0.5rem 0;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    color: var(--color-ink-500);
+}
+
+.settings-flash {
+    margin-top: 1rem;
+    border-radius: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.8125rem;
+}
+
+.settings-flash[data-tone='good'] {
+    background: color-mix(in srgb, #34d399 12%, transparent);
+    color: #6ee7b7;
+}
+
+.settings-flash[data-tone='bad'] {
+    background: color-mix(in srgb, #f87171 12%, transparent);
+    color: #fca5a5;
+}
+
+.settings-save {
+    /* 44px, so a thumb can hit it. */
+    min-height: 2.75rem;
+    width: 100%;
+    border-radius: 0.5rem;
+    background: var(--color-accent);
+    padding: 0 1.25rem;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.settings-save:hover { background: var(--color-accent-hot); }
+
+/* ------------------------------------------------------------ pagination */
+
+/* Laravel's stock view is built for a light page — white fills, grey-300
+   borders, dark text — which rendered as a bright slab at the foot of a dark
+   list. These use the app's own tokens. */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+}
+
+.pagination__link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* 2.75rem is 44px: the smallest target reliably hittable with a thumb. */
+    min-width: 2.75rem;
+    height: 2.75rem;
+    padding: 0 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-base-600);
+    background: var(--color-base-800);
+    color: var(--color-ink-300);
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.pagination__link:hover {
+    background: var(--color-base-700);
+    border-color: var(--color-ink-500);
+    color: var(--color-ink-100);
+}
+
+.pagination__link.is-active {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+}
+
+.pagination__link.is-disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.pagination__gap {
+    padding: 0 0.25rem;
+    color: var(--color-ink-500);
+}
+
+/* The numbers are noise on a phone: the two arrows and the current page are
+   what fit, and what a thumb can actually aim at. */
+@media (max-width: 639px) {
+    .pagination__link--number,
+    .pagination__gap { display: none; }
+}
+
+/* ------------------------------------------------------------ track menu */
+
+/* The overflow menu on songs and albums. Built on <details>, so the marker
+   has to go or Safari draws a disclosure triangle beside the meatball. */
+.track-menu > summary::-webkit-details-marker,
+.add-to-playlist > summary::-webkit-details-marker { display: none; }
+
+.track-menu > summary::marker,
+.add-to-playlist > summary::marker { content: ''; }
+
+.track-menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-size: 0.8125rem;
+    color: var(--color-ink-200);
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.track-menu-item:hover {
+    background: var(--color-base-700);
+    color: var(--color-ink-100);
+}
+
+/* The menu is anchored to its button, which sits at the right edge of a row.
+   Near the bottom of a long list it would otherwise open off-screen. */
+@media (max-width: 640px) {
+    .track-menu > div[role='menu'] {
+        position: fixed;
+        inset-inline: 1rem;
+        width: auto;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+}
+
+/* -------------------------------------------------------- upload progress */
+
+/* Global upload indicator. Fixed to the bottom so it does not shift the page,
+   and above the now-playing bar so the two never overlap. */
+.sc-upload-progress {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 60;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--color-base-800) 96%, transparent);
+    border-top: 1px solid var(--color-base-600);
+    backdrop-filter: blur(12px);
+}
+
+.sc-upload-progress__track {
+    height: 3px;
+    border-radius: 999px;
+    background: var(--color-base-600);
+    overflow: hidden;
+}
+
+.sc-upload-progress__fill {
+    height: 100%;
+    width: 0;
+    border-radius: 999px;
+    background: var(--color-accent);
+    transition: width 0.2s ease;
+}
+
+.sc-upload-progress__label {
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--color-ink-300);
+}
+
+.sc-upload-progress[data-state='error'] .sc-upload-progress__fill { background: #f43f5e; }
+.sc-upload-progress[data-state='error'] .sc-upload-progress__label { color: #fda4af; }
+
+/* ---------------------------------------------------------- music sub-nav */
+
+/* Four groupings plus shuffle. Scrolls rather than wraps so the row stays one
+   line on a phone, where wrapping would push the grid below the fold. */
+.music-subnav {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 1.25rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    /* Without these the row scrolls internally *and* still widens the page:
+       a flex item defaults to min-width:auto, so the tabs' combined width
+       becomes the container's minimum and the whole document scrolls
+       sideways. */
+    min-width: 0;
+    max-width: 100%;
+    /* The scroll container is correctly sized, but its own overflow does not
+       stop the tabs painting past the viewport and widening the document.
+       Clipping the inline axis contains them while leaving vertical overflow
+       alone, so a dropdown inside the row is not cut off. */
+    overflow-y: visible;
+}
+
+/* Belt and braces: the row lives inside page sections that size to content,
+   so the clip has to happen where the page width is decided. */
+.music-subnav-wrap { overflow-x: clip; }
+
+.music-subnav::-webkit-scrollbar { display: none; }
+
+.music-subnav__tab {
+    flex-shrink: 0;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-ink-400);
+    background: var(--color-base-800);
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.music-subnav__tab:hover { color: var(--color-ink-100); background: var(--color-base-700); }
+
+.music-subnav__tab.is-active {
+    color: var(--color-ink-100);
+    background: var(--color-base-600);
+}
+
+/* Pushed to the end so the groupings read as a set and the action does not
+   sit among them. On a narrow screen it follows the tabs into the scroll
+   rather than forcing the row wider. */
+.music-subnav__shuffle {
+    flex-shrink: 0;
+    margin-inline-start: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--color-accent);
+    transition: background-color 0.15s ease;
+}
+
+.music-subnav__shuffle:hover { background: var(--color-accent-hot); }
+.music-subnav__shuffle:disabled { opacity: 0.6; }
+
+/* The kebab is revealed on hover, which no touchscreen has. On touch it stays
+   visible: long-press also opens it, but a control the user cannot see is not
+   a control they will find. */
+@media (hover: none) {
+    .track-menu > summary { opacity: 1; }
+}
+
+/* ------------------------------------------------------------- filters */
+
+/* One consistent control height throughout, so nothing sits half a line off
+   its neighbour — the main reason the old row looked wrong on both sizes. */
+.browse-filters { --filter-height: 2.25rem; margin-bottom: 1.5rem; }
+
+.browse-filters__row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.browse-filters__field {
+    height: var(--filter-height);
+    min-width: 0;
+    padding-inline: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--color-base-500) 70%, transparent);
+    border-radius: 0.5rem;
+    background: var(--color-base-800);
+    color: var(--color-ink-100);
+    /* 16px stops iOS zooming the page when the field takes focus. */
+    font-size: 16px;
+}
+
+@media (min-width: 640px) {
+    .browse-filters__field { font-size: 0.875rem; }
+}
+
+.browse-filters__field::placeholder { color: var(--color-ink-500); }
+
+.browse-filters__field:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+/* The search field gets the slack; the genre select takes only what it needs.
+   On a phone that means search fills the row and the select stays legible. */
+.browse-filters__search { flex: 1 1 auto; }
+
+.browse-filters__apply {
+    flex-shrink: 0;
+    height: var(--filter-height);
+    padding-inline: 1.1rem;
+    border-radius: 0.5rem;
+    background: var(--color-accent);
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: background-color 0.15s ease;
+}
+
+.browse-filters__apply:hover { background: var(--color-accent-hot); }
+
+.browse-filters__toggles {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.browse-filters__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    height: var(--filter-height);
+    padding-inline: 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--color-base-500) 70%, transparent);
+    border-radius: 999px;
+    background: var(--color-base-800);
+    color: var(--color-ink-300);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.browse-filters__toggle:hover { border-color: var(--color-ink-500); color: var(--color-ink-100); }
+
+/* Checked state on the label, so the whole pill reads as on rather than just
+   a small box inside it. */
+.browse-filters__toggle:has(:checked) {
+    border-color: var(--color-accent);
+    color: var(--color-ink-100);
+}
+
+.browse-filters__checkbox {
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 0.2rem;
+    border: 1px solid var(--color-base-500);
+    background: var(--color-base-700);
+    accent-color: var(--color-accent);
+}
+
+/* The genre select on a narrow phone: cap it so a long genre name cannot
+   squeeze the search field to nothing. */
+@media (max-width: 480px) {
+    .browse-filters__field:not(.browse-filters__search) { max-width: 8.5rem; }
+}
+
+/* --------------------------------------------------------- offline shell */
+
+/* A quiet note that a screen came from the device's own copy.
+   It was a coloured banner, which made the app look like a different and
+   lesser application whenever the server was away — the intent is the same app
+   with less in it. */
+.offline-note {
+    margin-bottom: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--color-ink-500);
+}
+
+/* ----------------------------------------------------------- filter toggle */
+
+/* Filters are occasional, so they collapse. A permanent search field, two
+   toggles and an Apply button pushed the library itself most of a screen down
+   on a phone. */
+.browse-filters-wrap { margin-bottom: 1.25rem; }
+
+.browse-filters-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--color-base-500) 70%, transparent);
+    border-radius: 999px;
+    background: var(--color-base-800);
+    color: var(--color-ink-300);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    list-style: none;
+}
+
+.browse-filters-toggle::-webkit-details-marker { display: none; }
+.browse-filters-toggle::marker { content: ''; }
+.browse-filters-toggle:hover { color: var(--color-ink-100); border-color: var(--color-ink-500); }
+
+.browse-filters-wrap[open] .browse-filters-toggle {
+    margin-bottom: 0.75rem;
+    border-color: var(--color-accent);
+    color: var(--color-ink-100);
+}
+
+/* A dot rather than a count: knowing filters are on is the useful part, and a
+   number would need explaining. */
+.browse-filters-dot {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 999px;
+    background: var(--color-accent);
+}
+
+/*
+ * Rows that answer a long press.
+ *
+ * iOS treats a held finger on text as the start of a selection: it shows the
+ * magnifier, the selection handles and the copy/share callout, and the app's
+ * own menu never gets a look in. The handler was firing all along — it was
+ * competing with the platform and losing.
+ *
+ * Applied to the row rather than globally. Text elsewhere stays selectable,
+ * because a library is full of names worth copying.
+ */
+[data-long-press-menu] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/*
+ * The controls inside are exempt from the tap highlight, not from selection:
+ * a grey flash on a row that is opening a menu reads as a mis-tap.
+ */
+[data-long-press-menu] {
+    -webkit-tap-highlight-color: transparent;
+}
+
+/*
+ * Links inside the app, held rather than tapped.
+ *
+ * iOS answers a long press on an anchor with its own preview sheet — a
+ * thumbnail of the destination and "Open in Safari", "Add to Reading List",
+ * "Copy Link". Reasonable on a web page, wrong in an app: the destination is
+ * this app, and offering to open it somewhere else is offering to leave.
+ *
+ * Scoped to the app's own chrome so a link in a book's text, or anything the
+ * user might genuinely want to share, keeps the platform behaviour.
+ */
+#main a,
+nav a,
+header a {
+    -webkit-touch-callout: none;
+}
+
+/*
+ * The reader is the exception. A long press on a link in a book, or on the
+ * text itself, is the reader's own gesture — selecting a passage to highlight
+ * or annotate — and suppressing the callout there would break the feature the
+ * page exists for.
+ */
+#reader-page a,
+.reader-pdf-scroller a {
+    -webkit-touch-callout: default;
+}
+
+/*
+ * Connection toasts, tinted so the state reads before the words do.
+ *
+ * Losing the connection is not an error — the app keeps working from what is
+ * on the device — so it is warned rather than alarmed. Coming back is quieter
+ * still: it confirms something the user was probably already expecting.
+ */
+.toast[data-tone='warn'] {
+    border-color: color-mix(in srgb, var(--color-amber-500, #f59e0b) 55%, var(--color-base-600));
+}
+
+.toast[data-tone='ok'] {
+    border-color: color-mix(in srgb, var(--color-emerald-500, #10b981) 55%, var(--color-base-600));
+}

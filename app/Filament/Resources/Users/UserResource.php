@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Users;
 
+use App\Filament\Concerns\RestrictsToAdmins;
+
 use App\Filament\Resources\Users\Pages\CreateUser;
 use App\Filament\Resources\Users\Pages\EditUser;
 use App\Filament\Resources\Users\Pages\ListUsers;
@@ -15,12 +17,19 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class UserResource extends Resource
 {
+    use RestrictsToAdmins;
+
     protected static ?string $model = User::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;
+
+    protected static string|UnitEnum|null $navigationGroup = 'Users & Permissions';
+
+    protected static ?int $navigationSort = 1;
 
     protected static ?string $recordTitleAttribute = 'name';
 
@@ -51,7 +60,7 @@ class UserResource extends Resource
         return [
             'index' => ListUsers::route('/'),
             'create' => CreateUser::route('/create'),
-            'view' => ViewUser::route('/{record}'),
+            // 'view' => ViewUser::route('/{record}'),
             'edit' => EditUser::route('/{record}/edit'),
         ];
     }

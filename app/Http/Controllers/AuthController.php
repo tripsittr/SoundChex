@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
+use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
@@ -23,7 +24,12 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        if (! Auth::attempt($credentials, (bool) $request->boolean('remember'))) {
+        // Always remembered, the way a media app behaves. Signing in is a
+        // one-off act of setting the device up, not something to repeat every
+        // couple of hours — and a phone that asks for a password on the train
+        // is a phone whose downloads may as well not exist. The PIN, not the
+        // password, is what guards a profile day to day.
+        if (! Auth::attempt($credentials, remember: true)) {
             return back()->withErrors([
                 'email' => 'The provided credentials are incorrect.',
             ])->onlyInput('email');
@@ -31,16 +37,22 @@ class AuthController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard'));
+        return redirect()->intended(route('media.home'));
     }
 
     public function showRegister(): View
     {
-        return view('auth.register');
+        return view('auth.register', [
+            'isFirstAccount' => $this->isFirstAccount(),
+        ]);
     }
 
     public function register(Request $request): RedirectResponse
     {
+        // Self-hosted: the person who sets the server up gets the keys, and
+        // everyone after them is a library member until promoted.
+        $isFirstAccount = $this->isFirstAccount();
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
@@ -53,10 +65,15 @@ class AuthController extends Controller
             'password' => Hash::make($data['password']),
         ]);
 
+        $role = $isFirstAccount ? 'owner' : 'member';
+
+        Role::findOrCreate($role, 'web');
+        $user->assignRole($role);
+
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect()->route('dashboard');
+        return redirect()->route('media.home');
     }
 
     public function logout(Request $request): RedirectResponse
@@ -67,5 +84,14 @@ class AuthController extends Controller
         $request->session()->regenerateToken();
 
         return redirect('/');
+    }
+
+    /**
+     * Whether nobody has registered yet — the very first account on a freshly
+     * installed server.
+     */
+    private function isFirstAccount(): bool
+    {
+        return User::query()->doesntExist();
     }
 }

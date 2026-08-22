@@ -1,0 +1,17 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "SoundChex Server",
+  "identifier": "net.soundchex.server",
+  "app": {
+    "windows": [
+      {
+        "title": "SoundChex Server",
+        "url": "server.html",
+        "width": 1100,
+        "height": 780,
+        "minWidth": 720,
+        "minHeight": 520
+      }
+    ]
+  }
+}
