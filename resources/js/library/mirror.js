@@ -18,7 +18,12 @@ const META_STORE = 'meta';
 let dbPromise = null;
 
 function openDatabase() {
-    dbPromise ??= new Promise((resolve, reject) => {
+    if (dbPromise) return dbPromise;
+
+    // Captured so a close event from an old connection cannot drop a newer one.
+    let pending;
+
+    pending = dbPromise = new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onupgradeneeded = () => {
@@ -39,15 +44,61 @@ function openDatabase() {
             }
         };
 
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            const db = request.result;
+
+            // iOS closes the connection out from under the page when it is
+            // backgrounded or memory is tight, and a cached handle then throws
+            // "The database connection is closing" on every transaction for the
+            // rest of the session. Dropping the cache lets the next call open a
+            // fresh one instead of reusing a dead one.
+            db.onclose = () => {
+                if (dbPromise === pending) dbPromise = null;
+            };
+
+            db.onversionchange = () => {
+                db.close();
+
+                if (dbPromise === pending) dbPromise = null;
+            };
+
+            resolve(db);
+        };
+
+        request.onerror = () => {
+            if (dbPromise === pending) dbPromise = null;
+
+            reject(request.error);
+        };
     });
 
     return dbPromise;
 }
 
-async function transaction(store, mode, fn) {
+async function transaction(store, mode, fn, retrying = false) {
     const db = await openDatabase();
+
+    if (! retrying) {
+        try {
+            return await runTransaction(db, store, mode, fn);
+        } catch (error) {
+            const name = error?.name ?? '';
+
+            if (name === 'InvalidStateError' || name === 'UnknownError'
+                || String(error?.message ?? '').includes('connection is closing')) {
+                dbPromise = null;
+
+                return transaction(store, mode, fn, true);
+            }
+
+            throw error;
+        }
+    }
+
+    return runTransaction(db, store, mode, fn);
+}
+
+function runTransaction(db, store, mode, fn) {
 
     return new Promise((resolve, reject) => {
         const tx = db.transaction(store, mode);

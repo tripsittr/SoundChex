@@ -25,7 +25,12 @@ let dbPromise = null;
 function openDatabase() {
     if (dbPromise) return dbPromise;
 
-    dbPromise = new Promise((resolve, reject) => {
+    // Captured so the handlers below only clear the cache if it is still
+    // *their* connection cached — a later open must not be dropped by an
+    // earlier connection's close event arriving late.
+    let pending;
+
+    pending = dbPromise = new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
         request.onupgradeneeded = () => {
@@ -40,16 +45,78 @@ function openDatabase() {
             }
         };
 
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            const db = request.result;
+
+            // iOS closes an IndexedDB connection out from under the page —
+            // backgrounding, memory pressure, storage eviction — and the handle
+            // stays cached here. Every transaction afterwards throws "The
+            // database connection is closing", forever, until the app restarts.
+            //
+            // Reported from the phone: one UnknownError from the IndexedDB
+            // server, then 27 failed transactions piled up behind a connection
+            // nobody had noticed was dead.
+            //
+            // Dropping the cached promise means the next call opens a fresh
+            // connection rather than reusing a corpse.
+            db.onclose = () => {
+                if (dbPromise === pending) dbPromise = null;
+            };
+
+            // Another tab upgrading the schema. Close rather than block it, or
+            // that tab hangs waiting for this one.
+            db.onversionchange = () => {
+                db.close();
+
+                if (dbPromise === pending) dbPromise = null;
+            };
+
+            resolve(db);
+        };
+
+        request.onerror = () => {
+            if (dbPromise === pending) dbPromise = null;
+
+            reject(request.error);
+        };
     });
 
     return dbPromise;
 }
 
-async function transaction(store, mode, fn) {
+async function transaction(store, mode, fn, retrying = false) {
     const db = await openDatabase();
 
+    try {
+        return await runTransaction(db, store, mode, fn);
+    } catch (error) {
+        // A connection that died between opening and using it. Drop it and try
+        // once more with a fresh one — the alternative is failing a download
+        // the user asked for because the page was backgrounded a moment ago.
+        if (! retrying && isClosedConnection(error)) {
+            dbPromise = null;
+
+            return transaction(store, mode, fn, true);
+        }
+
+        throw error;
+    }
+}
+
+/**
+ * Whether this error means the connection is gone rather than the data is bad.
+ */
+function isClosedConnection(error) {
+    const name = error?.name ?? '';
+    const message = String(error?.message ?? '');
+
+    return name === 'InvalidStateError'
+        || name === 'UnknownError'
+        || message.includes('connection is closing')
+        || message.includes('database connection is closing');
+}
+
+function runTransaction(db, store, mode, fn) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(store, mode);
         const result = fn(tx.objectStore(store));
@@ -140,8 +207,47 @@ export async function checkSpace(bytes) {
  * @param {(loaded: number, total: number) => void} [options.onProgress]
  * @param {AbortSignal} [options.signal]
  */
-export async function download({ id, url, meta = {}, onProgress, signal, force = false }) {
+
+/**
+ * Records what a download did, for the report the device sends back.
+ *
+ * Downloads had no logging of their own: a file that never arrived left an
+ * unhandled rejection at best and silence at worst, and the phone is where
+ * these fail. Wrapped because diagnostics is optional — a missing reporter must
+ * not be the reason a download throws.
+ */
+function log(kind, detail = {}) {
+    try {
+        window.soundchexDiagnostics?.record?.(`download:${kind}`, detail);
+    } catch {
+        // Reporting is best-effort by definition.
+    }
+}
+
+export async function download(options) {
+    try {
+        return await runDownload(options);
+    } catch (error) {
+        // Every way a download can fail, in one place. Without this the only
+        // trace was an unhandled rejection with no id attached to it, which is
+        // exactly what the phone was reporting.
+        log('failed', {
+            id: String(options?.id ?? ''),
+            name: error?.name ?? '',
+            reason: String(error?.message ?? error).slice(0, 160),
+            aborted: error?.name === 'AbortError',
+        });
+
+        throw error;
+    }
+}
+
+async function runDownload({ id, url, meta = {}, onProgress, signal, force = false }) {
     await requestPersistence();
+
+    const startedAt = Date.now();
+
+    log('start', { id: String(id), force });
 
     // Already here, so there is nothing to fetch.
     //
@@ -156,6 +262,8 @@ export async function download({ id, url, meta = {}, onProgress, signal, force =
         if (existing?.size > 0) {
             onProgress?.(existing.size, existing.size);
 
+            log('already-stored', { id: String(id), size: existing.size });
+
             return { id: String(id), size: existing.size, alreadyStored: true };
         }
     }
@@ -163,6 +271,8 @@ export async function download({ id, url, meta = {}, onProgress, signal, force =
     const response = await fetch(url, { signal });
 
     if (!response.ok) {
+        log('http-error', { id: String(id), status: response.status });
+
         throw new Error(`Download failed (${response.status})`);
     }
 
@@ -219,6 +329,17 @@ export async function download({ id, url, meta = {}, onProgress, signal, force =
         downloadedAt: Date.now(),
         ...meta,
     }));
+
+    log('stored', {
+        id: String(id),
+        size: blob.size,
+        ms: Date.now() - startedAt,
+        // A mismatch here means the transfer was truncated and the file is
+        // stored short — which plays as a track that stops early rather than
+        // as an error anyone would notice.
+        expected: total || null,
+        truncated: total > 0 && blob.size !== total,
+    });
 
     return { id: String(id), size: blob.size };
 }
