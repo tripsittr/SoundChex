@@ -35,6 +35,7 @@ not that a test passed. Both are noted where they differ.
 | --- | --- | --- |
 | S-46 | Snapshot a file's own metadata at the moment it arrives | The embedded tags, the original filename and path, size and hash, recorded once as an `intake` version before anything renames or enriches. `metadata_versions` already holds 5,829 rows but every one has `reason = enrichment`, so the state a file arrived in exists nowhere. S-44 is exactly what that costs: the fix has to infer the original filename from the shape of a title, because the real one was overwritten and never kept |
 | S-45 | Three orphaned rows point at files that were re-filed | 622, 623, 1107. The files exist under corrected names and were catalogued again as 3484, 3499, 2984, so each song is in the library twice with one copy unplayable |
+| S-52 | No back arrow — getting out of a page means navigating all the way round | An artist, album or item page is reached from a list and has no way back to it except the tab bar, which lands on the top of a different screen. Needs to know where it came from rather than guessing: `history.back()` is wrong on a page opened directly or arrived at from the offline shell |
 | S-02 | Reader is slow to open and to turn pages | Not diagnosed. Page content, OCR text and images all stream per page; the mirror does not cover the reader at all |
 | S-03 | Artist, album and item pages are not in the device mirror | Six list screens are; these three are pure server round-trips, ~900ms each over the relay |
 | S-04 | `phone-dl.spec.js` "a stored track stays marked through a pre-render" | Passes alone and with all four download specs; fails in the full 231-test run on both projects. Not explained |
@@ -84,15 +85,15 @@ not that a test passed. Both are noted where they differ.
 | S-31 | now-playing sheet flake, ~1 run in 20 | `75c2d20` | 70 consecutive passes |
 | S-32 | Converted film unplayable after a catalogue rebuild | `603427a` | Backrooms plays; original archived, not deleted |
 | S-49 | "these tracks is already on this device", uncapitalised | `ee35c3e` | 5 tests; every label case checked by hand |
-| S-01 | Artist profiles: images, bios, years active | this commit | MusicBrainz and Wikipedia, no API key. 9 tests. `library:artist-profiles` paces itself at the published rate limit |
-| S-50 | A device report should identify the device | this commit | Name, type, IP, app and shell version, full user agent, timestamp. Verified end to end |
-| S-51 | Reports filterable by device, type and log kind | this commit | 5 tests. Built onto the existing admin page rather than the duplicate resource I started |
-| S-41 | The Tauri shell's own assets cannot update themselves | this commit | Not a broken updater: the served layer updates within 60s and the phone reported four builds progressing in one evening. The shell is compiled into the binary, so it now stamps itself and reports it — a stale shell is visible rather than suspected. Making it *self*-update on iOS is S-07's territory |
+| S-01 | Artist profiles: images, bios, years active | `743b674` | MusicBrainz and Wikipedia, no API key. 9 tests. `library:artist-profiles` paces itself at the published rate limit |
+| S-50 | A device report should identify the device | `720cbf6` | Name, type, IP, app and shell version, full user agent, timestamp. Verified end to end |
+| S-51 | Reports filterable by device, type and log kind | `720cbf6` | 5 tests. Built onto the existing admin page rather than the duplicate resource I started |
+| S-41 | The Tauri shell's own assets cannot update themselves | `720cbf6` | Not a broken updater: the served layer updates within 60s and the phone reported four builds progressing in one evening. The shell is compiled into the binary, so it now stamps itself and reports it — a stale shell is visible rather than suspected. Making it *self*-update on iOS is S-07's territory |
 | S-48 | Carousel errors on the Mac: `Can't find variable: rail` | not a defect | Transient. The reports carry `reloading-for-build` immediately before, and the build they name is two rebuilds old: cached HTML calling `rail()` against a bundle mid-replacement. Verified clean across four browse screens on the current build |
-| S-47 | Lists do not update while a page is open | this commit | 7 tests, desktop and mobile; player and scroll position both survive |
-| S-44 | Titles carry the artist: "Gold - Imagine Dragons" | this commit | 4,377 restored from file tags; 0 remain. Every change snapshotted to `metadata_versions` |
-| S-42 | No toast when going offline or coming back | this commit | 6 tests, desktop and mobile |
-| S-40 | Playlist rows have long press but no menu to open | this commit | `track-menu` added; every song surface now has one |
+| S-47 | Lists do not update while a page is open | `8a31e12` | 7 tests, desktop and mobile; player and scroll position both survive |
+| S-44 | Titles carry the artist: "Gold - Imagine Dragons" | `6646958` | 4,377 restored from file tags; 0 remain. Every change snapshotted to `metadata_versions` |
+| S-42 | No toast when going offline or coming back | `8af5001` | 6 tests, desktop and mobile |
+| S-40 | Playlist rows have long press but no menu to open | `1ad8cf7` | `track-menu` added; every song surface now has one |
 | S-05 | iPhone not on the tailnet | — | Phone is on it as `100.77.35.44`; server answers in 77ms. Confirm the app settles there rather than the Funnel |
 | S-10 | `/login` rate limiting | already built | 5/min by IP **and** by email, so spraying addresses does not defeat it. Listed in error |
 

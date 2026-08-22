@@ -76,6 +76,47 @@ Match the surrounding comment density, naming and structure. Comments explain
 **why**, never what — especially where a non-obvious decision was made. If a
 choice looks strange, it usually prevented a specific bug; say which.
 
+### 5. Everything gets an issue
+
+`Documentation & Planning/Issues.md` holds every piece of tracked work. An
+"issue" here is anything we decide to build or change — a feature, a fix, a
+bug, a piece of cleanup. A feature request gets an entry exactly as a defect
+does.
+
+- **Write the entry before the work starts.** A sentence is enough.
+- **Move it before starting the next thing**, not at the end of a session.
+  Finishing something and moving on is how the file goes stale and stops being
+  worth reading.
+- **Sections run In progress → Open → Deferred → Done.** Done is last because
+  it is read least; Deferred sits above it because a decision *not* to do
+  something is live information, and is otherwise re-argued every few months.
+- **Ids are `S-nn` and never reused.** Entries move between sections; nothing
+  is deleted.
+- **A Done entry carries the commit and what verified it** — not "this
+  commit", which means nothing to anyone reading it later.
+- **Verify a status against the code before trusting it.** Two entries were
+  wrong within a day of being written: one said `/login` had no rate limiting
+  when it has always had it, another said the update check was broken when the
+  device reports showed it working. Both were written from memory rather than
+  checked.
+
+### 6. Log anything that can fail
+
+The app runs on a phone that is not in the room, so a failure nobody wrote down
+is a failure reported as "it didn't work".
+
+A `catch` that only shows a toast says something broke and not what. Record
+what was attempted, what came back, and the id of whatever was being acted on.
+
+- Client: `log()` / `logFailure()` / `loggedFetch()` from `resources/js/log.js`,
+  which reaches the device report. A kind ending `:failed`, `:error` or
+  `:timeout` is sent to the server unprompted.
+- Server: `Log::warning` or `Log::error` with context. Every path that moves or
+  deletes a file logs when it does not.
+- **Not everything.** Storage denied under private browsing, an expected
+  offline — these are legitimately silent, and making them noisy buries the
+  lines that matter.
+
 ---
 
 ## Architecture
