@@ -35,7 +35,8 @@ not that a test passed. Both are noted where they differ.
 | ID | What | Notes |
 | --- | --- | --- |
 | S-41 | Why the app's update check did not pull today's build | The phone sat on `9bccab00a42b` while the server served newer, so none of the day's fixes reached it. Reinstalled by hand 22 Aug; the mechanism that should have done it is still unexplained |
-| S-44 | A playing song shows the wrong title and artwork | Not diagnosed. Could be mis-tagged files, or the player painting one track's metadata over another's — the now-playing bar and the sheet both read through a shared object. Worth checking a specific track against its file's tags before assuming either |
+| S-44 | Titles carry the artist: "Gold - Imagine Dragons" with "Imagine Dragons" beneath | **Diagnosed.** Not the files and not the frontend. The scanner catalogues with the filename as a placeholder, and `FileTagger::writeTitle()` promotes the tag title only when the title still equals the filename — but `LibraryOrganizer` renames the file first, so the comparison fails and the tag is never promoted. 4,120 of 5,692 music rows, 72% |
+| S-45 | Three orphaned rows point at files that were re-filed | 622, 623, 1107. The files exist under corrected names and were catalogued again as 3484, 3499, 2984, so each song is in the library twice with one copy unplayable |
 | S-02 | Reader is slow to open and to turn pages | Not diagnosed. Page content, OCR text and images all stream per page; the mirror does not cover the reader at all |
 | S-03 | Artist, album and item pages are not in the device mirror | Six list screens are; these three are pure server round-trips, ~900ms each over the relay |
 | S-04 | `phone-dl.spec.js` "a stored track stays marked through a pre-render" | Passes alone and with all four download specs; fails in the full 231-test run on both projects. Not explained |
