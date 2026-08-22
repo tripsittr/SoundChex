@@ -1,3 +1,4 @@
+import { logFailure } from './log.js';
 import ePub from 'epubjs';
 import { AnnotationStore } from './reader/annotations.js';
 import { setupAnnotationUi } from './reader/annotation-ui.js';
@@ -399,8 +400,16 @@ async function mountComic(config, ctx) {
         bindPaging(ctx);
         render();
     } catch (error) {
+        // The message blamed CBR for everything, so a corrupt zip, a failed
+        // fetch and an out-of-memory all read as "this is a RAR file" — which
+        // is wrong three times out of four and sends the reader after the
+        // wrong fix.
+        logFailure('reader:archive:failed', error, { item: ctx.itemId ?? null });
+
         if (ctx.status) {
-            ctx.status.textContent = 'Could not open this archive. CBR (RAR) files must be downloaded.';
+            ctx.status.textContent = error?.name === 'AbortError'
+                ? 'Opening this book was interrupted.'
+                : 'Could not open this archive. CBR (RAR) files must be downloaded rather than read here.';
         }
     }
 }

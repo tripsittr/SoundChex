@@ -1,3 +1,5 @@
+import { log } from './log.js';
+
 /**
  * The media player behind both the now-playing bar and the video view.
  *
@@ -331,6 +333,33 @@ export default class MediaPlayer {
         });
 
         this.el.addEventListener('loadedmetadata', () => this.saveSession());
+
+        // A track that will not play was doing so in silence: no message, no
+        // record, nothing to look up. The element's own error is the only
+        // thing that says which of the four reasons it was — a decode failure
+        // reads very differently from a 404, and "the music didn't work" is
+        // indistinguishable between them without this.
+        this.el.addEventListener('error', () => {
+            const codes = {
+                1: 'aborted',
+                2: 'network',
+                3: 'decode',
+                4: 'unsupported source',
+            };
+
+            const item = this.queue?.[this.index] ?? null;
+
+            log('playback:failed', {
+                item: item?.id ?? null,
+                title: item?.title ?? null,
+                cause: codes[this.el.error?.code] ?? 'unknown',
+                // Whether it was playing a downloaded copy or streaming: a
+                // stored file failing to decode is a corrupt download, and a
+                // stream failing is the network or the server.
+                local: String(this.el.currentSrc ?? '').startsWith('blob:'),
+                online: navigator.onLine !== false,
+            });
+        });
 
         // A phone kills a backgrounded tab without warning, and pagehide is the
         // last event that reliably fires before it goes.

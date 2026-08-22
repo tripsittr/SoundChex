@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -147,6 +148,13 @@ class LibraryOrganizer
         $directory = dirname($absoluteTarget);
 
         if (! is_dir($directory) && ! mkdir($directory, 0775, true) && ! is_dir($directory)) {
+            // A permissions problem or a full disk, and previously silent: the
+            // item simply stayed in the inbox with nothing saying why.
+            Log::warning('Could not create a library folder', [
+                'item' => $item->id,
+                'directory' => $directory,
+            ]);
+
             return null;
         }
 
@@ -167,6 +175,13 @@ class LibraryOrganizer
             // rename() fails across filesystems (an external drive, say), so
             // fall back to copy-then-delete.
             if (! @copy($source, $absoluteTarget)) {
+                Log::error('Could not file a media file', [
+                    'item' => $item->id,
+                    'from' => $source,
+                    'to' => $absoluteTarget,
+                    'reason' => 'rename and copy both failed',
+                ]);
+
                 return null;
             }
 
@@ -174,6 +189,16 @@ class LibraryOrganizer
             // copy plus an eager delete would lose the file outright.
             if (filesize($absoluteTarget) !== filesize($source)) {
                 @unlink($absoluteTarget);
+
+                // The partial copy is removed and the original kept, which is
+                // the right call — but a truncated copy usually means a full
+                // disk, and that will happen again on the next file.
+                Log::error('A filed copy was short and was discarded', [
+                    'item' => $item->id,
+                    'from' => $source,
+                    'expected' => filesize($source),
+                    'copied' => filesize($absoluteTarget),
+                ]);
 
                 return null;
             }

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\MediaItem;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -75,10 +76,25 @@ class ConversionFiler
         // original is touched. A failure part way leaves a playable file and an
         // original in one place or the other — never neither.
         if (! $this->move($conversion, Storage::path($filed))) {
+            Log::error('Could not file a converted copy', [
+                'item' => $item->id,
+                'from' => $conversion,
+                'to' => $filed,
+            ]);
+
             return null;
         }
 
         if (! is_file(Storage::path($filed))) {
+            // The move reported success and the file is not there, which is
+            // worth knowing about loudly: it means the check that follows is
+            // the only thing standing between this and archiving an original
+            // whose replacement does not exist.
+            Log::error('A filed conversion was not where it was put', [
+                'item' => $item->id,
+                'expected' => $filed,
+            ]);
+
             return null;
         }
 
@@ -86,6 +102,12 @@ class ConversionFiler
             // The conversion is filed and the original is where it was. Point
             // at the conversion anyway: it is playable, which the original is
             // not, and leaving the row on the old path would be worse.
+            Log::warning('Filed a conversion but could not archive the original', [
+                'item' => $item->id,
+                'original' => $original,
+                'archive' => $archived,
+                'note' => 'the item plays; the original is still in the library tree',
+            ]);
             $item->forceFill([
                 'file_path' => Storage::path($filed),
                 'converted_path' => null,

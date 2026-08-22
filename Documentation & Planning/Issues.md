@@ -27,7 +27,7 @@ not that a test passed. Both are noted where they differ.
 
 | ID | What | Notes |
 | --- | --- | --- |
-| S-43 | Logging everywhere it counts | Started. Download-all now logs on both sides and reports failures by rule; `resources/js/log.js` is the shared helper. 139 catch blocks across 43 files remain, of which most are legitimately silent — the ones to work through are network calls, storage writes and background jobs |
+| S-43 | Logging everywhere it counts | Second pass done. Playback failures, sync failures, reader archive failures, and every file-moving path in LibraryOrganizer and ConversionFiler now say what happened. Remaining catches are mostly legitimately silent — private-browsing storage, expected-offline — and should be left alone rather than made noisy |
 | S-01 | Artist profiles: images, bios, discographies | Plan written: `ArtistProfiles.md` steps 1–4 done, step 5 (the profile page itself) not started |
 
 ## Open

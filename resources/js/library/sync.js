@@ -1,3 +1,5 @@
+import { log } from '../log.js';
+
 import * as mirror from './mirror.js';
 
 /**
@@ -105,6 +107,17 @@ export async function sync({ force = false } = {}) {
     } catch (error) {
         // Offline is the expected case, not an error worth surfacing: the
         // mirror is still valid and the app carries on with what it has.
+        //
+        // Recorded even so. "Offline" here means the request failed, and a
+        // request failing while the device believes it has a connection is a
+        // different problem from having no connection — one that is invisible
+        // without this, because the mirror simply keeps serving yesterday.
+        log('sync:failed', {
+            reason: String(error?.message ?? error).slice(0, 160),
+            name: error?.name ?? '',
+            online: navigator.onLine !== false,
+        });
+
         return { status: 'offline', error: String(error?.message ?? error) };
     }
 }
