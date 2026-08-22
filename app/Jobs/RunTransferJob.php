@@ -64,8 +64,26 @@ class RunTransferJob implements ShouldQueue
             'started_at' => $transfer->started_at ?? now(),
         ])->save();
 
-        // Only files. Metadata and profiles arrive as a database import, which
-        // is one file and atomic.
+        // The catalogue first, and only once. It replaces this machine's
+        // database wholesale, so doing it after the files would overwrite the
+        // rows recording what just arrived.
+        if ($transfer->wants('metadata') && ! $transfer->metadata_imported) {
+            if (! $receiver->importDatabase($transfer)) {
+                $transfer->forceFill(['state' => Transfer::FAILED])->save();
+
+                return;
+            }
+
+            // Written with a raw update: the model's own row is in the database
+            // that was just replaced, so anything read before this point is
+            // stale.
+            \DB::table('transfers')->where('id', $transfer->id)->update([
+                'metadata_imported' => true,
+            ]);
+
+            $transfer = Transfer::find($transfer->id);
+        }
+
         if (! $transfer->wants('files')) {
             $this->finish($transfer);
 

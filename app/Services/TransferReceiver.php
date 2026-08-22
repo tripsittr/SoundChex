@@ -204,6 +204,138 @@ class TransferReceiver
         return $this->verifyAndPlace($item, $temporary, $destination);
     }
 
+    /**
+     * Replaces this machine's catalogue with the source's.
+     *
+     * The whole database rather than row-by-row: it is one file, it compresses
+     * by 85%, and it arrives atomically — a half-imported catalogue is a much
+     * worse thing to be left holding than a failed download.
+     *
+     * The existing database is backed up first, without asking. It holds play
+     * history, playlists and profiles that rescanning cannot rebuild, and
+     * someone who chose "the catalogue" has almost certainly not thought about
+     * losing theirs.
+     */
+    public function importDatabase(Transfer $transfer): bool
+    {
+        $backup = $this->backupExisting();
+
+        if ($backup === null) {
+            $transfer->forceFill([
+                'last_error' => 'Could not back up this machine\'s database, so nothing was replaced.',
+            ])->save();
+
+            return false;
+        }
+
+        $temporary = storage_path('app/transfer-incoming.sqlite.gz');
+
+        try {
+            $response = Http::withToken($transfer->token)
+                ->timeout(300)
+                ->sink($temporary)
+                ->get($this->url($transfer, 'transfer/database'));
+
+            if (! $response->successful()) {
+                $transfer->forceFill([
+                    'last_error' => 'The catalogue could not be read (' . $response->status() . ').',
+                ])->save();
+
+                return false;
+            }
+        } catch (\Throwable $e) {
+            $transfer->forceFill(['last_error' => 'The catalogue transfer failed: ' . $e->getMessage()])->save();
+
+            return false;
+        }
+
+        return $this->unpackDatabase($transfer, $temporary, $backup);
+    }
+
+    /**
+     * Decompresses and swaps in the received catalogue.
+     *
+     * Written beside the live database and moved into place, so a failure part
+     * way leaves the existing one untouched rather than truncated.
+     */
+    private function unpackDatabase(Transfer $transfer, string $archive, string $backup): bool
+    {
+        $target = database_path('database.sqlite');
+        $staged = $target . '.incoming';
+
+        $in = gzopen($archive, 'rb');
+        $out = fopen($staged, 'wb');
+
+        if ($in === false || $out === false) {
+            $transfer->forceFill(['last_error' => 'Could not unpack the catalogue.'])->save();
+
+            return false;
+        }
+
+        while (! gzeof($in)) {
+            fwrite($out, gzread($in, 1024 * 512));
+        }
+
+        gzclose($in);
+        fclose($out);
+        @unlink($archive);
+
+        // A SQLite file starts with a known string. Checked before anything is
+        // replaced, because the alternative is discovering it was HTML from a
+        // login page after the real database has gone.
+        if (file_get_contents($staged, false, null, 0, 15) !== 'SQLite format 3') {
+            @unlink($staged);
+
+            $transfer->forceFill([
+                'last_error' => 'What arrived was not a database. Nothing was replaced.',
+            ])->save();
+
+            return false;
+        }
+
+        if (! @rename($staged, $target)) {
+            @unlink($staged);
+
+            $transfer->forceFill(['last_error' => 'Could not put the new catalogue in place.'])->save();
+
+            return false;
+        }
+
+        Log::warning('This catalogue was replaced by another server\'s', [
+            'transfer' => $transfer->id,
+            'source' => $transfer->source_url,
+            'backup' => $backup,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Copies the current database somewhere safe.
+     *
+     * @return string|null the path, or null if it could not be done — in which
+     *                     case nothing is replaced.
+     */
+    private function backupExisting(): ?string
+    {
+        $source = database_path('database.sqlite');
+
+        if (! is_file($source)) {
+            // Nothing to lose. A fresh install receiving its first catalogue.
+            return 'none';
+        }
+
+        $directory = storage_path('app/backups');
+
+        if (! is_dir($directory) && ! @mkdir($directory, 0775, true)) {
+            return null;
+        }
+
+        $path = $directory . '/before-transfer-' . now()->format('Y-m-d_His') . '.sqlite';
+
+        return @copy($source, $path) ? $path : null;
+    }
+
     /** Whether the file is already here and correct. */
     private function alreadyHave(TransferItem $item, string $destination): bool
     {

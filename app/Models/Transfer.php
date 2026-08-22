@@ -21,7 +21,7 @@ class Transfer extends Model
     public const FAILED = 'failed';
 
     protected $fillable = [
-        'source_url', 'remote_request_id', 'token', 'wants',
+        'source_url', 'remote_request_id', 'token', 'wants', 'metadata_imported',
         'state', 'last_error', 'total_files', 'total_bytes',
         'started_at', 'finished_at',
     ];
@@ -32,6 +32,7 @@ class Transfer extends Model
     {
         return [
             'wants' => 'array',
+            'metadata_imported' => 'boolean',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
