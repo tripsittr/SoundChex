@@ -44,10 +44,14 @@ test.describe('download-all diagnostics', () => {
         await button.click();
         await page.waitForTimeout(2000);
 
+        // Filtered to this one kind rather than every :failed event. The
+        // original asserted across all of them, so an unrelated sync:failed
+        // satisfied "something failed" and then failed the url check — which
+        // it did on mobile, where the sync does fail, and not on desktop.
         const failures = await page.evaluate(() => window.soundchexDiagnostics.events()
-            .filter((e) => e.kind.endsWith(':failed')));
+            .filter((e) => e.kind === 'download:library:failed'));
 
-        expect(failures.length).toBeGreaterThan(0);
+        expect(failures.length, 'the library listing recorded its own failure').toBeGreaterThan(0);
 
         // The url is what "Load failed" alone never told anyone.
         expect(JSON.stringify(failures)).toContain('downloadable');

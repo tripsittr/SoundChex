@@ -1,0 +1,199 @@
+# Working on SoundChex
+
+What this project has taught, mostly the hard way. Written after a long session
+of fixing things on a real device, where several confident diagnoses turned out
+to be wrong and the tests that were supposed to catch them did not.
+
+Read [AGENTS.md](../AGENTS.md) first — that is the architecture and the
+workflow. This is about how to work here without repeating the same mistakes.
+
+---
+
+## The database
+
+**Never run a schema or seed command without asking.** `php artisan
+migrate:fresh` destroyed the real development library — 1,458 media items, along
+with play history, watchlists and playlists. The media survived because the
+database is only a catalogue, but everything derived was gone and had to be
+rebuilt by rescanning.
+
+- `migrate:fresh`, `db:wipe` and `migrate:rollback` are never the right answer
+  on the dev database. Write a new migration instead.
+- The e2e database exists to be destroyed. Use it.
+- Back up first when a migration is genuinely needed: `php artisan db:backup`
+  takes a consistent, compressed snapshot in a few seconds.
+
+**Never name the database file by hand.** `database_path('database.sqlite')`
+reads like the obvious way to reach it and is a hardcoded path that ignores
+configuration entirely. Code written that way ran under test — where the
+connection is `:memory:` — and replaced the real library's database with the
+gzipped HTML the test was feeding it.
+
+```php
+// Wrong. Ignores the connection, so :memory: writes to the real file anyway.
+$path = database_path('database.sqlite');
+
+// Right. Null under :memory:, which is the answer that refuses.
+$path = config('database.connections.' . config('database.default') . '.database');
+```
+
+The suite running on `:memory:` did not save it, because the code never asked
+the connection where to write. A hardcoded path is not a detail when the thing
+at the end of it is the only copy.
+
+**Restoring is three steps, not one.** Copying a backup over
+`database/database.sqlite` leaves SQLite still reporting `database disk image is
+malformed`, because the `-wal` and `-shm` files beside it belong to the database
+that was just replaced and no longer match:
+
+```bash
+rm -f database/database.sqlite-wal database/database.sqlite-shm
+gunzip -c storage/backups/soundchex-DATE.sqlite.gz > database/database.sqlite
+php artisan migrate --force    # the backup predates anything since
+```
+
+Nothing warns about the stale files, and the error is identical to the one a
+genuinely corrupt file gives — so it reads as "the backup is bad too" when the
+backup is fine.
+
+---
+
+## Testing
+
+**A test that passes whether or not the fix is present is worse than no test.**
+It reads as coverage and provides none. This happened repeatedly and the pattern
+is always the same: the test asserts something true for an unrelated reason.
+
+**Sabotage-verify everything.** Break the fix, run the test, watch it fail, put
+the fix back. Three separate tests in this session passed with the fix removed:
+
+- A path-traversal test where `.env` did not exist at the traversed path, so
+  `is_file()` refused it regardless of the guard.
+- A service-worker eviction test that planted an arbitrary cache key, which
+  activate deletes whether or not the version is stamped correctly.
+- A route-ranking test that awaited every measurement, so it passed against
+  first-to-answer and best-of-all alike.
+
+**Assert on the mechanism, not a symptom that has other causes.** "The page
+renders" is true for many reasons. "This pattern matches this URL" is true for
+one.
+
+**Parsing is not working.** A `return` at module top level parsed fine and killed
+the entire connect screen at runtime — no autofill, no buttons, nothing. `node
+--check` said it was fine. Always load the page and use it.
+
+**Playwright cannot see everything.** Route interception does not reach
+service-worker fetches or `no-cors` requests, and the browser reports a
+zero safe-area inset at every viewport — so a notched-phone layout bug is
+invisible in tests. Verify those on the device.
+
+---
+
+## Diagnosing on a device
+
+**Instrument before theorising.** Four rebuilds went into guessing at a Face ID
+failure. The detailed error, once obtained, ruled out every hypothesis in one
+line. Ship the diagnostic first.
+
+**The server log is often the fastest answer.** The music page failure was
+solved by `~/Library/Logs/SoundChex/serve.log` showing 6,958 artwork requests in
+an afternoon, peaking at 1,146 in a minute, while books and films answered in
+0.07ms. No amount of reading the client would have found that as quickly.
+
+**Check you are reading the live log.** Two hours went into a stale
+`storage/logs/serve.log` while the launchd agent wrote to `~/Library/Logs/`.
+
+**A report that dies with the page reports nothing.** Diagnostics need
+`keepalive: true` and must send immediately rather than on a timeout — every
+event worth reporting describes a page being torn down.
+
+---
+
+## The platform
+
+**macOS gates `~/Documents` behind TCC.** A launchd agent told to write there is
+dropped with `EX_CONFIG` before its program runs, and writes nothing — so the
+log that would explain the failure is the thing that caused it. Service logs go
+to `~/Library/Logs/`.
+
+**Tauri capability `remote.urls` are URLPattern, not shell globs.**
+`http://192.168.*.*:*` compiles without error and matches nothing. Test patterns
+against real URLs before trusting them.
+
+**Tauri scopes plugin access to what the shell serves.** Pages loaded from the
+Laravel server are a remote origin, and plugin calls from them are refused
+unless a remote scope covers them.
+
+**iOS forbids an app installing its own binary.** The updater is desktop-only.
+It matters less than it sounds: nearly everything here is served, so a deploy
+reaches a phone without a rebuild.
+
+**Free provisioning profiles last seven days.** The app stops opening with "no
+longer available" and needs a rebuild. A paid account gives a year, but the
+device must be registered to the paid team — the free registration does not
+carry over.
+
+**Never hardcode a LAN address.** This machine's changed four times in one day.
+Tailscale addresses are stable; LAN addresses are not.
+
+---
+
+## Performance
+
+**Measure before optimising, and measure the real library.** The test library
+has two music items and the real one has 1,356. Every music page problem this
+session was invisible until measured against the real thing.
+
+**A relayed route is not merely slower.** Tailscale Funnel measured 1,332ms
+against 18ms direct — the same server, from the same room, via Los Angeles.
+Rank relays below direct routes rather than trusting a latency comparison,
+because a relay that gets one lucky measurement will hold the connection.
+
+**Draw a screenful, not a library.** The offline shell rendered every item in
+the mirror — 1,356 rows, each with an image — as a *placeholder* shown for a
+moment before the real page arrived.
+
+**`stale-while-revalidate` still makes the request.** For content-addressed
+files there is nothing to revalidate; serve from cache alone.
+
+---
+
+## Changing this codebase
+
+**Look for the existing implementation first.** Several bugs were things already
+built and left unwired: `[data-download-batch]` buttons that nothing bound,
+`[data-download]` icons the same, a `music-nav` the offline shell rebuilt without
+its buttons. Grep for the attribute before writing a handler for it.
+
+**Blade and the offline shell must agree.** Any row rendered in Blade is also
+rendered in `resources/js/library/render.js`. A change to one that misses the
+other produces a UI that differs depending on whether the server answered.
+
+**Beware duplicate CSS rules.** A correct `#now-playing` rule was overridden by
+a second one added 120 lines below with a smaller offset. Same specificity,
+later wins. Grep for the selector before adding a rule for it.
+
+**Tailwind utilities lose to this project's stylesheet.** `md:hidden` did not
+hide the mobile tab bar because `.mobile-tabs { display: grid }` came later in
+the cascade. Scope the breakpoint in the stylesheet rather than fighting it.
+
+**Editing files with Python string replacement is fragile.** Several edits
+landed in the wrong place or removed a brace, twice producing a file that would
+not parse. Assert the text you expect to find before replacing it, and check the
+result parses.
+
+---
+
+## Communicating
+
+**Say what was verified and what was assumed.** Several claims this session were
+wrong: that the app shipped without a frontend (it did not — Tauri compresses
+embedded assets and a plaintext grep cannot see them), and that a device build
+could not be run from here (it could, and had been).
+
+**A user's report is evidence.** "iPhone 3000" was dismissed as not a real
+device; it was the device's name, and confirmed the hardware model. "Is it still
+the connect screen?" was right when the tests said otherwise.
+
+**Report failures plainly.** If a test is failing, say which and why, rather
+than reporting a pass count that excludes it.

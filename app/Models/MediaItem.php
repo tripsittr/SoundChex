@@ -380,13 +380,31 @@ class MediaItem extends Model
             return null;
         }
 
-        if (str_starts_with($this->file_path, DIRECTORY_SEPARATOR)) {
+        if ($this->isAbsolutePath($this->file_path)) {
             return is_readable($this->file_path) ? $this->file_path : null;
         }
 
         $path = Storage::path($this->file_path);
 
         return is_readable($path) ? $path : null;
+    }
+
+    /**
+     * Whether a stored path is absolute.
+     *
+     * A leading separator is the whole test on Unix and misses every Windows
+     * path: "C:\\Users\\..." does not start with one, so an absolute path
+     * would be treated as relative, prefixed with the storage root, and found
+     * unreadable — every file in the library at once.
+     */
+    private function isAbsolutePath(string $path): bool
+    {
+        if (str_starts_with($path, '/') || str_starts_with($path, '\\')) {
+            return true;
+        }
+
+        // A drive letter, and a UNC share for a library on a NAS.
+        return (bool) preg_match('#^[A-Za-z]:[\\\\/]#', $path);
     }
 
     /** Whether the underlying file is present and readable. */

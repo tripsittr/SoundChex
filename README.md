@@ -117,6 +117,14 @@ npm run build:server                   # the host app, with service controls
 iOS needs a paid Apple developer account for a profile that lasts a year; a
 free one expires in seven days.
 
+Tauri builds for the platform it runs on — a Mac produces the `.dmg`, not the
+`.msi`. **[docs/BuildingOnEachPlatform.md](docs/BuildingOnEachPlatform.md)**
+covers what each target needs, and is honest about which have actually been
+built: macOS and iOS have, Windows, Linux and Android have not.
+
+Setting up on Windows has its own step-by-step, with the silent failures called
+out: **[docs/SettingUpOnWindows.md](docs/SettingUpOnWindows.md)**.
+
 ---
 
 ## Reaching it from elsewhere

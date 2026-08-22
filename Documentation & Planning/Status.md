@@ -2,16 +2,20 @@
 
 What exists, what doesn't, and what's next. This is the file to read first.
 
-Plans in this folder are named for what they cover; a `DONE_` prefix means
-built, tested and verified. See `AGENTS.md` for the workflow.
+**`Issues.md` is the list.** Every feature, fix and bug lives there, and a
+finished plan is deleted once its entry records what was built and what
+verified it — a plan kept after the work is done is a second, staler answer to
+a question already answered.
 
-Some files here are **reference**, not plans — they describe how something
-works rather than proposing work. Those are never prefixed:
+What remains here is either an unstarted plan or reference:
 
+- `Issues.md` — everything tracked, and where each got to
 - `Status.md` — this file
-- `Handoff.md` — current state, known issues, and what was tried and abandoned
+- `Handoff.md` — current state, known issues, what was tried and abandoned
 - `UsersAndProfiles.md` — the account and profile model
 - `RemoteAccess.md` — reaching the server from outside the house
+- `NativeClients.md` — whether to build native apps, and the case each way
+- `AppDistribution.md` — sideloading against stores, and what each costs
 
 ---
 
@@ -67,7 +71,7 @@ verified by breaking it on purpose and confirming a test fails. Writing them
 found five silent bugs: profile permissions blocked at the panel door, music
 still stopping on navigation, episode codes stripped as file extensions, an
 ungated admin dashboard leaking titles above a profile's rating, and a missing
-IndexedDB record read as a hit. See `DONE_TestCoverage.md`.
+IndexedDB record read as a hit. Recorded as S-70 in `Issues.md`.
 
 ---
 
@@ -92,7 +96,7 @@ are still real and still unaddressed.
 ### Cross-media links
 
 A novel pointing at its film adaptation and soundtrack. Deferred from
-`UnifiedSearch.md` until the library holds a book and its adaptation together —
+unified search (S-56) until the library holds a book and its adaptation together —
 a matching rule written against one film verifies nothing.
 
 ### HLS adaptive streaming
