@@ -1,6 +1,6 @@
 ---
 name: soundchex-testing-standard
-description: "Tests are written for everything in SoundChex, across three layers — PHP, Vitest, Playwright — with specific rules about what each must cover"
+description: "Blaze wants tests written for everything in SoundChex, across three layers — PHP, Vitest, Playwright — with specific rules about what each must cover"
 metadata: 
   node_type: memory
   type: feedback
@@ -17,7 +17,7 @@ tests, 15 of them one parser) against ~4,580 lines of untested JavaScript and
 dialog, hyphen rejoining producing "port hole", a stale `MediaBrowser` scoping
 to the previous profile, double-bound download buttons, `@livewireScriptConfig`
 silently doing nothing. Most were frontend or integration, so unit tests alone
-would have caught few of them. The owner specifically asked for the kinds of tests
+would have caught few of them. Blaze specifically asked for the kinds of tests
 to be spelled out in detail, not left as "add tests".
 
 **How to apply:**

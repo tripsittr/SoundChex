@@ -119,6 +119,40 @@ class TransferApprovalTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/transfer/manifest')->assertForbidden();
     }
 
+    public function test_a_database_can_be_gzipped_to_a_file_and_read_back(): void
+    {
+        // The first real transfer got a 500 from the catalogue endpoint:
+        // gzopen('php://output') fails with "could not make seekable", because
+        // the handle seeks and output does not. Every test that checked only
+        // the status code passed regardless.
+        //
+        // Tested as the compression step rather than through the endpoint,
+        // because the endpoint checkpoints the WAL and that fights the test
+        // harness's own transaction. What broke was this, not the routing.
+        $source = tempnam(sys_get_temp_dir(), 'soundchex-src-');
+        file_put_contents($source, 'SQLite format 3' . str_repeat("\0", 200));
+
+        $archive = $source . '.gz';
+
+        $in = fopen($source, 'rb');
+        $out = gzopen($archive, 'wb6');
+
+        while (! feof($in)) {
+            gzwrite($out, fread($in, 1024 * 512));
+        }
+
+        fclose($in);
+        gzclose($out);
+
+        $unpacked = @gzdecode(file_get_contents($archive));
+
+        $this->assertNotFalse($unpacked, 'The archive was not gzip.');
+        $this->assertStringStartsWith('SQLite format 3', $unpacked);
+
+        @unlink($source);
+        @unlink($archive);
+    }
+
     private function pending(array $wants = ['metadata', 'files', 'profiles']): TransferRequest
     {
         return TransferRequest::create([
