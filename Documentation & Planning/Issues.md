@@ -27,6 +27,7 @@ not that a test passed. Both are noted where they differ.
 
 | ID | What | Notes |
 | --- | --- | --- |
+| S-41 | Phone is running an old build and stays on the relay | Reported build `9bccab00a42b` against `85b9bd3b598d` current — none of today's fixes are on the device. Needs a reinstall, and the app's own update check needs looking at |
 | S-02 | Reader is slow to open and to turn pages | Not diagnosed. Page content, OCR text and images all stream per page; the mirror does not cover the reader at all |
 | S-03 | Artist, album and item pages are not in the device mirror | Six list screens are; these three are pure server round-trips, ~900ms each over the relay |
 | S-04 | `phone-dl.spec.js` "a stored track stays marked through a pre-render" | Passes alone and with all four download specs; fails in the full 231-test run on both projects. Not explained |
@@ -65,6 +66,7 @@ not that a test passed. Both are noted where they differ.
 | S-30 | Scan knocks over its own enrichment jobs | `4e02ca8` | 12 dropped jobs retried, all 12 ran |
 | S-31 | now-playing sheet flake, ~1 run in 20 | `75c2d20` | 70 consecutive passes |
 | S-32 | Converted film unplayable after a catalogue rebuild | `603427a` | Backrooms plays; original archived, not deleted |
+| S-42 | No toast when going offline or coming back | this commit | 6 tests, desktop and mobile |
 | S-40 | Playlist rows have long press but no menu to open | this commit | `track-menu` added; every song surface now has one |
 | S-05 | iPhone not on the tailnet | — | Phone is on it as `100.77.35.44`; server answers in 77ms. Confirm the app settles there rather than the Funnel |
 | S-10 | `/login` rate limiting | already built | 5/min by IP **and** by email, so spraying addresses does not defeat it. Listed in error |

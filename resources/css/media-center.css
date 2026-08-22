@@ -1095,3 +1095,18 @@ header a {
 .reader-pdf-scroller a {
     -webkit-touch-callout: default;
 }
+
+/*
+ * Connection toasts, tinted so the state reads before the words do.
+ *
+ * Losing the connection is not an error — the app keeps working from what is
+ * on the device — so it is warned rather than alarmed. Coming back is quieter
+ * still: it confirms something the user was probably already expecting.
+ */
+.toast[data-tone='warn'] {
+    border-color: color-mix(in srgb, var(--color-amber-500, #f59e0b) 55%, var(--color-base-600));
+}
+
+.toast[data-tone='ok'] {
+    border-color: color-mix(in srgb, var(--color-emerald-500, #10b981) 55%, var(--color-base-600));
+}

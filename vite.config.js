@@ -16,6 +16,7 @@ export default defineConfig({
                 'resources/js/now-playing.js',
                 'resources/js/now-playing-sheet.js',
                 'resources/js/playlists.js',
+                'resources/js/connection-status.js',
                 'resources/js/playlist-reorder.js',
                 'resources/js/upload-progress.js',
                 'resources/js/library/index.js',
