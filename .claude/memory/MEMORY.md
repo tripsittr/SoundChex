@@ -7,3 +7,4 @@
 - [Issue tracking](soundchex-issue-tracking.md) — every feature/fix/bug goes in Issues.md; sections run In progress, Open, Deferred, Done
 - [Log everything that can fail](soundchex-log-everything.md) — network, batch, storage and background work all report what failed and why, not just a toast
 - [PR flow and changelogs](soundchex-pr-flow.md) — everything reaches main via PR; every PR gets changelog/NNN-name.md written when it opens
+- [Publish memory with the PR](soundchex-publish-memory.md) — copy changed notes into .claude/memory/ and ship them, correcting stale ones first
