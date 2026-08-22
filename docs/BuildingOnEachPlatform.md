@@ -40,6 +40,10 @@ npm run build
 **FFmpeg must be on the PATH.** Transcoding, caption extraction and duration
 reading all shell out to `ffmpeg` and `ffprobe` by name.
 
+**PHP needs a certificate bundle on Windows.** It ships without one, so every
+outbound HTTPS request fails with `cURL error 60` — see the Windows section
+below. macOS and Linux already have a system bundle.
+
 ---
 
 ## Windows
