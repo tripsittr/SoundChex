@@ -118,15 +118,21 @@ detail when the thing at the end of it is the only copy.
 
 ## Tests
 
-304 PHP · 87 Vitest · 283 of 287 Playwright. 15 new tests cover approval,
-denial, expiry, revocation, scope, verification and resume.
+**307 PHP · 87 Vitest · 281 of 287 Playwright.**
 
-The four failures are the S-04 pattern — mobile specs that pass alone and fail
-in the full run — with one exception that was a real bug in a test I wrote:
-`download-logging` asserted across *every* `:failed` event rather than the one
-it meant, so an unrelated `sync:failed` satisfied "something failed" and then
-failed the url check. It failed on mobile, where the sync does fail, and passed
-on desktop, where it does not. Narrowed to the specific event.
+18 new tests cover approval, denial, expiry, revocation, scope, file
+verification, resume, and refusing to replace a catalogue with something that
+is not one.
+
+The six Playwright failures are the S-04 pattern — every one passes alone and
+in its own spec, and fails only in the full 287-test run. Checked individually
+rather than assumed, which was worth doing: an earlier run had four failures
+and one of them turned out to be a real bug in a test I wrote, asserting across
+every `:failed` event rather than the one it meant. That one is fixed here.
+
+S-04 is worth restating plainly: while it stands, a full-suite failure cannot
+be told from a real one without re-running each spec by hand — which is exactly
+the check a suite exists to save.
 
 One was found toothless and fixed: the corrupt-file test sent a response
 *shorter* than expected, so the size check caught it and the hash check never
