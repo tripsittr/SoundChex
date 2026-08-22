@@ -100,7 +100,26 @@ does.
   device reports showed it working. Both were written from memory rather than
   checked.
 
-### 6. Log anything that can fail
+### 6. Everything reaches main through a pull request
+
+No exceptions, and no pushing to `main` directly. The PR is where a hundred
+commits become one readable account of what changed, and merging locally
+throws that away.
+
+Opening one:
+
+1. **Run the suites first.** PHP, Vitest and Playwright. A PR opened on an
+   unverified branch is a PR whose description cannot be trusted.
+2. **Write the changelog** — `changelog/NNN-short-name.md`, numbered for the
+   PR. Written when the PR is opened rather than after it merges, while the
+   reasoning is still to hand.
+3. **The PR body and the changelog say the same thing.** If they differ, one of
+   them is wrong.
+4. **Say what is still broken.** A PR that lists only wins is one nobody
+   believes twice. If tests fail, say which and why; if something is unverified,
+   say so.
+
+### 7. Log anything that can fail
 
 The app runs on a phone that is not in the room, so a failure nobody wrote down
 is a failure reported as "it didn't work".

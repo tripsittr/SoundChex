@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\Transfer\RequestController as TransferRequestController;
+use App\Http\Controllers\Api\Transfer\SourceController as TransferSourceController;
 use App\Http\Controllers\Api\LibraryController;
 use App\Http\Controllers\Api\DeviceReportController;
 use App\Http\Controllers\Api\NotificationController;
@@ -64,7 +66,44 @@ Route::prefix('v1')->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('api.tokens.store');
 
+    /*
+    | Asking to copy this server.
+    |
+    | The only unauthenticated writes in the application, and they have to be:
+    | a request is how authentication is obtained. Rate-limited hard because of
+    | it, and they disclose nothing about the library — an unapproved requester
+    | learns only that a SoundChex server answered.
+    */
+    Route::post('/transfer/requests', [TransferRequestController::class, 'store'])
+        ->middleware('throttle:5,10')
+        ->name('api.transfer.request');
+
+    Route::get('/transfer/requests/{transferRequest}', [TransferRequestController::class, 'show'])
+        ->middleware('throttle:120,1')
+        ->name('api.transfer.request.show');
+
     Route::middleware('auth:sanctum')->group(function (): void {
+        /*
+        | Serving an approved receiver. Read-only: a transfer never writes to
+        | the source, so a mistake at the far end cannot damage the machine
+        | being copied.
+        */
+        Route::prefix('transfer')->group(function (): void {
+            Route::get('/manifest', [TransferSourceController::class, 'manifest'])
+                ->name('api.transfer.manifest');
+
+            Route::get('/database', [TransferSourceController::class, 'database'])
+                ->name('api.transfer.database');
+
+            Route::get('/profiles', [TransferSourceController::class, 'profiles'])
+                ->name('api.transfer.profiles');
+
+            // Streaming, so not throttled with the rest — a transfer is
+            // thousands of these by design.
+            Route::get('/file/{item}', [TransferSourceController::class, 'file'])
+                ->name('api.transfer.file');
+        });
+
         Route::get('/me', [TokenController::class, 'show'])->name('api.me');
         Route::delete('/tokens/current', [TokenController::class, 'destroy'])->name('api.tokens.destroy');
 
