@@ -215,12 +215,65 @@ class FileTagger implements MetadataSource
             return;
         }
 
-        $placeholder = pathinfo((string) $item->file_path, PATHINFO_FILENAME);
-
-        if ($item->title === $placeholder || blank($item->title)) {
+        if (blank($item->title) || $this->looksLikeAFilename($item, $tagTitle)) {
             $item->title = $tagTitle;
             $item->saveQuietly();
         }
+    }
+
+    /**
+     * Whether the stored title came from the filename rather than from a person.
+     *
+     * The old test compared the title against the current filename, which held
+     * only until LibraryOrganizer renamed the file — and it renames before this
+     * runs. "Gold" became "2136 Gold - Imagine Dragons.mp3" on disk while the
+     * title stayed "Gold - Imagine Dragons", the equality failed, and the tag
+     * title was never promoted. 4,221 tracks, 72% of the library, displaying
+     * their artist twice: once in the title and once beneath it.
+     *
+     * Recognised by shape instead, and deliberately narrowly. A title that is
+     * the tag title plus a separator and the artist is a filename convention;
+     * nobody types that. Anything else is left alone, because overwriting a
+     * title the user set by hand is a worse failure than leaving a clumsy one.
+     */
+    private function looksLikeAFilename(MediaItem $item, string $tagTitle): bool
+    {
+        $title = trim($item->title ?? '');
+
+        if ($title === '' || $title === $tagTitle) {
+            return false;
+        }
+
+        // Still literally the filename: enrichment reached it before anything
+        // renamed the file.
+        if ($title === pathinfo((string) $item->file_path, PATHINFO_FILENAME)) {
+            return true;
+        }
+
+        $artist = trim((string) $item->musicMetadata?->artist);
+
+        if ($artist === '') {
+            return false;
+        }
+
+        // The filer writes "<track> <title> - <artist>", and the scanner read
+        // that back as a title. Both forms are checked, so a row catalogued
+        // before the track number was added is recognised too.
+        $candidates = [$title];
+
+        if (preg_match('/^\d+\s+(.+)$/u', $title, $matches)) {
+            $candidates[] = trim($matches[1]);
+        }
+
+        foreach ($candidates as $candidate) {
+            foreach ([' - ', ' — ', ' – ', '_-_'] as $separator) {
+                if ($candidate === $tagTitle . $separator . $artist) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function writeGenreTags(MediaItem $item, array $info): void

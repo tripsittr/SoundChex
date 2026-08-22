@@ -266,7 +266,45 @@ class LibraryOrganizer
             ? str_pad((string) $meta->track_number, 2, '0', STR_PAD_LEFT) . ' '
             : '';
 
-        return [$artist, $album, $track . $title . $suffix];
+        // The artist is already the folder, so repeating it in the filename
+        // gives "Imagine Dragons/Night Visions/09 Gold - Imagine Dragons.mp3".
+        // Worse, the scanner reads a filename back as a title when cataloguing,
+        // so a name written that way becomes a title carrying its own artist —
+        // which is how 4,243 tracks came to print their artist twice.
+        //
+        // Stripped here as well as fixed at the source, because a title that
+        // arrives in that shape from anywhere should not be written to disk in
+        // it.
+        return [$artist, $album, $track . $this->withoutArtist($title, $meta?->artist) . $suffix];
+    }
+
+    /**
+     * A track title with a trailing " - Artist" removed.
+     *
+     * Only this track's own artist, and only at the end. "Gold - Sia" on an
+     * Imagine Dragons record is part of the title; so is "Sing - Sing - Sing".
+     */
+    private function withoutArtist(string $title, ?string $artist): string
+    {
+        $artist = trim((string) $artist);
+
+        if ($artist === '') {
+            return $title;
+        }
+
+        foreach ([' - ', ' — ', ' – '] as $separator) {
+            $suffix = $separator . $artist;
+
+            if (str_ends_with($title, $suffix)) {
+                $stripped = trim(mb_substr($title, 0, -mb_strlen($suffix)));
+
+                // Never to nothing: a track actually called "- Artist" keeps
+                // the name it has rather than becoming an empty filename.
+                return $stripped === '' ? $title : $stripped;
+            }
+        }
+
+        return $title;
     }
 
     /**

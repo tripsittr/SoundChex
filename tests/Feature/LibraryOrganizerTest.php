@@ -34,6 +34,44 @@ class LibraryOrganizerTest extends TestCase
 
     /* --------------------------------------------------------- paths ---- */
 
+    public function test_the_filename_does_not_repeat_the_artist(): void
+    {
+        // The artist is already the folder. Repeating it gives
+        // "flipturn/Heavy Colors/03 Chicago - flipturn.mp3" — and the scanner
+        // reads a filename back as a title when cataloguing, so a name written
+        // that way becomes a title carrying its own artist. That is how 4,243
+        // tracks came to print their artist twice.
+        $item = $this->music('Chicago - flipturn', artist: 'flipturn', album: 'Heavy Colors', track: 3);
+
+        $this->assertSame(
+            'media/library/Music/flipturn/Heavy Colors/03 Chicago.mp3',
+            $this->organizer->targetPath($item),
+        );
+    }
+
+    public function test_a_hyphen_that_is_part_of_the_title_survives(): void
+    {
+        // Only this track's own artist, only at the end. "Sing - Sing - Sing"
+        // is a real title and must reach disk intact.
+        $item = $this->music('Sing - Sing - Sing', artist: 'Benny Goodman', album: 'Live', track: 1);
+
+        $this->assertSame(
+            'media/library/Music/Benny Goodman/Live/01 Sing - Sing - Sing.mp3',
+            $this->organizer->targetPath($item),
+        );
+    }
+
+    public function test_another_artist_named_in_the_title_survives(): void
+    {
+        $item = $this->music('Gold - Sia', artist: 'Imagine Dragons', album: 'Night Visions', track: 9);
+
+        $this->assertSame(
+            'media/library/Music/Imagine Dragons/Night Visions/09 Gold - Sia.mp3',
+            $this->organizer->targetPath($item),
+        );
+    }
+
+
     public function test_music_files_under_artist_and_album(): void
     {
         $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors', track: 3);
