@@ -1,0 +1,168 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+@import '../../tokens.css';
+
+@source '../../../../app/Filament';
+@source '../../../../resources/views/filament';
+@source '../../../../vendor/filament/**/*.blade.php';
+
+/*
+|--------------------------------------------------------------------------
+| Admin Panel Theme
+|--------------------------------------------------------------------------
+|
+| The management side at /admin. It is the same product as the media center,
+| so it uses the same palette, the same typeface, and the same red — the panel
+| previously shipped a blue primary and a third, unrelated red, which made
+| moving between the two surfaces feel like changing applications.
+|
+| Filament exposes its surfaces as CSS custom properties. Remapping those is
+| preferable to overriding `fi-*` classes, which are internal and change
+| between releases. Where a `fi-*` selector is unavoidable, the reason is
+| stated at the rule.
+|
+*/
+
+@theme {
+    --font-family-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+}
+
+/*
+| Dark is the default here, matching the media center. Light mode stays
+| available and legible: reading a long table in a bright room is a real use,
+| and the panel is where long tables live.
+*/
+
+.fi-body {
+    font-family: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------- dark ---*/
+
+.dark .fi-body,
+.dark .fi-simple-layout {
+    background-color: var(--sc-base-900);
+    color: var(--sc-ink-100);
+}
+
+/* Panels, cards, tables, modals and dropdowns all sit one step above the
+   page. Filament groups them under these classes rather than a variable. */
+.dark .fi-section,
+.dark .fi-wi,
+.dark .fi-ta-ctn,
+.dark .fi-modal-window,
+.dark .fi-dropdown-panel,
+.dark .fi-sidebar,
+.dark .fi-topbar > nav,
+.dark .fi-simple-main {
+    background-color: var(--sc-base-800);
+    border-color: var(--sc-base-600);
+}
+
+.dark .fi-main {
+    background-color: var(--sc-base-900);
+}
+
+/* Table rows: the header sits a shade darker so it separates from the body
+   without needing a heavy border. */
+.dark .fi-ta-header-cell,
+.dark .fi-ta-header {
+    background-color: var(--sc-base-700);
+    color: var(--sc-ink-300);
+}
+
+.dark .fi-ta-row:hover {
+    background-color: var(--sc-base-700);
+}
+
+.dark .fi-ta-cell,
+.dark .fi-ta-text {
+    color: var(--sc-ink-100);
+}
+
+/* Inputs need a surface darker than their container, or they disappear into
+   the card they sit on. */
+.dark .fi-input,
+.dark .fi-select-input,
+.dark .fi-fo-textarea textarea {
+    background-color: var(--sc-base-900);
+    border-color: var(--sc-base-500);
+    color: var(--sc-ink-100);
+}
+
+.dark .fi-input::placeholder {
+    color: var(--sc-ink-500);
+}
+
+.dark .fi-fo-field-wrp-label,
+.dark .fi-fo-field-wrp-hint {
+    color: var(--sc-ink-300);
+}
+
+/* -------------------------------------------------------------- sidebar ---*/
+
+/*
+| The active item is marked with a left rule in the accent rather than a filled
+| background: at this contrast a filled row reads as selected text.
+*/
+
+.fi-sidebar-item-btn {
+    border-left: 3px solid transparent;
+    border-radius: 0.5rem;
+    transition:
+        border-color 0.15s ease,
+        background-color 0.15s ease;
+}
+
+.fi-sidebar-item-btn:hover {
+    border-left-color: color-mix(in srgb, var(--sc-accent) 55%, transparent);
+}
+
+.fi-sidebar-item.fi-active > .fi-sidebar-item-btn {
+    border-left-color: var(--sc-accent);
+}
+
+.dark .fi-sidebar-item.fi-active > .fi-sidebar-item-btn {
+    background-color: color-mix(in srgb, var(--sc-accent) 12%, transparent);
+}
+
+.dark .fi-sidebar-group-label {
+    color: var(--sc-ink-500);
+}
+
+/* --------------------------------------------------------------- login ----*/
+
+/*
+| The sign-in screen is the first thing anyone sees, and it was stock white
+| against a dark app. This matches the media center's own auth pages: dark
+| card, accent focus, glow behind.
+*/
+
+.fi-simple-layout {
+    position: relative;
+    isolation: isolate;
+}
+
+.dark .fi-simple-layout::before {
+    content: '';
+    position: absolute;
+    inset: -30%;
+    z-index: -1;
+    background:
+        radial-gradient(40rem 30rem at 20% 10%, rgb(225 29 58 / 0.16), transparent 60%),
+        radial-gradient(35rem 28rem at 85% 80%, rgb(99 102 241 / 0.14), transparent 60%);
+    filter: blur(40px);
+    pointer-events: none;
+}
+
+.dark .fi-simple-main {
+    border: 1px solid var(--sc-base-500);
+    box-shadow: 0 24px 70px rgb(0 0 0 / 0.55);
+}
+
+/* --------------------------------------------------------------- tables ---*/
+
+/* A rule in the accent along the top of every table, carried over from the
+   previous theme — it reads as a deliberate frame rather than decoration. */
+.fi-ta-ctn {
+    border-top: 3px solid var(--sc-accent);
+}

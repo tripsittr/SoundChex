@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Minimal surface. The shell adds no privileged commands of its own: everything the user sees is the web app. Notifications are the exception, because there is no web equivalent inside a Tauri webview.",
+  "permissions": [
+    "core:default",
+    "notification:default",
+    "updater:default"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*",
+      "http://localhost:*/*",
+      "http://:a.:b.:c.:d:*",
+      "http://:a.:b.:c.:d:*/*",
+      "https://*.ts.net",
+      "https://*.ts.net/*",
+      "https://*.ts.net:*",
+      "https://*.ts.net:*/*"
+    ]
+  }
+}

@@ -2,18 +2,18 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
     /**
-     * A basic test example.
+     * Root is a front door, not a page.
+     *
+     * It used to render Laravel's welcome screen, which on a publicly
+     * reachable URL advertised the framework and told a visitor nothing.
      */
-    public function test_the_application_returns_a_successful_response(): void
+    public function test_root_sends_a_guest_to_the_login_screen(): void
     {
-        $response = $this->get('/');
-
-        $response->assertStatus(200);
+        $this->get('/')->assertRedirect('/login');
     }
 }

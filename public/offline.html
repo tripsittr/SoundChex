@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Offline — SoundChex</title>
+    <style>
+        :root { color-scheme: dark; }
+        /* Centred while this is a message. Once the library has been drawn
+           into the page the app's own layout takes over — an offline library
+           that is centred and narrow looks like a different, lesser
+           application rather than the same one with less in it. */
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #08080b;
+            color: #f4f4f5;
+            font-family: Figtree, ui-sans-serif, system-ui, -apple-system, sans-serif;
+            text-align: center;
+            padding: 1.5rem;
+        }
+        .glyph { font-size: 3rem; opacity: 0.5; }
+        h1 { margin: 1.5rem 0 0.5rem; font-size: 1.5rem; }
+        p { margin: 0; color: #b8b8c0; max-width: 28rem; line-height: 1.6; }
+        button {
+            margin-top: 1.75rem;
+            border: 0;
+            border-radius: 0.375rem;
+            background: #e11d3a;
+            color: #fff;
+            font: inherit;
+            font-weight: 600;
+            padding: 0.65rem 1.5rem;
+            cursor: pointer;
+        }
+        button:hover { background: #ff2a4a; }
+    </style>
+</head>
+<body>
+    <main>
+        <p class="glyph" aria-hidden="true">📡</p>
+        <h1>Can't reach your library</h1>
+        <p>
+            SoundChex runs on your own server, so it needs a connection to that
+            machine — either on your home network or through your tunnel.
+        </p>
+        <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+
+    <style>
+        /* Applied once a library has been rendered: normal document flow, and
+           the app's stylesheet supplies everything else. */
+        body.has-library {
+            display: block;
+            place-items: initial;
+            text-align: initial;
+        }
+    </style>
+
+    <script>
+        /*
+         * Reporting from the one page that most needs it.
+         *
+         * This page is served when a navigation fails, which is exactly the
+         * failure worth hearing about — and it loaded no diagnostics at all, so
+         * the moment things went wrong was the moment nothing was recording.
+         * Written inline because the whole point of this page is that it needs
+         * nothing fetched to work.
+         */
+        (function reportArrival() {
+            var wanted = typeof window.__soundchexWanted === 'string'
+                ? window.__soundchexWanted
+                : location.pathname;
+
+            var events = [];
+
+            try {
+                events = JSON.parse(sessionStorage.getItem('soundchex.diagnostics') || '[]');
+            } catch (error) {
+                events = [];
+            }
+
+            events.push({
+                kind: 'served-offline-page',
+                detail: { wanted: wanted },
+                at: Math.round(performance.now()),
+                path: wanted,
+            });
+
+            try {
+                sessionStorage.setItem('soundchex.diagnostics', JSON.stringify(events.slice(-40)));
+            } catch (error) {
+                // Nothing to do; the send below still carries this arrival.
+            }
+
+            var device = 'unknown';
+
+            try {
+                device = localStorage.getItem('soundchex.device-id') || 'unknown';
+            } catch (error) {
+                // Private browsing.
+            }
+
+            // Sent from here rather than left for the next page, which may
+            // never come: someone who cannot reach a screen closes the app.
+            try {
+                fetch('/api/v1/device-reports', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        device: device,
+                        platform: navigator.userAgent.slice(0, 40),
+                        origin: location.origin,
+                        events: events.slice(-40),
+                    }),
+                    keepalive: true,
+                }).catch(function () {
+                    // Offline is the expected case here. Nothing to be done
+                    // about a report that cannot be sent from a device with no
+                    // connection — it stays in session storage for next time.
+                });
+            } catch (error) {
+                // Ditto.
+            }
+        }());
+    </script>
+
+    <script type="module">
+        /*
+         * Rebuild the page from the device's copy of the library.
+         *
+         * This page is what the service worker serves when a navigation fails,
+         * and it previously loaded no scripts at all — so the mirror could
+         * never be reached and "offline" meant a dead end even with the whole
+         * catalogue sitting on the device.
+         *
+         * The bundle filename is content-hashed, so it is resolved from Vite's
+         * manifest rather than written in here, where it would go stale on the
+         * next build and fail silently.
+         */
+        try {
+            const manifest = await fetch('/build/manifest.json', { cache: 'force-cache' })
+                .then((response) => response.json());
+
+            const entry = Object.entries(manifest)
+                .find(([key]) => key.endsWith('library/index.js'));
+
+            if (entry) {
+                // The app's stylesheet, or the rendered library has no styling
+                // at all — the classes the shell emits are the app's own, and
+                // without this they mean nothing.
+                const css = Object.entries(manifest)
+                    .find(([key]) => key.endsWith('media-center.css'));
+
+                if (css) {
+                    const link = document.createElement('link');
+
+                    link.rel = 'stylesheet';
+                    link.href = `/build/${css[1].file}`;
+                    document.head.append(link);
+                }
+
+                await import(`/build/${entry[1].file}`);
+
+                // The module exposes the library once it has loaded.
+                const drawn = await window.soundchexLibrary?.takeOver();
+
+                // The message layout is wrong for a library; the app's is
+                // right. Swapped only once there is something to show.
+                if (drawn) document.body.classList.add('has-library');
+
+                // Nothing to draw — no sync yet, or a screen this cannot
+                // rebuild. The static message above is the honest answer.
+                if (!drawn) document.querySelector('main')?.removeAttribute('hidden');
+            }
+        } catch {
+            // The manifest is itself a network request. If it is not cached,
+            // the static page stands.
+        }
+    </script>
+</body>
+</html>

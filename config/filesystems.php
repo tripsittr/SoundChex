@@ -32,7 +32,10 @@ return [
 
         'local' => [
             'driver' => 'local',
-            'root' => storage_path('app/private'),
+            // Overridable so the browser tests can point at a scratch root and
+            // never write into the real library. Defaults to the normal
+            // location, so a self-hosted install needs no setting.
+            'root' => env('LOCAL_DISK_ROOT', storage_path('app/private')),
             'serve' => true,
             'throw' => false,
             'report' => false,

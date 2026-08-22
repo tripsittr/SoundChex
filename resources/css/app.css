@@ -1,6 +1,17 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+/* Tailwind v4 discovers templates automatically, but Blade lives outside the
+   default scan roots, so the Jetstream/pagination views are declared here. */
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views';
+@source '../../vendor/laravel/jetstream';
+
+@theme {
+    --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+}
 
 [x-cloak] {
     display: none;

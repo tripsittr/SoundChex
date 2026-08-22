@@ -13,7 +13,9 @@ class ListUsers extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make(),
+            // Self-hosted: the server owner creates accounts directly rather
+            // than emailing invitations into a tenant.
+            CreateAction::make()->label('Add user'),
         ];
     }
 }

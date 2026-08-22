@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>SoundChex</title>
+<style>
+    /*
+      The connect screen. This is the only markup the shell itself owns —
+      everything after this point is the real app, served by the host.
+
+      Hardcoding a server address would mean rebuilding the app per household,
+      so it is asked for once and remembered.
+    */
+    :root { color-scheme: dark; }
+
+    * { box-sizing: border-box; }
+
+    body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 2rem 1.5rem;
+        background: #08080b;
+        color: #f4f4f5;
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        /* Room for the notch and the home indicator on phones. */
+        padding-top: max(2rem, env(safe-area-inset-top));
+        padding-bottom: max(2rem, env(safe-area-inset-bottom));
+    }
+
+    main { width: 100%; max-width: 22rem; }
+
+    h1 { margin: 0 0 .35rem; font-size: 1.4rem; letter-spacing: -0.01em; }
+
+    p.lede { margin: 0 0 1.5rem; color: #a1a1aa; font-size: .875rem; }
+
+    label { display: block; margin-bottom: .4rem; font-size: .8125rem; color: #d4d4d8; }
+
+    input {
+        width: 100%;
+        padding: .7rem .8rem;
+        border: 1px solid #27272a;
+        border-radius: .6rem;
+        background: #131318;
+        color: inherit;
+        font: inherit;
+        /* 16px minimum or iOS zooms the field on focus. */
+        font-size: 16px;
+    }
+
+    input:focus { outline: 2px solid #e11d3a; outline-offset: 1px; border-color: transparent; }
+
+    button {
+        width: 100%;
+        margin-top: .75rem;
+        padding: .7rem 1rem;
+        border: 0;
+        border-radius: .6rem;
+        background: #e11d3a;
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    button:disabled { opacity: .6; cursor: default; }
+
+    .status { margin-top: .9rem; min-height: 1.25rem; font-size: .8125rem; color: #a1a1aa; }
+    .status[data-error="true"] { color: #fda4af; }
+
+    .hint { margin-top: 1.5rem; font-size: .75rem; color: #71717a; }
+
+    .alt { margin-top: 1.5rem; }
+    .alt summary {
+        cursor: pointer;
+        font-size: .8125rem;
+        color: #a1a1aa;
+        list-style: none;
+    }
+    .alt summary::-webkit-details-marker { display: none; }
+    .alt summary::before { content: '+ '; }
+    .alt[open] summary::before { content: '\2212 '; }
+    .alt .hint { margin-top: .6rem; }
+    .stay {
+        width: 100%;
+        margin-top: .75rem;
+        background: #27272a;
+        font-size: .8125rem;
+        padding: .5rem 1rem;
+    }
+
+    .alt button {
+        margin-top: .5rem;
+        background: #27272a;
+        font-size: .8125rem;
+        padding: .5rem 1rem;
+    }
+</style>
+</head>
+<body>
+<!--
+    Always visible.
+
+    Hiding it while an address was raced meant the screen appeared and vanished
+    on a slow connection, and any error shown during the race flashed up before
+    a success replaced it. A screen that is always there is one that can be made
+    correct; one that flickers cannot.
+-->
+<main id="connect-screen">
+    <h1>Connect to your library</h1>
+    <p class="lede">The address of your SoundChex server. Asked once, then remembered.</p>
+
+    <form id="connect">
+        <label for="host">Server address</label>
+        <input id="host" name="host" type="url" inputmode="url" autocapitalize="none"
+               autocorrect="off" spellcheck="false" required
+               placeholder="https://yourmachine.ts.net">
+        <button type="submit">Connect</button>
+    </form>
+
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+
+    <details class="alt">
+        <summary>Add another address</summary>
+        <p class="hint">
+            A server on your own network is far quicker than the same server
+            reached through a public tunnel — often 20ms against 700ms. Add
+            both and the app uses whichever answers first, so it is fast at
+            home and still works away from it.
+        </p>
+        <label for="alt-host" class="auth-label">Local address</label>
+        <input id="alt-host" type="url" inputmode="url" autocapitalize="none"
+               autocorrect="off" spellcheck="false"
+               placeholder="http://192.168.1.10:8000">
+        <button type="button" id="add-alt">Remember this too</button>
+    </details>
+
+    <p class="hint">
+        Addresses are stored on this device only.
+    </p>
+</main>
+
+<script type="module">
+    /**
+     * This shell's own build, stamped at embed time.
+     *
+     * The served layer — Blade, CSS, app JS — updates itself within a minute
+     * and reports its build. These files cannot: they are compiled into the
+     * binary, so a connect-screen change reaches a device only through a
+     * reinstall. Handed to the app so a device running an old shell is visible
+     * rather than merely suspected.
+     */
+    const SHELL_BUILD = 'a960f001aa42';
+
+
+    /** The native app's version, as declared in tauri.conf.json. */
+    const APP_VERSION = '0.1.0';
+
+    /**
+     * Appends this shell's identity to an origin the app is about to load.
+     *
+     * Carried on the URL because localStorage is per-origin: this screen runs
+     * on tauri://localhost and the app on the server's, so they share nothing.
+     */
+    function withShellBuild(origin) {
+        try {
+            const url = new URL(origin);
+
+            url.searchParams.set('shell', SHELL_BUILD);
+            url.searchParams.set('app', APP_VERSION);
+
+            return url.toString();
+        } catch {
+            return origin;
+        }
+    }
+
+    const KEY = 'soundchex.host';
+    const CANDIDATES_KEY = 'soundchex.hosts';
+
+    /**
+     * Every address this server is known by, fastest-first at launch.
+     *
+     * A self-hosted library is reachable several ways — over the LAN, over a
+     * VPN, and through a public tunnel — and they are not remotely equal:
+     * measured here at 53ms, 22ms and 782ms respectively. Storing one address
+     * means picking one of those permanently, and picking the only one that
+     * always works means paying 780ms on every request at home.
+     *
+     * So all of them are kept and raced on launch, and whichever answers first
+     * is used. This is what a native media client does; a browser cannot,
+     * because a page may only talk to the origin that served it.
+     */
+    function candidates() {
+        try {
+            const stored = JSON.parse(localStorage.getItem(CANDIDATES_KEY) ?? '[]');
+
+            return Array.isArray(stored) ? stored.filter(Boolean) : [];
+        } catch {
+            return [];
+        }
+    }
+
+    function rememberCandidates(list) {
+        try {
+            localStorage.setItem(CANDIDATES_KEY, JSON.stringify([...new Set(list)]));
+        } catch {
+            // Private browsing. The single saved host still works.
+        }
+    }
+
+    /**
+     * Returns whichever address answers first.
+     *
+     * Raced rather than tried in order: a dead LAN address on a mobile network
+     * takes until timeout to fail, and sequencing would make every launch away
+     * from home pay that wait before falling back.
+     */
+    // Long enough for a relayed address to answer.
+    //
+    // Three seconds was under the round trip for a Funnel address measured at
+    // 1.3s, so on a slow route the race gave up, the offline path ran and
+    // reported "nothing saved on this device" — and then the connection
+    // succeeded anyway. Two false errors and a working app, in that order.
+    //
+    // Matched to the manual check below, which always allowed eight: the two
+    // disagreeing is what let one fail while the other was still going.
+    async function fastest(origins, timeout = 8000) {
+        if (origins.length === 0) return null;
+
+        // A device with no connection at all does not need eight seconds to
+        // discover it. This covers every version of offline — airplane mode,
+        // wifi off, no signal, a cable pulled out — because the interface is
+        // reporting on itself rather than guessing at the network.
+        //
+        // It says nothing about whether the server is reachable, which is why
+        // the full race still runs when the interface claims to be online.
+        if (navigator.onLine === false) return null;
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeout);
+
+        /** How long an address takes to identify itself, or null if it does not. */
+        const measure = async (origin) => {
+            const started = performance.now();
+
+            try {
+                const response = await fetch(`${origin}/soundchex.json`, {
+                    signal: controller.signal,
+                    credentials: 'omit',
+                    cache: 'no-store',
+                });
+
+                const body = response.ok ? await response.json() : null;
+
+                // Identified rather than merely answered: a captive portal
+                // replying instantly would otherwise win.
+                if (body?.app !== 'soundchex') return null;
+
+                return Math.round(performance.now() - started);
+            } catch {
+                return null;
+            }
+        };
+
+        try {
+            // Every candidate measured, not the first to answer.
+            //
+            // The same server is reachable several ways and they are not close:
+            // measured here, the LAN answered in 18ms, the tailnet IP in 33ms,
+            // and the public Funnel hostname in 1,332ms — because that one
+            // relays through Los Angeles whatever room the phone is in. Taking
+            // whichever replied first meant a working-but-relayed route could
+            // win, and every page load after it paid a second and a third.
+            const results = await Promise.all(
+                origins.map(async (origin) => ({ origin, ms: await measure(origin) })),
+            );
+
+            // A relay is ranked last whatever it measures. Sorting on time
+            // alone let the Funnel win a race it should never win: it is a
+            // `.ts.net` name served from Tailscale's own infrastructure, and a
+            // single probe that happens to look acceptable is still a relay for
+            // every request afterwards. Measured here: 843ms relayed against
+            // 92ms on the same Wi-Fi.
+            const relayed = (origin) => /\.ts\.net(:|\/|$)/.test(origin);
+
+            const answered = results
+                .filter((result) => result.ms !== null)
+                .sort((a, b) => (relayed(a.origin) - relayed(b.origin)) || (a.ms - b.ms));
+
+            return answered[0]?.origin ?? null;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+    // Looked up on use rather than captured once.
+    //
+    // The offline fallback restores the form by cloning the original body and
+    // replacing the live children with it, so every element on this screen is
+    // swapped for a copy. A reference taken at load points at the detached
+    // original from that moment on — which is why the screen appeared to freeze
+    // on "opening what is on this device…": the recovery ran, the form came
+    // back, and the message explaining what had happened was written to a node
+    // that was no longer in the document.
+    const form = () => document.getElementById('connect');
+    const field = () => document.getElementById('host');
+    const status = () => document.getElementById('status');
+
+    const say = (message, isError = false) => {
+        const el = status();
+
+        if (!el) return;
+
+        el.textContent = message;
+        el.dataset.error = String(isError);
+    };
+
+    /** Adds a scheme if the user typed a bare hostname, and drops any path. */
+    function normalise(value) {
+        const trimmed = value.trim();
+
+        if (trimmed === '') return null;
+
+        // Default to https: this app is only reachable over TLS, and a typed
+        // "http://" would silently fail the CSP rather than explaining itself.
+        const looksPrivate = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/
+            .test(trimmed);
+
+        const withScheme = /^https?:\/\//i.test(trimmed)
+            ? trimmed
+            : `${looksPrivate ? 'http' : 'https'}://${trimmed}`;
+
+        try {
+            const url = new URL(withScheme);
+
+            // http is fine on a private network — a LAN or VPN address has no
+            // certificate and needs none, and refusing it would rule out the
+            // only fast route. Public addresses still have to be https.
+            const isPrivate = /^(localhost$|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/
+                .test(url.hostname);
+
+            return url.protocol === 'https:' || isPrivate ? url.origin : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Confirms something is actually listening before navigating.
+     *
+     * Without this a typo lands on a blank page with no way back, because the
+     * connect screen has already been replaced.
+     *
+     * `no-cors` is essential, not incidental. This page is served from a
+     * tauri:// origin, so a normal fetch to the server is cross-origin, and
+     * the server sends no CORS headers — the browser rejects the response
+     * before any status is readable and every address looks unreachable. An
+     * opaque response cannot be inspected, but the request either reached the
+     * network or it threw, and that is the only thing being asked here.
+     *
+     * The navigation that follows is a top-level one, which CORS does not
+     * apply to, so this restriction never affects the app itself.
+     */
+    async function reachable(origin) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+
+        try {
+            // Read, not just requested. A no-cors fetch of /login resolved for
+            // any response at all — a captive portal, a router's admin page, an
+            // unrelated server's error — so "reachable" meant "something
+            // answered" rather than "this is your library".
+            const response = await fetch(`${origin}/soundchex.json`, {
+                signal: controller.signal,
+                credentials: 'omit',
+                cache: 'no-store',
+            });
+
+            if (!response.ok) return false;
+
+            const body = await response.json();
+
+            return body?.app === 'soundchex';
+        } catch {
+            // A DNS failure, a refused connection, the timeout above, or a
+            // response that was not this application.
+            return false;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    // Delegated on document rather than bound to the form element. The offline
+    // fallback replaces the form with a clone, and a listener attached to the
+    // original does not come with it — leaving a form that looks right and does
+    // nothing when submitted.
+    document.addEventListener('submit', async (event) => {
+        if (event.target.id !== 'connect') return;
+
+        event.preventDefault();
+
+        const origin = normalise(field().value);
+
+        if (origin === null) {
+            say('That does not look like a valid https address.', true);
+
+            return;
+        }
+
+        form().querySelector('button').disabled = true;
+        say('Checking…');
+
+        if (!await reachable(origin)) {
+            say('Could not reach that address. Is the server running?', true);
+            form().querySelector('button').disabled = false;
+
+            return;
+        }
+
+        localStorage.setItem(KEY, origin);
+
+        // Remembered alongside any others already known, so a second address
+        // entered later becomes a candidate rather than replacing the first.
+        rememberCandidates([...candidates(), origin]);
+
+        window.location.replace(origin);
+    });
+
+    /**
+     * Straight in on every launch after the first.
+     *
+     * There is deliberately no "did the last attempt work" flag here. This
+     * page and the app live on different origins (tauri:// and https://), so
+     * they have separate localStorage — the app could never clear a flag set
+     * here, and the warning would fire on every launch instead of only after
+     * a real failure.
+     *
+     * Recovering from a wrong address is therefore a manual step: delete the
+     * app's data, or reinstall. Rare enough to be worth the simplicity, since
+     * the address is entered once.
+     */
+    /**
+     * Goes to the app anyway, with the server unreachable.
+     *
+     * The service worker on that origin serves its offline shell for a
+     * navigation it cannot fetch, and that shell reads the mirrored catalogue
+     * and the downloaded files — both of which are on this device already.
+     *
+     * Without this the app was unusable with the server off: the connect
+     * screen would not let anyone past, so music that had been deliberately
+     * downloaded for exactly this situation could not be reached.
+     */
+    async function offline(origin) {
+        if (!origin) {
+            say('No server saved yet, so there is nothing stored to open.', true);
+            field().focus();
+
+            return;
+        }
+
+        say('Server unreachable — opening what is on this device…');
+
+        // The server's origin first, because that is where the data is.
+        //
+        // IndexedDB is partitioned per origin: the app syncs the catalogue
+        // while running on the server's origin, and this screen runs on
+        // tauri://localhost, so the mirror is simply not visible from here. The
+        // embedded shell below can render, but only ever from an empty
+        // database — which is why a device with a fully synced library was told
+        // there was nothing stored.
+        //
+        // That origin has a service worker which caches its own offline page at
+        // install, so a navigation there answers without the network. If it does
+        // not — a fresh install whose worker never ran, or a cache iOS has since
+        // evicted — the navigation fails and the embedded shell still catches
+        // it.
+        if (await originHasData(origin)) {
+            window.location.replace(origin + '/app');
+
+            return;
+        }
+
+        // Rendered here, from assets shipped inside the app.
+        //
+        // This used to navigate to `origin + '/app'` and hope the service
+        // worker answered. That works only when its cache is warm, and the
+        // cache is not a guarantee: a fresh install has never populated it,
+        // and iOS evicts it from apps that have not been opened recently —
+        // exactly when someone reaches for music they downloaded for this
+        // situation. A cold device landed on the browser's error page with
+        // the whole catalogue sitting unread beside it.
+        renderEmbedded();
+    }
+
+    /**
+     * Whether the server's origin has anything worth opening.
+     *
+     * Asked in a hidden iframe on that origin, which is the only way to reach
+     * its IndexedDB from here — a same-origin script can read it and post the
+     * count back. Cheap, and it avoids navigating away to a page that would
+     * turn out to be as empty as this one.
+     *
+     * Any failure answers no: this is an optimisation over the embedded shell,
+     * not a replacement for it, and a hang here would be the freeze this whole
+     * change is meant to remove.
+     */
+    async function originHasData(origin) {
+        return new Promise((resolve) => {
+            const frame = document.createElement('iframe');
+            let settled = false;
+
+            const finish = (answer) => {
+                if (settled) return;
+
+                settled = true;
+                clearTimeout(timer);
+                window.removeEventListener('message', onMessage);
+                frame.remove();
+                resolve(answer);
+            };
+
+            // Bounded: an origin that is unreachable will never load the frame
+            // at all, and without this the screen would sit waiting on it.
+            const timer = setTimeout(() => finish(false), 4000);
+
+            const onMessage = (event) => {
+                if (event.origin !== origin) return;
+                if (event.data?.type !== 'soundchex:mirror-count') return;
+
+                finish(Number(event.data.count) > 0);
+            };
+
+            window.addEventListener('message', onMessage);
+
+            frame.style.display = 'none';
+            frame.src = origin + '/offline-probe.html';
+            frame.addEventListener('error', () => finish(false));
+            document.body.append(frame);
+        });
+    }
+
+    /**
+     * Draws the library from the copy on this device.
+     *
+     * Everything here is local: the assets ship in the app bundle, and the
+     * catalogue is IndexedDB on this origin. No request is made, because the
+     * network is the thing that just failed.
+     */
+    async function renderEmbedded() {
+        // Kept so the form can be put back: the failure path needs the screen
+        // that can fix the problem, not an empty document.
+        //
+        // Not named `saved` — that is the stored address, and shadowing it
+        // here silently broke the very fallback this is for.
+        const originalBody = document.body.cloneNode(true);
+
+        try {
+            const manifest = await fetch('./offline/manifest.json').then((r) => r.json());
+            const entry = manifest['resources/js/library/index.js'];
+            const css = manifest['resources/css/media-center.css'];
+
+            if (css) {
+                const link = document.createElement('link');
+
+                link.rel = 'stylesheet';
+                link.href = `./offline/${css.file}`;
+                document.head.append(link);
+            }
+
+            if (!entry) throw new Error('offline bundle missing');
+
+            const library = await import(`./offline/${entry.file}`);
+
+            // A <main> for the shell to draw into: the connect screen has none
+            // of the app's structure, so one is made for it.
+            document.body.replaceChildren(document.createElement('main'));
+            document.body.classList.add('offline-standalone');
+
+            // takeOver rather than preRender.
+            //
+            // preRender declines when the catalogue is empty, by design: it runs
+            // on every tap while the server is answering, and must never replace
+            // a working page with an offline one. takeOver is the deliberate
+            // fallback, and it is the one that lists downloads when there is no
+            // catalogue — which is the case this screen exists for.
+            const shell = window.soundchexLibrary ?? library.default;
+
+            window.__soundchexWanted = '/app';
+
+            const drawn = await (shell?.takeOver?.() ?? shell?.preRender?.(
+                document.querySelector('main'), '/app',
+            ));
+
+            if (!drawn) throw new Error('nothing stored');
+        } catch (error) {
+            // Nothing has ever been synced to this device, so there is
+            // genuinely nothing to show.
+            //
+            // The whole form is restored rather than a bare message: this is
+            // the one screen that can do anything about the situation, and
+            // clearing it left an empty body with no way forward — the blank
+            // page this was meant to prevent.
+            document.body.replaceChildren(...originalBody.children);
+
+            // The clone carries the hidden attribute, so the restored form
+            // would come back invisible — a blank screen with no way forward,
+            // which is the failure this whole path exists to prevent.
+            document.getElementById('connect-screen')?.removeAttribute('hidden');
+            document.body.classList.remove('offline-standalone');
+            say('Nothing is saved on this device yet, so there is nothing to open offline.', true);
+        }
+    }
+
+    document.getElementById('add-alt')?.addEventListener('click', () => {
+        const extra = normalise(document.getElementById('alt-host').value);
+
+        if (extra === null) {
+            say('That does not look like a valid address.', true);
+
+            return;
+        }
+
+        rememberCandidates([...candidates(), extra]);
+        say(`Remembered. ${candidates().length} addresses known.`);
+        document.getElementById('alt-host').value = '';
+    });
+
+    const screen = () => document.getElementById('connect-screen');
+
+    /** Shows the form, for when connecting is not going to happen by itself. */
+    const revealForm = () => screen()?.removeAttribute('hidden');
+
+    const saved = localStorage.getItem(KEY);
+    const known = candidates();
+
+    if (saved || known.length > 0) {
+        field().value = saved ?? known[0];
+
+        // Offline is known immediately, so there is nothing to wait for.
+        //
+        // Racing every address first meant sitting through the full timeout to
+        // be told the server was unreachable — which the device already knew.
+        // Going straight to what is stored is both faster and more honest.
+        //
+        // Written as a branch rather than an early return: this runs at the top
+        // level of the module, where `return` is a syntax error that takes the
+        // whole script with it — the screen then autofills nothing and its
+        // buttons do nothing, which is exactly what it did.
+        if (navigator.onLine === false) {
+            say('No connection — opening what is on this device…');
+            offline(saved ?? known[0]);
+        } else {
+            say('Finding the fastest route…');
+
+            // Shown while connecting, not only when connecting fails.
+            //
+            // The "Change server" button below is the only way to reach a
+            // different address once one is saved, and it lived inside a hidden
+            // element — so it existed and could not be tapped. On a fast route
+            // the redirect happens in tens of milliseconds, which made the one
+            // escape hatch invisible precisely when the connection was working.
+            revealForm();
+
+
+
+        // A way to stop.
+        //
+        // Without this the form is unreachable once an address is saved: the
+        // page redirects on load, so there is no moment in which to add a
+        // second address or correct a wrong one. Short of deleting the app,
+        // the first address entered was permanent.
+        let cancelled = false;
+
+        const stay = document.createElement('button');
+
+        stay.type = 'button';
+        stay.className = 'stay';
+        stay.textContent = 'Change server';
+        stay.addEventListener('click', () => {
+            cancelled = true;
+            say('Connection cancelled. Edit the addresses below.');
+            stay.remove();
+            field().focus();
+            field().select();
+        });
+
+        status().after(stay);
+
+        // The saved host is included but not privileged: it may be the slow
+        // public address, and a faster one may be reachable right now.
+        const pool = [...new Set([...known, saved].filter(Boolean))];
+
+        fastest(pool).then(async (winner) => {
+            if (cancelled) return;
+
+            if (winner) {
+                document.dispatchEvent(new CustomEvent('soundchex:connected'));
+            } else {
+                revealForm();
+            }
+
+            if (winner) {
+                if (winner !== saved) {
+                    // Remembered so the next launch starts from the one that
+                    // actually worked, though it is raced again regardless —
+                    // moving between home and mobile changes the answer.
+                    localStorage.setItem(KEY, winner);
+                }
+
+                // A moment to say no.
+                //
+                // On a direct route the race finishes in tens of milliseconds
+                // and the redirect fired before anyone could reach the button
+                // beside it. The button existed; the window in which to press
+                // it did not. So the address that worked once became the only
+                // address the app would ever use.
+                //
+                // Short enough not to be a wait, long enough to be a choice,
+                // and it counts down so the pause reads as deliberate rather
+                // than as the app hesitating.
+                const grace = 2500;
+                const startedAt = Date.now();
+
+                await new Promise((go) => {
+                    const tick = () => {
+                        if (cancelled) return go();
+
+                        const left = Math.ceil((grace - (Date.now() - startedAt)) / 1000);
+
+                        if (left <= 0) return go();
+
+                        say(`Connecting to ${winner.replace(/^https?:\/\//, '')} in ${left}…`);
+                        setTimeout(tick, 200);
+                    };
+
+                    tick();
+                });
+
+                if (cancelled) return;
+
+                // Carried on the URL rather than in storage: this screen
+                // runs on tauri://localhost and the app on the server's
+                // origin, and localStorage does not cross between them. The
+                // app stashes it on arrival and reports it from then on.
+                window.location.replace(withShellBuild(winner));
+
+                return;
+            }
+
+            // One last try before giving up, at the longer timeout the manual
+            // check uses.
+            //
+            // A race that ends in silence is not proof the server is off — it
+            // may just be slower than the deadline, which over a relay it
+            // frequently is. Declaring failure at that point showed two errors
+            // and then connected anyway, which teaches people to distrust every
+            // message this screen prints.
+            const host = saved ?? known[0];
+
+            if (host && await reachable(host)) {
+                localStorage.setItem(KEY, host);
+                window.location.replace(host);
+
+                return;
+            }
+
+            offline(host);
+            });
+        }
+    } else {
+        // Nothing saved, so this is a first launch and the form is the point.
+        revealForm();
+        field().focus();
+    }
+</script>
+</body>
+</html>
