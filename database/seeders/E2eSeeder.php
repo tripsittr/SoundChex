@@ -139,6 +139,9 @@ class E2eSeeder extends Seeder
 
         $item->musicMetadata()->create([
             'artist' => $artist,
+            // Browsing groups on this, so a seed without it has no artists at
+            // all — and the artist page could not be tested against anything.
+            'primary_artist' => $artist,
             'album' => $album,
             'track_number' => $trackNumber,
             'duration_ms' => 30_000,

@@ -12,8 +12,44 @@
 <x-media.layout :title="$artist">
     <div class="clears-header mx-auto max-w-6xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8">
 
-        <p class="text-xs font-medium uppercase tracking-wider text-ink-500">Artist</p>
-        <h1 class="mt-1 text-2xl font-bold text-ink-100 sm:text-4xl">{{ $artist }}</h1>
+        {{-- The profile is null for most of a self-hosted library — an artist
+             MusicBrainz has never heard of, or one whose name matches several
+             people and was refused rather than guessed at. The header reads the
+             same either way; the picture and the prose are additions to it, not
+             the thing it is built around. --}}
+        <div class="flex items-start gap-5">
+            @if ($profile?->headshot_url)
+                <img src="{{ $profile->headshot_url }}"
+                     alt=""
+                     loading="lazy"
+                     decoding="async"
+                     class="hidden size-28 shrink-0 rounded-full object-cover ring-1 ring-base-600 sm:block sm:size-36">
+            @endif
+
+            <div class="min-w-0">
+                <p class="text-xs font-medium uppercase tracking-wider text-ink-500">
+                    {{ $profile?->artist_type === 'Group' ? 'Band' : 'Artist' }}
+                </p>
+
+                <h1 class="mt-1 text-2xl font-bold text-ink-100 sm:text-4xl">{{ $artist }}</h1>
+
+                @if ($profile?->disambiguation)
+                    {{-- Often the single most useful line on the page, when two
+                         artists share a name. --}}
+                    <p class="mt-1 text-sm text-ink-400">{{ $profile->disambiguation }}</p>
+                @endif
+
+                @php
+                    $facts = collect([
+                        $profile?->country,
+                        $profile?->began ? Str::before($profile->began, '-') . ($profile->ended ? '–' . Str::before($profile->ended, '-') : '') : null,
+                    ])->filter();
+                @endphp
+
+                @if ($facts->isNotEmpty())
+                    <p class="mt-1 text-sm text-ink-500">{{ $facts->implode(' · ') }}</p>
+                @endif
+
         <p class="mt-2 text-sm text-ink-500">
             {{ $albums->count() }} {{ Str::plural('album', $albums->count()) }}
             @if ($singles->isNotEmpty())
@@ -21,6 +57,24 @@
                 {{ $singles->count() }} {{ Str::plural('single', $singles->count()) }}
             @endif
         </p>
+            </div>
+        </div>
+
+        @if ($profile?->biography)
+            {{-- Clamped rather than truncated server-side: the whole thing is
+                 there for anyone who wants it, and three lines is enough to say
+                 who this is. --}}
+            <details class="group mt-4 max-w-3xl">
+                <summary class="cursor-pointer list-none text-sm leading-relaxed text-ink-400 group-open:hidden">
+                    {{ Str::limit($profile->biography, 260) }}
+                    @if (strlen($profile->biography) > 260)
+                        <span class="text-ink-300 underline">more</span>
+                    @endif
+                </summary>
+
+                <p class="text-sm leading-relaxed text-ink-400">{{ $profile->biography }}</p>
+            </details>
+        @endif
 
         @if ($albums->isNotEmpty())
             <h2 class="mb-4 mt-10 text-lg font-semibold text-ink-100">Albums</h2>

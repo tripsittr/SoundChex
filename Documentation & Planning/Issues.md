@@ -28,7 +28,6 @@ not that a test passed. Both are noted where they differ.
 | ID | What | Notes |
 | --- | --- | --- |
 | S-43 | Logging everywhere it counts | Second pass done. Playback failures, sync failures, reader archive failures, and every file-moving path in LibraryOrganizer and ConversionFiler now say what happened. Remaining catches are mostly legitimately silent — private-browsing storage, expected-offline — and should be left alone rather than made noisy |
-| S-01 | Artist profiles: images, bios, discographies | Plan written: `ArtistProfiles.md` steps 1–4 done, step 5 (the profile page itself) not started |
 
 ## Open
 
@@ -85,6 +84,7 @@ not that a test passed. Both are noted where they differ.
 | S-31 | now-playing sheet flake, ~1 run in 20 | `75c2d20` | 70 consecutive passes |
 | S-32 | Converted film unplayable after a catalogue rebuild | `603427a` | Backrooms plays; original archived, not deleted |
 | S-49 | "these tracks is already on this device", uncapitalised | `ee35c3e` | 5 tests; every label case checked by hand |
+| S-01 | Artist profiles: images, bios, years active | this commit | MusicBrainz and Wikipedia, no API key. 9 tests. `library:artist-profiles` paces itself at the published rate limit |
 | S-50 | A device report should identify the device | this commit | Name, type, IP, app and shell version, full user agent, timestamp. Verified end to end |
 | S-51 | Reports filterable by device, type and log kind | this commit | 5 tests. Built onto the existing admin page rather than the duplicate resource I started |
 | S-41 | The Tauri shell's own assets cannot update themselves | this commit | Not a broken updater: the served layer updates within 60s and the phone reported four builds progressing in one evening. The shell is compiled into the binary, so it now stamps itself and reports it — a stale shell is visible rather than suspected. Making it *self*-update on iOS is S-07's territory |

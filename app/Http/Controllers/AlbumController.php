@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
+use App\Models\Person;
 use App\Services\AlbumBrowser;
 use App\Services\ContentGate;
 use Illuminate\Http\JsonResponse;
@@ -152,6 +153,11 @@ class AlbumController extends Controller
             'albums' => $albums,
             'singles' => $singles,
             'appearsOn' => $appearsOn,
+            // Null for most of a self-hosted library, and the page is built to
+            // read the same without it.
+            'profile' => Person::where('name', $data['name'])
+                ->whereNotNull('profile_synced_at')
+                ->first(),
         ]);
     }
 
