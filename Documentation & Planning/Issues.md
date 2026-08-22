@@ -38,8 +38,8 @@ not that a test passed. Both are noted where they differ.
 | S-02 | Reader is slow to open and to turn pages | Not diagnosed. Page content, OCR text and images all stream per page; the mirror does not cover the reader at all |
 | S-03 | Artist, album and item pages are not in the device mirror | Six list screens are; these three are pure server round-trips, ~900ms each over the relay |
 | S-04 | `phone-dl.spec.js` "a stored track stays marked through a pre-render" | Passes alone and with all four download specs; fails in the full 231-test run on both projects. Not explained |
-| S-06 | Native downloads: IndexedDB caps the library at ~1 GB | Plan written: `NativeDownloads.md`. Music alone is 7.71 GB |
-| S-07 | Background downloads and audio stop when the app is backgrounded | Plan written: `NativeOfflineBridge.md`. Unblocked, since the offline failures turned out to be application logic |
+| S-06 | Native downloads: IndexedDB caps the library at ~1 GB | Plan written: `NativeDownloads.md`. Re-measured 22 Aug: **34.95 GB across 7,031 tracks**, against the plan's 7.71 GB — the library has grown 4.5× and the ~1 GB cap now holds under 3% of it. "Download all" cannot succeed on the phone until this is done |
+| S-07 | Background downloads and audio stop when the app is backgrounded | Plan written: `NativeOfflineBridge.md`, ~6 days across five steps, none started. Unblocked. Depends on S-06 for where the bytes land, so that goes first. Step 1 is a day proving the plugin path on the device before any of the rest is worth writing |
 | S-08 | HLS adaptive streaming | Largest remaining item. No plan written |
 | S-09 | Direct route in from outside the house | Plan written: `DirectRemoteAccess.md`. Needs router and DNS work that is not code |
 | S-11 | `soundchex.json` and `soundchex-addresses.json` are unauthenticated | Deliberate on a tailnet, an information leak on the open internet. They name every address the server answers on. Blocks S-09 |
