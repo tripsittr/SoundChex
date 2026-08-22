@@ -117,19 +117,32 @@ class SourceController extends Controller
         \DB::statement('PRAGMA wal_checkpoint(TRUNCATE)');
         copy($source, $snapshot);
 
-        return response()->stream(function () use ($snapshot): void {
-            $handle = gzopen('php://output', 'wb6');
-            $in = fopen($snapshot, 'rb');
+        // Compressed to a file rather than streamed through gzopen().
+        //
+        // gzopen('php://output') fails with "could not make seekable" — the
+        // handle needs to seek and output does not, so the first real transfer
+        // got a 500 where the catalogue should have been. Compressing to disk
+        // first costs a few seconds and a few megabytes, against a database
+        // that shrinks 24 MB to 3.6.
+        $archive = $snapshot . '.gz';
 
-            while (! feof($in)) {
-                gzwrite($handle, fread($in, 1024 * 512));
-            }
+        $in = fopen($snapshot, 'rb');
+        $out = gzopen($archive, 'wb6');
 
-            fclose($in);
-            gzclose($handle);
-            @unlink($snapshot);
+        while (! feof($in)) {
+            gzwrite($out, fread($in, 1024 * 512));
+        }
+
+        fclose($in);
+        gzclose($out);
+        @unlink($snapshot);
+
+        return response()->stream(function () use ($archive): void {
+            readfile($archive);
+            @unlink($archive);
         }, 200, [
             'Content-Type' => 'application/gzip',
+            'Content-Length' => (string) filesize($archive),
             'Content-Disposition' => 'attachment; filename="soundchex.sqlite.gz"',
         ]);
     }

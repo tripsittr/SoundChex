@@ -1,4 +1,4 @@
-# 006 — Publishing what each change teaches
+# 006 — The catalogue download, and publishing what each change teaches
 
 **Merged** pending
 
@@ -6,6 +6,19 @@
 anything is learned and not copied across. Now part of the PR routine.
 
 ## What changed
+
+### The catalogue download was returning a 500
+
+`gzopen('php://output')` fails with `could not make seekable` — the handle
+seeks and output does not. So the first real transfer between two machines got
+an error where the catalogue should have been, after the request, the approval
+and the token had all worked.
+
+Compressed to a file and sent with `readfile()` instead. Costs a few seconds
+and a few megabytes against a database that shrinks 24 MB to 3.6.
+
+Found in the logs rather than by a test: every test asserted the endpoint
+answered, and it did — with a 500.
 
 Rule 6 in `AGENTS.md`: if a change taught you something another developer or
 agent would want — a convention, a trap, something that went wrong once — write
@@ -29,4 +42,4 @@ cp ~/.claude/projects/"$(pwd | tr '/' '-')"/memory/*.md .claude/memory/
 
 ## Tests
 
-**312 PHP · 87 Vitest.** Playwright not run — documentation only.
+**313 PHP · 87 Vitest.** Playwright not run — no browser code changed.
