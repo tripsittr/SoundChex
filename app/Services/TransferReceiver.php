@@ -260,7 +260,16 @@ class TransferReceiver
      */
     private function unpackDatabase(Transfer $transfer, string $archive, string $backup): bool
     {
-        $target = database_path('database.sqlite');
+        $target = $this->databaseFile();
+
+        if ($target === null) {
+            $transfer->forceFill([
+                'last_error' => 'This instance has no database file to replace.',
+            ])->save();
+
+            return false;
+        }
+
         $staged = $target . '.incoming';
 
         $in = gzopen($archive, 'rb');
@@ -318,7 +327,13 @@ class TransferReceiver
      */
     private function backupExisting(): ?string
     {
-        $source = database_path('database.sqlite');
+        $source = $this->databaseFile();
+
+        if ($source === null) {
+            // Nothing on disk to lose — an in-memory database, which is every
+            // test run.
+            return 'none';
+        }
 
         if (! is_file($source)) {
             // Nothing to lose. A fresh install receiving its first catalogue.
@@ -334,6 +349,28 @@ class TransferReceiver
         $path = $directory . '/before-transfer-' . now()->format('Y-m-d_His') . '.sqlite';
 
         return @copy($source, $path) ? $path : null;
+    }
+
+    /**
+     * The SQLite file this instance is actually using.
+     *
+     * Read from the connection rather than assumed to be
+     * database_path('database.sqlite'), which is a hardcoded path that ignores
+     * configuration entirely — under test the connection is :memory: and that
+     * assumption wrote to the real library's database and destroyed it.
+     *
+     * Returns null when there is no file to replace, which is the case in
+     * memory and the case where refusing is correct.
+     */
+    private function databaseFile(): ?string
+    {
+        $path = config('database.connections.' . config('database.default') . '.database');
+
+        if (! is_string($path) || $path === ':memory:' || $path === '') {
+            return null;
+        }
+
+        return $path;
     }
 
     /** Whether the file is already here and correct. */

@@ -101,9 +101,12 @@ class SourceController extends Controller
     {
         $this->authorizeTransfer($request, 'metadata');
 
-        $source = database_path('database.sqlite');
+        // From the connection rather than a hardcoded path: an instance
+        // configured to keep its database elsewhere would otherwise serve a
+        // file it is not using, or none at all.
+        $source = config('database.connections.' . config('database.default') . '.database');
 
-        abort_unless(is_file($source), 404);
+        abort_unless(is_string($source) && is_file($source), 404);
 
         // Copied before reading, so a write part way through does not produce
         // a torn file. SQLite's own backup would be better; a copy of a WAL

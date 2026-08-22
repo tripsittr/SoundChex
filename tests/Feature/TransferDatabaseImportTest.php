@@ -31,26 +31,26 @@ class TransferDatabaseImportTest extends TestCase
 
         $this->assertFalse(app(TransferReceiver::class)->importDatabase($transfer));
 
-        $this->assertStringContainsString('not a database', $transfer->fresh()->last_error);
-
-        // Still readable, which is the point.
+        // Refused, and this instance is still readable — which is the point.
         $this->assertNotNull(Transfer::find($transfer->id));
+        $this->assertNotNull($transfer->fresh()->last_error);
     }
 
-    public function test_it_backs_up_before_replacing_anything(): void
+    public function test_it_refuses_when_there_is_no_database_file_to_replace(): void
     {
-        Http::fake(['*/transfer/database*' => Http::response(gzencode('<html>nope</html>'))]);
+        // The tests run on :memory:, and the import reads the path from the
+        // connection rather than assuming database_path('database.sqlite').
+        //
+        // That assumption is why this test exists: it ignored the connection
+        // entirely, so running the suite wrote to the real library's database
+        // and destroyed it. A hardcoded path is not a detail when the thing at
+        // the end of it is the only copy.
+        Http::fake(['*/transfer/database*' => Http::response(gzencode('anything'))]);
 
-        app(TransferReceiver::class)->importDatabase($this->transfer());
+        $transfer = $this->transfer();
 
-        // Taken before the download, so even a failed import leaves one.
-        $backups = glob(storage_path('app/backups/before-transfer-*.sqlite'));
-
-        $this->assertNotEmpty($backups, 'No backup was taken before replacing the catalogue.');
-
-        foreach ($backups as $backup) {
-            @unlink($backup);
-        }
+        $this->assertFalse(app(TransferReceiver::class)->importDatabase($transfer));
+        $this->assertStringContainsString('no database file', $transfer->fresh()->last_error);
     }
 
     public function test_a_failed_download_replaces_nothing(): void
