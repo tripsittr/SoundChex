@@ -33,7 +33,7 @@ not that a test passed. Both are noted where they differ.
 
 | ID | What | Notes |
 | --- | --- | --- |
-| S-41 | Phone is running an old build and stays on the relay | Reported build `9bccab00a42b` against `85b9bd3b598d` current — none of today's fixes are on the device. Needs a reinstall, and the app's own update check needs looking at |
+| S-41 | Why the app's update check did not pull today's build | The phone sat on `9bccab00a42b` while the server served newer, so none of the day's fixes reached it. Reinstalled by hand 22 Aug; the mechanism that should have done it is still unexplained |
 | S-02 | Reader is slow to open and to turn pages | Not diagnosed. Page content, OCR text and images all stream per page; the mirror does not cover the reader at all |
 | S-03 | Artist, album and item pages are not in the device mirror | Six list screens are; these three are pure server round-trips, ~900ms each over the relay |
 | S-04 | `phone-dl.spec.js` "a stored track stays marked through a pre-render" | Passes alone and with all four download specs; fails in the full 231-test run on both projects. Not explained |
