@@ -1,3 +1,5 @@
+import { logFailure } from './log.js';
+
 import MediaPlayer, { formatTime } from './player.js';
 import { setupCaptions, applyStyle, savePrefs } from './watch-captions.js';
 
@@ -283,7 +285,9 @@ function setupCaptionSearch(root, captions) {
 
                 return;
             }
-        } catch {
+        } catch (error) {
+            logFailure('subtitles:search:failed', error, { item: itemId ?? null });
+
             status.textContent = 'Could not reach the subtitle service.';
 
             return;
@@ -429,7 +433,13 @@ async function preferDownloadedVideo(video, itemId) {
     try {
         const { localUrl } = await import('./downloads.js');
         url = await localUrl(itemId);
-    } catch {
+    } catch (error) {
+        // Falls back to streaming, which is the right behaviour and entirely
+        // invisible: someone who downloaded a film for a flight would find it
+        // streaming instead, with nothing anywhere saying the stored copy
+        // could not be read.
+        logFailure('watch:local-source:failed', error, { item: itemId ?? null });
+
         return;
     }
 

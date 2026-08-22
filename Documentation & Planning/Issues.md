@@ -27,7 +27,6 @@ not that a test passed. Both are noted where they differ.
 
 | ID | What | Notes |
 | --- | --- | --- |
-| S-43 | Logging everywhere it counts | Second pass done. Playback failures, sync failures, reader archive failures, and every file-moving path in LibraryOrganizer and ConversionFiler now say what happened. Remaining catches are mostly legitimately silent — private-browsing storage, expected-offline — and should be left alone rather than made noisy |
 
 ## Open
 
@@ -88,6 +87,7 @@ not that a test passed. Both are noted where they differ.
 | S-01 | Artist profiles: images, bios, years active | `743b674` | MusicBrainz and Wikipedia, no API key. 9 tests. `library:artist-profiles` paces itself at the published rate limit |
 | S-50 | A device report should identify the device | `720cbf6` | Name, type, IP, app and shell version, full user agent, timestamp. Verified end to end |
 | S-51 | Reports filterable by device, type and log kind | `720cbf6` | 5 tests. Built onto the existing admin page rather than the duplicate resource I started |
+| S-43 | Logging everywhere it counts | this commit | Every failure path that showed a message and recorded nothing now says what happened: playback, sync, the reader, downloads, playlists, shuffle, subtitles, a downloaded film that could not be read, address learning, and both offline render paths. 13 tests pin the coverage. The catches left silent are deliberate — private-browsing storage, an expected offline — and listed as such in AGENTS.md |
 | S-41 | The Tauri shell's own assets cannot update themselves | `720cbf6` | Not a broken updater: the served layer updates within 60s and the phone reported four builds progressing in one evening. The shell is compiled into the binary, so it now stamps itself and reports it — a stale shell is visible rather than suspected. Making it *self*-update on iOS is S-07's territory |
 | S-48 | Carousel errors on the Mac: `Can't find variable: rail` | not a defect | Transient. The reports carry `reloading-for-build` immediately before, and the build they name is two rebuilds old: cached HTML calling `rail()` against a bundle mid-replacement. Verified clean across four browse screens on the current build |
 | S-47 | Lists do not update while a page is open | `8a31e12` | 7 tests, desktop and mobile; player and scroll position both survive |

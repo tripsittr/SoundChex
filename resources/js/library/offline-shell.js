@@ -1,3 +1,5 @@
+import { logFailure } from '../log.js';
+
 import * as mirror from './mirror.js';
 import * as query from './query.js';
 import { artwork, fill, playerPayload, poster, songList } from './render.js';
@@ -583,7 +585,12 @@ export async function preRender(root, path) {
         repaintDownloadStates();
 
         return true;
-    } catch {
+    } catch (error) {
+        // Declining leaves the server's page in place, which is correct — but
+        // a device where this always throws never gets a local paint and pays
+        // the full round trip on every navigation, with nothing saying why.
+        logFailure('prerender:failed', error, { path });
+
         return false;
     }
 }
@@ -631,7 +638,13 @@ export async function takeOver() {
         // The play buttons are bound by a delegated listener on document, so
         // rendered rows work without rebinding anything.
         return true;
-    } catch {
+    } catch (error) {
+        // This is the offline rescue. Failing here is the difference between
+        // an app that works on a plane and one that shows an error page, and
+        // it was the single hardest thing to diagnose in this codebase
+        // precisely because it failed without a word.
+        logFailure('takeover:failed', error, { path });
+
         return false;
     }
 }

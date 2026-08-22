@@ -1,3 +1,5 @@
+import { logFailure } from './log.js';
+
 /**
  * Adding tracks to a playlist.
  *
@@ -97,7 +99,12 @@ function setupPlaylists() {
                 button.textContent = original;
                 button.disabled = false;
             }, 900);
-        } catch {
+        } catch (error) {
+            // "Failed" and nothing else: which playlist, which tracks, and
+            // whether the server said no or the request never arrived were all
+            // discarded.
+            logFailure('playlist:add:failed', error, { tracks: items.length });
+
             button.textContent = 'Failed';
             setTimeout(() => {
                 button.textContent = original;
@@ -140,7 +147,9 @@ function setupPlaylists() {
             // shuffle stays off — turning it on would reshuffle a shuffled
             // list and make "next" unpredictable for no gain.
             player.play(queue, 0);
-        } catch {
+        } catch (error) {
+            logFailure('shuffle:failed', error);
+
             if (label) label.textContent = 'Could not shuffle';
         } finally {
             setTimeout(() => {

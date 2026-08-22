@@ -1,3 +1,5 @@
+import { log } from '../log.js';
+
 /**
  * Staying connected when the server's address changes underneath the app.
  *
@@ -97,7 +99,17 @@ export async function learnAddresses() {
         }
 
         return merged;
-    } catch {
+    } catch (error) {
+        // Falls back to whatever was learned before, which is right — but a
+        // device that never learns the addresses is a device that stays on
+        // whichever route it happened to arrive by, and over the relay that is
+        // 843ms a page against 37ms. Silence here looks exactly like a working
+        // app that is simply slow.
+        log('addresses:failed', {
+            reason: String(error?.message ?? error).slice(0, 160),
+            known: stored().length,
+        });
+
         return stored();
     }
 }
