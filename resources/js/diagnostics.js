@@ -14,13 +14,28 @@ const MAX_EVENTS = 40;
 /** This device, so one phone's reports can be told from another's. */
 const DEVICE_KEY = 'soundchex.device-id';
 
-/** Kinds worth telling the server about, unprompted. */
+/**
+ * Kinds worth telling the server about, unprompted.
+ *
+ * Anything ending in `:failed` is reported by rule rather than by being listed
+ * here — a new failure kind should not have to be remembered in two places.
+ * The download logging added earlier recorded faithfully and sent nothing,
+ * because nobody thought to add it to this list.
+ */
 const WORTH_REPORTING = new Set([
     'served-offline-page',
     'switching-address',
     'error',
     'rejection',
 ]);
+
+/** Whether a kind describes something going wrong. */
+function worthReporting(kind) {
+    return WORTH_REPORTING.has(kind)
+        || kind.endsWith(':failed')
+        || kind.endsWith(':error')
+        || kind.endsWith(':timeout');
+}
 
 /**
  * A random id for this device.
@@ -105,7 +120,7 @@ export function record(kind, detail = {}) {
     // Reported without being asked, but only for the kinds that describe
     // something going wrong. Sending every page load would be a stream of
     // noise that buries the one event worth reading.
-    if (WORTH_REPORTING.has(kind)) {
+    if (worthReporting(kind)) {
         // Sent immediately rather than deferred. A timeout does not run if the
         // page is being torn down, which is precisely the case these events
         // describe — the report was scheduled and then discarded with the page

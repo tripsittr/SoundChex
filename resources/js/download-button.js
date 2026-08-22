@@ -1,4 +1,14 @@
 import * as queue from './download-queue.js';
+import { log, logFailure, loggedFetch } from './log.js';
+
+/**
+ * How long to wait for the list of everything downloadable.
+ *
+ * Generous: it is thousands of rows, and the server spends half a second
+ * sizing the files before the first byte is sent. Long enough for a slow
+ * route, short enough to say so rather than hang.
+ */
+const LIBRARY_LIST_TIMEOUT = 30000;
 import {
     checkSpace,
     download,
@@ -230,10 +240,37 @@ export function setupBatchDownloads() {
 
         if (label) label.textContent = 'Checking…';
 
+        const started = performance.now();
+
+        log('download:library-requested', {});
+
         try {
-            const { tracks } = await fetch('/app/downloadable', {
+            // The list is every downloadable track, which on this library is
+            // thousands of rows and megabytes of JSON. It is also the slowest
+            // thing this button does, so how long it took is worth keeping:
+            // "Checking…" sitting there is the symptom people report.
+            // Bounded, because it was not. The list is ~0.7 MB of JSON for
+            // 5,500 tracks and takes half a second to build before it is even
+            // sent, so over a slow route "Checking…" sat there indefinitely
+            // with no way to tell a slow response from a dead one.
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), LIBRARY_LIST_TIMEOUT);
+
+            const response = await loggedFetch('download:library', '/app/downloadable', {
                 headers: { Accept: 'application/json' },
-            }).then((response) => response.json());
+                signal: controller.signal,
+            }).finally(() => clearTimeout(timer));
+
+            if (!response.ok) {
+                throw new Error(`Library list failed (${response.status})`);
+            }
+
+            const { tracks } = await response.json();
+
+            log('download:library-listed', {
+                tracks: tracks?.length ?? 0,
+                ms: Math.round(performance.now() - started),
+            });
 
             if (!tracks?.length) {
                 if (label) label.textContent = 'Download all';
@@ -243,12 +280,21 @@ export function setupBatchDownloads() {
             }
 
             await runBatch(button, tracks, 'Your library');
-        } catch {
+        } catch (error) {
+            // Previously a bare toast with nothing recorded on either side, so
+            // "it says Checking and then fails" had no cause to look up.
+            logFailure('download:library:failed', error, {
+                ms: Math.round(performance.now() - started),
+            });
+
             button.dataset.state = 'failed';
 
             if (label) label.textContent = 'Download all';
 
-            toast('Could not reach the library.');
+            toast(({
+                AbortError: 'Timed out reading the library. Try again on a faster connection.',
+                TypeError: 'Could not reach the library.',
+            })[error?.name] ?? 'The library list could not be read.');
         }
     });
 }

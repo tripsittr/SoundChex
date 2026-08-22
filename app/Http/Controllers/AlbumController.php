@@ -8,6 +8,7 @@ use App\Services\AlbumBrowser;
 use App\Services\ContentGate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 /**
@@ -65,6 +66,8 @@ class AlbumController extends Controller
      */
     public function downloadableAll(): JsonResponse
     {
+        $startedAt = microtime(true);
+
         $items = $this->gate
             ->apply(MediaItem::query())
             ->where('media_items.type', MediaItemType::Music)
@@ -72,14 +75,28 @@ class AlbumController extends Controller
             ->orderBy('media_items.title')
             ->get();
 
-        return response()->json([
-            'tracks' => $items->map(fn (MediaItem $item) => [
-                'id' => $item->id,
-                'title' => $item->title,
-                'size' => $item->playbackSize() ?? 0,
-                'url' => route('media.stream', $item),
-            ])->values(),
+        $queriedAt = microtime(true);
+
+        $tracks = $items->map(fn (MediaItem $item) => [
+            'id' => $item->id,
+            'title' => $item->title,
+            'size' => $item->playbackSize() ?? 0,
+            'url' => route('media.stream', $item),
+        ])->values();
+
+        // The slowest thing this endpoint does is not the query — it is one
+        // is_file() and one filesize() per track, several thousand times over.
+        // Recorded separately so a slow response can be attributed rather than
+        // guessed at: "Checking…" sitting on screen is the reported symptom and
+        // this is where the time goes.
+        Log::info('Downloadable library listed', [
+            'tracks' => $tracks->count(),
+            'query_ms' => (int) round(($queriedAt - $startedAt) * 1000),
+            'sizing_ms' => (int) round((microtime(true) - $queriedAt) * 1000),
+            'bytes' => $tracks->sum('size'),
         ]);
+
+        return response()->json(['tracks' => $tracks]);
     }
 
     public function index(): View

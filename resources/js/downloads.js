@@ -1,3 +1,5 @@
+import { log as logEvent } from './log.js';
+
 /**
  * Offline downloads.
  *
@@ -208,22 +210,6 @@ export async function checkSpace(bytes) {
  * @param {AbortSignal} [options.signal]
  */
 
-/**
- * Records what a download did, for the report the device sends back.
- *
- * Downloads had no logging of their own: a file that never arrived left an
- * unhandled rejection at best and silence at worst, and the phone is where
- * these fail. Wrapped because diagnostics is optional — a missing reporter must
- * not be the reason a download throws.
- */
-function log(kind, detail = {}) {
-    try {
-        window.soundchexDiagnostics?.record?.(`download:${kind}`, detail);
-    } catch {
-        // Reporting is best-effort by definition.
-    }
-}
-
 export async function download(options) {
     try {
         return await runDownload(options);
@@ -231,7 +217,7 @@ export async function download(options) {
         // Every way a download can fail, in one place. Without this the only
         // trace was an unhandled rejection with no id attached to it, which is
         // exactly what the phone was reporting.
-        log('failed', {
+        logEvent('download:failed', {
             id: String(options?.id ?? ''),
             name: error?.name ?? '',
             reason: String(error?.message ?? error).slice(0, 160),
@@ -247,7 +233,7 @@ async function runDownload({ id, url, meta = {}, onProgress, signal, force = fal
 
     const startedAt = Date.now();
 
-    log('start', { id: String(id), force });
+    logEvent('download:start', { id: String(id), force });
 
     // Already here, so there is nothing to fetch.
     //
@@ -262,7 +248,7 @@ async function runDownload({ id, url, meta = {}, onProgress, signal, force = fal
         if (existing?.size > 0) {
             onProgress?.(existing.size, existing.size);
 
-            log('already-stored', { id: String(id), size: existing.size });
+            logEvent('download:already-stored', { id: String(id), size: existing.size });
 
             return { id: String(id), size: existing.size, alreadyStored: true };
         }
@@ -271,7 +257,7 @@ async function runDownload({ id, url, meta = {}, onProgress, signal, force = fal
     const response = await fetch(url, { signal });
 
     if (!response.ok) {
-        log('http-error', { id: String(id), status: response.status });
+        logEvent('download:http-error', { id: String(id), status: response.status });
 
         throw new Error(`Download failed (${response.status})`);
     }
@@ -330,7 +316,7 @@ async function runDownload({ id, url, meta = {}, onProgress, signal, force = fal
         ...meta,
     }));
 
-    log('stored', {
+    logEvent('download:stored', {
         id: String(id),
         size: blob.size,
         ms: Date.now() - startedAt,

@@ -27,6 +27,7 @@ not that a test passed. Both are noted where they differ.
 
 | ID | What | Notes |
 | --- | --- | --- |
+| S-43 | Logging everywhere it counts | Started. Download-all now logs on both sides and reports failures by rule; `resources/js/log.js` is the shared helper. 139 catch blocks across 43 files remain, of which most are legitimately silent — the ones to work through are network calls, storage writes and background jobs |
 | S-01 | Artist profiles: images, bios, discographies | Plan written: `ArtistProfiles.md` steps 1–4 done, step 5 (the profile page itself) not started |
 
 ## Open
@@ -34,6 +35,7 @@ not that a test passed. Both are noted where they differ.
 | ID | What | Notes |
 | --- | --- | --- |
 | S-41 | Why the app's update check did not pull today's build | The phone sat on `9bccab00a42b` while the server served newer, so none of the day's fixes reached it. Reinstalled by hand 22 Aug; the mechanism that should have done it is still unexplained |
+| S-44 | A playing song shows the wrong title and artwork | Not diagnosed. Could be mis-tagged files, or the player painting one track's metadata over another's — the now-playing bar and the sheet both read through a shared object. Worth checking a specific track against its file's tags before assuming either |
 | S-02 | Reader is slow to open and to turn pages | Not diagnosed. Page content, OCR text and images all stream per page; the mirror does not cover the reader at all |
 | S-03 | Artist, album and item pages are not in the device mirror | Six list screens are; these three are pure server round-trips, ~900ms each over the relay |
 | S-04 | `phone-dl.spec.js` "a stored track stays marked through a pre-render" | Passes alone and with all four download specs; fails in the full 231-test run on both projects. Not explained |
