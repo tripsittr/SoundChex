@@ -108,8 +108,25 @@ throws that away.
 
 Opening one:
 
-1. **Run the suites first.** PHP, Vitest and Playwright. A PR opened on an
-   unverified branch is a PR whose description cannot be trusted.
+1. **Run what the change can break.** PHP and Vitest are 18 seconds together
+   and always worth running. Playwright is 13 minutes on one worker — it is
+   constrained that way because the browser tests share one SQLite database and
+   one seeded library — so run it when the change can reach a browser:
+
+   | Changed | Run |
+   | --- | --- |
+   | Docs, changelog, planning | PHP · Vitest |
+   | PHP only — services, jobs, controllers, models | PHP · Vitest |
+   | Blade, CSS, `resources/js`, `public/sw.js` | **all three** |
+   | Migrations, or anything touching stored data | **all three** |
+   | Not sure | **all three** |
+
+   Targeted runs are cheap and worth preferring: `npx playwright test
+   tests/e2e/downloads-batch.spec.js --project=mobile` is under a minute.
+
+   A PR opened on an unverified branch is a PR whose description cannot be
+   trusted — but "verified" means the suites that could have caught something,
+   not all of them by reflex.
 2. **Write the changelog** — `changelog/NNN-short-name.md`, numbered for the
    PR. Written when the PR is opened rather than after it merges, while the
    reasoning is still to hand.

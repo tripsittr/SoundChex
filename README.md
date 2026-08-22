@@ -77,10 +77,27 @@ npm install
 cp .env.example .env
 php artisan key:generate
 php artisan migrate
+php artisan storage:link
 
 npm run build
 php artisan serve
 ```
+
+`storage:link` is easy to skip and fails silently: without it every avatar and
+artist image returns 404 with nothing explaining why.
+
+**On Windows, PHP needs a certificate bundle.** It ships without one, so every
+outbound HTTPS request fails with `cURL error 60: unable to get local issuer
+certificate` — metadata lookups, artwork, subtitles and server transfers alike.
+Download [cacert.pem](https://curl.se/ca/cacert.pem) and point `php.ini` at it:
+
+```ini
+curl.cainfo = "C:\path\to\cacert.pem"
+openssl.cafile = "C:\path\to\cacert.pem"
+```
+
+macOS and Linux already have a system bundle and need nothing.
+[docs/SettingUpOnWindows.md](docs/SettingUpOnWindows.md) covers the rest.
 
 Then point it at your media: **Admin → Library settings → watch folders**, and
 run a scan.
