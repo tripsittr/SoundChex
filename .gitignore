@@ -41,6 +41,14 @@ Thumbs.db
 !Documentation & Planning/
 !Documentation & Planning/**
 
+# The same for docs and changelogs. Written and then silently untracked —
+# the Windows setup guide, the transfer instructions and two changelogs
+# existed on one machine only, which is the opposite of what they are for.
+!docs/
+!docs/**/*.md
+!changelog/
+!changelog/**/*.md
+
 # ---------------------------------------------------------------------------
 # Media — never commit the library
 # ---------------------------------------------------------------------------
