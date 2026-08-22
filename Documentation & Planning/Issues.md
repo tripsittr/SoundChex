@@ -46,6 +46,7 @@ not that a test passed. Both are noted where they differ.
 | S-11 | `soundchex.json` and `soundchex-addresses.json` are unauthenticated | Deliberate on a tailnet, an information leak on the open internet. They name every address the server answers on. Blocks S-09 |
 | S-12 | AcoustID, Spotify and OpenSubtitles have no API key | Sources skip themselves silently. Now logged, not yet fixed |
 | S-13 | Three songs match no metadata provider | Items 1445, 2002, 2473. Complete with `match_confidence = none`; will never gain metadata without a manual match |
+| S-54 | Buildable on Mac, Windows, Linux, iOS and Android | In progress. The web app is platform-neutral; the host-specific parts are not. Address detection was macOS-only and is now per-platform. Service management is launchd and has no Windows or Linux equivalent. Android has no Tauri project generated at all. Each platform needs its toolchain documented and one real build to prove it |
 | S-14 | Windows and Linux client builds are untested | The config approach carries over unchanged, but neither has been built |
 | S-15 | Tailnet key expires 2027-02-09 | The Mac drops off the tailnet that day. Disable key expiry in the Tailscale admin console |
 | S-16 | Test suite is slow | `workers: 1`, one SQLite database and one seeded library. The fixable part is the remaining hardcoded `waitForTimeout` calls |

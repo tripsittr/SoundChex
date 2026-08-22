@@ -91,10 +91,9 @@ class NetworkAddresses
         $port = (int) parse_url(config('app.url'), PHP_URL_PORT) ?: 8000;
         $found = [];
 
-        // The LAN address, from the interface actually carrying traffic.
-        $lan = trim((string) @shell_exec("ipconfig getifaddr en0 2>/dev/null"));
+        $lan = $this->lanAddress();
 
-        if ($lan !== '') {
+        if ($lan !== null) {
             $found[] = "http://{$lan}:{$port}";
         }
 
@@ -104,7 +103,11 @@ class NetworkAddresses
         // simply not found — and the tailnet address, the one route that is
         // both fast and survives the machine changing networks, was silently
         // dropped from the list every client reads.
-        $tailscale = trim((string) @shell_exec($this->tailscaleBinary() . ' ip -4 2>/dev/null'));
+        // NUL rather than /dev/null on Windows, or cmd creates a file called
+        // "dev" and the command still writes its error to the page.
+        $quiet = PHP_OS_FAMILY === 'Windows' ? '2>NUL' : '2>/dev/null';
+
+        $tailscale = trim((string) @shell_exec($this->tailscaleBinary() . ' ip -4 ' . $quiet));
 
         if ($tailscale !== '') {
             $found[] = 'http://' . strtok($tailscale, "\n") . ":{$port}";
@@ -125,12 +128,61 @@ class NetworkAddresses
      * Checked in the usual places rather than trusted to PATH, which under
      * launchd contains none of them.
      */
+    /**
+     * The address of the interface actually carrying traffic.
+     *
+     * Asked of the operating system rather than derived, because a machine has
+     * several addresses and only one of them is the one other devices can
+     * reach: a VPN adapter, a virtual switch and a disconnected ethernet port
+     * all have addresses that would be advertised and never answer.
+     */
+    private function lanAddress(): ?string
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            // PowerShell rather than ipconfig: parsing ipconfig's output means
+            // parsing whatever language Windows is installed in.
+            $found = trim((string) @shell_exec(
+                'powershell -NoProfile -Command "'
+                . '(Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -ne $null '
+                . '-and $_.NetAdapter.Status -eq \'Up\' } '
+                . '| Select-Object -First 1).IPv4Address.IPAddress" 2>NUL'
+            ));
+
+            return $found === '' ? null : $found;
+        }
+
+        if (PHP_OS_FAMILY === 'Linux') {
+            $found = trim((string) @shell_exec("ip route get 1.1.1.1 2>/dev/null | awk '{print \$7; exit}'"));
+
+            return $found === '' ? null : $found;
+        }
+
+        $found = trim((string) @shell_exec('ipconfig getifaddr en0 2>/dev/null'));
+
+        return $found === '' ? null : $found;
+    }
+
     private function tailscaleBinary(): string
     {
+        if (PHP_OS_FAMILY === 'Windows') {
+            foreach ([
+                'C:\\Program Files\\Tailscale\\tailscale.exe',
+                'C:\\Program Files (x86)\\Tailscale\\tailscale.exe',
+            ] as $candidate) {
+                if (is_file($candidate)) {
+                    return '"' . $candidate . '"';
+                }
+            }
+
+            return 'tailscale';
+        }
+
         foreach ([
             '/opt/homebrew/bin/tailscale',
             '/usr/local/bin/tailscale',
             '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
+            // Linux packages install here.
+            '/usr/bin/tailscale',
         ] as $candidate) {
             if (is_executable($candidate)) {
                 return escapeshellarg($candidate);
