@@ -250,4 +250,24 @@ silently stale.
 before starting, and stops cleanly when it runs out rather than filling the
 disk.
 
+## Live test
+
+`a5.tail7e590c.ts.net` — a Windows machine on the tailnet, already running
+SoundChex. It answers over MagicDNS in ~750ms; port 80 on the tailnet IP does
+not, so use the hostname.
+
+Worth doing in this order:
+
+1. Pull this branch on `a5` and migrate. The four transfer tables and the
+   `plain_token` column are new.
+2. From `a5`, ask `https://macbookair.tail7e590c.ts.net` for **metadata only**
+   first. Minutes rather than hours, and it proves the whole chain — request,
+   approval, token, manifest — without moving 46 GB.
+3. Approve it on the Mac and check the code matches.
+4. Then files, which is the part that will actually be interrupted.
+
+**Both machines need `queue:work` running**, or the transfer will be approved
+and then sit doing nothing. On Windows that is a terminal of its own — the
+Services page is launchd-only.
+
 ## Not started
