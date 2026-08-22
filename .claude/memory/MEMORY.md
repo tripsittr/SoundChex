@@ -8,3 +8,4 @@
 - [Log everything that can fail](soundchex-log-everything.md) — network, batch, storage and background work all report what failed and why, not just a toast
 - [PR flow and changelogs](soundchex-pr-flow.md) — everything reaches main via PR; every PR gets changelog/NNN-name.md written when it opens
 - [Publish memory with the PR](soundchex-publish-memory.md) — copy changed notes into .claude/memory/ and ship them, correcting stale ones first
+- [No AI artifacts](soundchex-no-ai-artifacts.md) — nothing published mentions AI or carries a co-author trailer

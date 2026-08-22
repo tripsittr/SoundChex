@@ -40,6 +40,16 @@ directory is named after the project's full path, so derive it exactly:
 cp ~/.claude/projects/"$(pwd | tr '/' '-')"/memory/*.md .claude/memory/
 ```
 
+### A preference that was written nowhere durable
+
+"Nothing published mentions AI or carries a co-author trailer" had been in
+effect all session and existed only in a memory directory belonging to a
+project path that no longer exists — found while checking why a glob matched
+two SoundChex projects when only one is on disk.
+
+It is now in `.claude/memory/` with the rest, which is the point of publishing
+them.
+
 ## Tests
 
 **313 PHP · 87 Vitest.** Playwright not run — no browser code changed.
