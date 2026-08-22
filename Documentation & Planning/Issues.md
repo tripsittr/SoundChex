@@ -85,6 +85,7 @@ not that a test passed. Both are noted where they differ.
 | S-30 | Scan knocks over its own enrichment jobs | `4e02ca8` | 12 dropped jobs retried, all 12 ran |
 | S-31 | now-playing sheet flake, ~1 run in 20 | `75c2d20` | 70 consecutive passes |
 | S-32 | Converted film unplayable after a catalogue rebuild | `603427a` | Backrooms plays; original archived, not deleted |
+| S-47 | Lists do not update while a page is open | this commit | 7 tests, desktop and mobile; player and scroll position both survive |
 | S-44 | Titles carry the artist: "Gold - Imagine Dragons" | this commit | 4,377 restored from file tags; 0 remain. Every change snapshotted to `metadata_versions` |
 | S-42 | No toast when going offline or coming back | this commit | 6 tests, desktop and mobile |
 | S-40 | Playlist rows have long press but no menu to open | this commit | `track-menu` added; every song surface now has one |
