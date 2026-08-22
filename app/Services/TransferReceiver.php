@@ -58,11 +58,53 @@ class TransferReceiver
         } catch (\Throwable $e) {
             $transfer->forceFill([
                 'state' => Transfer::FAILED,
-                'last_error' => 'Could not reach that server: ' . $e->getMessage(),
+                'last_error' => $this->explain($e),
             ])->save();
 
             return false;
         }
+    }
+
+    /**
+     * Turns a connection failure into something worth reading.
+     *
+     * cURL's own messages are accurate and useless: "error 60: unable to get
+     * local issuer certificate" is exactly right and says nothing about what
+     * to do. It was the first thing a real transfer hit, and it reads as a
+     * network problem when it is a missing file on the machine doing the
+     * asking.
+     */
+    private function explain(\Throwable $error): string
+    {
+        $message = $error->getMessage();
+
+        // Windows PHP ships with no CA bundle, so every outbound HTTPS request
+        // fails this way until php.ini is pointed at one.
+        if (str_contains($message, 'local issuer certificate')
+            || str_contains($message, 'certificate verify failed')
+            || str_contains($message, 'error 60')) {
+            return 'This machine cannot verify certificates, so it cannot reach that '
+                . 'server over HTTPS. PHP needs a CA bundle — set curl.cainfo and '
+                . 'openssl.cafile in php.ini. See docs/SettingUpOnWindows.md.';
+        }
+
+        if (str_contains($message, 'Could not resolve host')) {
+            return 'That address does not resolve. Check the name, and that this '
+                . 'machine is on the same tailnet.';
+        }
+
+        if (str_contains($message, 'Connection refused')
+            || str_contains($message, 'Failed to connect')) {
+            return 'That server refused the connection. Check it is running and '
+                . 'that the address includes the right port.';
+        }
+
+        if (str_contains($message, 'Operation timed out') || str_contains($message, 'timed out')) {
+            return 'That server did not answer in time. It may be asleep, or the '
+                . 'address may be reaching something else.';
+        }
+
+        return 'Could not reach that server: ' . $message;
     }
 
     /**
