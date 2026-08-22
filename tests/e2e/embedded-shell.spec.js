@@ -469,6 +469,37 @@ test.describe('connecting without false alarms', () => {
         expect(source).toContain('if (host && await reachable(host))');
     });
 
+    test('a saved address can still be changed', async ({ page }) => {
+        // The escape hatch, and it had been unreachable twice over: the button
+        // lived inside an element that was only revealed when connecting
+        // *failed*, and once a direct route existed the race finished in tens
+        // of milliseconds and redirected before anyone could press it.
+        //
+        // An app whose server address cannot be corrected is an app that has to
+        // be deleted and reinstalled to move house.
+        await page.addInitScript(() => {
+            localStorage.setItem('soundchex.host', 'http://saved.example');
+        });
+
+        await page.goto('http://127.0.0.1:8199/index.html');
+
+        const form = page.locator('#connect-screen');
+        const change = page.locator('.stay');
+
+        // Visible while connecting, not only after it fails.
+        await expect(form).toBeVisible();
+        await expect(change).toBeVisible();
+
+        // And pressable: the countdown has to leave a window wide enough to
+        // actually hit.
+        await change.click();
+
+        await expect(page.locator('#status')).toContainText(/cancel/i);
+
+        // Still here, rather than redirected out from under the user.
+        expect(page.url()).toContain('127.0.0.1:8199');
+    });
+
     test('a genuinely dead server still reaches the offline path', async ({ page }) => {
         await page.goto('http://127.0.0.1:8199/index.html');
 

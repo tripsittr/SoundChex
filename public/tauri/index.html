@@ -620,6 +620,15 @@
         } else {
             say('Finding the fastest route…');
 
+            // Shown while connecting, not only when connecting fails.
+            //
+            // The "Change server" button below is the only way to reach a
+            // different address once one is saved, and it lived inside a hidden
+            // element — so it existed and could not be tapped. On a fast route
+            // the redirect happens in tens of milliseconds, which made the one
+            // escape hatch invisible precisely when the connection was working.
+            revealForm();
+
 
 
         // A way to stop.
@@ -665,6 +674,37 @@
                     // moving between home and mobile changes the answer.
                     localStorage.setItem(KEY, winner);
                 }
+
+                // A moment to say no.
+                //
+                // On a direct route the race finishes in tens of milliseconds
+                // and the redirect fired before anyone could reach the button
+                // beside it. The button existed; the window in which to press
+                // it did not. So the address that worked once became the only
+                // address the app would ever use.
+                //
+                // Short enough not to be a wait, long enough to be a choice,
+                // and it counts down so the pause reads as deliberate rather
+                // than as the app hesitating.
+                const grace = 2500;
+                const startedAt = Date.now();
+
+                await new Promise((go) => {
+                    const tick = () => {
+                        if (cancelled) return go();
+
+                        const left = Math.ceil((grace - (Date.now() - startedAt)) / 1000);
+
+                        if (left <= 0) return go();
+
+                        say(`Connecting to ${winner.replace(/^https?:\/\//, '')} in ${left}…`);
+                        setTimeout(tick, 200);
+                    };
+
+                    tick();
+                });
+
+                if (cancelled) return;
 
                 window.location.replace(winner);
 
