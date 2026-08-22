@@ -161,6 +161,25 @@ thing that either works completely or fails completely.
 
 ---
 
+### When the DMG step fails
+
+`npm run build:server` can fail at `bundle_dmg.sh` while the `.app` itself
+builds fine. Each failure leaves a mounted disk image and `rw.*` files in
+`src-tauri/target/release/bundle/macos/`, which break the next attempt — so it
+gets worse rather than better on a retry.
+
+```bash
+hdiutil info | grep -B14 "rw\." | grep -oE "^/dev/disk[0-9]+" | xargs -n1 hdiutil detach -force
+rm -f src-tauri/target/release/bundle/macos/rw.*
+
+# The .app alone, which is all a local install needs.
+npm run tauri build -- --config src-tauri/tauri.server.conf.json --bundles app
+cp -R "src-tauri/target/release/bundle/macos/SoundChex Server.app" /Applications/
+```
+
+**Tauri exits 0 on this failure.** Read the output rather than the exit code —
+it reports "failed to bundle project" and then exits successfully.
+
 ## Linux
 
 **Toolchain**
