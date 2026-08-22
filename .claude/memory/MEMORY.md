@@ -1,0 +1,9 @@
+- [Testing standard](soundchex-testing-standard.md) — write tests for everything, across PHP, Vitest and Playwright; test refusals and direct URLs, never the real library
+- [Plan workflow](soundchex-plan-workflow.md) — one plan at a time in `Documentation & Planning/`; a finished plan is deleted and Issues.md carries the record
+- [Audit tests before closing](soundchex-audit-tests-before-done.md) — hunt toothless, redundant and missing tests before marking an issue Done
+- [Reinstall on risky changes](soundchex-reinstall-on-risky-changes.md) — full delete-and-reinstall for anything that could break; over-the-air update when the fix can travel that way; testing on iPhone 16 Pro
+- [Capture interruptions as todos](soundchex-capture-interruptions-as-todos.md) — mid-turn requests go straight into the todo list and get returned to, never dropped
+- [Never touch the DB without permission](soundchex-never-touch-db-without-permission.md) — a migrate:fresh destroyed the real dev library; ask before any schema or seed command
+- [Issue tracking](soundchex-issue-tracking.md) — every feature/fix/bug goes in Issues.md; sections run In progress, Open, Deferred, Done
+- [Log everything that can fail](soundchex-log-everything.md) — network, batch, storage and background work all report what failed and why, not just a toast
+- [PR flow and changelogs](soundchex-pr-flow.md) — everything reaches main via PR; every PR gets changelog/NNN-name.md written when it opens
