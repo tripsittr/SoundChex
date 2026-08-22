@@ -45,8 +45,54 @@ has, so it decides what to ask for — which is what makes a resume cheap. It
 controls its own disk and can stop when it is full. And it needs the code
 anyway, so there is no asymmetry to justify.
 
-Both machines run SoundChex. The source needs no configuration beyond issuing a
-token.
+Both machines run SoundChex.
+
+### Approval, not a pre-shared token
+
+The receiver does not arrive holding a credential. It **asks**, and the request
+sits pending on the source until a person there approves it.
+
+```
+receiver                          source
+   |  POST /transfer/requests        |
+   |-------------------------------->|  request stored, state: pending
+   |  { pending, id, code: 4821 }    |  admin page shows it, with the code
+   |<--------------------------------|
+   |                                 |
+   |  (a person approves it)         |
+   |                                 |
+   |  GET  /transfer/requests/{id}   |
+   |-------------------------------->|
+   |  { approved, token }            |
+   |<--------------------------------|
+   |                                 |
+   |  everything else, with token    |
+   |-------------------------------->|
+```
+
+This is better than a token generated in advance for a specific reason: a token
+copied between machines can be copied twice, and once issued it exists whether
+anyone is watching or not. A request that must be approved while someone is
+looking at it cannot be used by someone who is not.
+
+**What the source shows before anyone approves:** the address it came from, the
+device name and platform the requester reports, what is being asked for
+(metadata, media, profiles), how much that is, and a short code the requester
+also displays. Matching the code is what tells you the request on your screen is
+the one you just started, rather than someone else's arriving at the same
+moment.
+
+**Pending requests expire.** An unapproved request is worthless after a few
+hours and becomes a way in if left forever; they lapse rather than waiting
+indefinitely.
+
+**Approval is revocable.** A transfer that has been approved and is running can
+be stopped from the source, and the token dies with it. A 46 GB transfer takes
+hours, which is long enough to change your mind.
+
+**The token is scoped and single-purpose.** It reads the manifest and the files
+and nothing else, it belongs to that one request, and it is useless once the
+request is complete or revoked.
 
 ## Compression
 
@@ -79,9 +125,30 @@ The bookmark is not a separate concept: it is the item table. Anything not yet
 `complete` is what is left to do, so an interrupted transfer resumes by asking
 the same question it asked at the start.
 
-### 2. The source side (~1 day)
+### 2. Requests and approval on the source (~1 day)
 
-Three endpoints, all `auth:sanctum`:
+`transfer_requests`: where it came from, what the requester says it is, what it
+wants, a short code, a state, and when it expires.
+
+Two endpoints that need **no** authentication, because a request is how
+authentication is obtained:
+
+- `POST /api/v1/transfer/requests` — heavily rate-limited, since it is the one
+  unauthenticated write in the system. Stores the request, returns its id and
+  the code.
+- `GET /api/v1/transfer/requests/{id}` — the receiver polls this. Returns
+  `pending`, or `approved` with the token, or `denied`, or `expired`.
+
+An admin page listing pending requests with **Approve** and **Deny**, showing
+the address, the reported device, what is being asked for, how large it is, and
+the code to check against the other screen.
+
+Approving mints a scoped Sanctum token tied to that request. Denying, revoking
+or expiring kills it.
+
+### 3. Serving the data (~1 day)
+
+Three endpoints, all requiring a token from an approved request:
 
 - `GET /api/v1/transfer/manifest` — what is here: every item's id, hash, size
   and relative path, plus the profiles and the database's own hash. Paginated,
@@ -94,7 +161,7 @@ Three endpoints, all `auth:sanctum`:
 Read-only. A transfer never writes to the source, so a mistake at the receiving
 end cannot damage the machine being copied.
 
-### 3. The receiving side (~2 days)
+### 4. The receiving side (~2 days)
 
 An admin page that takes an address and a token, fetches the manifest, and
 shows what it would do before doing it: how many files, how many gigabytes, how
@@ -113,7 +180,7 @@ Then a queued job per file:
 Failures are recorded per item with the reason and the attempt count, retried a
 few times, and left visible rather than retried forever.
 
-### 4. What travels (~half a day)
+### 5. What travels (~half a day)
 
 Four choices, because they have genuinely different costs:
 
@@ -128,28 +195,33 @@ Four choices, because they have genuinely different costs:
 Metadata and profiles arrive as a database import rather than row-by-row: it is
 one file, it compresses 85%, and it is atomic.
 
-### 5. Password-gated, and why that is not enough (~half a day)
+### 6. Password-gated on both ends (~half a day)
 
-The admin page asks for the account password before starting — a second
-deliberate act, not a click.
+Both pages ask for the account password: the receiver before sending a request,
+the source before approving one. A second deliberate act rather than a click,
+and on the source it is the act that matters most — approving is what hands
+over the library.
 
-But the real protection is the token. A transfer is authenticated with a
-Sanctum token issued by the *source* server, scoped to transfer only, and
-revocable. A password on the receiving side stops someone using an unlocked
-laptop; it does nothing about who may read the source. Both are needed and they
-do different jobs.
+The password is not the security boundary, though. That is the approval itself:
+nothing can be read from the source until a person there says so, and what they
+say yes to is revocable while it runs.
 
-### 6. Tests (~1.5 days)
+### 7. Tests (~1.5 days)
 
 - A resumed transfer skips what is already present and hashed.
 - A truncated file is detected, deleted and recorded — never left in place.
 - A failure records its reason and does not stop the rest.
 - A transfer interrupted mid-run resumes from the item table.
 - The source endpoints refuse an unauthenticated request.
+- A request sits pending until approved, and the manifest is refused until then.
+- A denied request never yields a token.
+- An expired request cannot be approved afterwards.
+- Revoking a running transfer stops it, and the token stops working.
+- A token from one request cannot be used for another.
 - Choosing metadata only moves no files.
 - A hash mismatch on the database aborts before importing.
 
-**Total: ~6.5 days.**
+**Total: ~7.5 days.**
 
 ## Deliberately not doing
 
