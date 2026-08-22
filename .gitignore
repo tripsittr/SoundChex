@@ -49,6 +49,12 @@ Thumbs.db
 !changelog/
 !changelog/**/*.md
 
+# What one agent learned, for the next one. Same reason as the two above: it is
+# written to be read by whoever comes next, which cannot happen if it lives on
+# one machine.
+!.claude/
+!.claude/**/*.md
+
 # ---------------------------------------------------------------------------
 # Media — never commit the library
 # ---------------------------------------------------------------------------
