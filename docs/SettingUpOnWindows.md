@@ -77,6 +77,34 @@ other devices, so the port matters:
 APP_URL=http://localhost:8000
 ```
 
+**4. Give PHP a certificate bundle.** Windows PHP ships without one, and
+`curl.cainfo` and `openssl.cafile` are unset — so every outbound HTTPS request
+fails with `cURL error 60: unable to get local issuer certificate`, whatever it
+was trying to reach. macOS and Linux do not hit this, because the system bundle
+is already there.
+
+Download [cacert.pem](https://curl.se/ca/cacert.pem), put it somewhere
+permanent, and point `php.ini` at it:
+
+```ini
+curl.cainfo = "C:\php\extras\ssl\cacert.pem"
+openssl.cafile = "C:\php\extras\ssl\cacert.pem"
+```
+
+Restart `php artisan serve` **and** `queue:work` afterwards — both need it, and
+the queue is the one that fetches files during a transfer.
+
+**Check:**
+
+```powershell
+php -r "var_dump(file_get_contents('https://api.themoviedb.org/3/'));"
+```
+
+Anything other than an SSL error means it works. Without this, metadata
+enrichment, artwork, subtitles and server transfers all fail — with the same
+certificate error, which reads as a network problem rather than a
+configuration one.
+
 Nothing is moved out of the watch folders until it has been catalogued and
 identified, and the originals are never deleted.
 
@@ -216,6 +244,7 @@ bootstrap refuses to run unless its paths are scratch paths.
 | Scan finds nothing | Watch folder paths — see step 8 |
 | Files catalogued but will not play | `ffmpeg` not on the PATH |
 | Phones cannot find the server | `APP_URL` missing its port, or the firewall |
+| `cURL error 60` on anything | No CA bundle — step 4 above |
 | Services page says it is unsupported | Expected. It is launchd-only |
 
 The app records what fails. **Admin → Device reports** shows what each device
