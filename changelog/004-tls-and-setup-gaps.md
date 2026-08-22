@@ -55,5 +55,10 @@ the next attempt, so retrying makes it worse. Recorded with the recovery steps
 
 ## Tests
 
-312 PHP · 87 Vitest. Five new tests cover the connection failure messages,
+**312 PHP · 87 Vitest.** Five new tests cover the connection failure messages,
 including that an unrecognised error is passed through rather than guessed at.
+
+Playwright was not run, deliberately. This changes documentation, one PHP
+service and one PHP test — no Blade, no CSS, no JavaScript — so 13 minutes of
+browser tests could not have caught anything the PHP suite did not. That
+judgement is now a rule rather than a case-by-case decision (AGENTS.md 6).
