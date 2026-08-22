@@ -28,6 +28,11 @@ The ones to read before touching anything:
 | [`pr-flow`](memory/soundchex-pr-flow.md) | Nothing reaches `main` any other way |
 | [`log-everything`](memory/soundchex-log-everything.md) | The phone that hit the bug is not in the room |
 
+**These are a copy.** They live in a local directory outside the repository and
+are copied here as part of whatever change made them true. If you learn
+something worth the next person knowing, write it and copy it across in the
+same PR — see rule 6 in [AGENTS.md](../AGENTS.md).
+
 ## scripts/
 
 [`watch-tests.sh`](scripts/watch-tests.sh) — a live view of a Playwright run.

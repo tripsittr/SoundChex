@@ -135,6 +135,19 @@ Opening one:
 4. **Say what is still broken.** A PR that lists only wins is one nobody
    believes twice. If tests fail, say which and why; if something is unverified,
    say so.
+5. **Publish anything you learned.** If the change taught you something another
+   developer or agent would want — a convention, a trap, something that went
+   wrong once — write it into `.claude/memory/` and ship it in the same PR.
+
+   ```bash
+   cp ~/.claude/projects/"$(pwd | tr '/' '-')"/memory/*.md .claude/memory/
+   ```
+
+   That folder is a *copy* of a local directory, so it goes stale silently
+   unless refreshed as part of the change that made it stale. Check the
+   published notes against the local ones and correct rather than ship: three
+   were wrong on first publish, describing a plan convention replaced that
+   morning.
 
 ### 7. Log anything that can fail
 
