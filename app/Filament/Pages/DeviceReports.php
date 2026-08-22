@@ -40,6 +40,20 @@ class DeviceReports extends Page
     /** @var array<int, array<string, mixed>> */
     public array $reports = [];
 
+    public string $deviceFilter = '';
+
+    public string $kindFilter = '';
+
+    public string $logFilter = '';
+
+    public bool $failuresOnly = false;
+
+    /** Re-runs the query whenever a filter moves. */
+    public function updated(): void
+    {
+        $this->loadReports();
+    }
+
     public function mount(): void
     {
         $this->loadReports();
@@ -48,18 +62,47 @@ class DeviceReports extends Page
     public function loadReports(): void
     {
         $this->reports = DeviceReport::query()
+            ->when($this->deviceFilter !== '', fn ($q) => $q->where('device', $this->deviceFilter))
+            ->when($this->kindFilter !== '', fn ($q) => $q->where('kind', $this->kindFilter))
+            // One report holds many events, so this asks whether it contains
+            // the kind rather than whether it is one.
+            ->when($this->logFilter !== '', fn ($q) => $q->where('events', 'like', '%' . $this->logFilter . '%'))
+            ->when($this->failuresOnly, fn ($q) => $q->where(fn ($inner) => $inner
+                ->where('events', 'like', '%:failed%')
+                ->orWhere('events', 'like', '%"error"%')
+                ->orWhere('events', 'like', '%"rejection"%')))
             ->latest('id')
-            ->limit(30)
+            ->limit(60)
             ->get()
             ->map(fn (DeviceReport $report): array => [
                 'id' => $report->id,
+                // The name if it has one, and the id otherwise: a device that
+                // has never been named still needs telling from the others.
+                'name' => $report->name ?: 'Unnamed · ' . substr($report->device, 0, 8),
                 'device' => substr($report->device, 0, 8),
+                'kind' => $report->kind ?: 'unknown',
+                'ip' => $report->ip,
                 'platform' => $this->shortPlatform($report->platform),
                 'build' => $report->build,
+                // The shell cannot update itself, so a device can be current
+                // on the served build and months behind on this one.
+                'shell' => $report->shell ? substr($report->shell, 0, 8) : null,
+                'app_version' => $report->app_version,
                 'origin' => $report->origin,
+                'at' => $report->created_at?->format('D j M, H:i:s'),
                 'when' => $report->created_at?->diffForHumans(),
                 'events' => $report->events ?? [],
             ])
+            ->all();
+    }
+
+    /** Devices that have ever reported, for the filter. */
+    public function devices(): array
+    {
+        return DeviceReport::query()
+            ->selectRaw('device, COALESCE(NULLIF(name, \'\'), device) as label')
+            ->distinct()
+            ->pluck('label', 'device')
             ->all();
     }
 

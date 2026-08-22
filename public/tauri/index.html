@@ -143,6 +143,40 @@
 </main>
 
 <script type="module">
+    /**
+     * This shell's own build, stamped at embed time.
+     *
+     * The served layer — Blade, CSS, app JS — updates itself within a minute
+     * and reports its build. These files cannot: they are compiled into the
+     * binary, so a connect-screen change reaches a device only through a
+     * reinstall. Handed to the app so a device running an old shell is visible
+     * rather than merely suspected.
+     */
+    const SHELL_BUILD = 'dd07b611cdca';
+
+
+    /** The native app's version, as declared in tauri.conf.json. */
+    const APP_VERSION = '0.1.0';
+
+    /**
+     * Appends this shell's identity to an origin the app is about to load.
+     *
+     * Carried on the URL because localStorage is per-origin: this screen runs
+     * on tauri://localhost and the app on the server's, so they share nothing.
+     */
+    function withShellBuild(origin) {
+        try {
+            const url = new URL(origin);
+
+            url.searchParams.set('shell', SHELL_BUILD);
+            url.searchParams.set('app', APP_VERSION);
+
+            return url.toString();
+        } catch {
+            return origin;
+        }
+    }
+
     const KEY = 'soundchex.host';
     const CANDIDATES_KEY = 'soundchex.hosts';
 
@@ -706,7 +740,11 @@
 
                 if (cancelled) return;
 
-                window.location.replace(winner);
+                // Carried on the URL rather than in storage: this screen
+                // runs on tauri://localhost and the app on the server's
+                // origin, and localStorage does not cross between them. The
+                // app stashes it on arrival and reports it from then on.
+                window.location.replace(withShellBuild(winner));
 
                 return;
             }

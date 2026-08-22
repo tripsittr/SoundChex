@@ -25,8 +25,14 @@ class DeviceReportController extends Controller
     {
         $data = $request->validate([
             'device' => ['required', 'string', 'max:40'],
-            'platform' => ['nullable', 'string', 'max:40'],
+            'name' => ['nullable', 'string', 'max:60'],
+            'platform' => ['nullable', 'string', 'max:120'],
             'build' => ['nullable', 'string', 'max:40'],
+            // The embedded Tauri shell, which the served build says nothing
+            // about: it cannot update itself, so a device can be current on
+            // one and months behind on the other.
+            'shell' => ['nullable', 'string', 'max:40'],
+            'app_version' => ['nullable', 'string', 'max:20'],
             'origin' => ['nullable', 'string', 'max:255'],
             'events' => ['required', 'array', 'max:40'],
             'events.*.kind' => ['required', 'string', 'max:40'],
@@ -35,8 +41,35 @@ class DeviceReportController extends Controller
             'events.*.detail' => ['nullable', 'array'],
         ]);
 
-        DeviceReport::create($data);
+        DeviceReport::create([
+            ...$data,
+            // Never taken from the request body. A device reporting its own
+            // address would be reporting whatever it felt like, and the point
+            // of recording it is to tell one device from another.
+            'ip' => $request->ip(),
+            // Narrowed from the user agent, which is the one thing it is
+            // reliable about.
+            'kind' => $this->kindOf($data['platform'] ?? ''),
+        ]);
 
         return response()->json(['stored' => true], 201);
+    }
+
+    /**
+     * What sort of device this is, from its user agent.
+     *
+     * Deliberately coarse. A user agent will not tell you which iPhone, and a
+     * guess dressed up as a fact is worse than "phone" — the name field is for
+     * saying which one, and it is asked for rather than inferred.
+     */
+    private function kindOf(string $agent): string
+    {
+        return match (true) {
+            str_contains($agent, 'iPad') => 'tablet',
+            str_contains($agent, 'iPhone'), str_contains($agent, 'Android') => 'phone',
+            str_contains($agent, 'Macintosh'), str_contains($agent, 'Windows'),
+            str_contains($agent, 'Linux') => 'desktop',
+            default => 'unknown',
+        };
     }
 }

@@ -1,4 +1,53 @@
 <x-filament-panels::page>
+    {{-- Filters. Reports have been arriving for weeks and the only way to read
+         them was a tinker script, which in practice meant they were read when
+         someone already suspected something rather than when it happened. --}}
+    <x-filament::section>
+        <x-slot name="heading">Filter</x-slot>
+
+        <div class="grid gap-3 sm:grid-cols-4">
+            <label class="block">
+                <span class="text-xs uppercase tracking-wide opacity-60">Device</span>
+                <select wire:model.live="deviceFilter" class="mt-1 w-full rounded-lg border-gray-300 text-sm dark:border-white/10 dark:bg-white/5">
+                    <option value="">All devices</option>
+                    @foreach ($this->devices() as $id => $label)
+                        <option value="{{ $id }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+            </label>
+
+            <label class="block">
+                <span class="text-xs uppercase tracking-wide opacity-60">Type</span>
+                <select wire:model.live="kindFilter" class="mt-1 w-full rounded-lg border-gray-300 text-sm dark:border-white/10 dark:bg-white/5">
+                    <option value="">Any</option>
+                    <option value="phone">Phone</option>
+                    <option value="tablet">Tablet</option>
+                    <option value="desktop">Desktop</option>
+                    <option value="unknown">Unknown</option>
+                </select>
+            </label>
+
+            <label class="block">
+                <span class="text-xs uppercase tracking-wide opacity-60">Log type</span>
+                <select wire:model.live="logFilter" class="mt-1 w-full rounded-lg border-gray-300 text-sm dark:border-white/10 dark:bg-white/5">
+                    <option value="">Anything</option>
+                    <option value=":failed">Failures</option>
+                    <option value="&quot;error&quot;">Errors</option>
+                    <option value="rejection">Unhandled rejections</option>
+                    <option value="download:">Downloads</option>
+                    <option value="switching-address">Address switches</option>
+                    <option value="served-offline-page">Served offline</option>
+                    <option value="reloading-for-build">Build reloads</option>
+                </select>
+            </label>
+
+            <label class="flex items-end gap-2 pb-1">
+                <input type="checkbox" wire:model.live="failuresOnly" class="rounded border-gray-300 dark:border-white/10">
+                <span class="text-sm">Only failures</span>
+            </label>
+        </div>
+    </x-filament::section>
+
     @if ($reports === [])
         <x-filament::section>
             <x-slot name="heading">Nothing reported</x-slot>
@@ -14,12 +63,19 @@
         @foreach ($reports as $report)
             <x-filament::section collapsible :collapsed="! $loop->first">
                 <x-slot name="heading">
-                    {{ $report['platform'] }} &middot; {{ $report['when'] }}
+                    {{ $report['name'] }} &middot; {{ $report['when'] }}
                 </x-slot>
 
                 <x-slot name="description">
-                    device {{ $report['device'] }}
-                    @if ($report['build']) &middot; build {{ $report['build'] }} @endif
+                    {{ $report['platform'] }}
+                    @if ($report['ip']) &middot; {{ $report['ip'] }} @endif
+                    @if ($report['at']) &middot; {{ $report['at'] }} @endif
+                    <br>
+                    @if ($report['build']) build {{ $report['build'] }} @endif
+                    {{-- The shell is compiled into the binary and cannot update
+                         itself, so it is worth seeing beside the served build. --}}
+                    @if ($report['shell']) &middot; shell {{ $report['shell'] }} @endif
+                    @if ($report['app_version']) &middot; app {{ $report['app_version'] }} @endif
                     @if ($report['origin']) &middot; {{ $report['origin'] }} @endif
                 </x-slot>
 

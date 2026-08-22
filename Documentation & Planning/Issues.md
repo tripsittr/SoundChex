@@ -34,7 +34,6 @@ not that a test passed. Both are noted where they differ.
 
 | ID | What | Notes |
 | --- | --- | --- |
-| S-41 | Why the app's update check did not pull today's build | The phone sat on `9bccab00a42b` while the server served newer, so none of the day's fixes reached it. Reinstalled by hand 22 Aug; the mechanism that should have done it is still unexplained |
 | S-46 | Snapshot a file's own metadata at the moment it arrives | The embedded tags, the original filename and path, size and hash, recorded once as an `intake` version before anything renames or enriches. `metadata_versions` already holds 5,829 rows but every one has `reason = enrichment`, so the state a file arrived in exists nowhere. S-44 is exactly what that costs: the fix has to infer the original filename from the shape of a title, because the real one was overwritten and never kept |
 | S-45 | Three orphaned rows point at files that were re-filed | 622, 623, 1107. The files exist under corrected names and were catalogued again as 3484, 3499, 2984, so each song is in the library twice with one copy unplayable |
 | S-02 | Reader is slow to open and to turn pages | Not diagnosed. Page content, OCR text and images all stream per page; the mirror does not cover the reader at all |
@@ -86,6 +85,9 @@ not that a test passed. Both are noted where they differ.
 | S-31 | now-playing sheet flake, ~1 run in 20 | `75c2d20` | 70 consecutive passes |
 | S-32 | Converted film unplayable after a catalogue rebuild | `603427a` | Backrooms plays; original archived, not deleted |
 | S-49 | "these tracks is already on this device", uncapitalised | `ee35c3e` | 5 tests; every label case checked by hand |
+| S-50 | A device report should identify the device | this commit | Name, type, IP, app and shell version, full user agent, timestamp. Verified end to end |
+| S-51 | Reports filterable by device, type and log kind | this commit | 5 tests. Built onto the existing admin page rather than the duplicate resource I started |
+| S-41 | The Tauri shell's own assets cannot update themselves | this commit | Not a broken updater: the served layer updates within 60s and the phone reported four builds progressing in one evening. The shell is compiled into the binary, so it now stamps itself and reports it — a stale shell is visible rather than suspected. Making it *self*-update on iOS is S-07's territory |
 | S-48 | Carousel errors on the Mac: `Can't find variable: rail` | not a defect | Transient. The reports carry `reloading-for-build` immediately before, and the build they name is two rebuilds old: cached HTML calling `rail()` against a bundle mid-replacement. Verified clean across four browse screens on the current build |
 | S-47 | Lists do not update while a page is open | this commit | 7 tests, desktop and mobile; player and scroll position both survive |
 | S-44 | Titles carry the artist: "Gold - Imagine Dragons" | this commit | 4,377 restored from file tags; 0 remain. Every change snapshotted to `metadata_versions` |

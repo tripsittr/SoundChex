@@ -67,6 +67,60 @@ function deviceId() {
  * when the network is down is useless precisely when it is needed. The events
  * stay in session storage either way, so nothing is lost by a send that failed.
  */
+/**
+ * What the user calls this device.
+ *
+ * A browser cannot read the device name, and a user agent gives "iPhone" for
+ * every iPhone in the house — so it is asked for once, in settings, and stored.
+ * Null until then, which is honest: an invented name is worse than none.
+ */
+function deviceName() {
+    return stash('soundchex.device-name');
+}
+
+/** Reads a stored value without throwing on private browsing. */
+function stash(key) {
+    try {
+        return localStorage.getItem(key);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The Tauri shell's build, when the app was opened by one.
+ *
+ * Handed over on the URL by the connect screen, because that screen runs on
+ * tauri://localhost and the app on the server's origin — separate localStorage,
+ * separate everything. Stashed on arrival so it survives navigation, since the
+ * parameter only exists on the first load.
+ */
+function shellBuild() {
+    return carried('shell', 'soundchex.shell-build');
+}
+
+/**
+ * A value the shell handed over on the URL, stashed so it survives navigation.
+ *
+ * The parameter only exists on the first load — every page after it is an
+ * ordinary navigation — so it has to be kept the moment it arrives.
+ */
+function carried(param, key) {
+    try {
+        const fromUrl = new URLSearchParams(window.location.search).get(param);
+
+        if (fromUrl) {
+            localStorage.setItem(key, fromUrl);
+
+            return fromUrl;
+        }
+
+        return localStorage.getItem(key);
+    } catch {
+        return null;
+    }
+}
+
 export async function sendReport() {
     const log = load();
 
@@ -83,8 +137,20 @@ export async function sendReport() {
             keepalive: true,
             body: JSON.stringify({
                 device: deviceId(),
-                platform: navigator.userAgent.slice(0, 40),
+                // Was 40 characters, which cut off before the OS version —
+                // "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7" and no further,
+                // so the one useful part was the part that was truncated.
+                platform: navigator.userAgent.slice(0, 120),
+                name: deviceName(),
+                // The native app's own version, when there is one. Set by
+                // the shell on the way in; a browser has none and says so.
+                app_version: carried('app', 'soundchex.app-version'),
                 build: window.soundchexBuild?.current?.() ?? null,
+                // The shell is a separate thing from the served build and
+                // cannot update itself, so a device can be current on one and
+                // months behind on the other. Reporting only the served build
+                // hides exactly the case where a reinstall is the answer.
+                shell: shellBuild(),
                 origin: window.location.origin,
                 events: log.slice(-MAX_EVENTS),
             }),

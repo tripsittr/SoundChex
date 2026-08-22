@@ -116,4 +116,37 @@ if (!existsSync(join(root, 'public/tauri/index.html'))) {
     process.exit(1);
 }
 
-console.log(`  embedded ${copied.length} files, service worker stamped ${stamp}`);
+// The shell's own stamp, over the files that are compiled into the binary
+// rather than served.
+//
+// These cannot update themselves: a change to the connect screen or the
+// offline shell reaches a device only through a reinstall or the Tauri
+// updater. Without a stamp there is no way to tell a device running last
+// week's shell from one running today's — the served build number says
+// nothing about it, which is exactly how an evening went into asking why an
+// update "didn't arrive" when the served layer had been updating all along.
+const connectScreen = join(root, 'public/tauri/index.html');
+
+// Hashed with the placeholder still in place, so the stamp describes the shell
+// rather than the last stamp written into it.
+const shellSources = [
+    readFileSync(connectScreen, 'utf8').replace(/const SHELL_BUILD = '[^']*';/, ''),
+    readFileSync(join(outDir, 'manifest.json'), 'utf8'),
+].join('');
+
+const shellStamp = createHash('sha1').update(shellSources).digest('hex').slice(0, 12);
+
+// Read from tauri.conf.json rather than duplicated here, so bumping the
+// version in one place is enough.
+const appVersion = JSON.parse(
+    readFileSync(join(root, 'src-tauri/tauri.conf.json'), 'utf8'),
+).version ?? '0.0.0';
+
+writeFileSync(
+    connectScreen,
+    readFileSync(connectScreen, 'utf8')
+        .replace(/const SHELL_BUILD = '[^']*';/, `const SHELL_BUILD = '${shellStamp}';`)
+        .replace(/const APP_VERSION = '[^']*';/, `const APP_VERSION = '${appVersion}';`),
+);
+
+console.log(`  embedded ${copied.length} files, service worker stamped ${stamp}, shell ${shellStamp}`);

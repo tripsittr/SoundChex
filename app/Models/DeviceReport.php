@@ -15,8 +15,13 @@ class DeviceReport extends Model
 {
     protected $fillable = [
         'device',
+        'name',
+        'kind',
+        'ip',
         'platform',
         'build',
+        'shell',
+        'app_version',
         'origin',
         'events',
     ];
