@@ -31,6 +31,29 @@ working on its own say-so.
 5. **Both run real tests.**
 6. **Mac closes the issue** and tells the owner it is done.
 
+## What an A5 approval can and cannot attest to
+
+`a5` has no Playwright — no `.env.e2e`, no browsers installed. So an approval
+from there is not a statement that a change works in a browser, and must never
+be read as one.
+
+What `a5` can be held to:
+
+- **PHP and Vitest**, full suites — including breaking a guard on purpose to
+  check the test can actually fail.
+- **Real requests against the running app.** It serves on `0.0.0.0:8000`, so
+  artisan commands, API calls and HTTP round trips are all testable there.
+- **Reading the diff against the code it touches.** That is where a duplicate
+  `library:duplicates` command was caught before it was written twice.
+
+**An approval says which of those were done, and names any browser-shaped risk
+it could not cover.** Where such risk exists, Mac tests it here before merging —
+`a5`'s approval does not substitute for that.
+
+The reverse also holds. `a5` is the **receiving** machine in a transfer, so
+transfer behaviour cannot be tested from this side alone. Six of seven transfer
+bugs today were only visible there.
+
 ## What "real tests" means
 
 Explicitly **not** PHPUnit, Pest, Vitest or Playwright. Those stay in the suite
