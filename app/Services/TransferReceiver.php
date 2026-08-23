@@ -104,7 +104,134 @@ class TransferReceiver
                 . 'address may be reaching something else.';
         }
 
+        // Not a network problem at all, and it reads like one. On Windows a
+        // file unlinked while something still holds it open keeps its name in
+        // a delete-pending state, and every later open of that name is refused
+        // — so a transfer fails here having never left the machine.
+        if (str_contains($message, 'Permission denied')
+            || str_contains($message, 'Failed to open stream')) {
+            return 'This machine could not write the file it downloads into. '
+                . 'Something is still holding the previous one open — restart '
+                . 'the queue worker, then try again.';
+        }
+
         return 'Could not reach that server: ' . $message;
+    }
+
+    /**
+     * Calls a transfer off, and tells the source it is over.
+     *
+     * Pausing leaves the request approved and the token live on the other
+     * machine — fine for a lunch break, wrong for "I did not mean to start
+     * this", because it leaves a machine able to read this one for as long as
+     * the token lasts. Cancelling ends it at both ends.
+     *
+     * Stopped here first, then reported there. A source that cannot be
+     * reached must not leave this machine still transferring: the local stop
+     * is the one that matters, and the remote one is what makes it tidy.
+     *
+     * @return bool whether the source was told. False still means cancelled.
+     */
+    public function cancel(Transfer $transfer): bool
+    {
+        $token = $transfer->token;
+
+        $transfer->forceFill([
+            'state' => Transfer::CANCELLED,
+            'token' => null,
+            'finished_at' => now(),
+        ])->save();
+
+        // Never approved, so there is no token and nothing on the source to
+        // end. It expires there on its own — four hours, unapproved and
+        // unusable in the meantime.
+        if (blank($token)) {
+            Log::info('A transfer was cancelled before it was approved', [
+                'transfer' => $transfer->id,
+                'source' => $transfer->source_url,
+            ]);
+
+            return true;
+        }
+
+        try {
+            $response = $this->http()->withToken($token)
+                ->acceptJson()
+                ->timeout(20)
+                ->delete($this->url($transfer, 'transfer/requests/mine'));
+
+            // 401 and 403 mean the token is already dead — revoked from the
+            // other end, or expired. The request is over either way, which is
+            // what was being asked for.
+            $told = $response->successful()
+                || in_array($response->status(), [401, 403, 404], true);
+
+            if (! $told) {
+                $transfer->forceFill([
+                    'last_error' => $this->truncate(
+                        'Cancelled here, but that server answered ' . $response->status()
+                        . ' and may still hold the request open.',
+                    ),
+                ])->save();
+
+                Log::warning('A cancelled transfer could not be called off at the source', [
+                    'transfer' => $transfer->id,
+                    'source' => $transfer->source_url,
+                    'status' => $response->status(),
+                ]);
+            }
+
+            return $told;
+        } catch (\Throwable $e) {
+            $transfer->forceFill([
+                'last_error' => $this->truncate(
+                    'Cancelled here, but that server could not be told: ' . $this->explain($e),
+                ),
+            ])->save();
+
+            Log::warning('A cancelled transfer could not be called off at the source', [
+                'transfer' => $transfer->id,
+                'source' => $transfer->source_url,
+                'reason' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * Removes a transfer and everything it left behind.
+     *
+     * Refused while one is running rather than quietly stopping it: the row is
+     * what queued file jobs read to decide whether to carry on, and deleting
+     * it under them would leave them fetching into a transfer that no longer
+     * exists. Clearing the list should not be a way to abandon a transfer half
+     * way — cancelling is, and it is one button along.
+     *
+     * @return bool false when it was refused, so a caller can say why
+     */
+    public function discard(Transfer $transfer): bool
+    {
+        if ($transfer->state === Transfer::RUNNING) {
+            return false;
+        }
+
+        // The part-downloaded catalogue for this transfer. Nothing will ever
+        // come back for it, and it is 3 MB of the source's database.
+        @unlink($this->archivePath($transfer));
+
+        Log::info('A transfer was removed from the list', [
+            'transfer' => $transfer->id,
+            'source' => $transfer->source_url,
+            'state' => $transfer->state,
+        ]);
+
+        // Explicitly as well as by cascade: the constraint is declared, and
+        // SQLite only enforces it when foreign keys are switched on.
+        $transfer->items()->delete();
+        $transfer->delete();
+
+        return true;
     }
 
     /**
@@ -270,7 +397,7 @@ class TransferReceiver
             return false;
         }
 
-        $temporary = storage_path('app/transfer-incoming.sqlite.gz');
+        $temporary = $this->archivePath($transfer);
 
         try {
             $response = $this->http()->withToken($transfer->token)
@@ -278,20 +405,125 @@ class TransferReceiver
                 ->sink($temporary)
                 ->get($this->url($transfer, 'transfer/database'));
 
+            // Before anything reads, unlinks or renames the archive. The
+            // response holds the sink file open for as long as it is alive,
+            // and on Windows unlinking a file that still has a handle open
+            // does not remove the name — it leaves it in a delete-pending
+            // state where every later open fails with "Permission denied".
+            // That is how one failed transfer made every transfer after it
+            // fail before it had started.
+            $this->releaseSink($response);
+
             if (! $response->successful()) {
                 $transfer->forceFill([
-                    'last_error' => 'The catalogue could not be read (' . $response->status() . ').',
+                    'last_error' => $this->truncate(
+                        'The catalogue could not be read (' . $response->status() . ').'
+                        . $this->reasonFrom($temporary),
+                    ),
                 ])->save();
+
+                Log::error('A catalogue transfer failed', [
+                    'transfer' => $transfer->id,
+                    'source' => $transfer->source_url,
+                    'status' => $response->status(),
+                    // The body went to the sink rather than into memory, so
+                    // this is read back from the file — bounded, because what
+                    // arrived is only known to be an error, not to be small.
+                    'reason' => trim($this->reasonFrom($temporary)) ?: null,
+                ]);
+
+                @unlink($temporary);
 
                 return false;
             }
         } catch (\Throwable $e) {
-            $transfer->forceFill(['last_error' => 'The catalogue transfer failed: ' . $e->getMessage()])->save();
+            $transfer->forceFill([
+                'last_error' => $this->truncate('The catalogue transfer failed: ' . $this->explain($e)),
+            ])->save();
+
+            Log::error('A catalogue transfer failed', [
+                'transfer' => $transfer->id,
+                'source' => $transfer->source_url,
+                'archive' => $temporary,
+                'reason' => $e->getMessage(),
+            ]);
 
             return false;
         }
 
         return $this->unpackDatabase($transfer, $temporary, $backup);
+    }
+
+    /**
+     * Where this transfer's catalogue archive is written.
+     *
+     * Per transfer rather than one shared name. The shared name meant a single
+     * archive left behind — or worse, left in a delete-pending state by
+     * `releaseSink()`'s absence — blocked every later transfer with a
+     * permission error before it had asked the source for anything.
+     */
+    public function archivePath(Transfer $transfer): string
+    {
+        return storage_path('app/transfer-' . $transfer->id . '-incoming.sqlite.gz');
+    }
+
+    /**
+     * Closes the file the response was streamed into.
+     *
+     * The handle would close on its own when the response is collected, which
+     * is too late: the archive is unlinked and reopened while the response is
+     * still in scope, and on Windows that is the difference between a working
+     * transfer and a permission error that survives it.
+     */
+    private function releaseSink(\Illuminate\Http\Client\Response $response): void
+    {
+        try {
+            $response->toPsrResponse()->getBody()->close();
+        } catch (\Throwable $e) {
+            // Not worth abandoning a catalogue over: the handle still closes
+            // with the response, just later than we would like.
+            Log::warning('A transfer sink could not be closed early', ['reason' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * What the source said, when it said anything.
+     *
+     * With `sink()` the body is on disk rather than in memory, so a failure
+     * that the other machine explained in full arrived and was thrown away —
+     * and the only way to read the explanation was to go to that machine's
+     * log. Read bounded: an error body is normally a sentence of JSON, but
+     * nothing guarantees it.
+     */
+    private function reasonFrom(string $archive): string
+    {
+        $head = @file_get_contents($archive, false, null, 0, 2048);
+
+        if (! is_string($head) || trim($head) === '') {
+            return '';
+        }
+
+        $decoded = json_decode($head, true);
+
+        $message = is_array($decoded)
+            ? ($decoded['message'] ?? $decoded['error'] ?? null)
+            // Not JSON: an HTML error page or a plain string. Worth keeping,
+            // but only the readable part of it.
+            : trim(strip_tags($head));
+
+        if (! is_string($message) || trim($message) === '') {
+            return '';
+        }
+
+        return ' The server said: ' . trim(preg_replace('/\s+/', ' ', $message));
+    }
+
+    /** `last_error` is a 255-column, and a truncated reason beats a lost one. */
+    private function truncate(string $message): string
+    {
+        return mb_strlen($message) > 255
+            ? mb_substr($message, 0, 252) . '...'
+            : $message;
     }
 
     /**
@@ -487,9 +719,23 @@ class TransferReceiver
                 ->get($this->url($transfer, $path), $query);
 
             if (! $response->successful()) {
+                $reason = $response->json('message') ?: trim(strip_tags($response->body()));
+
                 $transfer->forceFill([
-                    'last_error' => $path . ' answered ' . $response->status() . '.',
+                    'last_error' => $this->truncate(
+                        $path . ' answered ' . $response->status() . '.'
+                        . (is_string($reason) && $reason !== ''
+                            ? ' The server said: ' . trim(preg_replace('/\s+/', ' ', $reason))
+                            : ''),
+                    ),
                 ])->save();
+
+                Log::warning('A transfer request was refused', [
+                    'transfer' => $transfer->id,
+                    'path' => $path,
+                    'status' => $response->status(),
+                    'reason' => is_string($reason) && $reason !== '' ? $reason : null,
+                ]);
 
                 return null;
             }
