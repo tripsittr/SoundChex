@@ -180,6 +180,33 @@ class TransferApprovalTest extends TestCase
         $this->withToken($token)->deleteJson('/api/v1/transfer/requests/mine')->assertForbidden();
     }
 
+    public function test_a_files_only_transfer_can_read_the_manifest(): void
+    {
+        // The manifest *is* the list of files. Gating it behind `metadata`
+        // alone made `wants: ['files']` unusable by construction: the transfer
+        // authenticated, asked what to fetch, and was refused 403. A real
+        // request hit this — nothing rejects the combination at request time.
+        $request = $this->pending(['files']);
+
+        app(TransferApprovals::class)->approve($request, User::factory()->create());
+
+        $token = $request->fresh()->plain_token;
+
+        $this->withToken($token)->getJson('/api/v1/transfer/manifest')->assertOk();
+    }
+
+    public function test_a_files_only_transfer_still_cannot_read_the_catalogue(): void
+    {
+        // Widening the manifest must not widen the database dump with it.
+        $request = $this->pending(['files']);
+
+        app(TransferApprovals::class)->approve($request, User::factory()->create());
+
+        $this->withToken($request->fresh()->plain_token)
+            ->get('/api/v1/transfer/database')
+            ->assertForbidden();
+    }
+
     public function test_the_approval_window_runs_from_approval_not_from_the_request(): void
     {
         // A request that has already sat for most of its life. The old code

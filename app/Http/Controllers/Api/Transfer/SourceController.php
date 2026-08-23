@@ -29,7 +29,11 @@ class SourceController extends Controller
      */
     public function manifest(Request $request): JsonResponse
     {
-        $this->authorizeTransfer($request, 'metadata');
+        // Either want reaches this. The manifest *is* the list of files, so a
+        // transfer authorised to fetch files but not to read the manifest can
+        // never learn what to fetch — it authenticates, asks, and is refused.
+        // `wants: ['files']` was unusable by construction until this.
+        $this->authorizeTransfer($request, ['metadata', 'files']);
 
         $page = max(1, (int) $request->integer('page', 1));
         $perPage = 500;
@@ -198,7 +202,10 @@ class SourceController extends Controller
      * Checked per call rather than once at the start: a 46 GB transfer runs
      * for hours, and revoking it half way has to actually stop it.
      */
-    private function authorizeTransfer(Request $request, string $want): void
+    /**
+     * @param  string|array<int, string>  $want  Any one of these is enough.
+     */
+    private function authorizeTransfer(Request $request, string|array $want): void
     {
         $token = $request->user()?->currentAccessToken();
 
@@ -209,7 +216,7 @@ class SourceController extends Controller
         abort_unless($transferRequest?->isUsable(), 403, 'This transfer is no longer approved.');
 
         abort_unless(
-            in_array($want, $transferRequest->wants ?? [], true),
+            array_intersect((array) $want, $transferRequest->wants ?? []) !== [],
             403,
             'This transfer did not ask for that.',
         );
