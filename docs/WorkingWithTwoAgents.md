@@ -62,8 +62,55 @@ than seconds and say what the instrument was.
 
 **Reviewing perturbs the thing being measured.** Checking out a branch to
 review it swaps the code under a live `queue:work`, which stops the run — and
-from the other machine that is indistinguishable from a crash. Say when you are
-about to do it, or expect the other side to raise an alarm about your review.
+from the other machine that is indistinguishable from a crash. It happened
+once and was reported as a stalled transfer before anyone connected the two.
+
+**So review in a worktree while anything is running.** The checkout is a
+separate directory, the worker keeps running against the code it started with,
+and nothing has to be announced or timed.
+
+The three obvious lines do not work, and the obvious fix for that is worse than
+the problem:
+
+```bash
+git worktree add ../sc-review <branch>
+cd ../sc-review
+cp -R ../SoundChex/vendor vendor              # a real copy
+cp -R ../SoundChex/public/build public/build  # or every Filament test dies on Vite
+cp ../SoundChex/.env .env
+```
+
+**`vendor/` is gitignored**, so a fresh worktree has application code and no
+dependencies — the suite cannot start.
+
+**Do not symlink `vendor`.** It resolves, and then quietly runs the wrong code.
+Composer computes its base directory from `__DIR__`, which resolves the link to
+its real path, so `App\` maps back to the *main* checkout. The worktree's own
+`app/` is never loaded. Verified on both machines: a review of a branch adding
+a new class reported `Class "App\Services\Titles" not found` and ten failures
+that belonged entirely to the harness.
+
+**Confirm it before trusting a single number:**
+
+```bash
+php -r 'require "vendor/autoload.php";
+  echo (new ReflectionClass("App\Services\LibraryScanner"))->getFileName(), "\n";'
+```
+
+It must print the **worktree** path. If it prints the main checkout, every
+result from that run is about the wrong code — including the green ones.
+
+About 176 MB and twenty seconds. Keep **one** `sc-review` worktree and check
+branches out inside it rather than paying that per branch. `git worktree
+remove` refuses while an untracked `vendor` is present, so removing it needs
+`--force`, which deletes the copy — another reason to keep one.
+
+Proven on a live copy: 219 files landed *during* a review that would previously
+have stopped it dead.
+
+Better than the warning it replaces. A practice that cannot go wrong beats one
+that depends on both sides remembering to say so — provided the practice itself
+is written down correctly, which the first version of this section was not.
 
 ## What an A5 approval can and cannot attest to
 
