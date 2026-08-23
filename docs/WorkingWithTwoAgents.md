@@ -62,8 +62,24 @@ than seconds and say what the instrument was.
 
 **Reviewing perturbs the thing being measured.** Checking out a branch to
 review it swaps the code under a live `queue:work`, which stops the run — and
-from the other machine that is indistinguishable from a crash. Say when you are
-about to do it, or expect the other side to raise an alarm about your review.
+from the other machine that is indistinguishable from a crash. It happened
+once and was reported as a stalled transfer before anyone connected the two.
+
+**So review in a worktree while anything is running:**
+
+```bash
+git worktree add ../review-<branch> <branch>
+# run the suite there, then
+git worktree remove ../review-<branch>
+```
+
+The checkout is a separate directory, the worker keeps running against the
+code it started with, and nothing has to be announced or timed. Proven on a
+live copy: 219 files landed *during* a review that would previously have
+stopped it dead.
+
+Better than the warning it replaces. A practice that cannot go wrong beats
+one that depends on both sides remembering to say so.
 
 ## What an A5 approval can and cannot attest to
 
