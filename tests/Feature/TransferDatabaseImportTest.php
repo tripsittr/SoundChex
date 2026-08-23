@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\Transfer;
+use App\Models\TransferItem;
 use App\Services\TransferReceiver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
@@ -157,6 +159,45 @@ class TransferDatabaseImportTest extends TestCase
         $this->assertStringContainsString('could not be put in place', $transfer->fresh()->last_error);
 
         rmdir($this->catalogue);
+    }
+
+    public function test_a_transfer_survives_importing_the_catalogue_it_is_running_from(): void
+    {
+        // The transfer's row and its work list live in the database being
+        // replaced. Without carrying them across, the catalogue lands and the
+        // transfer that fetched it no longer exists — 8,309 items of work list
+        // discarded before a single file had been fetched, and the token with
+        // them, so nothing could resume either.
+        Http::fake(['*/transfer/database*' => Http::response(gzencode('SQLite format 3' . "\0" . 'new'))]);
+
+        $this->useScratchCatalogue();
+
+        $transfer = $this->transfer();
+
+        TransferItem::create([
+            'transfer_id' => $transfer->id,
+            'remote_id' => 41,
+            'path' => 'media/music/a.mp3',
+            'state' => TransferItem::PENDING,
+        ]);
+
+        // Asserted through the log rather than by reading the rows back.
+        //
+        // The rows cannot be read back meaningfully here: Eloquent runs on
+        // `:memory:` while the swap replaces a scratch *file*, so the transfer
+        // is never actually destroyed and a test that checks it is still there
+        // passes whether the carry-across runs or not. It did, until this was
+        // checked by removing the fix and watching nothing go red.
+        Log::spy();
+
+        $this->assertTrue(app(TransferReceiver::class)->importDatabase($transfer));
+
+        Log::shouldHaveReceived('info')
+            ->withArgs(fn (string $message, array $context) =>
+                $message === 'A transfer was carried across the catalogue it imported'
+                && $context['transfer'] === $transfer->id
+                && $context['items'] === 1)
+            ->once();
     }
 
     public function test_it_refuses_when_there_is_no_database_file_to_replace(): void

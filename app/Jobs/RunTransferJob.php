@@ -87,7 +87,19 @@ class RunTransferJob implements ShouldQueue
                 'metadata_imported' => true,
             ]);
 
-            $transfer = Transfer::find($transfer->id);
+            $id = $transfer->id;
+            $transfer = Transfer::find($id);
+
+            // The import replaces this database, and the transfer's own row
+            // lives in it. TransferReceiver carries the row back across, so
+            // this should not happen — but "should not" and a fatal
+            // `wants() on null` two lines later are not the same thing, and
+            // the catalogue is already in place by now.
+            if ($transfer === null) {
+                Log::error('A transfer vanished with the catalogue it imported', ['transfer' => $id]);
+
+                return;
+            }
         }
 
         if (! $transfer->wants('files')) {
