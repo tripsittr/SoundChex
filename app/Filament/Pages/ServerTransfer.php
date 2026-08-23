@@ -63,6 +63,27 @@ class ServerTransfer extends Page
 
     public array $transfers = [];
 
+    /**
+     * Which destructive button is waiting for a second click, as `action:id`.
+     *
+     * A round trip rather than `wire:confirm`'s native dialog. Those two
+     * buttons were the only use of that directive in the application, and both
+     * did nothing when clicked while the methods behind them worked — so the
+     * confirmation is done the way every button on this page that does work is
+     * done, and a test can drive it without a browser.
+     */
+    public ?string $confirming = null;
+
+    public function askToConfirm(string $key): void
+    {
+        $this->confirming = $key;
+    }
+
+    public function dismissConfirmation(): void
+    {
+        $this->confirming = null;
+    }
+
     public function mount(): void
     {
         $this->refresh();
@@ -293,6 +314,7 @@ class ServerTransfer extends Page
                 ->send();
         }
 
+        $this->confirming = null;
         $this->refresh();
     }
 
@@ -321,6 +343,7 @@ class ServerTransfer extends Page
                 ->send();
         }
 
+        $this->confirming = null;
         $this->refresh();
     }
 
