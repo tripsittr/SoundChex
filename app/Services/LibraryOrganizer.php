@@ -535,7 +535,14 @@ class LibraryOrganizer
         $real = realpath($absolute) ?: $absolute;
 
         if ($root !== false && str_starts_with($real, $root . DIRECTORY_SEPARATOR)) {
-            return ltrim(substr($real, strlen($root)), DIRECTORY_SEPARATOR);
+            $relative = ltrim(substr($real, strlen($root)), DIRECTORY_SEPARATOR);
+
+            // Forward slashes, whatever the platform. `realpath()` hands back
+            // `media\library\…` on Windows, and that value is then compared
+            // against other stored paths and passed to `Storage::` — which is
+            // how the scanner came to catalogue one film nine times, once per
+            // scan, because the two spellings never matched (S-98).
+            return str_replace('\\', '/', $relative);
         }
 
         return $real;
