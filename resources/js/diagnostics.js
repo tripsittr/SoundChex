@@ -126,6 +126,10 @@ export async function sendReport() {
 
     if (log.length === 0) return { sent: false };
 
+    // What this send is responsible for. Anything recorded while the request
+    // is in flight is not in here and must survive it.
+    const sending = log.slice(-MAX_EVENTS);
+
     try {
         const response = await fetch('/api/v1/device-reports', {
             method: 'POST',
@@ -152,9 +156,26 @@ export async function sendReport() {
                 // hides exactly the case where a reinstall is the answer.
                 shell: shellBuild(),
                 origin: window.location.origin,
-                events: log.slice(-MAX_EVENTS),
+                events: sending,
             }),
         });
+
+        // Sent events are dropped, so the next report carries what is new
+        // rather than everything since the tab opened. They were kept before,
+        // and 94% of stored events were repeats - one incident arriving three
+        // times reads as three incidents to anyone watching the table.
+        //
+        // Only what went in this request is removed: a failure keeps
+        // everything, and anything recorded mid-flight is still here.
+        if (response.ok) {
+            // Keep what is not in this batch. `sending` is the tail of the
+            // buffer, so a count-based slice would drop from the wrong end
+            // when the buffer was longer than MAX_EVENTS, and anything
+            // recorded while the request was in flight is at the tail too.
+            const sent = new Set(sending.map((event) => JSON.stringify(event)));
+
+            save(load().filter((event) => ! sent.has(JSON.stringify(event))));
+        }
 
         return { sent: response.ok };
     } catch {
