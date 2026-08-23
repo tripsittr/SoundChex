@@ -492,7 +492,7 @@ class LibraryScanner
         }
 
         $author = trim(preg_replace('/\s{2,}/', ' ', $match[1]) ?? $match[1]);
-        $author = trim($author, " ._-–—");
+        $author = Titles::trim($author);
 
         // A trailing "by" fragment that isn't a name (a stray word, a number)
         // would be worse than having no hint at all.
@@ -523,7 +523,7 @@ class LibraryScanner
         $title = preg_replace('/^\d{1,4}\s*[-–—.]?\s+/', '', $title) ?? $title;
 
         $title = trim(preg_replace('/\s{2,}/', ' ', $title) ?? $title);
-        $title = trim($title, " -–—_");
+        $title = Titles::trim($title);
 
         if ($title === '') {
             return null;
@@ -572,7 +572,7 @@ class LibraryScanner
         $cleaned = preg_replace('/[\[\(\{][^\]\)\}]*[\]\)\}]/', ' ', $cleaned) ?? $cleaned;
 
         $cleaned = trim(preg_replace('/\s{2,}/', ' ', $cleaned) ?? $cleaned);
-        $cleaned = trim($cleaned, " -–—_");
+        $cleaned = Titles::trim($cleaned);
 
         // The year disambiguates remakes, so it's appended back when the title
         // didn't already end with it.
