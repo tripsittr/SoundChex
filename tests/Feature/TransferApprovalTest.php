@@ -180,6 +180,26 @@ class TransferApprovalTest extends TestCase
         $this->withToken($token)->deleteJson('/api/v1/transfer/requests/mine')->assertForbidden();
     }
 
+    public function test_the_approval_window_runs_from_approval_not_from_the_request(): void
+    {
+        // A request that has already sat for most of its life. The old code
+        // handed the token whatever was left of that, so an approval given
+        // late was already nearly dead — and a 46 GB copy does not finish in
+        // the remainder. Four real transfers died this way.
+        $request = $this->pending();
+        $request->forceFill(['expires_at' => now()->addMinutes(5)])->save();
+
+        app(TransferApprovals::class)->approve($request->fresh(), User::factory()->create());
+
+        $request->refresh();
+
+        $this->assertTrue(
+            $request->expires_at->gt(now()->addHours(TransferRequest::APPROVAL_HOURS - 1)),
+            'the approval should be good for hours after it was given, not minutes',
+        );
+        $this->assertTrue($request->isUsable(), 'a freshly approved request must be usable');
+    }
+
     private function pending(array $wants = ['metadata', 'files', 'profiles']): TransferRequest
     {
         return TransferRequest::create([
