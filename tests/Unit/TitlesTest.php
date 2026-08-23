@@ -43,6 +43,20 @@ class TitlesTest extends TestCase
         $this->assertSame('Song', Titles::trim('.Song.'));
     }
 
+    public function test_the_dot_is_stripped_and_that_is_a_change(): void
+    {
+        // Two of the four callers this replaced used " -–—_" with no dot, so a
+        // trailing full stop used to survive and now does not. Inert today —
+        // LibraryScanner turns dots into spaces before either trim — but the
+        // next caller passing a raw title inherits it, so it is pinned here
+        // rather than left to be discovered.
+        $this->assertSame('Track', Titles::trim('Track.'));
+        $this->assertSame('Track.', Titles::trimExact('Track.'));
+
+        // Both still strip everything the old mask did.
+        $this->assertSame('Track', Titles::trimExact('_ Track —'));
+    }
+
     public function test_the_old_byte_mask_is_what_this_replaces(): void
     {
         // Kept as the record of the bug: this is what the code did before,

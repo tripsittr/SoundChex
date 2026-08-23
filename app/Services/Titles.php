@@ -30,17 +30,38 @@ class Titles
      *
      * Listed as characters, matched as characters. Adding to this is safe;
      * adding to a byte mask is not.
+     *
+     * The dot is deliberate and worth flagging: two of the callers this
+     * replaced used `" -–—_"` with no dot, so `"Track."` used to keep its
+     * full stop and now loses it. That is inert today — `LibraryScanner`
+     * turns dots into spaces before either trim, and `EpisodeParser` always
+     * had the dot — but it is load-bearing for whoever calls this next with
+     * a raw title. `Titles::trimExact()` is there for a caller that wants the
+     * old set.
      */
     private const TRIMMABLE = [' ', '-', '–', '—', '_', '.', "\t", "\n", "\r", "\0", "\x0B"];
+
+    /** Without the dot, for a caller that means a trailing full stop to survive. */
+    private const NO_DOT = [' ', '-', '–', '—', '_', "\t", "\n", "\r", "\0", "\x0B"];
+
+    /** Strips leading and trailing junk, keeping a trailing full stop. */
+    public static function trimExact(?string $value): string
+    {
+        return self::strip($value, self::NO_DOT);
+    }
 
     /** Strips leading and trailing junk without splitting a character in half. */
     public static function trim(?string $value, array $extra = []): string
     {
+        return self::strip($value, array_merge(self::TRIMMABLE, $extra));
+    }
+
+    /** @param  array<int, string>  $characters */
+    private static function strip(?string $value, array $characters): string
+    {
         if ($value === null || $value === '') {
             return '';
         }
-
-        $characters = array_merge(self::TRIMMABLE, $extra);
 
         // A character class, so the match is per character and never lands
         // mid-sequence. `u` makes the subject UTF-8 rather than bytes.
