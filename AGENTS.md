@@ -46,8 +46,11 @@ transfer, so transfer behaviour cannot be verified from this side alone.
 **Neither machine can measure the other's progress — ask, do not infer.** Byte
 counters read a bursty copy as stalled. Worse, a number you changed yourself is
 not a measurement: a hand-reset queue reads as a fix working. Reviewing also
-perturbs the run, so **review in a worktree** (`git worktree add`) while
-anything is copying — checking a branch out swaps the code under a live worker.
+perturbs the run, so **review in a worktree** while anything is copying —
+checking a branch out swaps the code under a live worker. Copy `vendor` in
+rather than symlinking it, or Composer resolves `App\` back to the main
+checkout and the suite silently tests the wrong code. Recipe and the one-line
+check: [docs/WorkingWithTwoAgents.md](docs/WorkingWithTwoAgents.md).
 
 Full agreement: [docs/WorkingWithTwoAgents.md](docs/WorkingWithTwoAgents.md).
 
