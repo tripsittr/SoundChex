@@ -104,6 +104,13 @@ Route::prefix('v1')->group(function (): void {
             Route::delete('/requests/mine', [TransferRequestController::class, 'cancel'])
                 ->name('api.transfer.cancel');
 
+            // The receiver reporting how far it has got. Neither machine could
+            // see the other's progress, so both guessed and both were wrong -
+            // see docs/WorkingWithTwoAgents.md. Which transfer this is comes
+            // from the token rather than the body.
+            Route::post('/progress', [TransferRequestController::class, 'progress'])
+                ->name('api.transfer.progress');
+
             // Streaming, so not throttled with the rest — a transfer is
             // thousands of these by design.
             Route::get('/file/{item}', [TransferSourceController::class, 'file'])

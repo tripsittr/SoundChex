@@ -46,6 +46,9 @@ class TransferRequest extends Model
     protected $fillable = [
         'ip', 'device_name', 'platform', 'wants', 'code',
         'state', 'denied_reason', 'expires_at', 'approved_at', 'token_id', 'plain_token',
+        'items_total', 'items_complete', 'items_failed', 'items_skipped',
+        'items_pending', 'bytes_complete', 'bytes_total', 'worker_alive', 'progress_state',
+        'progress_note', 'progress_at',
     ];
 
     protected function casts(): array
@@ -53,6 +56,8 @@ class TransferRequest extends Model
         return [
             'wants' => 'array',
             'expires_at' => 'datetime',
+            'progress_at' => 'datetime',
+            'worker_alive' => 'boolean',
             'approved_at' => 'datetime',
         ];
     }

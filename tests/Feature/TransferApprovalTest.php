@@ -180,6 +180,62 @@ class TransferApprovalTest extends TestCase
         $this->withToken($token)->deleteJson('/api/v1/transfer/requests/mine')->assertForbidden();
     }
 
+    public function test_a_receiver_can_report_its_progress(): void
+    {
+        $request = $this->pending();
+
+        app(TransferApprovals::class)->approve($request, User::factory()->create());
+
+        $this->withToken($request->fresh()->plain_token)
+            ->postJson('/api/v1/transfer/progress', [
+                'items_total' => 8309,
+                'items_complete' => 65,
+                'items_failed' => 5,
+                'bytes_complete' => 375809638,
+                'bytes_total' => 49712345678,
+                'state' => 'running',
+            ])
+            ->assertOk();
+
+        $request->refresh();
+
+        $this->assertSame(8309, $request->items_total);
+        $this->assertSame(65, $request->items_complete);
+        $this->assertSame('running', $request->progress_state);
+        $this->assertNotNull($request->progress_at, 'the time of the report is the signal that it is still alive');
+    }
+
+    public function test_progress_needs_a_transfer_token(): void
+    {
+        // An ordinary API token must not be able to write here: it would let
+        // any signed-in device rewrite what the page reports about a copy.
+        $token = User::factory()->create()->createToken('phone')->plainTextToken;
+
+        $this->withToken($token)
+            ->postJson('/api/v1/transfer/progress', ['items_complete' => 1])
+            ->assertForbidden();
+    }
+
+    public function test_a_receiver_can_only_report_its_own_progress(): void
+    {
+        // Which request this is comes from the token, never the body — the
+        // same rule as cancel(). A receiver cannot report about another.
+        $mine = $this->pending();
+        $theirs = $this->pending();
+
+        app(TransferApprovals::class)->approve($mine, User::factory()->create());
+
+        $this->withToken($mine->fresh()->plain_token)
+            ->postJson('/api/v1/transfer/progress', [
+                'items_complete' => 42,
+                'id' => $theirs->id,
+            ])
+            ->assertOk();
+
+        $this->assertSame(42, $mine->fresh()->items_complete);
+        $this->assertNull($theirs->fresh()->items_complete);
+    }
+
     public function test_a_files_only_transfer_can_read_the_manifest(): void
     {
         // The manifest *is* the list of files. Gating it behind `metadata`
