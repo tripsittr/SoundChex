@@ -451,7 +451,86 @@ class TransferReceiver
             return false;
         }
 
-        return $this->unpackDatabase($transfer, $temporary, $backup);
+        // Taken before the swap, because the swap destroys it. This
+        // transfer's row and its work list live in the database being
+        // replaced, so the arriving catalogue overwrites the record of the
+        // transfer that is fetching it — with the *source's* transfer
+        // bookkeeping, which describes copies the source was making and means
+        // nothing here.
+        $ourRecord = $this->recordOf($transfer);
+
+        if (! $this->unpackDatabase($transfer, $temporary, $backup)) {
+            return false;
+        }
+
+        $this->restoreRecord($ourRecord);
+
+        return true;
+    }
+
+    /**
+     * This transfer and its work list, as plain rows.
+     *
+     * @return array{transfer: array<string, mixed>, items: array<int, array<string, mixed>>}
+     */
+    private function recordOf(Transfer $transfer): array
+    {
+        return [
+            'transfer' => (array) \DB::table('transfers')->where('id', $transfer->id)->first(),
+            'items' => \DB::table('transfer_items')
+                ->where('transfer_id', $transfer->id)
+                ->get()
+                ->map(fn ($row) => (array) $row)
+                ->all(),
+        ];
+    }
+
+    /**
+     * Puts this transfer back into the catalogue that just replaced it.
+     *
+     * Without this the transfer cannot continue and cannot be resumed: the
+     * row carries the token, and the items are the work list — 8,309 of them
+     * for the transfer this was found on, all of which the import discarded
+     * before a single file had been fetched.
+     *
+     * Anything already occupying those ids came from the source and is its
+     * own record of its own transfers, so ours replaces it.
+     *
+     * @param array{transfer: array<string, mixed>, items: array<int, array<string, mixed>>} $record
+     */
+    private function restoreRecord(array $record): void
+    {
+        if ($record['transfer'] === []) {
+            return;
+        }
+
+        $id = $record['transfer']['id'];
+
+        try {
+            \DB::table('transfer_items')->where('transfer_id', $id)->delete();
+            \DB::table('transfers')->where('id', $id)->delete();
+
+            \DB::table('transfers')->insert($record['transfer']);
+
+            // In chunks: a full library is thousands of rows and SQLite has a
+            // limit on how many variables one statement may bind.
+            foreach (array_chunk($record['items'], 200) as $chunk) {
+                \DB::table('transfer_items')->insert($chunk);
+            }
+
+            Log::info('A transfer was carried across the catalogue it imported', [
+                'transfer' => $id,
+                'items' => count($record['items']),
+            ]);
+        } catch (\Throwable $e) {
+            // Said plainly: the catalogue is in place but the transfer cannot
+            // continue, and the reason is not something the next step can
+            // discover for itself.
+            Log::error('A transfer could not be carried across its own catalogue import', [
+                'transfer' => $id,
+                'reason' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
