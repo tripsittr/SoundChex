@@ -1,9 +1,9 @@
 # 026 — Files that can actually be placed
 
-**Merged** 2026-08-23 · **Issues** S-106, S-107, GitHub #34
+**Merged** 2026-08-23 · **Issues** S-106, GitHub #34
 
-Two faults found by a real 46.3 GB transfer, both costing individual files
-rather than stopping the run — and both permanent for the files they hit.
+One fault found by a real 46.3 GB transfer. It cost individual files rather
+than stopping the run, and was permanent for every file it hit.
 
 ## What changed
 
@@ -29,18 +29,6 @@ The fix above stops new ones. This recovers the ones already stranded: if the
 `.part` matches the expected size, it is verified and placed instead of
 re-requested.
 
-### Windows can open paths longer than 260 characters
-
-37 files in this library are longer than `MAX_PATH` — the longest is 382
-characters, a track credited to nine artists. They fail on open regardless of
-permissions, and it looks like a missing file rather than a name too long to
-say.
-
-The `\\?\` prefix lifts that limit without a registry change on the receiving
-machine. It is applied only to the filesystem call: `$item->path` and the
-catalogue keep the name they always had, so nothing needs reconciling
-afterwards. Absolute paths only, and a no-op everywhere but Windows.
-
 ## Worth knowing
 
 - No migration.
@@ -50,3 +38,16 @@ afterwards. Absolute paths only, and a no-op everywhere but Windows.
   directly and passed with the fix removed, because that method was never
   broken. It now drives `fetch()` against a fake that answers `416` — what a
   real server returns for a range past the end — so re-fetching fails it.
+
+## What was dropped before merging
+
+A third change added the `\\?\` prefix so Windows could open paths over
+`MAX_PATH`. It was written on a report that 37 files would fail on open — and
+that report was withdrawn after being tested rather than measured. Long paths
+already work on the receiving machine: a 416-character path opens fine there.
+
+Worse, the prefix **broke paths that worked**. PHP does not resolve `\\?\`
+and treats it as part of the filename, so five tests failed on Windows,
+including four core file-transfer ones that pass on `main`. It was invisible
+here because `longPath()` is a no-op off Windows — the exact asymmetry the
+review gate exists to catch.

@@ -201,33 +201,5 @@ class TransferPathTest extends TestCase
         @unlink($destination);
     }
 
-    public function test_long_paths_are_left_alone_off_windows(): void
-    {
-        // The prefix is a Windows filesystem call detail. Applying it anywhere
-        // else would break every path it touched.
-        $receiver = app(TransferReceiver::class);
-
-        $method = new \ReflectionMethod($receiver, 'longPath');
-        $method->setAccessible(true);
-
-        $path = '/Users/x/media/library/Music/' . str_repeat('a', 300) . '.mp3';
-
-        $this->assertSame(
-            PHP_OS_FAMILY === 'Windows' ? '\\\\?\\' . str_replace('/', '\\', $path) : $path,
-            $method->invoke($receiver, $path),
-        );
-    }
-
-    public function test_a_relative_path_never_takes_the_long_prefix(): void
-    {
-        // `\\?\` on a relative path resolves against the device namespace and
-        // would not mean the same thing.
-        $receiver = app(TransferReceiver::class);
-
-        $method = new \ReflectionMethod($receiver, 'longPath');
-        $method->setAccessible(true);
-
-        $this->assertSame('media/library/x.mp3', $method->invoke($receiver, 'media/library/x.mp3'));
-    }
 
 }
