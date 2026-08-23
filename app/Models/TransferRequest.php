@@ -81,7 +81,19 @@ class TransferRequest extends Model
      */
     public function publicState(): string
     {
-        if ($this->state === self::PENDING && $this->expires_at->isPast()) {
+        // An approved request that has run out of time reports as expired too,
+        // not merely a pending one.
+        //
+        // `isUsable()` already refuses it, so the source was right to answer
+        // 401 — but this told the receiver "approved", so it polled, believed
+        // it, and asked again with a token that could never work. A status
+        // that says approved while every request is refused is worse than no
+        // status.
+        //
+        // Denied and revoked keep their own names: a decision someone made is
+        // more use to whoever reads it than the clock running out.
+        if (in_array($this->state, [self::PENDING, self::APPROVED], true)
+            && $this->expires_at->isPast()) {
             return 'expired';
         }
 
