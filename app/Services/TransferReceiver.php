@@ -280,6 +280,13 @@ class TransferReceiver
     {
         $page = 1;
         $files = 0;
+
+        // Every item the source offered, refused ones included. The loop below
+        // stops when it has seen as many as the source said it had, and an
+        // item skipped for an unusable path is still one the source counted —
+        // measuring progress by what was *kept* means a single refusal asks
+        // for the same page for ever.
+        $seen = 0;
         $bytes = 0;
 
         do {
@@ -290,10 +297,27 @@ class TransferReceiver
             }
 
             foreach ($response->json('items', []) as $item) {
+                $seen++;
+
+                $path = $this->safePath($item['path'] ?? '');
+
+                // Not fetched rather than fetched somewhere else. A path this
+                // machine cannot place safely is not a file it should be
+                // writing at all.
+                if ($path === null) {
+                    Log::warning('A transfer item was skipped for an unusable path', [
+                        'transfer' => $transfer->id,
+                        'remote' => $item['id'] ?? null,
+                        'path' => $item['path'] ?? null,
+                    ]);
+
+                    continue;
+                }
+
                 TransferItem::updateOrCreate(
                     ['transfer_id' => $transfer->id, 'remote_id' => $item['id']],
                     [
-                        'path' => $item['path'],
+                        'path' => $path,
                         'expected_hash' => $item['hash'] ?? null,
                         'expected_bytes' => $item['bytes'] ?? 0,
                         'state' => TransferItem::PENDING,
@@ -306,7 +330,7 @@ class TransferReceiver
 
             $total = (int) $response->json('total', 0);
             $page++;
-        } while ($files < $total && $response->json('items') !== []);
+        } while ($seen < $total && $response->json('items') !== []);
 
         $transfer->forceFill([
             'total_files' => $files,
@@ -314,6 +338,49 @@ class TransferReceiver
         ])->save();
 
         return true;
+    }
+
+    /**
+     * Where a manifest entry may be written, or null if nowhere.
+     *
+     * The receiver writes whatever path the source sends, joined onto its own
+     * storage root. That trusted a remote machine with the location of a file
+     * on this one: `../../` walks out of the media folder, and an absolute
+     * path rebuilds the sender's filesystem inside it — which is what a real
+     * transfer did, 31 files into a mirror of `/Users/…/storage/app/private/`.
+     *
+     * A source running the current code sends a relative path already. One
+     * running older code sends its own absolute path, and the media root is
+     * the part of it that means anything here, so that much is recovered
+     * rather than refused — the alternative is a transfer that cannot run
+     * until both machines have been updated.
+     */
+    private function safePath(string $path): ?string
+    {
+        $normal = trim(str_replace('\\', '/', $path));
+
+        // Before anything else. No amount of trimming makes `..` safe, and a
+        // path is not worth rescuing if it was trying to leave.
+        foreach (explode('/', $normal) as $segment) {
+            if ($segment === '..') {
+                return null;
+            }
+        }
+
+        // The media root is what both machines have in common.
+        if (preg_match('#(?:^|/)(media/.+)$#', $normal, $match) === 1) {
+            $normal = $match[1];
+        }
+
+        // Anything still absolute — a drive letter, a leading slash, a UNC
+        // share — has no place under this machine's storage root.
+        if ($normal === ''
+            || str_starts_with($normal, '/')
+            || preg_match('#^[A-Za-z]:#', $normal) === 1) {
+            return null;
+        }
+
+        return $normal;
     }
 
     /**
@@ -464,8 +531,56 @@ class TransferReceiver
         }
 
         $this->restoreRecord($ourRecord);
+        $this->makeCataloguePathsRelative();
 
         return true;
+    }
+
+    /**
+     * Rewrites an imported catalogue's file paths to this machine's shape.
+     *
+     * A catalogue from another server carries that server's paths, and on the
+     * transfer this was written for they were absolute:
+     * `/Users/…/storage/app/private/media/…`. `MediaItem::absoluteFilePath()`
+     * returns an absolute path as-is when it is readable and null when it is
+     * not — and `/Users/…` is not readable on Windows — so **every item in the
+     * imported library resolved to nothing**. The files would have arrived and
+     * the catalogue would still not have found one of them.
+     *
+     * Only rows that cannot be read as they stand are touched, and only where
+     * the media root can be recovered from them, so a catalogue that already
+     * holds relative paths passes through untouched.
+     *
+     * @return int how many were rewritten
+     */
+    public function makeCataloguePathsRelative(): int
+    {
+        $changed = 0;
+
+        MediaItem::query()
+            ->whereNotNull('file_path')
+            ->select(['id', 'file_path'])
+            ->chunkById(500, function ($items) use (&$changed): void {
+                foreach ($items as $item) {
+                    $relative = $this->safePath((string) $item->file_path);
+
+                    if ($relative === null || $relative === $item->file_path) {
+                        continue;
+                    }
+
+                    MediaItem::whereKey($item->id)->update(['file_path' => $relative]);
+
+                    $changed++;
+                }
+            });
+
+        if ($changed > 0) {
+            Log::warning('An imported catalogue had its paths rewritten for this machine', [
+                'rewritten' => $changed,
+            ]);
+        }
+
+        return $changed;
     }
 
     /**

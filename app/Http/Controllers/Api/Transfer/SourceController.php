@@ -51,14 +51,25 @@ class SourceController extends Controller
                     return null;
                 }
 
+                // Relative, so the receiver files it under its own root rather
+                // than inheriting an absolute path from another machine.
+                //
+                // Derived rather than taken from `file_path`, which said this
+                // was already relative and was not: a real transfer sent
+                // `/Users/…/storage/app/private/media/…`, and the receiver
+                // joined that onto its own root and began rebuilding the
+                // source's entire filesystem inside its media folder.
+                $relative = $this->relativePath($path);
+
+                if ($relative === null) {
+                    return null;
+                }
+
                 return [
                     'id' => $item->id,
                     'type' => $item->type->value,
                     'title' => $item->title,
-                    // Relative, so the receiver files it under its own root
-                    // rather than inheriting an absolute path from another
-                    // machine — which on Windows would not even be valid.
-                    'path' => $item->file_path,
+                    'path' => $relative,
                     'hash' => $item->content_hash,
                     'bytes' => filesize($path),
                 ];
@@ -72,6 +83,31 @@ class SourceController extends Controller
             'total' => $total,
             'items' => $items,
         ]);
+    }
+
+    /**
+     * Where a file sits relative to this server's storage root.
+     *
+     * Null when it sits outside that root altogether — a watched folder
+     * somewhere else — because there is then no relative location to offer and
+     * inventing one would file it somewhere the receiver's catalogue does not
+     * point. Logged rather than dropped silently: a file that is never offered
+     * and never mentioned is the hardest kind of missing.
+     */
+    private function relativePath(string $absolute): ?string
+    {
+        $root = rtrim(str_replace('\\', '/', \Storage::path('')), '/') . '/';
+        $normal = str_replace('\\', '/', $absolute);
+
+        if (str_starts_with($normal, $root)) {
+            return substr($normal, strlen($root));
+        }
+
+        \Log::warning('A file outside the storage root was left out of the manifest', [
+            'path' => $absolute,
+        ]);
+
+        return null;
     }
 
     /**
