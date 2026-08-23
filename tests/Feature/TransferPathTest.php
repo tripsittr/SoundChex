@@ -202,4 +202,90 @@ class TransferPathTest extends TestCase
     }
 
 
+    public function test_a_large_file_is_asked_for_in_pieces(): void
+    {
+        // A 4.7 GB film could not transfer at all: six attempts and the .part
+        // never grew past its first. The connection gives out at about 34
+        // seconds however much is outstanding - 952 MB delivered 27 MB, and a
+        // 20 MB range completed in 28s - so each attempt now asks for a piece
+        // it can finish, and a piece that lands is progress that survives.
+        $asked = [];
+
+        Http::fake(function ($request) use (&$asked) {
+            $asked[] = $request->header('Range')[0] ?? null;
+
+            return Http::response(str_repeat('x', TransferReceiver::CHUNK_BYTES), 206);
+        });
+
+        $transfer = Transfer::create([
+            'source_url' => 'https://other.example',
+            'token' => 'test-token',
+            'wants' => ['files'],
+            'state' => Transfer::RUNNING,
+        ]);
+
+        $item = TransferItem::create([
+            'transfer_id' => $transfer->id,
+            'remote_id' => 11,
+            'path' => 'big-film.mp4',
+            'state' => TransferItem::PENDING,
+            'expected_bytes' => TransferReceiver::CHUNK_BYTES * 3,
+        ]);
+
+        @mkdir(dirname(Storage::path('big-film.mp4')), 0775, true);
+
+        app(TransferReceiver::class)->fetch($item->fresh());
+
+        $this->assertSame(
+            'bytes=0-' . (TransferReceiver::CHUNK_BYTES - 1),
+            $asked[0],
+            'the first request should be bounded, not open-ended',
+        );
+
+        $this->assertSame(
+            TransferItem::PENDING,
+            $item->fresh()->state,
+            'a file with more to come goes back in the queue rather than failing as short',
+        );
+
+        @unlink(Storage::path('big-film.mp4') . '.part');
+    }
+
+    public function test_a_small_file_still_arrives_in_one_request(): void
+    {
+        // The chunk size is a ceiling, not a quantum. Nothing under it should
+        // gain a round trip.
+        $asked = [];
+
+        Http::fake(function ($request) use (&$asked) {
+            $asked[] = $request->header('Range')[0] ?? null;
+
+            return Http::response('abcdefghij', 206);
+        });
+
+        $transfer = Transfer::create([
+            'source_url' => 'https://other.example',
+            'token' => 'test-token',
+            'wants' => ['files'],
+            'state' => Transfer::RUNNING,
+        ]);
+
+        $item = TransferItem::create([
+            'transfer_id' => $transfer->id,
+            'remote_id' => 12,
+            'path' => 'small.mp3',
+            'state' => TransferItem::PENDING,
+            'expected_bytes' => 10,
+            'expected_hash' => hash(TransferReceiver::HASH, 'abcdefghij'),
+        ]);
+
+        @mkdir(dirname(Storage::path('small.mp3')), 0775, true);
+
+        $this->assertTrue(app(TransferReceiver::class)->fetch($item->fresh()));
+        $this->assertCount(1, $asked, 'a small file should take one request');
+        $this->assertSame(TransferItem::COMPLETE, $item->fresh()->state);
+
+        @unlink(Storage::path('small.mp3'));
+    }
+
 }

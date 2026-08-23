@@ -27,6 +27,17 @@ class TransferReceiver
      */
     public const HASH = 'xxh128';
 
+    /**
+     * How much to ask for in one request.
+     *
+     * Sized against what the link can actually finish, not against what the
+     * file is: the connection gives out at roughly 34 seconds regardless of
+     * the range asked for, and 20 MB completed in 28. Smaller means more
+     * round trips on a slow link; larger means a 4.7 GB film that never
+     * arrives at all, which is where this started.
+     */
+    public const CHUNK_BYTES = 20 * 1024 * 1024;
+
     /** Asks a server for permission, and records what it said. */
     public function request(Transfer $transfer): bool
     {
@@ -528,8 +539,28 @@ class TransferReceiver
                 return $this->verifyAndPlace($item, $temporary, $destination);
             }
 
+            // Asked for in bounded pieces rather than "everything from here".
+            //
+            // A 4.7 GB film could not transfer at all: six attempts, and the
+            // `.part` never grew past its first. Measured against the real
+            // link, the connection dies at about 34 seconds however much is
+            // outstanding — 952 MB delivered 27 MB, a 50 MB range delivered
+            // 25 MB, and a 20 MB range completed in 28s. It is a time limit
+            // on the connection, not a size limit on the range, and the same
+            // request served locally delivers all 952 MB.
+            //
+            // So each attempt asks for a piece it can finish inside that
+            // window, and a piece that arrives is progress that survives.
+            $end = $item->expected_bytes > 0
+                ? min($from + self::CHUNK_BYTES, (int) $item->expected_bytes) - 1
+                : null;
+
+            $range = $end !== null
+                ? "bytes={$from}-{$end}"
+                : ($from > 0 ? "bytes={$from}-" : null);
+
             $response = $this->http()->withToken($transfer->token)
-                ->withHeaders($from > 0 ? ['Range' => "bytes={$from}-"] : [])
+                ->withHeaders($range !== null ? ['Range' => $range] : [])
                 ->timeout(600)
                 ->sink($from > 0 ? fopen($temporary, 'ab') : $temporary)
                 ->get($this->url($transfer, 'transfer/file/' . $item->remote_id));
@@ -563,6 +594,22 @@ class TransferReceiver
         // `importDatabase()` already did this for the catalogue archive. The
         // per-file path did not, which is the same bug one layer down.
         $this->releaseSink($response);
+
+        // More to come. A chunk that lands is progress, not a short file, so
+        // the item goes back in the queue rather than being verified against a
+        // length it was never going to reach yet. `attempts` is not counted
+        // against it either — this is one file arriving in pieces, not one
+        // file failing repeatedly.
+        if ($item->expected_bytes > 0 && is_file($temporary)
+            && filesize($temporary) < (int) $item->expected_bytes) {
+            $item->forceFill([
+                'state' => TransferItem::PENDING,
+                'attempts' => max(0, $item->attempts - 1),
+                'bytes_received' => filesize($temporary),
+            ])->save();
+
+            return true;
+        }
 
         return $this->verifyAndPlace($item, $temporary, $destination);
     }
