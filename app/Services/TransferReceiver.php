@@ -1106,15 +1106,29 @@ class TransferReceiver
      * binary, force that bundle so transfer requests do not fail with
      * "unable to get local issuer certificate".
      */
+    /**
+     * How long to wait for the other machine to answer the phone.
+     *
+     * The default is ten seconds, and three failures in one transfer were
+     * `cURL error 28: Connection timed out after 10014 milliseconds` — two of
+     * them while the source was up and thirty-one other files were arriving
+     * fine. Both machines were on a *relayed* tailnet rather than a direct
+     * connection, which is slower to establish and occasionally slower than
+     * ten seconds.
+     *
+     * Only the connection. The request timeouts are unchanged, because a
+     * server that has accepted a connection and then gone quiet is a
+     * different problem and should still be given up on.
+     */
+    private const CONNECT_SECONDS = 30;
+
     private function http(): \Illuminate\Http\Client\PendingRequest
     {
         $ca = $this->caBundlePath();
 
-        if (filled($ca)) {
-            return Http::withOptions(['verify' => $ca]);
-        }
-
-        return Http::withOptions(['verify' => true]);
+        return Http::withOptions([
+            'verify' => filled($ca) ? $ca : true,
+        ])->connectTimeout(self::CONNECT_SECONDS);
     }
 
     private function caBundlePath(): ?string
