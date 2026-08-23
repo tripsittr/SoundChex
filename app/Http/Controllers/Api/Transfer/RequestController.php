@@ -173,13 +173,24 @@ class RequestController extends Controller
 
         abort_unless($transferRequest !== null, 403, 'Not a transfer token.');
 
+        // Matching authorizeTransfer(). Nothing unusable can reach here as the
+        // code stands: revoking destroys the token, and approval mints the
+        // Sanctum token with the same `$expires_at` written to the row, so the
+        // two die in the same instant.
+        //
+        // That is a property of two other files, not of this one. If either
+        // stops holding — an approval extended without re-minting, a
+        // revocation that only marks the row — this endpoint would begin
+        // accepting writes from a transfer that is over, and nothing here
+        // would have changed to say so.
+        abort_unless($transferRequest->isUsable(), 403, 'This transfer is no longer approved.');
+
         $data = $request->validate([
             'items_total' => ['nullable', 'integer', 'min:0'],
             'items_complete' => ['nullable', 'integer', 'min:0'],
             'items_failed' => ['nullable', 'integer', 'min:0'],
             'items_skipped' => ['nullable', 'integer', 'min:0'],
             'items_pending' => ['nullable', 'integer', 'min:0'],
-            'worker_alive' => ['nullable', 'boolean'],
             'bytes_complete' => ['nullable', 'integer', 'min:0'],
             'bytes_total' => ['nullable', 'integer', 'min:0'],
             'state' => ['nullable', 'string', 'max:40'],
@@ -194,10 +205,6 @@ class RequestController extends Controller
             'items_pending' => $data['items_pending'] ?? null,
             'bytes_complete' => $data['bytes_complete'] ?? null,
             'bytes_total' => $data['bytes_total'] ?? null,
-            // A dead worker is indistinguishable from a stalled transfer
-            // from outside, and cost half an hour today before anyone thought
-            // to check. Reported rather than inferred.
-            'worker_alive' => $data['worker_alive'] ?? null,
             'progress_state' => $data['state'] ?? null,
             'progress_note' => $data['note'] ?? null,
             'progress_at' => now(),

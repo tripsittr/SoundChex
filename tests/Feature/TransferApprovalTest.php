@@ -261,6 +261,27 @@ class TransferApprovalTest extends TestCase
         $this->assertNotNull($request->progress_at, 'the time of the report is the signal that it is still alive');
     }
 
+    public function test_an_expired_transfer_cannot_report_progress(): void
+    {
+        // Today this cannot happen: approval mints the Sanctum token with the
+        // same expiry it writes to the row, so both die together. This forces
+        // the row past its expiry while the token still stands — the state the
+        // app would reach if those two ever stopped sharing one value — and
+        // asserts the endpoint refuses it on its own account rather than
+        // relying on the token to have died.
+        $request = $this->pending();
+
+        app(TransferApprovals::class)->approve($request, User::factory()->create());
+
+        $token = $request->fresh()->plain_token;
+
+        $request->fresh()->forceFill(['expires_at' => now()->subMinute()])->save();
+
+        $this->withToken($token)
+            ->postJson('/api/v1/transfer/progress', ['items_complete' => 1])
+            ->assertForbidden();
+    }
+
     public function test_progress_needs_a_transfer_token(): void
     {
         // An ordinary API token must not be able to write here: it would let
