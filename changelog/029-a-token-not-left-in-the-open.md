@@ -28,14 +28,20 @@ reject it says anything.
 no token. An unapproved request discloses nothing either way, which is the
 property the original design was protecting.
 
-### It does not invalidate a transfer already running
+### Default deny, including for requests that predate the column
 
-A request with no `claim_hash` is one made before this existed and is answered
-as it always was. That exception empties itself, because `store()` records a
-claim for every new request.
+The first version of this let a claim-less request through, so as not to break
+a 46.3 GB copy that was running at the time.
 
-This mattered concretely: a 46.3 GB copy was 786 files in when the fix was
-written, and a change that invalidated its request would have cost the lot.
+That was wrong, and `a5` rejected it. The leaking request had no `claim_hash` —
+it predated the column by a day — so the exception protected precisely the
+request the issue was filed about, and a test asserted it stayed that way. The
+change would have closed nothing while appearing to.
+
+It also bought nothing. `poll()` has one caller, the admin page's button, and a
+running job uses the token already on its row, so removing the exception cannot
+interrupt a copy in flight. Both machines had traced that before the exception
+was written.
 
 ## Worth knowing
 
