@@ -61,5 +61,12 @@ export default defineConfig({
         url: 'http://127.0.0.1:8199/index.html',
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,
+    }, {
+        // Stands in for the other machine in a transfer. See the file itself
+        // for why this server cannot play that part.
+        command: 'node tests/e2e/stub-source-server.js',
+        url: 'http://127.0.0.1:8198/',
+        reuseExistingServer: !process.env.CI,
+        timeout: 30_000,
     }],
 });
