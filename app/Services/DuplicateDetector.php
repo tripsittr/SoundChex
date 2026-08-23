@@ -76,9 +76,11 @@ class DuplicateDetector
     /**
      * Flags an item if an earlier one holds identical bytes.
      *
-     * The older row is treated as the original purely because it was
-     * catalogued first — with identical content there's no better criterion,
-     * and it keeps the choice stable across runs.
+     * A filed copy is treated as the original, and the oldest row only when
+     * none of them is filed. There *is* a better criterion than arrival order:
+     * the organiser put a copy in `media/library/` deliberately and the rest of
+     * the catalogue points into that tree, so it is the copy everything else
+     * expects to still be there. Both rules are stable across runs.
      *
      * @return MediaItem|null The original, when this item is a duplicate.
      */
@@ -100,7 +102,7 @@ class DuplicateDetector
             return null;
         }
 
-        $original = MediaItem::query()
+        $candidates = MediaItem::query()
             ->where('content_hash', $hash)
             ->where('id', '!=', $item->id)
             // Same type only: a cover image and an audio file could in
@@ -110,7 +112,17 @@ class DuplicateDetector
             // somebody else's original.
             ->whereNull('duplicate_of_id')
             ->orderBy('id')
-            ->first();
+            ->get();
+
+        // A filed copy outranks a loose one, whatever order they arrived in.
+        //
+        // The oldest row used to win outright, which decides which real file
+        // gets deleted — and a loose copy catalogued first would survive while
+        // the one the organiser had deliberately filed was removed. The
+        // catalogue's other rows point into the filed tree, so that is the
+        // copy everything else expects to still be there.
+        $original = $candidates->first(fn (MediaItem $c) => $this->isFiled($c))
+            ?? $candidates->first();
 
         if ($original === null) {
             return null;
@@ -200,6 +212,21 @@ class DuplicateDetector
         $duplicate->forceFill([
             'duplicate_status' => DuplicateStatus::Kept,
         ])->saveQuietly();
+    }
+
+    /**
+     * Whether this copy sits in the filed tree rather than loose.
+     *
+     * Both separators, because the organiser writes `media\library\…` on
+     * Windows and `media/library/…` everywhere else — see S-86. Matching only
+     * one would quietly make every Windows copy look loose, and on that
+     * machine the preference above would do nothing at all.
+     */
+    private function isFiled(MediaItem $item): bool
+    {
+        $path = str_replace('\\', '/', (string) $item->file_path);
+
+        return str_contains($path, 'media/library/');
     }
 
     /**
