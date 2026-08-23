@@ -21,13 +21,59 @@ test.describe('playback across a full page load', () => {
         await appReady(page, { rows: true });
     });
 
+    /**
+     * Starts playback and waits for the clock to actually move.
+     *
+     * `currentTime > 6` is the assertion on purpose: `paused: false` and
+     * `readyState: 4` are exactly what a player reports when it is stuck, so
+     * anything weaker would pass on a silent one.
+     *
+     * On failure it says what the element was doing rather than only that it
+     * did not reach six. These specs spent a night frozen at `0.02322` — one
+     * 1024-sample buffer at 44.1 kHz — and every hypothesis had to be paid for
+     * with a fresh run because the failure itself carried no evidence. Three
+     * were wrong. If it comes back, this makes the next report the last one.
+     */
     const startPlaying = async (page) => {
         await page.locator('li[data-long-press-menu] button[data-play]').first().click();
 
-        await expect.poll(
-            () => page.evaluate(() => window.soundchexPlayer?.el?.currentTime ?? 0),
-            { message: 'playback has actually started', timeout: 15000 },
-        ).toBeGreaterThan(6);
+        const state = () => page.evaluate(() => {
+            const el = window.soundchexPlayer?.el;
+
+            if (!el) return { player: false };
+
+            return {
+                currentTime: el.currentTime,
+                paused: el.paused,
+                readyState: el.readyState,
+                networkState: el.networkState,
+                error: el.error?.code ?? null,
+                duration: el.duration,
+                buffered: el.buffered.length ? el.buffered.end(0) : 0,
+                playbackRate: el.playbackRate,
+                muted: el.muted,
+                volume: el.volume,
+                // Which source it settled on. A blob means the downloaded copy
+                // was swapped in; the network one means it was not.
+                isBlob: (el.currentSrc || '').startsWith('blob:'),
+                localSourceUrl: window.soundchexPlayer?.localSourceUrl ?? null,
+            };
+        });
+
+        try {
+            await expect.poll(
+                async () => (await state()).currentTime ?? 0,
+                { message: 'playback has actually started', timeout: 15000 },
+            ).toBeGreaterThan(6);
+        } catch (failure) {
+            // Attached rather than thrown away: a stationary clock and a
+            // stalled decoder look identical from the assertion alone.
+            const frozen = await state();
+
+            throw new Error(
+                `playback did not advance past 6s. Element reported: ${JSON.stringify(frozen)}\n\n${failure.message}`,
+            );
+        }
     };
 
     test('the queue and position survive into the reader', async ({ page }) => {
