@@ -98,6 +98,12 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/profiles', [TransferSourceController::class, 'profiles'])
                 ->name('api.transfer.profiles');
 
+            // Calling it off from the receiving end. Which request that is
+            // comes from the token rather than the URL, so a receiver can
+            // only end its own — see RequestController::cancel().
+            Route::delete('/requests/mine', [TransferRequestController::class, 'cancel'])
+                ->name('api.transfer.cancel');
+
             // Streaming, so not throttled with the rest — a transfer is
             // thousands of these by design.
             Route::get('/file/{item}', [TransferSourceController::class, 'file'])
