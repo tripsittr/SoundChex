@@ -56,6 +56,30 @@ class TransferErrorMessagesTest extends TestCase
         );
     }
 
+    public function test_it_waits_longer_than_the_default_for_a_relayed_connection(): void
+    {
+        // Three failures in one real transfer were "Connection timed out after
+        // 10014 milliseconds" — the ten-second default — two of them while the
+        // source was up and 31 other files were arriving. A relayed tailnet is
+        // slower to connect than a direct one.
+        // Asserted on the option rather than on behaviour: observing it
+        // otherwise needs a server that accepts slowly, which a test cannot
+        // conjure and a fake cannot represent.
+        $http = new \ReflectionMethod(TransferReceiver::class, 'http');
+        $http->setAccessible(true);
+
+        $pending = $http->invoke(app(TransferReceiver::class));
+
+        $options = new \ReflectionProperty($pending, 'options');
+        $options->setAccessible(true);
+
+        $this->assertSame(
+            30,
+            $options->getValue($pending)['connect_timeout'] ?? null,
+            'The transfer client is back on the ten-second default.',
+        );
+    }
+
     public function test_anything_unrecognised_is_passed_through(): void
     {
         // Better a raw message than a wrong guess at what it means.
