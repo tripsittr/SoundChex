@@ -126,10 +126,16 @@ class RequestController extends Controller
 
         abort_unless($transferRequest !== null, 403, 'Not a transfer token.');
 
-        // Matching authorizeTransfer(). Revoking deletes the token, so in
-        // practice an unusable request cannot reach here — but resting on that
-        // makes this correct by side effect rather than by rule, and an
-        // expired request keeps its token until Sanctum expires it.
+        // Matching authorizeTransfer(). Nothing unusable can reach here as the
+        // code stands: revoking destroys the token, and approval mints the
+        // Sanctum token with the same `$expires_at` written to the row, so the
+        // two die in the same instant.
+        //
+        // That is a property of two other files, not of this one. If either
+        // stops holding — an approval extended without re-minting, a
+        // revocation that only marks the row — this endpoint would begin
+        // accepting writes from a transfer that is over, and nothing here
+        // would have changed to say so.
         abort_unless($transferRequest->isUsable(), 403, 'This transfer is no longer approved.');
 
         $data = $request->validate([

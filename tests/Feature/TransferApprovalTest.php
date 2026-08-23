@@ -207,9 +207,12 @@ class TransferApprovalTest extends TestCase
 
     public function test_an_expired_transfer_cannot_report_progress(): void
     {
-        // Revoking deletes the token, so revocation is covered either way. An
-        // expired request is the case that is not: its token stays valid until
-        // Sanctum expires it, and without this check it could still write.
+        // Today this cannot happen: approval mints the Sanctum token with the
+        // same expiry it writes to the row, so both die together. This forces
+        // the row past its expiry while the token still stands — the state the
+        // app would reach if those two ever stopped sharing one value — and
+        // asserts the endpoint refuses it on its own account rather than
+        // relying on the token to have died.
         $request = $this->pending();
 
         app(TransferApprovals::class)->approve($request, User::factory()->create());
