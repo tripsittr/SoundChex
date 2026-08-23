@@ -7,6 +7,7 @@ use App\Models\TransferItem;
 use App\Services\TransferReceiver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -160,4 +161,45 @@ class TransferPathTest extends TestCase
 
         return TransferItem::where('transfer_id', $transfer->id)->value('path');
     }
+    public function test_a_complete_part_file_is_placed_rather_than_refetched(): void
+    {
+        // Driven through fetch(), not verifyAndPlace(), because the fix lives
+        // in fetch(). Asserting on verifyAndPlace alone passed with the fix
+        // removed — the test exercised code that was never broken.
+        //
+        // The fake answers any file request with 416, which is what a real
+        // server returns for a range starting past the end. So if fetch()
+        // re-requests instead of placing what is already there, this fails.
+        Http::fake([
+            '*/transfer/file/*' => Http::response('range not satisfiable', 416),
+        ]);
+
+        $transfer = Transfer::create([
+            'source_url' => 'https://other.example',
+            'token' => 'test-token',
+            'wants' => ['files'],
+            'state' => Transfer::RUNNING,
+        ]);
+
+        $item = TransferItem::create([
+            'transfer_id' => $transfer->id,
+            'remote_id' => 7,
+            'path' => 'complete-part.mp3',
+            'state' => TransferItem::PENDING,
+            'expected_bytes' => 10,
+            'expected_hash' => hash(TransferReceiver::HASH, 'abcdefghij'),
+        ]);
+
+        $destination = Storage::path('complete-part.mp3');
+        @mkdir(dirname($destination), 0775, true);
+        file_put_contents($destination . '.part', 'abcdefghij');
+
+        $this->assertTrue(app(TransferReceiver::class)->fetch($item->fresh()));
+        $this->assertFileExists($destination);
+        $this->assertFileDoesNotExist($destination . '.part');
+
+        @unlink($destination);
+    }
+
+
 }

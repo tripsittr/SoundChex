@@ -451,6 +451,16 @@ class TransferReceiver
             // film continues where it stopped.
             $from = is_file($temporary) ? filesize($temporary) : 0;
 
+            // A `.part` that is already the whole file needs placing, not
+            // fetching. This is what the released-handle bug left behind on
+            // Windows: the bytes all arrived and only the move failed, so
+            // re-requesting from EOF would ask for a range past the end and be
+            // refused. Every one of those names was otherwise unreachable for
+            // good.
+            if ($item->expected_bytes > 0 && $from === (int) $item->expected_bytes) {
+                return $this->verifyAndPlace($item, $temporary, $destination);
+            }
+
             $response = $this->http()->withToken($transfer->token)
                 ->withHeaders($from > 0 ? ['Range' => "bytes={$from}-"] : [])
                 ->timeout(600)
@@ -476,6 +486,16 @@ class TransferReceiver
 
             return false;
         }
+
+        // Before the file is touched. The sink holds an open handle on
+        // `$temporary`, and Windows refuses to move or reopen a file another
+        // handle still has — the download completes, every byte arrives, and
+        // the placement fails with "Permission denied". The name is then
+        // poisoned: the `.part` is left behind and that file can never arrive.
+        //
+        // `importDatabase()` already did this for the catalogue archive. The
+        // per-file path did not, which is the same bug one layer down.
+        $this->releaseSink($response);
 
         return $this->verifyAndPlace($item, $temporary, $destination);
     }
