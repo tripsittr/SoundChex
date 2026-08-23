@@ -39,6 +39,25 @@ re-requested.
   broken. It now drives `fetch()` against a fake that answers `416` — what a
   real server returns for a range past the end — so re-fetching fails it.
 
+## The suite does not cover the sink release
+
+Worth stating plainly so nobody later reads a green run as proof of it.
+
+`Http::fake()` writes its sinks with `file_put_contents()`, which closes the
+handle immediately — so the open-handle condition this fixes cannot occur under
+test. Removing `releaseSink($response)` from `fetch()` leaves the whole suite
+green on both machines.
+
+The evidence for it is a probe on real data, not a test:
+
+```
+File.Exists       : true      Directory listing : present, 6,593,713 bytes
+PHP is_file()     : false     File.Open         : UnauthorizedAccessException
+```
+
+The file downloaded completely and could not be placed. The complete-`.part`
+recovery beside it *is* covered — removing that one turns a test red.
+
 ## What was dropped before merging
 
 A third change added the `\\?\` prefix so Windows could open paths over
