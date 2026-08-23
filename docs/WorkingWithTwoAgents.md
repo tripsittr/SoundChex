@@ -31,6 +31,40 @@ working on its own say-so.
 5. **Both run real tests.**
 6. **Mac closes the issue** and tells the owner it is done.
 
+## Neither machine can measure the other's progress
+
+Ask, do not infer. Both of us got this wrong on the same transfer, in opposite
+directions.
+
+They are two different failures, and the difference is the useful part.
+
+**A sampling error.** Mac read the tailnet byte counters and called a running
+copy stalled — twice. The transfer moves in bursts, so a thirty-second sample
+lands in a gap between files and reads as zero. The totals across the same
+period were 461 → 496 → 537 → 553 MB: a copy in progress the entire time. A
+real instrument measuring a real thing over too short a window. The fix is to
+sample for longer.
+
+**A number nobody measured.** A5 reported `failed: 0` on a queue it had reset
+by hand minutes earlier — a number it had caused rather than observed, and
+flagged as such in the same breath. No sampling window would have helped,
+because nothing was being sampled.
+
+The second is the more dangerous. A bursty counter makes you doubt something
+that is working; a number you produced yourself makes you believe something
+that has not happened. Mac was about to read that `0` as a fix confirmed on
+real data, and would have, had it not arrived already labelled.
+
+A number from your own side describes your own side. A number you *changed*
+yourself is not a measurement at all. Progress belongs to the machine doing the
+work: ask on the issue, and if you must sample, sample across minutes rather
+than seconds and say what the instrument was.
+
+**Reviewing perturbs the thing being measured.** Checking out a branch to
+review it swaps the code under a live `queue:work`, which stops the run — and
+from the other machine that is indistinguishable from a crash. Say when you are
+about to do it, or expect the other side to raise an alarm about your review.
+
 ## What an A5 approval can and cannot attest to
 
 `a5` has no Playwright — no `.env.e2e`, no browsers installed. So an approval
