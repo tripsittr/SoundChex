@@ -15,10 +15,43 @@ use Tests\TestCase;
  * holding play history, playlists and profiles — none of which rescanning can
  * rebuild. So the failures worth testing are the ones that would replace it
  * with something wrong.
+ *
+ * Most of these run against a scratch database file rather than `:memory:`.
+ * On `:memory:` the import stops at "no database file to replace" before it
+ * reaches anything else, which is how the refusal below used to pass without
+ * ever running the check it was named for.
  */
 class TransferDatabaseImportTest extends TestCase
 {
     use RefreshDatabase;
+
+    /** A scratch storage root, so nothing here writes into the real one. */
+    private string $storage;
+
+    /** A scratch catalogue, standing in for the one that would be replaced. */
+    private string $catalogue;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->storage = sys_get_temp_dir() . '/soundchex-transfer-' . bin2hex(random_bytes(6));
+
+        mkdir($this->storage . '/app/backups', 0775, true);
+
+        $this->app->useStoragePath($this->storage);
+
+        $this->catalogue = $this->storage . '/scratch-catalogue.sqlite';
+
+        file_put_contents($this->catalogue, 'SQLite format 3' . "\0" . 'the existing catalogue');
+    }
+
+    protected function tearDown(): void
+    {
+        $this->deleteDirectory($this->storage);
+
+        parent::tearDown();
+    }
 
     public function test_it_refuses_anything_that_is_not_a_database(): void
     {
@@ -27,13 +60,39 @@ class TransferDatabaseImportTest extends TestCase
         // be discovered only afterwards.
         Http::fake(['*/transfer/database*' => Http::response(gzencode('<html>Please sign in</html>'))]);
 
+        $this->useScratchCatalogue();
+
         $transfer = $this->transfer();
 
         $this->assertFalse(app(TransferReceiver::class)->importDatabase($transfer));
 
-        // Refused, and this instance is still readable — which is the point.
-        $this->assertNotNull(Transfer::find($transfer->id));
-        $this->assertNotNull($transfer->fresh()->last_error);
+        $this->assertStringContainsString('not a database', $transfer->fresh()->last_error);
+
+        // The existing catalogue is untouched, which is the whole point.
+        $this->assertStringContainsString('the existing catalogue', file_get_contents($this->catalogue));
+    }
+
+    public function test_a_real_catalogue_is_put_in_place_and_the_old_one_kept(): void
+    {
+        // The success path, so the refusal above is known to be a refusal
+        // rather than the import never working at all.
+        $arriving = 'SQLite format 3' . "\0" . 'the catalogue from the other machine';
+
+        Http::fake(['*/transfer/database*' => Http::response(gzencode($arriving))]);
+
+        $this->useScratchCatalogue();
+
+        $transfer = $this->transfer();
+
+        $this->assertTrue(app(TransferReceiver::class)->importDatabase($transfer));
+        $this->assertSame($arriving, file_get_contents($this->catalogue));
+
+        // Play history, playlists and profiles are not rebuildable, so the
+        // one that was replaced is still on disk.
+        $backups = glob($this->storage . '/app/backups/before-transfer-*.sqlite');
+
+        $this->assertNotEmpty($backups, 'The replaced catalogue was not backed up.');
+        $this->assertStringContainsString('the existing catalogue', file_get_contents($backups[0]));
     }
 
     public function test_it_refuses_when_there_is_no_database_file_to_replace(): void
@@ -63,6 +122,64 @@ class TransferDatabaseImportTest extends TestCase
         $this->assertStringContainsString('403', $transfer->fresh()->last_error);
     }
 
+    public function test_a_failure_records_what_the_server_said(): void
+    {
+        // The status code on its own sent someone to the other machine's log
+        // to find out what "500" meant. The body had said, and was discarded.
+        Http::fake([
+            '*/transfer/database*' => Http::response(
+                json_encode(['message' => 'gzopen(): could not make seekable']),
+                500,
+            ),
+        ]);
+
+        $transfer = $this->transfer();
+
+        $this->assertFalse(app(TransferReceiver::class)->importDatabase($transfer));
+
+        $error = $transfer->fresh()->last_error;
+
+        $this->assertStringContainsString('500', $error);
+        $this->assertStringContainsString('could not make seekable', $error);
+    }
+
+    public function test_each_transfer_downloads_into_its_own_file(): void
+    {
+        // One shared name meant a single archive left behind — or left in a
+        // delete-pending state by an unclosed handle — failed every transfer
+        // after it with a permission error, before it had asked the source
+        // for anything.
+        $receiver = app(TransferReceiver::class);
+
+        $this->assertNotSame(
+            $receiver->archivePath($this->transfer()),
+            $receiver->archivePath($this->transfer()),
+        );
+    }
+
+    public function test_a_failed_download_leaves_no_archive_behind(): void
+    {
+        Http::fake(['*/transfer/database*' => Http::response('nope', 500)]);
+
+        $transfer = $this->transfer();
+
+        $this->assertFalse(app(TransferReceiver::class)->importDatabase($transfer));
+
+        $this->assertFileDoesNotExist(app(TransferReceiver::class)->archivePath($transfer));
+    }
+
+    /**
+     * Points the connection's configured path at the scratch catalogue.
+     *
+     * Config only: the connection Eloquent is already using stays `:memory:`,
+     * so the harness is untouched while the code under test reads a real file
+     * — which is the only way to reach the checks that come after it.
+     */
+    private function useScratchCatalogue(): void
+    {
+        config(['database.connections.' . config('database.default') . '.database' => $this->catalogue]);
+    }
+
     private function transfer(): Transfer
     {
         return Transfer::create([
@@ -71,5 +188,24 @@ class TransferDatabaseImportTest extends TestCase
             'wants' => ['metadata'],
             'state' => Transfer::RUNNING,
         ]);
+    }
+
+    private function deleteDirectory(string $directory): void
+    {
+        if (! is_dir($directory)) {
+            return;
+        }
+
+        foreach (scandir($directory) as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $path = $directory . '/' . $entry;
+
+            is_dir($path) ? $this->deleteDirectory($path) : @unlink($path);
+        }
+
+        @rmdir($directory);
     }
 }

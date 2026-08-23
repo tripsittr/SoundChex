@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { signIn } from './helpers.js';
+import { ACCOUNT, signIn } from './helpers.js';
 
 /**
  * Moving a library between machines.
@@ -44,6 +44,38 @@ test.describe('server transfer', () => {
         await expect(page.getByText('Windows Box').first()).toBeVisible();
         await expect(page.getByText(request.code).first()).toBeVisible();
         await expect(page.getByText(/the catalogue, the media files/i).first()).toBeVisible();
+    });
+
+    test('a transfer can be cancelled and then cleared from the list', async ({ page }) => {
+        // Cancelling is not pausing: pausing leaves the request approved and
+        // the token live on the other machine. The row is created before the
+        // source is contacted, so an address that answers nothing still
+        // produces a transfer to cancel — which is the state this is about.
+        await page.goto('/admin/server-transfer');
+
+        await page.fill('input[wire\\:model="sourceUrl"]', 'http://127.0.0.1:9');
+        await page.fill('input[type="password"]', ACCOUNT.password);
+        await page.getByRole('button', { name: /^Ask/ }).first().click();
+
+        const row = page.getByText('http://127.0.0.1:9').first();
+        await expect(row).toBeVisible({ timeout: 15000 });
+
+        // Delete is refused while one is running, so both buttons are here
+        // for a transfer that never started.
+        const cancel = page.getByRole('button', { name: 'Cancel' }).first();
+        await expect(cancel).toBeVisible();
+
+        page.once('dialog', (dialog) => dialog.accept());
+        await cancel.click();
+
+        await expect(page.getByText(/cancelled/i).first()).toBeVisible({ timeout: 15000 });
+
+        page.once('dialog', (dialog) => dialog.accept());
+        await page.getByRole('button', { name: 'Delete' }).first().click();
+
+        // Gone from the list rather than merely marked, which is what
+        // "clean it up" has to mean.
+        await expect(page.getByText('http://127.0.0.1:9')).toHaveCount(0, { timeout: 15000 });
     });
 
     test('approving needs the password', async ({ page }) => {

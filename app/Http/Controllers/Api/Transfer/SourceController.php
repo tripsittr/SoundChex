@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MediaItem;
 use App\Models\Profile;
 use App\Models\TransferRequest;
+use App\Services\CatalogueArchive;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -114,6 +115,10 @@ class SourceController extends Controller
         // extension.
         $snapshot = tempnam(sys_get_temp_dir(), 'soundchex-db-');
 
+        // A full temp directory returns false here, and passing that on gives
+        // a copy() failure whose message says nothing about the cause.
+        abort_if($snapshot === false, 503, 'This server has nowhere to stage the catalogue.');
+
         \DB::statement('PRAGMA wal_checkpoint(TRUNCATE)');
         copy($source, $snapshot);
 
@@ -124,17 +129,11 @@ class SourceController extends Controller
         // got a 500 where the catalogue should have been. Compressing to disk
         // first costs a few seconds and a few megabytes, against a database
         // that shrinks 24 MB to 3.6.
-        $archive = $snapshot . '.gz';
+        //
+        // In CatalogueArchive rather than inline so the test for it calls this
+        // code instead of a copy of it.
+        $archive = app(CatalogueArchive::class)->compress($snapshot);
 
-        $in = fopen($snapshot, 'rb');
-        $out = gzopen($archive, 'wb6');
-
-        while (! feof($in)) {
-            gzwrite($out, fread($in, 1024 * 512));
-        }
-
-        fclose($in);
-        gzclose($out);
         @unlink($snapshot);
 
         return response()->stream(function () use ($archive): void {

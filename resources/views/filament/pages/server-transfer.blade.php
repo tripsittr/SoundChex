@@ -174,6 +174,32 @@
                                         Resume
                                     </x-filament::button>
                                 @endif
+
+                                {{-- Cancelling ends the request on the other machine too, which
+                                     pausing deliberately does not. --}}
+                                @if (in_array($transfer['state'], ['requested', 'approved', 'running', 'paused'], true))
+                                    <x-filament::button
+                                        wire:click="cancel({{ $transfer['id'] }})"
+                                        wire:confirm="Stop this transfer here and on the other server?"
+                                        color="danger"
+                                        size="sm"
+                                    >
+                                        Cancel
+                                    </x-filament::button>
+                                @endif
+
+                                {{-- Refused while running, so clearing the list cannot be a way
+                                     to abandon a transfer half way. --}}
+                                @if ($transfer['state'] !== 'running')
+                                    <x-filament::button
+                                        wire:click="delete({{ $transfer['id'] }})"
+                                        wire:confirm="Remove this transfer from the list?"
+                                        color="gray"
+                                        size="sm"
+                                    >
+                                        Delete
+                                    </x-filament::button>
+                                @endif
                             </div>
                         </div>
 

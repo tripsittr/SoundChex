@@ -40,6 +40,12 @@ class RunTransferJob implements ShouldQueue
             return;
         }
 
+        // Cancelled while this was waiting its turn. The token is gone and the
+        // source has already been told, so there is nothing left to ask for.
+        if ($transfer->state === Transfer::CANCELLED) {
+            return;
+        }
+
         // First run: fetch the manifest before anything else, so the work is
         // written down before any of it is attempted.
         if ($transfer->items()->count() === 0) {

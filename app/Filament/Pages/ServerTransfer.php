@@ -262,6 +262,69 @@ class ServerTransfer extends Page
     }
 
     /**
+     * Stops a transfer here and on the machine being copied.
+     *
+     * Distinct from pausing, which is what the button beside it does: pausing
+     * leaves the request approved and the token live over there, so a transfer
+     * paused and forgotten leaves another machine able to read this one until
+     * the token lapses. Cancelling ends it at both ends.
+     */
+    public function cancel(int $id): void
+    {
+        $transfer = Transfer::find($id);
+
+        if ($transfer === null) {
+            $this->refresh();
+
+            return;
+        }
+
+        if (app(TransferReceiver::class)->cancel($transfer)) {
+            Notification::make()->success()
+                ->title('Cancelled')
+                ->body('Stopped here, and the other server has been told.')
+                ->send();
+        } else {
+            // Cancelled locally either way — the transfer is over here
+            // regardless of whether the source could be reached.
+            Notification::make()->warning()
+                ->title('Cancelled here only')
+                ->body($transfer->fresh()->last_error ?? 'That server could not be told.')
+                ->send();
+        }
+
+        $this->refresh();
+    }
+
+    /**
+     * Removes a finished transfer from the list.
+     *
+     * The rule about what may be removed lives in `TransferReceiver::discard()`
+     * with the deletion itself, so it can be tested without driving the page.
+     */
+    public function delete(int $id): void
+    {
+        $transfer = Transfer::find($id);
+
+        if ($transfer === null) {
+            $this->refresh();
+
+            return;
+        }
+
+        if (app(TransferReceiver::class)->discard($transfer)) {
+            Notification::make()->success()->title('Removed from the list')->send();
+        } else {
+            Notification::make()->danger()
+                ->title('That transfer is still running')
+                ->body('Cancel it first, then delete it.')
+                ->send();
+        }
+
+        $this->refresh();
+    }
+
+    /**
      * A second deliberate act before anything is handed over or fetched.
      *
      * Not the security boundary — the approval on the other machine is — but
