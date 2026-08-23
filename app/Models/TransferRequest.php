@@ -47,13 +47,8 @@ class TransferRequest extends Model
         'ip', 'device_name', 'platform', 'wants', 'code',
         'state', 'denied_reason', 'expires_at', 'approved_at', 'token_id', 'plain_token',
         'items_total', 'items_complete', 'items_failed', 'items_skipped',
-<<<<<<< HEAD
-        'items_pending', 'bytes_complete', 'bytes_total', 'progress_state',
-        'progress_note', 'progress_at',
-=======
         'items_pending', 'bytes_complete', 'bytes_total', 'worker_alive', 'progress_state',
         'progress_note', 'progress_at', 'claim_hash',
->>>>>>> origin/main
     ];
 
     protected function casts(): array
