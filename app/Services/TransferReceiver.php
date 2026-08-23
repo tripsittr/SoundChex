@@ -425,7 +425,7 @@ class TransferReceiver
     public function fetch(TransferItem $item): bool
     {
         $transfer = $item->transfer;
-        $destination = Storage::path($item->path);
+        $destination = $this->longPath(Storage::path($item->path));
 
         if ($this->alreadyHave($item, $destination)) {
             $item->forceFill(['state' => TransferItem::SKIPPED])->save();
@@ -450,6 +450,16 @@ class TransferReceiver
             // Resumed at the byte rather than the file: an interrupted 4 GB
             // film continues where it stopped.
             $from = is_file($temporary) ? filesize($temporary) : 0;
+
+            // A `.part` that is already the whole file needs placing, not
+            // fetching. This is what the released-handle bug left behind on
+            // Windows: the bytes all arrived and only the move failed, so
+            // re-requesting from EOF would ask for a range past the end and be
+            // refused. Every one of those names was otherwise unreachable for
+            // good.
+            if ($item->expected_bytes > 0 && $from === (int) $item->expected_bytes) {
+                return $this->verifyAndPlace($item, $temporary, $destination);
+            }
 
             $response = $this->http()->withToken($transfer->token)
                 ->withHeaders($from > 0 ? ['Range' => "bytes={$from}-"] : [])
@@ -476,6 +486,16 @@ class TransferReceiver
 
             return false;
         }
+
+        // Before the file is touched. The sink holds an open handle on
+        // `$temporary`, and Windows refuses to move or reopen a file another
+        // handle still has — the download completes, every byte arrives, and
+        // the placement fails with "Permission denied". The name is then
+        // poisoned: the `.part` is left behind and that file can never arrive.
+        //
+        // `importDatabase()` already did this for the catalogue archive. The
+        // per-file path did not, which is the same bug one layer down.
+        $this->releaseSink($response);
 
         return $this->verifyAndPlace($item, $temporary, $destination);
     }
@@ -1050,6 +1070,37 @@ class TransferReceiver
      * that looks like a film is worse than no film, because nothing will ever
      * tell you it is wrong.
      */
+    /**
+     * Lets Windows open a path longer than it otherwise would.
+     *
+     * `MAX_PATH` is 260 characters, and 37 files in this library are longer
+     * than that — one is 382, a track credited to nine artists. They fail on
+     * open regardless of permissions, and the failure looks like a missing
+     * file rather than a name nobody can say.
+     *
+     * The `\\?\` prefix skips that limit without a registry change on the
+     * receiving machine. It only reaches the filesystem call: `$item->path`
+     * and the catalogue keep the name they always had, so nothing has to be
+     * reconciled afterwards. Absolute paths only, and a no-op everywhere but
+     * Windows.
+     */
+    private function longPath(string $path): string
+    {
+        if (PHP_OS_FAMILY !== 'Windows' || str_starts_with($path, '\\\\?\\')) {
+            return $path;
+        }
+
+        $native = str_replace('/', '\\', $path);
+
+        // A relative path cannot take the prefix — it is resolved against the
+        // device namespace and would not mean the same thing.
+        if (! preg_match('/^[A-Za-z]:\\\\/', $native)) {
+            return $path;
+        }
+
+        return '\\\\?\\' . $native;
+    }
+
     private function verifyAndPlace(TransferItem $item, string $temporary, string $destination): bool
     {
         if (! is_file($temporary)) {
