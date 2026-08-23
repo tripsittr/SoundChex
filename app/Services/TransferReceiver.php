@@ -645,7 +645,11 @@ class TransferReceiver
         // length it was never going to reach yet. `attempts` is not counted
         // against it either — this is one file arriving in pieces, not one
         // file failing repeatedly.
-        if ($item->expected_bytes > 0 && is_file($temporary)
+        // Only a 206 is a piece of something larger. A 200 is the whole file,
+        // so short means truncated and must still fail - otherwise a genuinely
+        // incomplete download would sit in the queue for ever looking like
+        // progress.
+        if ($response->status() === 206 && $item->expected_bytes > 0 && is_file($temporary)
             && filesize($temporary) < (int) $item->expected_bytes) {
             $item->forceFill([
                 'state' => TransferItem::PENDING,

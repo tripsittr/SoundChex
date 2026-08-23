@@ -289,7 +289,10 @@ class TransferPathTest extends TestCase
         Http::fake(function ($request) use (&$asked) {
             $asked[] = $request->header('Range')[0] ?? null;
 
-            return Http::response(str_repeat('x', TransferReceiver::CHUNK_BYTES), 206);
+            // A short body on purpose: this asserts what was *asked for*.
+            // Building a real 20 MB string here exhausted the memory limit
+            // when the whole suite ran, while passing in isolation.
+            return Http::response('xxxxxxxxxx', 206);
         });
 
         $transfer = Transfer::create([
@@ -305,6 +308,8 @@ class TransferPathTest extends TestCase
             'path' => 'big-film.mp4',
             'state' => TransferItem::PENDING,
             'expected_bytes' => TransferReceiver::CHUNK_BYTES * 3,
+            // Nothing here writes 20 MB; the fake returns ten bytes and the
+            // item stays pending because it is short of expected_bytes.
         ]);
 
         @mkdir(dirname(Storage::path('big-film.mp4')), 0775, true);
