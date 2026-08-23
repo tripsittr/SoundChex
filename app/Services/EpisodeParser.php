@@ -27,6 +27,11 @@ class EpisodeParser
         // 1x02, 01x02
         '/\b(?<season>\d{1,2})x(?<episode>\d{1,3})\b/i',
 
+        // S06X01 — the season prefix with an `x` separator. Unambiguous in the
+        // same way S06E01 is, and absent here until 48 Simpsons specials and
+        // two of these turned up catalogued as films.
+        '/\bS(?<season>\d{1,2})[\s._-]?X(?<episode>\d{1,3})\b/i',
+
         // Season 1 Episode 2, Season.1.Episode.2
         '/\bSeason[\s._-]*(?<season>\d{1,2})[\s._-]*Episode[\s._-]*(?<episode>\d{1,3})\b/i',
 
@@ -67,7 +72,68 @@ class EpisodeParser
     }
 
     /**
-     * Pulls season, episode and series name out of a filename.
+     * What the filename says this is, whether or not it can be filed.
+     *
+     * Separate from `parse()` because the two questions are different and
+     * were being answered by one value. "Is this television?" decides the
+     * item's *type*; "can this be filed?" decides whether a real file gets
+     * moved. Conflating them meant every case `parse()` refused — 48 Simpsons
+     * specials at season zero — was catalogued as a **film**, because the
+     * scanner read a refusal to file as a statement that it was not a show.
+     *
+     * This one only refuses when there is no episode marker at all.
+     *
+     * @return array{series: string, season: int, episode: int}|null
+     */
+    public function marker(string $filename): ?array
+    {
+        $name = $this->withoutExtension($filename);
+
+        foreach (self::PATTERNS as $pattern) {
+            if (! preg_match($pattern, $name, $match, PREG_OFFSET_CAPTURE)) {
+                continue;
+            }
+
+            $series = $this->seriesName(substr($name, 0, $match[0][1]));
+
+            if ($series === null) {
+                return null;
+            }
+
+            return [
+                'series' => $series,
+                'season' => (int) $match['season'][0],
+                'episode' => (int) $match['episode'][0],
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether this is television at all, for deciding an item's type.
+     *
+     * Deliberately broader than `parse()`: a special, or a file covering two
+     * episodes, is still television even though neither can be filed.
+     *
+     * The multi-episode check is separate rather than redundant. `S01E01E02`
+     * matches none of the single-episode patterns — there is no word boundary
+     * between `E01` and `E02` for them to end on — so without it a file
+     * covering two episodes would be classified a film.
+     */
+    public function isTelevision(string $filename): bool
+    {
+        return $this->marker($filename) !== null
+            || $this->isMultiEpisode($filename);
+    }
+
+    /**
+     * Pulls season, episode and series name out of a filename, for **filing**.
+     *
+     * Stricter than `marker()`, and stays that way: everything it refuses is a
+     * file that would otherwise be moved somewhere wrong, and a file filed as
+     * the wrong episode looks correct and is far harder to notice than one
+     * left in the inbox.
      *
      * @return array{series: string, season: int, episode: int}|null
      */
@@ -81,34 +147,15 @@ class EpisodeParser
             return null;
         }
 
-        foreach (self::PATTERNS as $pattern) {
-            if (! preg_match($pattern, $name, $match, PREG_OFFSET_CAPTURE)) {
-                continue;
-            }
+        $marker = $this->marker($filename);
 
-            $season = (int) $match['season'][0];
-            $episode = (int) $match['episode'][0];
-
-            // Season 0 is the convention for specials, which have their own
-            // rules; left in the inbox rather than filed as season zero.
-            if ($season < 1 || $episode < 1) {
-                return null;
-            }
-
-            $series = $this->seriesName(substr($name, 0, $match[0][1]));
-
-            if ($series === null) {
-                return null;
-            }
-
-            return [
-                'series' => $series,
-                'season' => $season,
-                'episode' => $episode,
-            ];
+        // Season 0 is the convention for specials, which have their own
+        // rules; left in the inbox rather than filed as season zero.
+        if ($marker === null || $marker['season'] < 1 || $marker['episode'] < 1) {
+            return null;
         }
 
-        return null;
+        return $marker;
     }
 
     public function isEpisode(string $filename): bool
