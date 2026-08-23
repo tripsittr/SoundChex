@@ -438,6 +438,37 @@ class TransferReceiver
      * than one plainly absent.
      */
     /**
+     * Removes a failed response body from the part file.
+     *
+     * Truncated back to what was there before the attempt rather than
+     * deleted: a resumed 4 GB film has legitimate bytes in front of the error
+     * page, and throwing those away would cost the whole download.
+     */
+    private function discardFailedBody(string $temporary, int $from): void
+    {
+        if (! is_file($temporary)) {
+            return;
+        }
+
+        if ($from === 0) {
+            @unlink($temporary);
+
+            return;
+        }
+
+        // Only the tail is suspect. Anything at or below `$from` arrived on an
+        // attempt that succeeded.
+        if (filesize($temporary) > $from) {
+            $handle = @fopen($temporary, 'r+');
+
+            if ($handle !== false) {
+                @ftruncate($handle, $from);
+                @fclose($handle);
+            }
+        }
+    }
+
+    /**
      * Tells the source how far this copy has got.
      *
      * The receiver is the only machine that knows, and the source had no way
@@ -535,6 +566,20 @@ class TransferReceiver
                 ->get($this->url($transfer, 'transfer/file/' . $item->remote_id));
 
             if (! $response->successful() && $response->status() !== 206) {
+                // `sink()` has already written the body, whatever the status.
+                // An error page is now sitting in the `.part`, and the next
+                // attempt resumes from `filesize()` — so it asks for
+                // `Range: bytes=198-`, receives genuine audio from byte 198,
+                // and produces a file with an error page welded to its front.
+                // Six 500s during a four-minute source outage left exactly
+                // that: `{"message":"Server Error"}` repeated, one per attempt.
+                //
+                // The hash check would catch it at the end, after the whole
+                // file had been fetched again. Cheaper and clearer to throw
+                // away what was never audio.
+                $this->releaseSink($response);
+                $this->discardFailedBody($temporary, $from);
+
                 $item->markFailed('The server answered ' . $response->status() . '.');
 
                 // 401 and 403 are not about this file. The token has expired —

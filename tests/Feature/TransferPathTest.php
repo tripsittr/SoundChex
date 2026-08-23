@@ -202,4 +202,76 @@ class TransferPathTest extends TestCase
     }
 
 
+    public function test_a_failed_response_leaves_no_bytes_in_the_part_file(): void
+    {
+        // sink() writes the body whatever the status, and the status check
+        // happens after Guzzle has already written it. So a 500 left
+        // {"message":"Server Error"} in the .part, and the next attempt
+        // resumed from filesize() - asking for Range: bytes=33-, getting real
+        // audio, and welding an error page to the front of the file.
+        //
+        // Six 500s during a four-minute source outage produced exactly that:
+        // 198 bytes, 33 six times over.
+        Http::fake(['*/transfer/file/*' => Http::response('{"message":"Server Error"}', 500)]);
+
+        $transfer = Transfer::create([
+            'source_url' => 'https://other.example',
+            'token' => 'test-token',
+            'wants' => ['files'],
+            'state' => Transfer::RUNNING,
+        ]);
+
+        $item = TransferItem::create([
+            'transfer_id' => $transfer->id,
+            'remote_id' => 9,
+            'path' => 'failed-fetch.mp3',
+            'state' => TransferItem::PENDING,
+            'expected_bytes' => 4096,
+        ]);
+
+        $destination = Storage::path('failed-fetch.mp3');
+        @mkdir(dirname($destination), 0775, true);
+
+        $this->assertFalse(app(TransferReceiver::class)->fetch($item->fresh()));
+
+        $this->assertFileDoesNotExist(
+            $destination . '.part',
+            'an error body must not be left where the next attempt will resume from it',
+        );
+    }
+
+    public function test_a_failure_keeps_bytes_that_already_arrived(): void
+    {
+        // The other half: a resumed 4 GB film has legitimate bytes in front of
+        // the error page, and deleting the part file would cost the download.
+        // Only the tail is thrown away.
+        Http::fake(['*/transfer/file/*' => Http::response('{"message":"Server Error"}', 500)]);
+
+        $transfer = Transfer::create([
+            'source_url' => 'https://other.example',
+            'token' => 'test-token',
+            'wants' => ['files'],
+            'state' => Transfer::RUNNING,
+        ]);
+
+        $item = TransferItem::create([
+            'transfer_id' => $transfer->id,
+            'remote_id' => 10,
+            'path' => 'resumed.mp3',
+            'state' => TransferItem::PENDING,
+            'expected_bytes' => 4096,
+        ]);
+
+        $destination = Storage::path('resumed.mp3');
+        @mkdir(dirname($destination), 0775, true);
+        file_put_contents($destination . '.part', str_repeat('a', 1000));
+
+        app(TransferReceiver::class)->fetch($item->fresh());
+
+        $this->assertFileExists($destination . '.part');
+        $this->assertSame(1000, filesize($destination . '.part'), 'the bytes that arrived should survive');
+
+        @unlink($destination . '.part');
+    }
+
 }
