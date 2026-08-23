@@ -111,15 +111,20 @@ class RequestController extends Controller
      * was anything worth stealing. Compared in constant time against a hash,
      * so neither the value nor the time taken to reject it says anything.
      *
-     * A request with no claim is one made before this existed, and is let
-     * through: deploying this must not kill a transfer already running.
-     * `store()` records a claim for every new request, so the exception
-     * empties itself.
+     * Default deny. A request that never proved itself never collects a
+     * token — including one made before this column existed.
+     *
+     * The first version of this let those through, to avoid breaking a copy
+     * that was running at the time. That exception protected exactly the
+     * request that was leaking, and a test asserted it stayed that way, so
+     * the change closed nothing. It cost nothing to remove either: `poll()`
+     * has one caller, the admin page's button, and a running job uses the
+     * token already on its row.
      */
     private function claimMatches(Request $request, TransferRequest $transferRequest): bool
     {
         if ($transferRequest->claim_hash === null) {
-            return true;
+            return false;
         }
 
         $claim = $request->query('claim') ?? $request->input('claim');

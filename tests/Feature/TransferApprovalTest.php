@@ -73,19 +73,26 @@ class TransferApprovalTest extends TestCase
         );
     }
 
-    public function test_a_request_made_before_claims_existed_still_works(): void
+    public function test_a_request_made_before_claims_existed_gets_nothing(): void
     {
-        // Deploying this must not kill a transfer already running. A request
-        // with no claim_hash is one made before the column existed, and is
-        // answered the way it always was.
+        // Default deny, and this test used to assert the opposite.
+        //
+        // The first version let a claim-less request through so as not to
+        // break a copy running at the time — which protected precisely the
+        // request that was leaking, and asserted it stayed that way. The
+        // change closed nothing while looking like it did.
+        //
+        // Nothing was bought by it: `poll()` has one caller, the admin page's
+        // button, and a running job uses the token already on its row. A
+        // receiver that needs a token after this asks again and gets a claim.
         $request = $this->pending();
 
         app(TransferApprovals::class)->approve($request, User::factory()->create());
 
-        $this->assertSame(
-            $request->fresh()->plain_token,
-            $this->getJson('/api/v1/transfer/requests/' . $request->id)->json('token'),
-        );
+        $response = $this->getJson('/api/v1/transfer/requests/' . $request->id)->assertOk();
+
+        $this->assertNull($response->json('token'), 'a request that never proved itself must not collect a token');
+        $this->assertSame('approved', $response->json('state'), 'the state stays public');
     }
 
     public function test_the_manifest_is_refused_until_approved(): void
