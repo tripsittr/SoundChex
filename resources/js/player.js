@@ -229,6 +229,39 @@ export default class MediaPlayer {
         this.emit('localsource', item);
     }
 
+    /**
+     * Says why a track would not play, when the element cannot.
+     *
+     * `MEDIA_ERR_SRC_NOT_SUPPORTED` is what the browser reports for any load
+     * that failed, so a file the server has not received yet arrives as
+     * "unsupported source" and reads as a codec problem. During a transfer
+     * that is most of the library.
+     *
+     * The server distinguishes them — 409 for a catalogued row whose file has
+     * not arrived, 404 for one that does not exist — so ask, and tell whoever
+     * is looking. Best effort: a failed explanation must not become a second
+     * failure.
+     */
+    async explainFailure(item) {
+        if (!item?.id || String(this.el.currentSrc ?? '').startsWith('blob:')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/app/item/${item.id}/stream`, { method: 'HEAD' });
+
+            if (response.status === 409) {
+                this.emit('unavailable', {
+                    item,
+                    message: 'That file has not arrived on this server yet.',
+                });
+            }
+        } catch {
+            // Offline, or the server is unreachable. Either way the element's
+            // own error is the better description and this adds nothing.
+        }
+    }
+
     releaseLocalSource() {
         if (!this.localSourceUrl) return;
 
@@ -348,6 +381,16 @@ export default class MediaPlayer {
             };
 
             const item = this.queue?.[this.index] ?? null;
+
+            // The element only ever reports "unsupported source" for a load
+            // that failed, whatever the reason — so a file the server has not
+            // received yet is reported as a codec problem. During a transfer
+            // most of the library is in that state, and the message sends
+            // whoever reads it looking for a decoder bug.
+            //
+            // The status is the only thing that separates them, and the
+            // element does not expose it, so ask.
+            this.explainFailure(item);
 
             log('playback:failed', {
                 item: item?.id ?? null,

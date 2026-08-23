@@ -1,4 +1,5 @@
 import MediaPlayer, { formatTime } from './player.js';
+import { toast } from './download-button.js';
 
 /**
  * The persistent now-playing bar.
@@ -78,6 +79,11 @@ function bindNowPlaying() {
     const ICON_PAUSE = 'M6 5h4v14H6zM14 5h4v14h-4z';
 
     /* ------------------------------------------------------------ wiring */
+
+    // A file the server has not received yet fails as "unsupported source",
+    // which reads as a codec fault. The player asks the server what actually
+    // happened; this is where the answer reaches the person holding the phone.
+    player.on('unavailable', ({ message }) => toast(message));
 
     player.on('trackchange', (item) => {
         current.bar.classList.remove('translate-y-full');

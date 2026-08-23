@@ -201,6 +201,19 @@ class MediaCenterController extends Controller
         // container or codec no browser decodes.
         $path = $item->playbackPath();
 
+        // A catalogued row whose file is not here yet is a different thing
+        // from a row that does not exist, and the player cannot tell them
+        // apart from a bare 404 — it reports "unsupported source", which
+        // blames the codec for a file that was never fetched.
+        //
+        // This happens in bulk: a transfer imports the catalogue in one go and
+        // then copies files for hours, so the whole library is browsable and
+        // most of it is unplayable. 409 rather than 404 because the row is
+        // real and the condition is temporary.
+        if ($path === null && $item->file_path !== null) {
+            abort(409, 'That file has not arrived on this server yet.');
+        }
+
         abort_unless($path !== null, 404);
 
         $this->recordPlay($item);

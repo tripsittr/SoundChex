@@ -425,7 +425,7 @@ async function runBatch(button, tracks, label) {
  * the offline shell also builds, and a toast anchored to page markup would be
  * missing from half of them.
  */
-function toast(message) {
+export function toast(message) {
     let host = document.getElementById('soundchex-toast');
 
     if (!host) {
