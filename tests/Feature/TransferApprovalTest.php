@@ -205,6 +205,24 @@ class TransferApprovalTest extends TestCase
         $this->assertNotNull($request->progress_at, 'the time of the report is the signal that it is still alive');
     }
 
+    public function test_an_expired_transfer_cannot_report_progress(): void
+    {
+        // Revoking deletes the token, so revocation is covered either way. An
+        // expired request is the case that is not: its token stays valid until
+        // Sanctum expires it, and without this check it could still write.
+        $request = $this->pending();
+
+        app(TransferApprovals::class)->approve($request, User::factory()->create());
+
+        $token = $request->fresh()->plain_token;
+
+        $request->fresh()->forceFill(['expires_at' => now()->subMinute()])->save();
+
+        $this->withToken($token)
+            ->postJson('/api/v1/transfer/progress', ['items_complete' => 1])
+            ->assertForbidden();
+    }
+
     public function test_progress_needs_a_transfer_token(): void
     {
         // An ordinary API token must not be able to write here: it would let
