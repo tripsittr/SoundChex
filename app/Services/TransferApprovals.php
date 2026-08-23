@@ -83,6 +83,24 @@ class TransferApprovals
         ]);
     }
 
+    /**
+     * The receiving server calling its own transfer off.
+     *
+     * The same ending as a revoke — the request closes and the token dies with
+     * it — recorded differently because the person reading this machine's log
+     * did not do it. A transfer that stops from the other end and a transfer
+     * someone here stopped are not the same event.
+     */
+    public function cancelledByReceiver(TransferRequest $request): void
+    {
+        $request->revoke();
+
+        Log::warning('A transfer was cancelled by the server copying this one', [
+            'request' => $request->id,
+            'ip' => $request->ip,
+        ]);
+    }
+
     /** @return \Illuminate\Support\Collection<int, TransferRequest> */
     public function pending()
     {

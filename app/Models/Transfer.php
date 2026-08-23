@@ -20,6 +20,15 @@ class Transfer extends Model
     public const COMPLETE = 'complete';
     public const FAILED = 'failed';
 
+    /**
+     * Called off from this end.
+     *
+     * Distinct from `failed`, which is something going wrong, and from
+     * `paused`, which leaves the request approved and the token live on the
+     * other machine. Cancelling ends it there as well as here.
+     */
+    public const CANCELLED = 'cancelled';
+
     protected $fillable = [
         'source_url', 'remote_request_id', 'token', 'wants', 'metadata_imported',
         'state', 'last_error', 'total_files', 'total_bytes',
