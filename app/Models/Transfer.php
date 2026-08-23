@@ -30,12 +30,12 @@ class Transfer extends Model
     public const CANCELLED = 'cancelled';
 
     protected $fillable = [
-        'source_url', 'remote_request_id', 'token', 'wants', 'metadata_imported',
+        'source_url', 'remote_request_id', 'token', 'wants', 'metadata_imported', 'claim',
         'state', 'last_error', 'total_files', 'total_bytes',
         'started_at', 'finished_at',
     ];
 
-    protected $hidden = ['token'];
+    protected $hidden = ['token', 'claim'];
 
     protected function casts(): array
     {
