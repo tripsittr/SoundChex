@@ -48,32 +48,57 @@ test.describe('server transfer', () => {
 
     test('a transfer can be cancelled and then cleared from the list', async ({ page }) => {
         // Cancelling is not pausing: pausing leaves the request approved and
-        // the token live on the other machine. The row is created before the
-        // source is contacted, so an address that answers nothing still
-        // produces a transfer to cancel — which is the state this is about.
+        // the token live on the other machine.
+        //
+        // The source has to be a server that answers. An address that refuses
+        // the connection leaves the transfer `failed`, and Cancel is
+        // deliberately not offered then — a finished transfer has nothing
+        // left to stop at the other end.
+        //
+        // 8198 is a stub server this suite runs, standing in for
+        // the other machine: it returns a canned request id, which is all
+        // asking needs. This server cannot ask itself — `artisan serve` is
+        // single threaded, so the call would wait on the process already
+        // serving the page it came from.
+        const source = 'http://127.0.0.1:8198';
+
         await page.goto('/admin/server-transfer');
 
-        await page.fill('input[wire\\:model="sourceUrl"]', 'http://127.0.0.1:9');
+        await page.fill('input[wire\\:model="sourceUrl"]', source);
         await page.fill('input[type="password"]', ACCOUNT.password);
         await page.getByRole('button', { name: /^Ask/ }).first().click();
 
-        const row = page.getByText('http://127.0.0.1:9').first();
-        await expect(row).toBeVisible({ timeout: 15000 });
+        // Scoped to this transfer's own row, by id rather than by address.
+        // Transfers are not cleaned up between runs, so matching on the
+        // address finds rows from earlier runs too — and those are `cancelled`
+        // or `failed`, states that offer none of the buttons below.
+        //
+        // The list is newest first, so the row just created is the first one.
+        // Reading its key pins the rest of the test to that id.
+        const newest = page.locator('[wire\\:key^="transfer-"]').first();
+        await expect(newest).toBeVisible({ timeout: 15000 });
+
+        const key = await newest.getAttribute('wire:key');
+        const row = page.locator(`[wire\\:key="${key}"]`);
+
+        await expect(row).toContainText(source);
+        await expect(row.getByText('requested')).toBeVisible();
 
         // Both confirm with a second click rather than a native dialog — the
         // first click only offers the second, which is what makes this
         // testable without handling a browser prompt.
-        await page.getByRole('button', { name: 'Cancel', exact: true }).first().click();
-        await page.getByRole('button', { name: 'Stop it on both machines' }).first().click();
+        await row.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await row.getByRole('button', { name: 'Stop it on both machines' }).click();
 
-        await expect(page.getByText(/cancelled/i).first()).toBeVisible({ timeout: 15000 });
+        await expect(row.getByText(/cancelled/i)).toBeVisible({ timeout: 15000 });
 
-        await page.getByRole('button', { name: 'Delete', exact: true }).first().click();
-        await page.getByRole('button', { name: 'Remove it' }).first().click();
+        await row.getByRole('button', { name: 'Delete', exact: true }).click();
+        await row.getByRole('button', { name: 'Remove it' }).click();
 
         // Gone from the list rather than merely marked, which is what
-        // "clean it up" has to mean.
-        await expect(page.getByText('http://127.0.0.1:9')).toHaveCount(0, { timeout: 15000 });
+        // "clean it up" has to mean. This row, not every row that ever
+        // mentioned the address.
+        await expect(row).toHaveCount(0, { timeout: 15000 });
     });
 
     test('approving needs the password', async ({ page }) => {
