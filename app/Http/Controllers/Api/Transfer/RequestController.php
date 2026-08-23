@@ -34,6 +34,10 @@ class RequestController extends Controller
             'platform' => ['nullable', 'string', 'max:120'],
             'wants' => ['required', 'array', 'min:1'],
             'wants.*' => ['string', 'in:metadata,files,profiles,settings'],
+            // A secret the receiver makes up before there is anything to
+            // steal, and presents later to collect its token. Optional so a
+            // request made before this existed keeps working.
+            'claim' => ['nullable', 'string', 'min:16', 'max:200'],
         ]);
 
         $transferRequest = TransferRequest::create([
@@ -46,6 +50,10 @@ class RequestController extends Controller
             'code' => TransferRequest::newCode(),
             'state' => TransferRequest::PENDING,
             'expires_at' => now()->addHours(TransferRequest::LIFETIME_HOURS),
+            // Hashed: the plain value lives only on the machine that made it
+            // up, so this column is worth nothing to anyone reading the
+            // database.
+            'claim_hash' => isset($data['claim']) ? hash('sha256', $data['claim']) : null,
         ]);
 
         Log::info('A server asked to copy this one', [
@@ -75,7 +83,8 @@ class RequestController extends Controller
 
         $body = ['id' => $transferRequest->id, 'state' => $state];
 
-        if ($state === TransferRequest::APPROVED && $transferRequest->isUsable()) {
+        if ($state === TransferRequest::APPROVED && $transferRequest->isUsable()
+            && $this->claimMatches($request, $transferRequest)) {
             // Minted at approval and stored in plain text on the source, which
             // is the machine that issued it and can revoke it.
             $body['token'] = $transferRequest->plain_token;
@@ -87,6 +96,44 @@ class RequestController extends Controller
         }
 
         return response()->json($body);
+    }
+
+    /**
+     * Whether this poller is the machine that opened the request.
+     *
+     * The endpoint cannot be authenticated — collecting the token is *how* a
+     * receiver authenticates — so it was handing a live bearer token to
+     * anyone who asked for the right id, over a Funnel address, with ids
+     * running sequentially from 1. The token grants read of the whole
+     * library.
+     *
+     * So the receiver proves itself with a secret it generated before there
+     * was anything worth stealing. Compared in constant time against a hash,
+     * so neither the value nor the time taken to reject it says anything.
+     *
+     * Default deny. A request that never proved itself never collects a
+     * token — including one made before this column existed.
+     *
+     * The first version of this let those through, to avoid breaking a copy
+     * that was running at the time. That exception protected exactly the
+     * request that was leaking, and a test asserted it stayed that way, so
+     * the change closed nothing. It cost nothing to remove either: `poll()`
+     * has one caller, the admin page's button, and a running job uses the
+     * token already on its row.
+     */
+    private function claimMatches(Request $request, TransferRequest $transferRequest): bool
+    {
+        if ($transferRequest->claim_hash === null) {
+            return false;
+        }
+
+        $claim = $request->query('claim') ?? $request->input('claim');
+
+        if (! is_string($claim) || $claim === '') {
+            return false;
+        }
+
+        return hash_equals($transferRequest->claim_hash, hash('sha256', $claim));
     }
 
     /**
