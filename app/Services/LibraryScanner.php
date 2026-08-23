@@ -71,7 +71,7 @@ class LibraryScanner
                 // reaches becomes a second movie named after the output file.
                 filled($item->converted_path) ? Storage::path($item->converted_path) : null,
             ]))
-            ->mapWithKeys(fn (string $path) => [$path => true]);
+            ->mapWithKeys(fn (string $path) => [$this->canonical($path) => true]);
 
         $settle = $this->settings->settleSeconds();
         $excluded = $this->excludedPaths();
@@ -80,7 +80,7 @@ class LibraryScanner
             foreach ($this->mediaFilesIn($folder, $excluded) as $file) {
                 $path = $file->getRealPath();
 
-                if ($path === false || isset($known[$path])) {
+                if ($path === false || isset($known[$this->canonical($path)])) {
                     continue;
                 }
 
@@ -346,7 +346,7 @@ class LibraryScanner
             foreach ($this->mediaFilesIn($folder, []) as $file) {
                 $path = $file->getRealPath();
 
-                if ($path === false || isset($known[$path])) {
+                if ($path === false || isset($known[$this->canonical($path)])) {
                     $result['skipped']++;
 
                     continue;
@@ -590,6 +590,26 @@ class LibraryScanner
      * becomes a track, a film, or a book. Unknown extensions are ignored
      * rather than guessed at.
      */
+    /**
+     * One spelling of a path, so two spellings of the same file match.
+     *
+     * `getRealPath()` returns `C:\…\media\library\x.avi`, while
+     * `Storage::path()` builds `C:\…\storage\app/private\media\library\x.avi` —
+     * the same file, mixed separators, and never equal as strings. The known
+     * list is keyed on one and looked up with the other, so on Windows **every
+     * scan catalogued every file again**: one film was found holding nine rows,
+     * one per scan, and it would have kept growing.
+     *
+     * Case is folded only where the filesystem ignores it. On Linux `Song.mp3`
+     * and `song.mp3` are two files, and folding there would merge them.
+     */
+    private function canonical(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+
+        return PHP_OS_FAMILY === 'Windows' ? mb_strtolower($path) : $path;
+    }
+
     private function typeForExtension(string $extension): ?MediaItemType
     {
         $extension = strtolower($extension);

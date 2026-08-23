@@ -56,6 +56,45 @@ class LibraryScannerTest extends TestCase
 
     /* ------------------------------------------------------ cataloguing -- */
 
+    public function test_scanning_twice_does_not_catalogue_the_same_file_twice(): void
+    {
+        // On Windows it did, every single time. The known list is keyed on
+        // Storage::path() — `…\storage\app/private\media\…`, mixed separators —
+        // and looked up with getRealPath()'s `…\media\…`. The two never matched
+        // as strings, so every scan catalogued the whole library again. One
+        // film in the real catalogue had nine rows, one per scan.
+        file_put_contents($this->watched . '/Jackass Number Two.avi', 'x');
+
+        $this->scanner->scan();
+        $this->scanner->scan();
+        $this->scanner->scan();
+
+        $this->assertSame(
+            1,
+            MediaItem::where('title', 'like', '%Jackass%')->count(),
+            'The same file was catalogued more than once.',
+        );
+    }
+
+    public function test_a_path_stored_with_the_other_separator_still_counts_as_known(): void
+    {
+        // What the organiser leaves behind on Windows — S-86. A row stored
+        // that way must still be recognised, or rescanning duplicates it.
+        file_put_contents($this->watched . '/Backrooms.mkv', 'x');
+
+        $this->scanner->scan();
+
+        $item = MediaItem::where('title', 'like', '%Backrooms%')->firstOrFail();
+
+        $item->forceFill([
+            'file_path' => str_replace('/', '\\', (string) $item->file_path),
+        ])->saveQuietly();
+
+        $this->scanner->scan();
+
+        $this->assertSame(1, MediaItem::where('title', 'like', '%Backrooms%')->count());
+    }
+
     public function test_an_mp4_holding_only_audio_is_music_not_a_film(): void
     {
         // Three Spotify exports were catalogued as films because they had been

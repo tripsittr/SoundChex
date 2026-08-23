@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\DuplicateStatus;
 use App\Enums\MediaItemType;
 use App\Models\Profile;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,8 +42,35 @@ class ContentGate
      * it. The cap is about keeping an R-rated film out, not about hiding
      * everything unlabelled.
      */
+    /**
+     * Hides rows that have been merged into another copy.
+     *
+     * `DuplicateDetector::merge()` keeps the duplicate row on purpose — play
+     * history and ratings live on it — and repoints it at the surviving file.
+     * Nothing hid it afterwards, so a file catalogued nine times still
+     * appeared nine times in the library after the duplicates had been
+     * resolved. Resolving them looked like it had done nothing.
+     *
+     * Here rather than in `MediaBrowser` because this is the one call every
+     * browse and search query already makes. Adding it to eight query sites
+     * instead is how a gate ends up applied in seven of them — the failure
+     * this class exists to avoid. The duplicate review screen queries the
+     * model directly and is unaffected, which is what it needs.
+     */
+    private function withoutMergedDuplicates(Builder $query): Builder
+    {
+        $table = $query->getModel()->getTable();
+
+        return $query->where(
+            fn (Builder $q) => $q->whereNull($table . '.duplicate_status')
+                ->orWhere($table . '.duplicate_status', '!=', DuplicateStatus::Merged->value),
+        );
+    }
+
     public function apply(Builder $query): Builder
     {
+        $query = $this->withoutMergedDuplicates($query);
+
         $profile = $this->profiles->get();
 
         if ($profile?->max_rating === null) {
