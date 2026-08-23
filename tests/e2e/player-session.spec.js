@@ -28,6 +28,12 @@ test.describe('playback across a full page load', () => {
      * `readyState: 4` are exactly what a player reports when it is stuck, so
      * anything weaker would pass on a silent one.
      *
+     * It is **not** a six-second wait. Chromium decodes faster than realtime
+     * when nothing holds it back — a fifteen-second poll window was measured
+     * reaching `currentTime: 20.6` on a thirty-second fixture. So this clears
+     * in well under six seconds of wall clock, and any timing intuition built
+     * on "six seconds of audio means six seconds elapsed" will be wrong.
+     *
      * On failure it says what the element was doing rather than only that it
      * did not reach six. These specs spent a night frozen at `0.02322` — one
      * 1024-sample buffer at 44.1 kHz — and every hypothesis had to be paid for
