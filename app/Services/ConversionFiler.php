@@ -187,18 +187,29 @@ class ConversionFiler
             return false;
         }
 
-        $root = Storage::path(trim((string) config('library.library_root', 'media/library'), '/'));
+        // One spelling before comparing. `Storage::path()` returns the root
+        // with backslashes and the stored remainder with forward ones —
+        // `C:\…\storage\app/private\media/library` — so a `DIRECTORY_SEPARATOR`
+        // comparison never matched on Windows and this guard did nothing
+        // there. It is the guard that stops the filer flattening a library
+        // that was already organised.
+        $current = str_replace('\\', '/', $current);
+        $root = str_replace(
+            '\\',
+            '/',
+            Storage::path(trim((string) config('library.library_root', 'media/library'), '/')),
+        );
 
         // Already in the flat root, or outside the library altogether: filing
         // it to the root takes nothing away.
-        if (! str_starts_with($current, $root . DIRECTORY_SEPARATOR)) {
+        if (! str_starts_with($current, $root . '/')) {
             return false;
         }
 
         $relative = substr($current, strlen($root) + 1);
 
         // A separator means it lives in a folder worth keeping.
-        return str_contains($relative, DIRECTORY_SEPARATOR);
+        return str_contains($relative, '/');
     }
 
     private function filedPathFor(MediaItem $item, string $conversion): string
