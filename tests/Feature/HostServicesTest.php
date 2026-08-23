@@ -95,6 +95,13 @@ class HostServicesTest extends TestCase
         $path = ($_SERVER['HOME'] ?? getenv('HOME')) . '/Library/Logs/SoundChex/serve.log';
         $existing = is_file($path) ? file_get_contents($path) : null;
 
+        // The folder is always there on macOS and never on Windows, where the
+        // test errored outright rather than failing — one of the six red
+        // results that made a real regression indistinguishable from noise.
+        // The tailing being tested is not macOS-specific, so it is worth
+        // running everywhere rather than skipped.
+        $created = ! is_dir(dirname($path)) && @mkdir(dirname($path), 0755, true);
+
         try {
             // A hundred lines written, ten asked for.
             file_put_contents($path, implode("\n", array_map(
@@ -108,8 +115,17 @@ class HostServicesTest extends TestCase
             $this->assertStringNotContainsString('line 1' . "\n", $log);
             $this->assertLessThanOrEqual(10, substr_count($log, "\n") + 1);
         } finally {
+            // Put back exactly what was there, including nothing. Leaving a
+            // hundred lines of "line 42" in a real log the user may later read
+            // is test data left behind, which this project asks us not to do.
             if ($existing !== null) {
                 file_put_contents($path, $existing);
+            } else {
+                @unlink($path);
+            }
+
+            if ($created) {
+                @rmdir(dirname($path));
             }
         }
     }
