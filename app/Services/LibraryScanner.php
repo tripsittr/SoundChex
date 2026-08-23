@@ -27,6 +27,7 @@ class LibraryScanner
         private DuplicateDetector $duplicates,
         private LibrarySettings $settings,
         private EpisodeParser $episodes,
+        private ContainerProbe $containers,
     ) {}
 
     /**
@@ -95,6 +96,17 @@ class LibraryScanner
 
                 if ($type === null) {
                     continue;
+                }
+
+                // An extension is a guess about a container, and .mp4 carries
+                // audio just as happily as video — three Spotify exports were
+                // catalogued as films on the strength of it. Asked only when
+                // the answer could differ, and only trusted when it is a
+                // definite no: a missing ffprobe must not retype a library.
+                if ($type === MediaItemType::Movie
+                    && $this->containers->isAmbiguous($path)
+                    && $this->containers->hasVideo($path) === false) {
+                    $type = MediaItemType::Music;
                 }
 
                 $basename = $file->getBasename('.' . $file->getExtension());
@@ -344,6 +356,17 @@ class LibraryScanner
 
                 if ($type === null) {
                     continue;
+                }
+
+                // An extension is a guess about a container, and .mp4 carries
+                // audio just as happily as video — three Spotify exports were
+                // catalogued as films on the strength of it. Asked only when
+                // the answer could differ, and only trusted when it is a
+                // definite no: a missing ffprobe must not retype a library.
+                if ($type === MediaItemType::Movie
+                    && $this->containers->isAmbiguous($path)
+                    && $this->containers->hasVideo($path) === false) {
+                    $type = MediaItemType::Music;
                 }
 
                 $basename = $file->getBasename('.' . $file->getExtension());
