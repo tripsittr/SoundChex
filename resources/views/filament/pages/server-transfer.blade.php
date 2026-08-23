@@ -140,8 +140,13 @@
             <x-slot name="heading">Transfers</x-slot>
 
             <div class="space-y-3">
+                {{-- Keyed so Livewire re-renders the right row. Without it a
+                     list of near-identical addresses can reuse the wrong DOM
+                     node, which is also what makes a row addressable in a
+                     test. --}}
                 @foreach ($transfers as $transfer)
-                    <div class="rounded-lg border border-gray-200 p-4 dark:border-white/10">
+                    <div wire:key="transfer-{{ $transfer['id'] }}"
+                         class="rounded-lg border border-gray-200 p-4 dark:border-white/10">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div class="min-w-0">
                                 <p class="truncate font-mono text-sm">{{ $transfer['source'] }}</p>
