@@ -90,6 +90,122 @@ class ReclassifyTelevisionTest extends TestCase
         $this->assertSame('The Bear S01E01', $show->fresh()->title);
     }
 
+    public function test_it_recatalogues_a_film_that_holds_no_video(): void
+    {
+        $file = $this->realFile('1044. Lights Out - Royal Blood.mp4');
+
+        $item = MediaItem::create([
+            'user_id' => $this->owner()->id,
+            'type' => MediaItemType::Movie,
+            'title' => 'Lights Out - Royal Blood',
+            'file_path' => $file,
+        ]);
+
+        \Illuminate\Support\Facades\Process::fake([
+            '*' => \Illuminate\Support\Facades\Process::result(
+                output: json_encode(['streams' => [['codec_type' => 'audio', 'codec_name' => 'aac']]]),
+            ),
+        ]);
+
+        $this->artisan('library:reclassify --apply')->assertSuccessful();
+
+        $this->assertSame(MediaItemType::Music, $item->fresh()->type);
+    }
+
+    public function test_a_film_whose_file_is_not_here_is_left_alone(): void
+    {
+        // Most of the catalogue during a half-finished transfer. Treating
+        // "cannot check" as "not a film" would empty the film list of
+        // everything that has not arrived yet.
+        $item = MediaItem::create([
+            'user_id' => $this->owner()->id,
+            'type' => MediaItemType::Movie,
+            'title' => 'Not here yet',
+            'file_path' => 'media/library/Films/NotHereYet.mp4',
+        ]);
+
+        \Illuminate\Support\Facades\Process::fake();
+
+        $this->artisan('library:reclassify --apply')
+            ->expectsOutputToContain('could not be checked')
+            ->assertSuccessful();
+
+        $this->assertSame(MediaItemType::Movie, $item->fresh()->type);
+
+        // And did not spend a process launch on a file it does not have.
+        \Illuminate\Support\Facades\Process::assertNothingRan();
+    }
+
+    public function test_a_film_is_left_alone_when_ffprobe_cannot_answer(): void
+    {
+        // The file is here, so the check is reached — and ffprobe fails, which
+        // is what happens on a machine that has not got it installed. Reading
+        // that as "no video" would recatalogue every film in the library as
+        // music in one run.
+        $item = MediaItem::create([
+            'user_id' => $this->owner()->id,
+            'type' => MediaItemType::Movie,
+            'title' => 'Elf',
+            'file_path' => $this->realFile('Elf 2003.mp4'),
+        ]);
+
+        \Illuminate\Support\Facades\Process::fake([
+            '*' => \Illuminate\Support\Facades\Process::result(output: '', errorOutput: 'not found', exitCode: 1),
+        ]);
+
+        $this->artisan('library:reclassify --apply')
+            ->expectsOutputToContain('could not be checked')
+            ->assertSuccessful();
+
+        $this->assertSame(MediaItemType::Movie, $item->fresh()->type);
+    }
+
+    public function test_a_film_with_video_is_left_alone(): void
+    {
+        $item = MediaItem::create([
+            'user_id' => $this->owner()->id,
+            'type' => MediaItemType::Movie,
+            'title' => 'Backrooms',
+            'file_path' => $this->realFile('Backrooms 2026.mp4'),
+        ]);
+
+        \Illuminate\Support\Facades\Process::fake([
+            '*' => \Illuminate\Support\Facades\Process::result(
+                output: json_encode(['streams' => [['codec_type' => 'video', 'codec_name' => 'h264']]]),
+            ),
+        ]);
+
+        $this->artisan('library:reclassify --apply')->assertSuccessful();
+
+        $this->assertSame(MediaItemType::Movie, $item->fresh()->type);
+    }
+
+    /** A real file under the faked disk, because the probe refuses absent ones. */
+    private function realFile(string $name): string
+    {
+        $relative = 'media/unsorted/' . $name;
+        $full = \Illuminate\Support\Facades\Storage::path($relative);
+
+        @mkdir(dirname($full), 0755, true);
+        file_put_contents($full, 'x');
+
+        $this->scratch[] = $full;
+
+        return $relative;
+    }
+
+    /** @var array<int, string> */
+    private array $scratch = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->scratch as $path) {
+            @unlink($path);
+        }
+
+        parent::tearDown();
+    }
+
     private function owner(): User
     {
         return $this->user ??= User::factory()->create();

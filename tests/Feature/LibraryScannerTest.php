@@ -56,6 +56,69 @@ class LibraryScannerTest extends TestCase
 
     /* ------------------------------------------------------ cataloguing -- */
 
+    public function test_an_mp4_holding_only_audio_is_music_not_a_film(): void
+    {
+        // Three Spotify exports were catalogued as films because they had been
+        // written to .mp4, which is configured as a film extension. The
+        // extension is a guess about the container; the streams are the answer.
+        file_put_contents($this->watched . '/1044. Lights Out - Royal Blood.mp4', 'x');
+
+        \Illuminate\Support\Facades\Process::fake([
+            '*' => \Illuminate\Support\Facades\Process::result(
+                output: json_encode(['streams' => [['codec_type' => 'audio', 'codec_name' => 'aac']]]),
+            ),
+        ]);
+
+        $this->scanner->scan();
+
+        $item = MediaItem::where('title', 'like', '%Lights Out%')->first();
+
+        $this->assertNotNull($item);
+        $this->assertSame(MediaItemType::Music, $item->type);
+    }
+
+    public function test_an_mp4_with_video_is_still_a_film(): void
+    {
+        // The other direction, and the one that would quietly empty the film
+        // list if this were got wrong.
+        file_put_contents($this->watched . '/Backrooms 2026.mp4', 'x');
+
+        \Illuminate\Support\Facades\Process::fake([
+            '*' => \Illuminate\Support\Facades\Process::result(
+                output: json_encode(['streams' => [
+                    ['codec_type' => 'video', 'codec_name' => 'h264'],
+                    ['codec_type' => 'audio', 'codec_name' => 'aac'],
+                ]]),
+            ),
+        ]);
+
+        $this->scanner->scan();
+
+        $item = MediaItem::where('title', 'like', '%Backrooms%')->first();
+
+        $this->assertNotNull($item);
+        $this->assertSame(MediaItemType::Movie, $item->type);
+    }
+
+    public function test_a_film_stays_a_film_when_ffprobe_cannot_answer(): void
+    {
+        // ffprobe is optional in this project. A probe that failed and was read
+        // as "no video" would retype every film in the library the first time
+        // it went missing.
+        file_put_contents($this->watched . '/Elf 2003.mp4', 'x');
+
+        \Illuminate\Support\Facades\Process::fake([
+            '*' => \Illuminate\Support\Facades\Process::result(output: '', errorOutput: 'not found', exitCode: 1),
+        ]);
+
+        $this->scanner->scan();
+
+        $item = MediaItem::where('title', 'like', '%Elf%')->first();
+
+        $this->assertNotNull($item);
+        $this->assertSame(MediaItemType::Movie, $item->type);
+    }
+
     public function test_it_catalogues_a_new_file(): void
     {
         $this->file('Backrooms 2026 1080p WEB-DL.mkv');
