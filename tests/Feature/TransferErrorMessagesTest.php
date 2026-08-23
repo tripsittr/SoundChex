@@ -44,6 +44,18 @@ class TransferErrorMessagesTest extends TestCase
         $this->assertMessage('cURL error 28: Operation timed out after 30000 ms', 'did not answer in time');
     }
 
+    public function test_a_file_that_cannot_be_written_is_not_reported_as_a_network_problem(): void
+    {
+        // It reads like one and is not. On Windows a file unlinked while
+        // something still holds it open keeps its name in a delete-pending
+        // state, and every later open of that name is refused — so a transfer
+        // fails here having never left the machine.
+        $this->assertMessage(
+            'fopen(storage/app/transfer-incoming.sqlite.gz): Failed to open stream: Permission denied',
+            'still holding the previous one open',
+        );
+    }
+
     public function test_anything_unrecognised_is_passed_through(): void
     {
         // Better a raw message than a wrong guess at what it means.
