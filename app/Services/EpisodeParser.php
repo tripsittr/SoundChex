@@ -193,7 +193,7 @@ class EpisodeParser
         $name = preg_replace('/\s*[\(\[]?\b(19|20)\d{2}\b[\)\]]?\s*$/', '', $name) ?? $name;
 
         $name = trim(preg_replace('/\s{2,}/', ' ', $name) ?? $name);
-        $name = trim($name, " -–—_.");
+        $name = Titles::trim($name);
 
         return $name === '' ? null : $name;
     }
