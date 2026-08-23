@@ -43,6 +43,10 @@ approval names what it covered and what it could not; Mac tests browser-shaped
 risk here before merging. Equally, `a5` is the *receiving* machine in a
 transfer, so transfer behaviour cannot be verified from this side alone.
 
+**Neither machine can measure the other's progress — ask, do not infer.** Byte
+counters read a bursty copy as stalled; a hand-reset queue reads as a fix
+working. Both happened on one transfer.
+
 Full agreement: [docs/WorkingWithTwoAgents.md](docs/WorkingWithTwoAgents.md).
 
 ### 1. Never commit media

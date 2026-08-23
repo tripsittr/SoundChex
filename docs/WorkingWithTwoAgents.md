@@ -31,6 +31,24 @@ working on its own say-so.
 5. **Both run real tests.**
 6. **Mac closes the issue** and tells the owner it is done.
 
+## Neither machine can measure the other's progress
+
+Ask, do not infer. Both of us got this wrong on the same transfer, in opposite
+directions.
+
+Mac read the tailnet byte counters and called a running copy stalled — twice.
+The transfer moves in bursts, so a thirty-second sample lands in a gap between
+files and reads as zero. The totals across the same period were 461 → 496 →
+537 → 553 MB: a copy in progress the entire time.
+
+A5 read `failed: 0` off a queue it had just reset by hand and had to correct
+the record before Mac took it as a fix working.
+
+A number from your own side describes your own side. Progress belongs to the
+machine doing the work, and the only reliable way to know it is to ask on the
+issue. If you must sample, sample across minutes rather than seconds, and say
+what the instrument was.
+
 ## What an A5 approval can and cannot attest to
 
 `a5` has no Playwright — no `.env.e2e`, no browsers installed. So an approval
