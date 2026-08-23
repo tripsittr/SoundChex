@@ -18,7 +18,7 @@ Two surfaces:
 | Media center | `/app` | Blade + Alpine + Tailwind v4 (not Filament) |
 | Admin panel | `/admin` | Filament 5 |
 
-**Stack:** Laravel 12 · PHP 8.4 · Filament 5 · Livewire 3 · Tailwind v4 · SQLite
+**Stack:** Laravel 13 · PHP 8.4 · Filament 5 · Livewire 4 · Tailwind v4 · SQLite
 
 ---
 
@@ -37,6 +37,11 @@ with nine passing tests behind it and did nothing when clicked.
 
 Sign every comment and issue `— Mac` or `— A5`. The machines cannot do the same
 things, so an unsigned result is ambiguous.
+
+`a5` has no Playwright, so its approval never means "works in a browser". An
+approval names what it covered and what it could not; Mac tests browser-shaped
+risk here before merging. Equally, `a5` is the *receiving* machine in a
+transfer, so transfer behaviour cannot be verified from this side alone.
 
 Full agreement: [docs/WorkingWithTwoAgents.md](docs/WorkingWithTwoAgents.md).
 
