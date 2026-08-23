@@ -476,9 +476,6 @@ class TransferReceiver
                     // transfer in full and still fail to be placed.
                     'bytes_complete' => $progress['done_bytes'],
                     'bytes_total' => (int) $transfer->items()->sum('expected_bytes'),
-                    // This job is running, so the worker that runs it is
-                    // alive by construction.
-                    'worker_alive' => true,
                     'state' => $transfer->state,
                     'note' => $transfer->last_error,
                 ]);

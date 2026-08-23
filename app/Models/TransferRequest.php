@@ -57,7 +57,6 @@ class TransferRequest extends Model
             'wants' => 'array',
             'expires_at' => 'datetime',
             'progress_at' => 'datetime',
-            'worker_alive' => 'boolean',
             'approved_at' => 'datetime',
         ];
     }

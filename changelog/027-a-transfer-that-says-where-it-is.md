@@ -29,12 +29,6 @@ misleading number in every false alarm: a file can transfer in full, byte for
 byte, and still fail to be placed — which is exactly what the Windows
 open-handle bug did all morning.
 
-### Whether the worker is alive
-
-Reported rather than inferred. A dead queue worker is indistinguishable from a
-stalled transfer from outside, and cost half an hour today before anyone
-thought to check.
-
 ## Worth knowing
 
 - **A migration adds ten nullable columns to `transfer_requests`.** Nothing is
@@ -44,3 +38,6 @@ thought to check.
   should not stop over a status update.
 - Nothing here is trusted beyond display. A receiver could report whatever it
   liked; the worst it can do is lie about its own progress.
+- A `worker_alive` field was written and then removed in review: only a running
+  worker can report, so it could only ever be `true`, and `progress_at` going
+  quiet already carries that signal honestly.
