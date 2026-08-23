@@ -24,6 +24,22 @@ Two surfaces:
 
 ## The rules that matter most
 
+### 0. Two machines work this repository
+
+`a5` (Windows) and `macbookair` (macOS), each with an agent. **Mac writes every
+fix; `a5` reports logs, findings and errors on the issue.** `a5` claims, Mac
+fixes and opens a PR, **`a5` reviews and approves before Mac merges**, then both
+test for real and Mac closes.
+
+"For real" excludes PHPUnit, Pest, Vitest and Playwright — those still have to
+pass, but they close nothing. Drive the actual app. The Cancel button shipped
+with nine passing tests behind it and did nothing when clicked.
+
+Sign every comment and issue `— Mac` or `— A5`. The machines cannot do the same
+things, so an unsigned result is ambiguous.
+
+Full agreement: [docs/WorkingWithTwoAgents.md](docs/WorkingWithTwoAgents.md).
+
 ### 1. Never commit media
 
 The library is the user's own films, music and books. A single misplaced folder
