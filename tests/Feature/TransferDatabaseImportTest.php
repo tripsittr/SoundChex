@@ -95,6 +95,70 @@ class TransferDatabaseImportTest extends TestCase
         $this->assertStringContainsString('the existing catalogue', file_get_contents($backups[0]));
     }
 
+    public function test_it_replaces_a_catalogue_something_else_holds_open(): void
+    {
+        // The failure this covers: `rename()` over a file another process has
+        // open is refused on Windows with "Access is denied", and the
+        // catalogue is held open by the app, the scheduler and the queue
+        // worker running this. The arrived catalogue downloaded, unpacked and
+        // verified, and then could not be put in place.
+        $arriving = 'SQLite format 3' . "\0" . 'the catalogue from the other machine';
+
+        Http::fake(['*/transfer/database*' => Http::response(gzencode($arriving))]);
+
+        $this->useScratchCatalogue();
+
+        // Stands in for every process that has the live catalogue open.
+        $holder = fopen($this->catalogue, 'rb');
+
+        $this->assertTrue(app(TransferReceiver::class)->importDatabase($this->transfer()));
+
+        fclose($holder);
+
+        $this->assertSame($arriving, file_get_contents($this->catalogue));
+    }
+
+    public function test_the_old_write_ahead_log_does_not_survive_the_swap(): void
+    {
+        // It belongs to the catalogue that was just replaced. Several megabytes
+        // of another database's pending writes sitting beside a fresh file is
+        // not something to leave and hope is ignored.
+        Http::fake(['*/transfer/database*' => Http::response(gzencode('SQLite format 3' . "\0" . 'new'))]);
+
+        $this->useScratchCatalogue();
+
+        file_put_contents($this->catalogue . '-wal', 'pages from the old catalogue');
+        file_put_contents($this->catalogue . '-shm', 'shared memory index');
+
+        $this->assertTrue(app(TransferReceiver::class)->importDatabase($this->transfer()));
+
+        $this->assertFileDoesNotExist($this->catalogue . '-wal');
+        $this->assertFileDoesNotExist($this->catalogue . '-shm');
+    }
+
+    public function test_a_catalogue_that_cannot_be_placed_is_kept_for_the_retry(): void
+    {
+        // Deleting it meant fetching the whole catalogue again to retry a
+        // rename. What arrived was correct — it is the swap that failed.
+        Http::fake(['*/transfer/database*' => Http::response(gzencode('SQLite format 3' . "\0" . 'new'))]);
+
+        $this->useScratchCatalogue();
+
+        // A directory cannot be opened for writing or renamed over, so both
+        // routes fail and the staged copy is all that is left.
+        @unlink($this->catalogue);
+        mkdir($this->catalogue);
+
+        $transfer = $this->transfer();
+
+        $this->assertFalse(app(TransferReceiver::class)->importDatabase($transfer));
+
+        $this->assertFileExists($this->catalogue . '.incoming');
+        $this->assertStringContainsString('could not be put in place', $transfer->fresh()->last_error);
+
+        rmdir($this->catalogue);
+    }
+
     public function test_it_refuses_when_there_is_no_database_file_to_replace(): void
     {
         // The tests run on :memory:, and the import reads the path from the

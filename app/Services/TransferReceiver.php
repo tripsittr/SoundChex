@@ -576,12 +576,36 @@ class TransferReceiver
             return false;
         }
 
-        if (! @rename($staged, $target)) {
-            @unlink($staged);
+        if (! $this->putInPlace($staged, $target)) {
+            // Kept, not deleted. What arrived is correct — it downloaded,
+            // unpacked and passed the header check — and throwing it away
+            // means fetching the whole catalogue again to retry a rename.
+            $transfer->forceFill([
+                'last_error' => $this->truncate(
+                    'The catalogue arrived but could not be put in place. Something else '
+                    . 'still has the database open — stop the app and the queue worker, '
+                    . 'then resume. It is kept at ' . basename($staged) . '.',
+                ),
+            ])->save();
 
-            $transfer->forceFill(['last_error' => 'Could not put the new catalogue in place.'])->save();
+            Log::error('A catalogue could not be put in place', [
+                'transfer' => $transfer->id,
+                'staged' => $staged,
+                'target' => $target,
+            ]);
 
             return false;
+        }
+
+        // The old write-ahead log belongs to the catalogue that was just
+        // replaced. SQLite checks it against the database header and should
+        // reject a mismatched one, but leaving several megabytes of another
+        // database's pending writes beside a fresh file is not something to
+        // rely on being ignored.
+        foreach (['-wal', '-shm'] as $sidecar) {
+            if (is_file($target . $sidecar)) {
+                @unlink($target . $sidecar);
+            }
         }
 
         Log::warning('This catalogue was replaced by another server\'s', [
@@ -589,6 +613,112 @@ class TransferReceiver
             'source' => $transfer->source_url,
             'backup' => $backup,
         ]);
+
+        return true;
+    }
+
+    /**
+     * Swaps the arrived catalogue in for the live one.
+     *
+     * `rename()` is the right way to do this and is atomic, so it is tried
+     * first. It cannot be the only way: on Windows a rename over a file
+     * another process holds open fails with "Access is denied", and the
+     * catalogue is held open by every part of the app that is running —
+     * including the queue worker running this, through its own connection.
+     * That is why the connection is dropped first, and why there is a second
+     * route at all.
+     *
+     * The fallback writes over the existing file rather than replacing it,
+     * which Windows does permit. It is not atomic, which is exactly why it is
+     * second: an interrupted write leaves a corrupt catalogue, and the only
+     * thing standing behind that is the backup taken before any of this.
+     */
+    private function putInPlace(string $staged, string $target): bool
+    {
+        // This process holds the catalogue open too, so without dropping it
+        // the rename cannot succeed on Windows however much else is stopped.
+        //
+        // Only when the live connection really is the file being replaced.
+        // Read from the connection rather than from config(): the two differ
+        // whenever something has pointed config elsewhere, and disconnecting
+        // an `:memory:` connection destroys the database rather than releasing
+        // a handle on it.
+        $live = \DB::connection()->getConfig('database');
+
+        if (is_string($live)
+            && $live !== ':memory:'
+            && realpath($live) !== false
+            && realpath($live) === realpath($target)) {
+            try {
+                \DB::disconnect();
+            } catch (\Throwable $e) {
+                Log::warning('The catalogue connection could not be dropped before the swap', [
+                    'reason' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if (@rename($staged, $target)) {
+            return true;
+        }
+
+        // Everything still running holds the catalogue open — the app, the
+        // queue worker, the scheduler. Windows refuses a rename over any of
+        // them, so the contents are written into the existing file instead.
+        Log::warning('The catalogue could not be renamed into place, writing over it instead', [
+            'target' => $target,
+            'note' => 'Every process using this catalogue must be restarted.',
+        ]);
+
+        $in = @fopen($staged, 'rb');
+        $out = @fopen($target, 'wb');
+
+        if ($in === false || $out === false) {
+            if ($in !== false) {
+                fclose($in);
+            }
+
+            if ($out !== false) {
+                fclose($out);
+            }
+
+            return false;
+        }
+
+        $written = 0;
+
+        while (! feof($in)) {
+            $chunk = fread($in, 1024 * 512);
+
+            if ($chunk === false) {
+                break;
+            }
+
+            $bytes = fwrite($out, $chunk);
+
+            if ($bytes === false) {
+                break;
+            }
+
+            $written += $bytes;
+        }
+
+        fclose($in);
+        fclose($out);
+
+        // Short means the live catalogue is now part old and part new, which
+        // is worse than either. Said plainly rather than reported as success.
+        if ($written !== filesize($staged)) {
+            Log::error('The catalogue was only partly written', [
+                'written' => $written,
+                'expected' => filesize($staged),
+                'target' => $target,
+            ]);
+
+            return false;
+        }
+
+        @unlink($staged);
 
         return true;
     }
@@ -621,6 +751,21 @@ class TransferReceiver
         }
 
         $path = $directory . '/before-transfer-' . now()->format('Y-m-d_His') . '.sqlite';
+
+        // Folded in before copying. In WAL mode recent writes live in
+        // `database.sqlite-wal` rather than the file being copied — 4.3 MB of
+        // it on the machine this was found on — so a copy of the main file
+        // alone is a backup missing whatever was written most recently, which
+        // is the part least likely to exist anywhere else.
+        try {
+            \DB::statement('PRAGMA wal_checkpoint(TRUNCATE)');
+        } catch (\Throwable $e) {
+            // Worth saying, not worth refusing over: the copy below is still a
+            // better backup than none, it is just potentially short of the tail.
+            Log::warning('The catalogue could not be checkpointed before backing it up', [
+                'reason' => $e->getMessage(),
+            ]);
+        }
 
         return @copy($source, $path) ? $path : null;
     }
