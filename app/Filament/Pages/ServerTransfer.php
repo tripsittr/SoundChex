@@ -109,6 +109,18 @@ class ServerTransfer extends Page
             'device' => $r->device_name ?: 'unnamed',
             'wants' => $r->wantsLabel(),
             'since' => $r->approved_at?->diffForHumans(),
+            // Reported by the receiver, which is the only machine that knows.
+            // Null until the first report arrives; `heard` going quiet is the
+            // signal that something stopped.
+            'complete' => $r->items_complete,
+            'total' => $r->items_total,
+            'failed' => $r->items_failed,
+            'gb' => $r->bytes_total
+                ? round(($r->bytes_complete ?? 0) / 1073741824, 2) . ' of '
+                    . round($r->bytes_total / 1073741824, 2) . ' GB'
+                : null,
+            'heard' => $r->progress_at?->diffForHumans(),
+            'stale' => $r->progress_at !== null && $r->progress_at->lt(now()->subMinutes(5)),
         ])->all();
 
         $this->transfers = Transfer::latest('id')->limit(5)->get()->map(function (Transfer $t) {

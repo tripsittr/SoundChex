@@ -102,6 +102,63 @@ class RequestController extends Controller
      * at authentication rather than answered here. The receiver reads that
      * refusal as already-ended, which it is.
      */
+    /**
+     * The receiver saying how far it has got.
+     *
+     * The machine doing the copying is the only one that knows, and the
+     * machine being copied had no way to ask. Both sides guessed instead: one
+     * read tailnet byte counters and called a running transfer stalled, twice,
+     * because the copy moves in bursts and a short sample lands in a gap; the
+     * other reported a queue count it had changed by hand minutes earlier.
+     *
+     * Which request this is comes from the token, not the body, so a receiver
+     * can only report its own — the same rule as `cancel()`. Nothing here is
+     * trusted for anything but display: the worst a receiver can do is lie
+     * about its own progress.
+     */
+    public function progress(Request $request): JsonResponse
+    {
+        $token = $request->user()?->currentAccessToken();
+
+        abort_unless($token?->can(TransferRequest::ABILITY), 403, 'Not a transfer token.');
+
+        $transferRequest = TransferRequest::where('token_id', $token->id)->first();
+
+        abort_unless($transferRequest !== null, 403, 'Not a transfer token.');
+
+        $data = $request->validate([
+            'items_total' => ['nullable', 'integer', 'min:0'],
+            'items_complete' => ['nullable', 'integer', 'min:0'],
+            'items_failed' => ['nullable', 'integer', 'min:0'],
+            'items_skipped' => ['nullable', 'integer', 'min:0'],
+            'items_pending' => ['nullable', 'integer', 'min:0'],
+            'worker_alive' => ['nullable', 'boolean'],
+            'bytes_complete' => ['nullable', 'integer', 'min:0'],
+            'bytes_total' => ['nullable', 'integer', 'min:0'],
+            'state' => ['nullable', 'string', 'max:40'],
+            'note' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $transferRequest->forceFill([
+            'items_total' => $data['items_total'] ?? null,
+            'items_complete' => $data['items_complete'] ?? null,
+            'items_failed' => $data['items_failed'] ?? null,
+            'items_skipped' => $data['items_skipped'] ?? null,
+            'items_pending' => $data['items_pending'] ?? null,
+            'bytes_complete' => $data['bytes_complete'] ?? null,
+            'bytes_total' => $data['bytes_total'] ?? null,
+            // A dead worker is indistinguishable from a stalled transfer
+            // from outside, and cost half an hour today before anyone thought
+            // to check. Reported rather than inferred.
+            'worker_alive' => $data['worker_alive'] ?? null,
+            'progress_state' => $data['state'] ?? null,
+            'progress_note' => $data['note'] ?? null,
+            'progress_at' => now(),
+        ])->save();
+
+        return response()->json(['recorded' => true]);
+    }
+
     public function cancel(Request $request): JsonResponse
     {
         $token = $request->user()?->currentAccessToken();
