@@ -6,6 +6,7 @@ use App\Models\TransferRequest;
 use App\Models\User;
 use App\Services\TransferApprovals;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\PersonalAccessToken;
 use Tests\TestCase;
 
 /**
@@ -119,38 +120,64 @@ class TransferApprovalTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/transfer/manifest')->assertForbidden();
     }
 
-    public function test_a_database_can_be_gzipped_to_a_file_and_read_back(): void
+    /*
+     * The compression that broke the first real transfer is covered by
+     * tests/Unit/CatalogueArchiveTest.php, which calls the class the endpoint
+     * calls. It is not exercised through the route here on purpose: the route
+     * checkpoints the WAL, and that fights the harness's own transaction. The
+     * accepted gap is the routing, which did not break; the compression, which
+     * did, is covered against the real code.
+     */
+
+    public function test_a_receiver_can_cancel_its_own_transfer(): void
     {
-        // The first real transfer got a 500 from the catalogue endpoint:
-        // gzopen('php://output') fails with "could not make seekable", because
-        // the handle seeks and output does not. Every test that checked only
-        // the status code passed regardless.
-        //
-        // Tested as the compression step rather than through the endpoint,
-        // because the endpoint checkpoints the WAL and that fights the test
-        // harness's own transaction. What broke was this, not the routing.
-        $source = tempnam(sys_get_temp_dir(), 'soundchex-src-');
-        file_put_contents($source, 'SQLite format 3' . str_repeat("\0", 200));
+        $request = $this->pending();
 
-        $archive = $source . '.gz';
+        $this->assertTrue(app(TransferApprovals::class)->approve($request, User::factory()->create()));
 
-        $in = fopen($source, 'rb');
-        $out = gzopen($archive, 'wb6');
+        $token = $request->fresh()->plain_token;
+        $tokenId = $request->fresh()->token_id;
 
-        while (! feof($in)) {
-            gzwrite($out, fread($in, 1024 * 512));
-        }
+        $this->withToken($token)->deleteJson('/api/v1/transfer/requests/mine')->assertOk();
 
-        fclose($in);
-        gzclose($out);
+        // Ended, and the token destroyed with it — so cancelling is not merely
+        // a label on a request that can still read this machine.
+        $this->assertSame(TransferRequest::REVOKED, $request->fresh()->state);
+        $this->assertNull($request->fresh()->token_id);
+        $this->assertSame(0, PersonalAccessToken::where('id', $tokenId)->count());
+    }
 
-        $unpacked = @gzdecode(file_get_contents($archive));
+    public function test_cancelling_ends_only_the_caller_s_own_transfer(): void
+    {
+        // Otherwise cancelling would be a way to stop somebody else's transfer
+        // by guessing an id, and the id is a small integer.
+        $mine = $this->pending();
+        $theirs = $this->pending();
 
-        $this->assertNotFalse($unpacked, 'The archive was not gzip.');
-        $this->assertStringStartsWith('SQLite format 3', $unpacked);
+        $approvals = app(TransferApprovals::class);
+        $user = User::factory()->create();
 
-        @unlink($source);
-        @unlink($archive);
+        $this->assertTrue($approvals->approve($mine, $user));
+        $this->assertTrue($approvals->approve($theirs, $user));
+
+        $this->withToken($mine->fresh()->plain_token)
+            ->deleteJson('/api/v1/transfer/requests/mine')
+            ->assertOk();
+
+        $this->assertSame(TransferRequest::REVOKED, $mine->fresh()->state);
+        $this->assertSame(TransferRequest::APPROVED, $theirs->fresh()->state);
+    }
+
+    public function test_cancelling_is_refused_without_a_transfer_token(): void
+    {
+        $this->deleteJson('/api/v1/transfer/requests/mine')->assertUnauthorized();
+    }
+
+    public function test_an_ordinary_api_token_cannot_cancel_a_transfer(): void
+    {
+        $token = User::factory()->create()->createToken('phone')->plainTextToken;
+
+        $this->withToken($token)->deleteJson('/api/v1/transfer/requests/mine')->assertForbidden();
     }
 
     private function pending(array $wants = ['metadata', 'files', 'profiles']): TransferRequest

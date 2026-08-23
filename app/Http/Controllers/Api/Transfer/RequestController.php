@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api\Transfer;
 
 use App\Http\Controllers\Controller;
 use App\Models\TransferRequest;
-use App\Models\User;
+use App\Services\TransferApprovals;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -87,5 +87,36 @@ class RequestController extends Controller
         }
 
         return response()->json($body);
+    }
+
+    /**
+     * The receiver calling off its own transfer.
+     *
+     * Which request is being cancelled comes from the token, never from the
+     * URL. A receiver holds a token for exactly one request, so it can end
+     * that one and no other — otherwise cancelling would be a way to stop
+     * somebody else's transfer by guessing an id, and the id is a small
+     * integer.
+     *
+     * Cancelling destroys the token, so a second attempt with it is refused
+     * at authentication rather than answered here. The receiver reads that
+     * refusal as already-ended, which it is.
+     */
+    public function cancel(Request $request): JsonResponse
+    {
+        $token = $request->user()?->currentAccessToken();
+
+        abort_unless($token?->can(TransferRequest::ABILITY), 403, 'Not a transfer token.');
+
+        $transferRequest = TransferRequest::where('token_id', $token->id)->first();
+
+        // 403 rather than 404, matching SourceController::authorizeTransfer():
+        // a token that belongs to no transfer learns that it is not a transfer
+        // token, and nothing about which requests exist.
+        abort_unless($transferRequest !== null, 403, 'Not a transfer token.');
+
+        app(TransferApprovals::class)->cancelledByReceiver($transferRequest);
+
+        return response()->json(['state' => TransferRequest::REVOKED]);
     }
 }
