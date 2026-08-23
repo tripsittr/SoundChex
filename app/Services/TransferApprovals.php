@@ -27,15 +27,23 @@ class TransferApprovals
             return false;
         }
 
+        // The window runs from the moment of approval, not from when the
+        // request arrived. It was the latter, so the four hours were shared
+        // with however long the request sat waiting for a person to see it —
+        // and a 46 GB copy that starts with an hour left does not finish.
+        // Four transfers died this way, each one reported as an expired token.
+        $expiresAt = now()->addHours(TransferRequest::APPROVAL_HOURS);
+
         $token = $approver->createToken(
             'transfer-' . $request->id,
             [TransferRequest::ABILITY],
-            $request->expires_at,
+            $expiresAt,
         );
 
         $request->forceFill([
             'state' => TransferRequest::APPROVED,
             'approved_at' => now(),
+            'expires_at' => $expiresAt,
             'token_id' => $token->accessToken->id,
             'plain_token' => $token->plainTextToken,
         ])->save();
