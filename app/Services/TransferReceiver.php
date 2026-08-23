@@ -425,7 +425,7 @@ class TransferReceiver
     public function fetch(TransferItem $item): bool
     {
         $transfer = $item->transfer;
-        $destination = $this->longPath(Storage::path($item->path));
+        $destination = Storage::path($item->path);
 
         if ($this->alreadyHave($item, $destination)) {
             $item->forceFill(['state' => TransferItem::SKIPPED])->save();
@@ -1070,37 +1070,6 @@ class TransferReceiver
      * that looks like a film is worse than no film, because nothing will ever
      * tell you it is wrong.
      */
-    /**
-     * Lets Windows open a path longer than it otherwise would.
-     *
-     * `MAX_PATH` is 260 characters, and 37 files in this library are longer
-     * than that — one is 382, a track credited to nine artists. They fail on
-     * open regardless of permissions, and the failure looks like a missing
-     * file rather than a name nobody can say.
-     *
-     * The `\\?\` prefix skips that limit without a registry change on the
-     * receiving machine. It only reaches the filesystem call: `$item->path`
-     * and the catalogue keep the name they always had, so nothing has to be
-     * reconciled afterwards. Absolute paths only, and a no-op everywhere but
-     * Windows.
-     */
-    private function longPath(string $path): string
-    {
-        if (PHP_OS_FAMILY !== 'Windows' || str_starts_with($path, '\\\\?\\')) {
-            return $path;
-        }
-
-        $native = str_replace('/', '\\', $path);
-
-        // A relative path cannot take the prefix — it is resolved against the
-        // device namespace and would not mean the same thing.
-        if (! preg_match('/^[A-Za-z]:\\\\/', $native)) {
-            return $path;
-        }
-
-        return '\\\\?\\' . $native;
-    }
-
     private function verifyAndPlace(TransferItem $item, string $temporary, string $destination): bool
     {
         if (! is_file($temporary)) {
