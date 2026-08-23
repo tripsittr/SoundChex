@@ -60,18 +60,16 @@ test.describe('server transfer', () => {
         const row = page.getByText('http://127.0.0.1:9').first();
         await expect(row).toBeVisible({ timeout: 15000 });
 
-        // Delete is refused while one is running, so both buttons are here
-        // for a transfer that never started.
-        const cancel = page.getByRole('button', { name: 'Cancel' }).first();
-        await expect(cancel).toBeVisible();
-
-        page.once('dialog', (dialog) => dialog.accept());
-        await cancel.click();
+        // Both confirm with a second click rather than a native dialog — the
+        // first click only offers the second, which is what makes this
+        // testable without handling a browser prompt.
+        await page.getByRole('button', { name: 'Cancel', exact: true }).first().click();
+        await page.getByRole('button', { name: 'Stop it on both machines' }).first().click();
 
         await expect(page.getByText(/cancelled/i).first()).toBeVisible({ timeout: 15000 });
 
-        page.once('dialog', (dialog) => dialog.accept());
-        await page.getByRole('button', { name: 'Delete' }).first().click();
+        await page.getByRole('button', { name: 'Delete', exact: true }).first().click();
+        await page.getByRole('button', { name: 'Remove it' }).first().click();
 
         // Gone from the list rather than merely marked, which is what
         // "clean it up" has to mean.
