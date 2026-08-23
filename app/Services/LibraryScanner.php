@@ -106,14 +106,25 @@ class LibraryScanner
                     ? $this->episodes->parse($basename)
                     : null;
 
-                if ($parsed !== null) {
+                // Type is decided by whether this is television, not by
+                // whether it can be filed. Reading a refusal to file as "not a
+                // show" put 48 season-zero specials in the library as films.
+                $marker = $type === MediaItemType::Movie
+                    ? $this->episodes->marker($basename)
+                    : null;
+
+                if ($type === MediaItemType::Movie && $this->episodes->isTelevision($basename)) {
                     $type = MediaItemType::Show;
                 }
 
-                $title = $parsed !== null
+                // From the marker rather than the filing result: without it
+                // all 48 specials were catalogued under the bare series name,
+                // indistinguishable from one another. A multi-episode file has
+                // no single code to carry, so it keeps its cleaned filename.
+                $title = $marker !== null && ! $this->episodes->isMultiEpisode($basename)
                     // The episode's own title is filled by enrichment; until
                     // then the code identifies it unambiguously.
-                    ? sprintf('%s S%02dE%02d', $parsed['series'], $parsed['season'], $parsed['episode'])
+                    ? sprintf('%s S%02dE%02d', $marker['series'], $marker['season'], $marker['episode'])
                     : $this->cleanTitle($basename, $type);
 
                 // A filename that carries no readable title — a temp-upload
@@ -148,8 +159,8 @@ class LibraryScanner
 
                     // Episodes hang off one series row, so a show is a single
                     // entry with children rather than ten unrelated items.
-                    if ($parsed !== null) {
-                        $this->attachToSeries($item, $parsed['series'], $userId);
+                    if ($marker !== null) {
+                        $this->attachToSeries($item, $marker['series'], $userId);
                     }
 
                     // Checked before enrichment is queued: an identical copy
@@ -340,12 +351,21 @@ class LibraryScanner
                     ? $this->episodes->parse($basename)
                     : null;
 
-                if ($parsed !== null) {
+                // Type is decided by whether this is television, not by
+                // whether it can be filed. Reading a refusal to file as "not a
+                // show" put 48 season-zero specials in the library as films.
+                $marker = $type === MediaItemType::Movie
+                    ? $this->episodes->marker($basename)
+                    : null;
+
+                if ($type === MediaItemType::Movie && $this->episodes->isTelevision($basename)) {
                     $type = MediaItemType::Show;
                 }
 
-                $title = $parsed !== null
-                    ? sprintf('%s S%02dE%02d', $parsed['series'], $parsed['season'], $parsed['episode'])
+                // From the marker rather than the filing result — see the same
+                // decision in scan() above.
+                $title = $marker !== null && ! $this->episodes->isMultiEpisode($basename)
+                    ? sprintf('%s S%02dE%02d', $marker['series'], $marker['season'], $marker['episode'])
                     : $this->cleanTitle($basename, $type);
 
                 if ($title === null) {
@@ -372,8 +392,8 @@ class LibraryScanner
                 if (! $dryRun) {
                     $item = $this->catalog($path, $title, $type, $userId, $seed);
 
-                    if ($parsed !== null) {
-                        $this->attachToSeries($item, $parsed['series'], $userId);
+                    if ($marker !== null) {
+                        $this->attachToSeries($item, $marker['series'], $userId);
                     }
 
                     // Opt-in, unlike a scan. Recovery is about getting the rows
