@@ -39,6 +39,55 @@ class TransferApprovalTest extends TestCase
             ->assertJsonMissingPath('token');
     }
 
+    public function test_an_approved_token_is_not_handed_to_a_stranger(): void
+    {
+        // show() cannot be authenticated - collecting the token is how a
+        // receiver authenticates - so it was handing a live bearer token to
+        // anyone who asked for the right id, unauthenticated, over a Funnel
+        // address, with ids running from 1. The token reads the whole library.
+        $request = $this->pending();
+        $request->forceFill(['claim_hash' => hash('sha256', 'the-receivers-secret')])->save();
+
+        app(TransferApprovals::class)->approve($request->fresh(), User::factory()->create());
+
+        $blind = $this->getJson('/api/v1/transfer/requests/' . $request->id)->assertOk();
+
+        $blind->assertJsonMissing(['token' => $request->fresh()->plain_token]);
+        $this->assertNull($blind->json('token'), 'a stranger must not be given the token');
+        $this->assertSame('approved', $blind->json('state'), 'but the state is still public');
+
+        $held = $this->getJson('/api/v1/transfer/requests/' . $request->id . '?claim=the-receivers-secret');
+
+        $this->assertSame($request->fresh()->plain_token, $held->json('token'));
+    }
+
+    public function test_a_wrong_claim_gets_nothing(): void
+    {
+        $request = $this->pending();
+        $request->forceFill(['claim_hash' => hash('sha256', 'the-receivers-secret')])->save();
+
+        app(TransferApprovals::class)->approve($request->fresh(), User::factory()->create());
+
+        $this->assertNull(
+            $this->getJson('/api/v1/transfer/requests/' . $request->id . '?claim=wrong')->json('token'),
+        );
+    }
+
+    public function test_a_request_made_before_claims_existed_still_works(): void
+    {
+        // Deploying this must not kill a transfer already running. A request
+        // with no claim_hash is one made before the column existed, and is
+        // answered the way it always was.
+        $request = $this->pending();
+
+        app(TransferApprovals::class)->approve($request, User::factory()->create());
+
+        $this->assertSame(
+            $request->fresh()->plain_token,
+            $this->getJson('/api/v1/transfer/requests/' . $request->id)->json('token'),
+        );
+    }
+
     public function test_the_manifest_is_refused_until_approved(): void
     {
         $this->getJson('/api/v1/transfer/manifest')->assertUnauthorized();

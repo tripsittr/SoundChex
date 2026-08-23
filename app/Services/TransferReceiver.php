@@ -30,6 +30,14 @@ class TransferReceiver
     /** Asks a server for permission, and records what it said. */
     public function request(Transfer $transfer): bool
     {
+        // Generated before there is anything worth stealing, and kept so a
+        // restart can still collect the token.
+        $claim = $transfer->claim ?? bin2hex(random_bytes(32));
+
+        if ($transfer->claim === null) {
+            $transfer->forceFill(['claim' => $claim])->save();
+        }
+
         try {
             $response = $this->http()->acceptJson()->timeout(20)->post(
                 $this->url($transfer, 'transfer/requests'),
@@ -37,6 +45,10 @@ class TransferReceiver
                     'device_name' => gethostname() ?: null,
                     'platform' => PHP_OS_FAMILY,
                     'wants' => $transfer->wants,
+                    // Proves later that the machine collecting the token is
+                    // the one that asked. The source stores only its hash;
+                    // this plain copy never leaves here except to claim.
+                    'claim' => $claim,
                 ],
             );
 
@@ -276,6 +288,9 @@ class TransferReceiver
         try {
             $response = $this->http()->acceptJson()->timeout(15)->get(
                 $this->url($transfer, 'transfer/requests/' . $transfer->remote_request_id),
+                // Without this the source returns state only. A request made
+                // before claims existed has none, and is answered as before.
+                $transfer->claim !== null ? ['claim' => $transfer->claim] : [],
             );
 
             $state = $response->json('state', 'unknown');
