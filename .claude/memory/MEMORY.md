@@ -9,5 +9,8 @@
 - [PR flow and changelogs](soundchex-pr-flow.md) — everything reaches main via PR; every PR gets changelog/NNN-name.md written when it opens
 - [Publish memory with the PR](soundchex-publish-memory.md) — copy changed notes into .claude/memory/ and ship them, correcting stale ones first
 - [No AI artifacts](soundchex-no-ai-artifacts.md) — nothing published mentions AI or carries a co-author trailer
+- [Break the test to trust it](soundchex-break-the-test-to-trust-it.md) — a test written against a fix inherits its assumptions; four in one day passed with the code deleted
+- [Windows path separators](soundchex-windows-path-separators.md) — Storage::path() and realpath() return mixed separators, and every DIRECTORY_SEPARATOR comparison was silently broken there
+- [Check what a field means](soundchex-check-what-a-field-means.md) — match_confidence and publicState both mean less than their names suggest; grep for the write before concluding
 - [Windows delete-pending files](soundchex-windows-delete-pending.md) — unlinking a file something still has open poisons the name; every later open is refused with "Permission denied"
 - [The auto-updater switches branch](soundchex-auto-update-switches-branch.md) — a scheduled task on the Windows machine yanks the working tree back to main every five minutes, and skips its pull when anything is dirty
