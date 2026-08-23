@@ -44,8 +44,9 @@ risk here before merging. Equally, `a5` is the *receiving* machine in a
 transfer, so transfer behaviour cannot be verified from this side alone.
 
 **Neither machine can measure the other's progress — ask, do not infer.** Byte
-counters read a bursty copy as stalled; a hand-reset queue reads as a fix
-working. Both happened on one transfer.
+counters read a bursty copy as stalled. Worse, a number you changed yourself is
+not a measurement: a hand-reset queue reads as a fix working. Reviewing also
+perturbs the run — checking out a branch swaps the code under a live worker.
 
 Full agreement: [docs/WorkingWithTwoAgents.md](docs/WorkingWithTwoAgents.md).
 
