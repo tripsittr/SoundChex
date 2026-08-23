@@ -32,10 +32,6 @@ return new class extends Migration
             $table->unsignedBigInteger('bytes_complete')->nullable();
             $table->unsignedBigInteger('bytes_total')->nullable();
 
-            // A dead worker looks exactly like a stalled transfer from the
-            // outside. Reported rather than guessed at.
-            $table->boolean('worker_alive')->nullable();
-
             $table->string('progress_state')->nullable();
             $table->string('progress_note')->nullable();
 
@@ -59,7 +55,6 @@ return new class extends Migration
                 'items_pending',
                 'bytes_complete',
                 'bytes_total',
-                'worker_alive',
                 'progress_state',
                 'progress_note',
                 'progress_at',

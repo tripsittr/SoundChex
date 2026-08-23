@@ -47,7 +47,7 @@ class TransferRequest extends Model
         'ip', 'device_name', 'platform', 'wants', 'code',
         'state', 'denied_reason', 'expires_at', 'approved_at', 'token_id', 'plain_token',
         'items_total', 'items_complete', 'items_failed', 'items_skipped',
-        'items_pending', 'bytes_complete', 'bytes_total', 'worker_alive', 'progress_state',
+        'items_pending', 'bytes_complete', 'bytes_total', 'progress_state',
         'progress_note', 'progress_at',
     ];
 
@@ -57,7 +57,6 @@ class TransferRequest extends Model
             'wants' => 'array',
             'expires_at' => 'datetime',
             'progress_at' => 'datetime',
-            'worker_alive' => 'boolean',
             'approved_at' => 'datetime',
         ];
     }
