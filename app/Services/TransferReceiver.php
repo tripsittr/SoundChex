@@ -422,6 +422,61 @@ class TransferReceiver
      * one free. After, because a truncated file that looks present is worse
      * than one plainly absent.
      */
+    /**
+     * Tells the source how far this copy has got.
+     *
+     * The receiver is the only machine that knows, and the source had no way
+     * to ask. Both guessed instead, and both were wrong — one read tailnet
+     * byte counters that go quiet between files and called a running copy
+     * stalled, the other reported a queue count it had reset by hand. See
+     * docs/WorkingWithTwoAgents.md.
+     *
+     * Best-effort by design: this is a courtesy to the other end, and a
+     * transfer that cannot report is still a transfer. Every failure is
+     * swallowed after being logged, because a copy of 46 GB should not stop
+     * over a status update.
+     */
+    public function reportProgress(Transfer $transfer): void
+    {
+        if ($transfer->token === null) {
+            return;
+        }
+
+        $progress = $transfer->progress();
+        $total = $transfer->items()->count();
+
+        try {
+            $this->http()->withToken($transfer->token)
+                ->timeout(15)
+                ->post($this->url($transfer, 'transfer/progress'), [
+                    'items_total' => $total,
+                    'items_complete' => $progress['complete'],
+                    'items_failed' => $progress['failed'],
+                    'items_skipped' => $progress['skipped'],
+                    'items_pending' => $progress['pending'],
+                    // What landed, not what left: summed from bytes actually
+                    // written and verified, and an item only becomes complete
+                    // after the rename succeeds. Bytes on the wire were the
+                    // misleading number in every false alarm today - a file can
+                    // transfer in full and still fail to be placed.
+                    'bytes_complete' => $progress['done_bytes'],
+                    'bytes_total' => (int) $transfer->items()->sum('expected_bytes'),
+                    // This job is running, so the worker that runs it is
+                    // alive by construction.
+                    'worker_alive' => true,
+                    'state' => $transfer->state,
+                    'note' => $transfer->last_error,
+                ]);
+        } catch (\Throwable $e) {
+            // Logged rather than silent: a source that never hears anything
+            // should be able to find out why from the receiving end.
+            Log::info('Could not report transfer progress to the source', [
+                'transfer' => $transfer->id,
+                'error' => $this->truncate($e->getMessage()),
+            ]);
+        }
+    }
+
     public function fetch(TransferItem $item): bool
     {
         $transfer = $item->transfer;
