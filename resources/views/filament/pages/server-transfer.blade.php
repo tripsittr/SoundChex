@@ -73,6 +73,33 @@
                             <p class="text-sm opacity-70">
                                 Reading {{ $request['wants'] }} · approved {{ $request['since'] }}
                             </p>
+
+                            {{-- Reported by the receiver, because it is the only
+                                 machine that knows. Nothing shows until the
+                                 first report arrives. --}}
+                            @if ($request['total'])
+                                <p class="mt-1 text-sm">
+                                    {{ number_format($request['complete'] ?? 0) }} of
+                                    {{ number_format($request['total']) }} files
+                                    @if ($request['gb'])
+                                        · {{ $request['gb'] }}
+                                    @endif
+                                    @if ($request['failed'])
+                                        · <span class="text-danger-600">{{ number_format($request['failed']) }} failed</span>
+                                    @endif
+                                </p>
+
+                                {{-- Silence is the signal. A report that stopped
+                                     arriving means the copy did too, and that is
+                                     exactly what neither machine could see. --}}
+                                <p class="text-xs {{ $request['stale'] ? 'text-danger-600' : 'opacity-50' }}">
+                                    @if ($request['stale'])
+                                        Nothing heard {{ $request['heard'] }} — it may have stopped
+                                    @else
+                                        Last heard {{ $request['heard'] }}
+                                    @endif
+                                </p>
+                            @endif
                         </div>
 
                         <x-filament::button wire:click="revoke({{ $request['id'] }})" color="danger" size="sm">

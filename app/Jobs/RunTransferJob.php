@@ -108,6 +108,12 @@ class RunTransferJob implements ShouldQueue
             return;
         }
 
+        // Told to the machine being copied, every pass. It has no other way
+        // to know: both sides guessed at this and both were wrong, one reading
+        // byte counters that go quiet between files, the other a queue count
+        // it had just changed by hand. Failing to report never stops a copy.
+        $receiver->reportProgress($transfer);
+
         $next = $transfer->remaining()->limit(self::CONCURRENCY)->pluck('id');
 
         if ($next->isEmpty()) {
