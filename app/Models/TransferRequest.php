@@ -24,8 +24,22 @@ class TransferRequest extends Model
     /** What a token minted for a transfer is allowed to do, and nothing else. */
     public const ABILITY = 'transfer:read';
 
-    /** Long enough to walk to the other machine, short enough not to linger. */
+    /**
+     * How long a request waits for a person, before it is approved.
+     *
+     * Long enough to walk to the other machine, short enough not to linger.
+     */
     public const LIFETIME_HOURS = 4;
+
+    /**
+     * How long an approval lasts, from the moment it is given.
+     *
+     * Sized against the job rather than the walk: a full copy of this library
+     * is 46.3 GB, which is ~2.6 hours at 5 MB/s and longer if the link drops
+     * to a relay or the run is paused. Four hours left no margin for either,
+     * and expiring mid-copy costs the whole remaining transfer.
+     */
+    public const APPROVAL_HOURS = 12;
 
     protected $hidden = ['plain_token'];
 
