@@ -200,6 +200,37 @@ class TransferReceiver
     }
 
     /**
+     * Ends a transfer whose permission has gone.
+     *
+     * Stopped rather than retried, because nothing about it is retryable: the
+     * request has to be approved again on the other machine, by a person, and
+     * no amount of asking changes that. The state and what is already copied
+     * are left in place so resuming after a fresh approval picks up where this
+     * stopped rather than starting over.
+     */
+    private function authorisationLost(Transfer $transfer, int $status): void
+    {
+        if ($transfer->state === Transfer::FAILED) {
+            return;
+        }
+
+        $transfer->forceFill([
+            'state' => Transfer::FAILED,
+            'last_error' => $this->truncate(
+                'That server answered ' . $status . ' — the transfer is no longer approved. '
+                . 'Tokens last four hours, so it has most likely expired. Ask again and approve '
+                . 'it on that machine; what has already copied is kept.',
+            ),
+        ])->save();
+
+        Log::warning('A transfer lost its authorisation part way through', [
+            'transfer' => $transfer->id,
+            'source' => $transfer->source_url,
+            'status' => $status,
+        ]);
+    }
+
+    /**
      * Removes a transfer and everything it left behind.
      *
      * Refused while one is running rather than quietly stopping it: the row is
@@ -428,6 +459,15 @@ class TransferReceiver
 
             if (! $response->successful() && $response->status() !== 206) {
                 $item->markFailed('The server answered ' . $response->status() . '.');
+
+                // 401 and 403 are not about this file. The token has expired —
+                // they last four hours from approval — or the transfer was
+                // revoked at the other end, and every remaining file will
+                // answer the same way. Left alone it retried a dead token
+                // through 6,964 more items, none of which could ever arrive.
+                if (in_array($response->status(), [401, 403], true)) {
+                    $this->authorisationLost($transfer, $response->status());
+                }
 
                 return false;
             }
