@@ -175,30 +175,44 @@
                                     </x-filament::button>
                                 @endif
 
+                                {{-- Both confirm with a second click rather than wire:confirm.
+                                     That directive is used nowhere else here, and both buttons
+                                     did nothing when clicked while the methods behind them
+                                     worked. This is the same round trip as every button above
+                                     that does work. --}}
+
                                 {{-- Cancelling ends the request on the other machine too, which
                                      pausing deliberately does not. --}}
                                 @if (in_array($transfer['state'], ['requested', 'approved', 'running', 'paused'], true))
-                                    <x-filament::button
-                                        wire:click="cancel({{ $transfer['id'] }})"
-                                        wire:confirm="Stop this transfer here and on the other server?"
-                                        color="danger"
-                                        size="sm"
-                                    >
-                                        Cancel
-                                    </x-filament::button>
+                                    @if ($confirming === 'cancel:' . $transfer['id'])
+                                        <x-filament::button wire:click="cancel({{ $transfer['id'] }})" color="danger" size="sm">
+                                            Stop it on both machines
+                                        </x-filament::button>
+                                        <x-filament::button wire:click="dismissConfirmation" color="gray" size="sm">
+                                            Keep it
+                                        </x-filament::button>
+                                    @else
+                                        <x-filament::button wire:click="askToConfirm('cancel:{{ $transfer['id'] }}')" color="danger" size="sm">
+                                            Cancel
+                                        </x-filament::button>
+                                    @endif
                                 @endif
 
                                 {{-- Refused while running, so clearing the list cannot be a way
                                      to abandon a transfer half way. --}}
                                 @if ($transfer['state'] !== 'running')
-                                    <x-filament::button
-                                        wire:click="delete({{ $transfer['id'] }})"
-                                        wire:confirm="Remove this transfer from the list?"
-                                        color="gray"
-                                        size="sm"
-                                    >
-                                        Delete
-                                    </x-filament::button>
+                                    @if ($confirming === 'delete:' . $transfer['id'])
+                                        <x-filament::button wire:click="delete({{ $transfer['id'] }})" color="danger" size="sm">
+                                            Remove it
+                                        </x-filament::button>
+                                        <x-filament::button wire:click="dismissConfirmation" color="gray" size="sm">
+                                            Keep it
+                                        </x-filament::button>
+                                    @else
+                                        <x-filament::button wire:click="askToConfirm('delete:{{ $transfer['id'] }}')" color="gray" size="sm">
+                                            Delete
+                                        </x-filament::button>
+                                    @endif
                                 @endif
                             </div>
                         </div>
