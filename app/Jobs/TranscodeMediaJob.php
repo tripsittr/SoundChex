@@ -7,6 +7,7 @@ use App\Services\ConversionFiler;
 use App\Services\MediaTranscoder;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Converts one item to a browser-playable copy.
@@ -89,6 +90,17 @@ class TranscodeMediaJob implements ShouldQueue
         try {
             $filer->promote($item->fresh());
         } catch (\Throwable $e) {
+            // Named, because the consequence is invisible otherwise: the
+            // transcode succeeded and plays, but the converted file was never
+            // filed and the original never archived beside it. Nothing in the
+            // app looks wrong, and without this there is no way to find which
+            // items are in that state.
+            Log::error('A transcoded file could not be promoted', [
+                'item' => $item->id,
+                'title' => $item->title,
+                'error' => $e->getMessage(),
+            ]);
+
             report($e);
         }
     }

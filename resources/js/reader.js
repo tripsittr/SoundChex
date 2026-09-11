@@ -91,6 +91,10 @@ if (el) {
     const saveProgress = debounce((location, percent) => {
         if (!config.progressUrl) return;
 
+        // Stamped here rather than when the queue drains: what matters is when
+        // the page was actually read, not when the connection came back.
+        const recordedAt = new Date().toISOString();
+
         fetch(config.progressUrl, {
             method: 'POST',
             headers: {
@@ -98,11 +102,29 @@ if (el) {
                 'X-CSRF-TOKEN': config.csrf ?? '',
                 Accept: 'application/json',
             },
-            body: JSON.stringify({ location, percent }),
+            body: JSON.stringify({ location, percent, recorded_at: recordedAt }),
             // Lets a save in flight finish if the tab is closing.
             keepalive: true,
-        }).catch(() => {
-            // Losing one position update isn't worth interrupting reading.
+        }).catch((error) => {
+            // Queued rather than dropped. The player has done this for a while
+            // — the position of a film someone is watching on a train — and a
+            // book read on the same train was losing its page instead, because
+            // this only ever swallowed the failure.
+            //
+            // Keyed per item so a long reading session leaves one entry to
+            // replay rather than one per page turn, and stamped with when it
+            // was recorded so the server can refuse it if a newer position has
+            // arrived from another device meanwhile.
+            window.soundchexWrites?.enqueue({
+                kind: 'reading-progress',
+                url: config.progressUrl,
+                body: { location, percent, recorded_at: recordedAt },
+            });
+
+            logFailure('reader:progress:failed', error, {
+                percent,
+                queued: Boolean(window.soundchexWrites),
+            });
         });
 
         if (percentLabel) percentLabel.textContent = `${percent}%`;

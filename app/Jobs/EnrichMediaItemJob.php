@@ -235,6 +235,17 @@ class EnrichMediaItemJob implements ShouldQueue
         try {
             $organizer->organize($item->refresh());
         } catch (\Throwable $e) {
+            // Which item, not just which exception. `report()` alone gives a
+            // stack trace with nothing to act on — a full disk or an unplugged
+            // drive fails every item in a scan the same way, and the question
+            // afterwards is always "which files are still in the inbox?".
+            Log::error('Could not file an item into the library', [
+                'item' => $item->id,
+                'title' => $item->title,
+                'path' => $item->file_path,
+                'error' => $e->getMessage(),
+            ]);
+
             report($e);
         }
     }
