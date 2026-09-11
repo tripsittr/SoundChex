@@ -16,6 +16,7 @@ use App\Services\OcrService;
 use Illuminate\Http\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -96,16 +97,43 @@ class ReaderController extends Controller
             // Opaque resume token — an EPUB CFI, a PDF page, a comic index.
             'location' => ['nullable', 'string', 'max:512'],
             'percent' => ['nullable', 'integer', 'min:0', 'max:100'],
+            // When the reader recorded this, for writes that were queued
+            // offline and are arriving late. See the staleness check below.
+            'recorded_at' => ['nullable', 'date'],
         ]);
 
         // Keyed on the profile so two readers keep separate places; falls
         // back to the account for rows written before profiles existed.
         $profileId = app(CurrentProfile::class)->id();
 
+        $keys = $profileId !== null
+            ? ['media_item_id' => $item->id, 'profile_id' => $profileId]
+            : ['media_item_id' => $item->id, 'user_id' => Auth::id()];
+
+        // A queued write is older than it looks: someone reads three chapters
+        // on a train, then opens the book on another device before the phone
+        // reconnects. Replaying the train's last position would silently undo
+        // reading that has already happened.
+        //
+        // Checked before the row is touched, not after — creating it first
+        // stamps `updated_at` with "now" and makes every queued write look
+        // stale against a row this same request just made.
+        $existing = ReadingProgress::query()->where($keys)->first();
+
+        $recordedAt = isset($data['recorded_at'])
+            ? Carbon::parse($data['recorded_at'])
+            : now();
+
+        if ($existing?->updated_at !== null && $recordedAt->lt($existing->updated_at)) {
+            return response()->json([
+                'percent' => $existing->percent,
+                'finished' => $existing->finished,
+                'stale' => true,
+            ]);
+        }
+
         $progress = ReadingProgress::updateOrCreate(
-            $profileId !== null
-                ? ['media_item_id' => $item->id, 'profile_id' => $profileId]
-                : ['media_item_id' => $item->id, 'user_id' => Auth::id()],
+            $keys,
             [
                 'user_id' => Auth::id(),
                 'location' => $data['location'] ?? null,
