@@ -66,6 +66,12 @@ function scheduleSync() {
     });
 
     sync.sync().then((result) => {
+        // Recorded as well as dispatched. The launch sync is a full one on a
+        // device that has never synced, so it redraws the page — and anything
+        // arriving afterwards has no way to tell whether that has already
+        // happened or is still coming. The event alone cannot answer that.
+        window.__soundchexSynced = true;
+
         // Dispatched rather than logged, so a UI can show "synced" or
         // "offline" without this module knowing anything about the DOM.
         document.dispatchEvent(new CustomEvent('soundchex:synced', { detail: result }));

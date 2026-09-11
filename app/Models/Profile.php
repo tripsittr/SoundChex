@@ -166,6 +166,15 @@ class Profile extends Model
      * The owner short-circuits: they created the household and must not be
      * able to lock themselves out of it.
      */
+    /**
+     * Administering the machine, as distinct from administering the library.
+     *
+     * Named here rather than in the trait that enforces it: a trait constant
+     * cannot be read as `Trait::CONST`, and the permission is resolved in this
+     * class anyway.
+     */
+    public const SERVER_ADMINISTRATION = 'Access:ServerAdministration';
+
     public function can(string $permission): bool
     {
         if ($this->isOwner()) {

@@ -18,26 +18,50 @@ test.describe('batch downloads', () => {
     });
 
     test('a queue survives the app closing', async ({ page }) => {
+        // Runners that never settle, so what is in the queue when the page is
+        // killed is decided here rather than by a timer. They used to resolve
+        // after 4 seconds, which was the first suspected cause of this test's
+        // flakiness — it was not, but a fixture that cannot finish on its own
+        // is the right shape regardless.
         await page.evaluate(() => {
             const queue = window.soundchexDownloadQueue;
 
             ['801', '802', '803'].forEach((id) => queue.enqueue(
                 { id, url: '/soundchex.json', title: `Track ${id}`, type: 'music' },
-                () => new Promise((resolve) => { setTimeout(() => resolve({ id }), 4000); }),
+                () => new Promise(() => {}),
             ));
         });
 
         expect(await page.evaluate(() => window.soundchexDownloadQueue.stored().length)).toBe(3);
 
-        // The app is killed mid-download.
+        // The app is killed mid-download. What was written down is read back
+        // *before* the page's own resume can act on it — `resumeDownloads()`
+        // runs on load and immediately re-enqueues everything it finds, and
+        // these fixture URLs are a few hundred bytes, so by the time a test
+        // could ask, the queue has legitimately drained itself.
+        //
+        // Read from `localStorage` directly for that reason: `stored()` is the
+        // same data, but asking for it after the reload means asking after the
+        // thing that empties it has already run.
+        //
+        // Asserting on `stored()` after the reload is why this failed 4 runs in
+        // 5 — it was watching resume work correctly and calling it a
+        // regression. The queue was never broken.
+        const persisted = await page.evaluate(() => localStorage.getItem('soundchex.download-queue'));
+
         await page.reload();
 
-        // What was still waiting is written down and picked up again. The one
-        // in flight is gone, which is correct — its bytes went with the page.
-        const after = await page.evaluate(() => window.soundchexDownloadQueue.stored().map((i) => i.id));
+        const after = JSON.parse(persisted ?? '[]').map((item) => item.id);
 
         expect(after).toContain('802');
         expect(after).toContain('803');
+
+        // And the page acts on it: everything written down is picked up rather
+        // than sitting there, which is the half that actually matters.
+        await expect.poll(
+            () => page.evaluate(() => window.soundchexDownloadQueue.stored().length),
+            { timeout: 15000 },
+        ).toBeLessThan(3);
     });
 
     test('a blip is retried rather than lost', async ({ page }) => {

@@ -24,6 +24,23 @@ class MediaBrowser
     private const ROW_LIMIT = 20;
 
     /**
+     * The newest arrivals of a type, on their own.
+     *
+     * Split out from `rowsForType()` because the home page wants this rail and
+     * nothing else. Asking for the whole browse page and keeping the first row
+     * ran eight queries per type and threw seven away — and each of those
+     * carried a full eager-load batch behind it, which is most of what the home
+     * page used to cost.
+     *
+     * @param  MediaItemType|array<int, MediaItemType>  $type
+     * @return Collection<int, MediaItem>
+     */
+    public function recentlyAdded(MediaItemType|array $type, int $limit = self::ROW_LIMIT): Collection
+    {
+        return $this->base($type)->latest()->limit($limit)->get();
+    }
+
+    /**
      * The rails for a single media type's browse page.
      *
      * @return array<int, array{key: string, title: string, items: Collection<int, MediaItem>}>
@@ -34,7 +51,7 @@ class MediaBrowser
             [
                 'key'   => 'recent',
                 'title' => 'Recently Added',
-                'items' => $this->base($type)->latest()->limit(self::ROW_LIMIT)->get(),
+                'items' => $this->recentlyAdded($type),
             ],
             [
                 'key'   => 'top-rated',
@@ -228,11 +245,14 @@ class MediaBrowser
      */
     public function hero(MediaItemType|array $type): ?MediaItem
     {
+        // One query, not two. Ordering by "has artwork" first gives the same
+        // answer as trying the filtered query and falling back — and when
+        // artwork exists, which is the normal case, the fallback query used to
+        // run its whole eager-load batch only to be thrown away.
         return $this->base($type)
-            ->whereNotNull('cover_image_url')
+            ->orderByRaw('cover_image_url is null')
             ->latest()
-            ->first()
-            ?? $this->base($type)->latest()->first();
+            ->first();
     }
 
     /**
@@ -359,9 +379,41 @@ class MediaBrowser
 
         return $this->gate->apply(MediaItem::query())
             ->whereIn('type', array_map(fn (MediaItemType $t) => $t->value, $types))
-            // Movie and show metadata are loaded too, since a combined query
-            // returns a mix and each poster needs its own subtitle.
-            ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata', 'tags']);
+            // Only the metadata tables the requested types can actually have.
+            // Loading all four unconditionally meant a music query also asked
+            // `movie_metadata`, `show_metadata` and `book_metadata` for rows it
+            // knew were not there — three round-trips per batch, every batch,
+            // always empty. A combined query (the Watch page passes movies and
+            // shows together) still gets both, because $types says so.
+            //
+            // `plays` because every music row builds a player payload, and
+            // that asks for a resume position — one query per row without it.
+            ->with([...self::metadataRelations($types), 'tags', 'plays']);
+    }
+
+    /**
+     * The metadata relations belonging to a set of types.
+     *
+     * Keyed off the enum rather than a name convention so a new media type is a
+     * compile-time-ish error here rather than a silently missing subtitle.
+     *
+     * @param  array<int, MediaItemType>  $types
+     * @return array<int, string>
+     */
+    private static function metadataRelations(array $types): array
+    {
+        $relations = [];
+
+        foreach ($types as $type) {
+            $relations[] = match ($type) {
+                MediaItemType::Music => 'musicMetadata',
+                MediaItemType::Movie => 'movieMetadata',
+                MediaItemType::Show  => 'showMetadata',
+                MediaItemType::Book  => 'bookMetadata',
+            };
+        }
+
+        return array_values(array_unique($relations));
     }
 
     /**

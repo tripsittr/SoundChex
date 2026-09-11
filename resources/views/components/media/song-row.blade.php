@@ -12,7 +12,13 @@
 @php
     // A row with no queue plays alone, which is right for a search result but
     // wrong inside an album — the caller decides.
-    $payload = $queue ?? collect([$item->playerPayload()]);
+    //
+    // With a queue, the row carries only its position: the list writes the
+    // queue once into `data-queue` and every row points into it. Writing it
+    // here instead put the whole queue on both of this row's buttons — 96
+    // copies of the same 26 KB on a 48-song page, 83% of the HTML, and a
+    // 26 KB JSON.parse on every tap.
+    $payload = $queue === null ? collect([$item->playerPayload()])->toJson() : null;
 @endphp
 
 {{--
@@ -31,7 +37,7 @@
 
     {{-- Artwork doubles as the play button. --}}
     <button type="button"
-            data-play="{{ $payload->toJson() }}"
+            @if ($payload !== null) data-play="{{ $payload }}" @endif
             data-play-index="{{ $index }}"
             class="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded bg-base-700"
             aria-label="Play {{ $item->title }}">
@@ -55,7 +61,7 @@
          the user and the song. Details moved to the kebab, where the
          occasionally-wanted things live. --}}
     <button type="button"
-            data-play="{{ $payload->toJson() }}"
+            @if ($payload !== null) data-play="{{ $payload }}" @endif
             data-play-index="{{ $index }}"
             class="min-w-0 flex-1 text-left"
             aria-label="Play {{ $item->title }}">

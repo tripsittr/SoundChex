@@ -14,6 +14,24 @@ test.describe('refreshing an open page', () => {
         await signIn(page);
         await page.goto('/app/music');
         await page.locator('main').waitFor({ timeout: 15000 });
+
+        // The mirror syncs on launch, and on a fresh database that first sync
+        // is a *full* one — `{ status: 'synced', count: 5, full: true }` — so
+        // it legitimately redraws the page. A test that dispatches its own
+        // synthetic event before that lands measures the real sync's redraw
+        // and blames the synthetic one, which is what "a sync that changed
+        // nothing does not redraw" was failing on.
+        //
+        // Waiting for the sync alone is not enough: the redraw is debounced
+        // SETTLE (1200ms) behind it. So wait for the sync, then for the
+        // redraw it schedules, and only then start measuring.
+        await page.waitForFunction(
+            () => window.__soundchexSynced === true,
+            null,
+            { timeout: 20000 },
+        );
+
+        await page.waitForTimeout(2000);
     });
 
     test('a sync that changed nothing does not redraw', async ({ page }) => {

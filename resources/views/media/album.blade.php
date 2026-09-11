@@ -21,7 +21,10 @@
 @endphp
 
 <x-media.layout :title="$album">
-    <div class="clears-header mx-auto max-w-5xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8">
+    {{-- The queue, once. Every play control below — the header buttons and
+         each track row — points into it rather than repeating it. --}}
+    <div class="clears-header mx-auto max-w-5xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8"
+         data-play-queue="{{ $queue->toJson() }}">
 
         {{-- Header: artwork beside the album's identity and its actions. --}}
         <div class="flex flex-col gap-6 sm:flex-row sm:items-end">
@@ -57,7 +60,6 @@
                      line, then a centred "More" floating alone. --}}
                 <div class="album-actions mt-5 flex items-center justify-center gap-2 sm:justify-start">
                     <button type="button"
-                            data-play="{{ $queue->toJson() }}"
                             data-play-index="0"
                             class="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-hot sm:flex-none">
                         <svg class="size-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -70,7 +72,7 @@
                          "shuffle this album" is a different intent from
                          "shuffle whatever happens to be playing". --}}
                     <button type="button"
-                            data-play="{{ $queue->toJson() }}"
+                            data-play-index="0"
                             data-play-shuffle="true"
                             class="flex size-11 shrink-0 items-center justify-center rounded-full border border-base-500 text-ink-200 transition hover:border-ink-500 hover:text-ink-100"
                             aria-label="Shuffle this album">
@@ -114,7 +116,6 @@
                     {{-- The number becomes a play button on hover, so the row
                          stays quiet until it is being used. --}}
                     <button type="button"
-                            data-play="{{ $queue->toJson() }}"
                             data-play-index="{{ $index }}"
                             class="relative flex size-8 shrink-0 items-center justify-center rounded text-sm tabular-nums text-ink-500 transition hover:bg-base-700 hover:text-ink-100"
                             aria-label="Play {{ $track->title }}">

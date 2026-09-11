@@ -192,44 +192,77 @@ class NetworkAddresses
         return 'tailscale';
     }
 
+    /** Where a completed probe is kept, and how long it stays fresh. */
+    public const PROBE_KEY = 'network_addresses_probe';
+
+    public const PROBE_TTL_MINUTES = 10;
+
     /**
      * How each address performs, from the server's own vantage point.
      *
-     * Cached briefly: this makes a request per address, and a dashboard widget
-     * that reprobes on every page load would add its own latency to the thing
-     * it is measuring.
+     * **Read-only, and never probes inline.** `artisan serve` is
+     * single-threaded, so a request made while serving a request waits on the
+     * process that would answer it and times out — the dashboard reported
+     * "0 of 3 addresses answering, clients cannot reach this server" about a
+     * server that was answering all three perfectly well. Measuring something
+     * by blocking it is not a measurement.
+     *
+     * `measure()` fills this, from the scheduler or by hand. An empty result
+     * means "not measured yet", which the widget says rather than rendering it
+     * as failure.
      *
      * @return array<int, array{address: string, ms: int|null, reachable: bool}>
      */
     public function probe(bool $fresh = false): array
     {
         if ($fresh) {
-            Cache::forget('network_addresses_probe');
+            return $this->measure();
         }
 
-        return Cache::remember('network_addresses_probe', now()->addMinutes(2), function (): array {
-            return collect($this->all())
-                ->map(function (string $address): array {
-                    $started = microtime(true);
+        return Cache::get(self::PROBE_KEY, []);
+    }
 
-                    try {
-                        $response = Http::timeout(5)
-                            ->withoutVerifying()
-                            ->get($address . '/login');
+    /** Whether anything has measured the addresses yet. */
+    public function probed(): bool
+    {
+        return Cache::has(self::PROBE_KEY);
+    }
 
-                        return [
-                            'address' => $address,
-                            'ms' => (int) round((microtime(true) - $started) * 1000),
-                            'reachable' => $response->successful() || $response->redirect(),
-                        ];
-                    } catch (\Throwable) {
-                        return ['address' => $address, 'ms' => null, 'reachable' => false];
-                    }
-                })
-                ->sortBy(fn (array $row) => $row['ms'] ?? PHP_INT_MAX)
-                ->values()
-                ->all();
-        });
+    /**
+     * Actually reach each address, and remember what happened.
+     *
+     * Must not run inside a web request on a single-threaded server — see
+     * `probe()`. The scheduler and `network:probe` are the callers.
+     *
+     * @return array<int, array{address: string, ms: int|null, reachable: bool}>
+     */
+    public function measure(): array
+    {
+        $results = collect($this->all())
+            ->map(function (string $address): array {
+                $started = microtime(true);
+
+                try {
+                    $response = Http::timeout(5)
+                        ->withoutVerifying()
+                        ->get($address . '/login');
+
+                    return [
+                        'address' => $address,
+                        'ms' => (int) round((microtime(true) - $started) * 1000),
+                        'reachable' => $response->successful() || $response->redirect(),
+                    ];
+                } catch (\Throwable) {
+                    return ['address' => $address, 'ms' => null, 'reachable' => false];
+                }
+            })
+            ->sortBy(fn (array $row) => $row['ms'] ?? PHP_INT_MAX)
+            ->values()
+            ->all();
+
+        Cache::put(self::PROBE_KEY, $results, now()->addMinutes(self::PROBE_TTL_MINUTES));
+
+        return $results;
     }
 
     /**

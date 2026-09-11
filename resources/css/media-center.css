@@ -1110,3 +1110,23 @@ header a {
 .toast[data-tone='ok'] {
     border-color: color-mix(in srgb, var(--color-emerald-500, #10b981) 55%, var(--color-base-600));
 }
+
+/* A row whose file is not on this device, while there is no server.
+
+   Dimmed rather than hidden: the metadata is worth reading even when the audio
+   is not — knowing the record exists, and that this is the track you were
+   after, is most of what a catalogue is for. Hiding it would make the library
+   look like it had shrunk to whatever happened to be downloaded.
+
+   Not `pointer-events: none`: the row still opens its detail page, and the
+   download button on it is exactly what someone would reach for. Only playing
+   is impossible, and the player already says so. */
+li[data-long-press-menu].is-unavailable-offline {
+    opacity: 0.45;
+}
+
+/* The download button keeps full contrast — it is the way out of this state,
+   so dimming it would hide the remedy along with the problem. */
+li[data-long-press-menu].is-unavailable-offline .download-btn {
+    opacity: 1;
+}

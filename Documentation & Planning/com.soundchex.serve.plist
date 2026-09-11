@@ -14,7 +14,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/Users/tripsittr/Library/Application Support/Herd/bin/php84</string>
-		<string>/Users/tripsittr/Documents/GitHub/SoundChex/artisan</string>
+		<string>/Users/tripsittr/Documents/Tripsittr LLC/SoundChex/SoundChex App/artisan</string>
 		<string>serve</string>
 		<string>--host=0.0.0.0</string>
 		<string>--port=8000</string>
@@ -26,6 +26,6 @@
 	<key>StandardOutPath</key>
 	<string>/Users/tripsittr/Library/Logs/SoundChex/serve.log</string>
 	<key>WorkingDirectory</key>
-	<string>/Users/tripsittr/Documents/GitHub/SoundChex</string>
+	<string>/Users/tripsittr/Documents/Tripsittr LLC/SoundChex/SoundChex App</string>
 </dict>
 </plist>
