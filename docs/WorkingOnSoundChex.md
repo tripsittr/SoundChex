@@ -199,6 +199,25 @@ returned 200 with every byte, and storage had 2.1 GB free. Tracing the download
 harder would have found nothing; the question worth asking was which code path
 was allowed to set the state.
 
+**A missing `$fillable` entry fails silently and looks like forgetfulness.**
+`reading_progress` keyed rows on `profile_id`, but the column was never added to
+the model's `$fillable`, so mass assignment dropped it on every insert. Nothing
+errored. Every row was written with a null profile, the whole household shared
+one place in every book, and it read as the app forgetting where you were rather
+than as a bug. When a column was added to a table after the model was written,
+check `$fillable` before believing the data.
+
+**An index written before profiles existed outlives the assumption it encoded.**
+The same table still had `unique(media_item_id, user_id)` from when one account
+meant one reader. A household shares one login, so the second profile to open a
+book hit a 500 from a constraint the code did not know about. Schema written
+before a concept exists does not update itself when the concept arrives.
+
+**Tests written for one thing find another.** The reading-progress tests were
+written to cover a new staleness guard. They failed on a database constraint
+violation instead — two bugs that had been live for weeks, neither visible from
+the UI. Writing the test was worth more than the feature it was written for.
+
 **One run per side is not a bisect when the test is flaky.** A download test
 failed, reverting a suspect change made it pass, and that looked like proof. It
 was not — the original code failed 4 runs in 5, so a single green run was noise.
