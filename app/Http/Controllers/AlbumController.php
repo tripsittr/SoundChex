@@ -46,7 +46,9 @@ class AlbumController extends Controller
             ->whereNotNull('media_items.file_path')
             ->inRandomOrder()
             ->limit(200)
-            ->with('musicMetadata')
+            // `plays` too: the shuffled queue is 200 payloads, each of which
+            // asks for a resume position.
+            ->with(['musicMetadata', 'plays'])
             ->get();
 
         return response()->json([

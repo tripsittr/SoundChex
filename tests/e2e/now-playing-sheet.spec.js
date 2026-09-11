@@ -101,7 +101,7 @@ test.describe('now-playing sheet', () => {
         await page.setViewportSize({ width: 390, height: 844 });
         await page.goto('/app/music');
         await page.waitForTimeout(800);
-        await page.locator('ol li [data-play]').first().click();
+        await page.locator('ol li [data-play], ol li [data-play-index]').first().click();
         await page.waitForTimeout(2000);
 
         const overlap = await page.evaluate(() => {
@@ -116,7 +116,7 @@ test.describe('now-playing sheet', () => {
 });
 
 async function startPlaying(page) {
-    const trigger = page.locator('[data-play]').first();
+    const trigger = page.locator('[data-play], [data-play-index]').first();
 
     await trigger.scrollIntoViewIfNeeded();
     await trigger.hover();

@@ -2,7 +2,8 @@
 
 namespace App\Filament\Pages;
 
-use App\Filament\Concerns\RestrictsToAdmins;
+use App\Filament\Concerns\RestrictsToServerAdmins;
+use App\Jobs\ProbeNetworkJob;
 use App\Services\NetworkAddresses;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -24,18 +25,8 @@ use UnitEnum;
  */
 class Network extends Page
 {
-    use RestrictsToAdmins;
+    use RestrictsToServerAdmins;
 
-    /**
-     * Shield names this one View:Network rather than the Access: prefix the
-     * trait derives for pages. Pointing at a permission that does not exist
-     * fails closed, which reads as working access control right up until a
-     * granted admin is locked out.
-     */
-    protected static function requiredPermission(): string
-    {
-        return 'View:Network';
-    }
 
     protected string $view = 'filament.pages.network';
 
@@ -59,9 +50,18 @@ class Network extends Page
 
     public function retest(): void
     {
-        $this->results = app(NetworkAddresses::class)->probe(fresh: true);
+        // Queued rather than measured here. This page is served by the thing
+        // being probed, and `artisan serve` is single-threaded — probing
+        // inline waits on the process that would answer and times out against
+        // itself, which is how the dashboard came to report a healthy server
+        // as unreachable.
+        ProbeNetworkJob::dispatch();
 
-        Notification::make()->title('Addresses retested')->success()->send();
+        Notification::make()
+            ->title('Retesting addresses')
+            ->body('Results appear here once the queue picks it up.')
+            ->success()
+            ->send();
     }
 
     public function addAddress(): void
@@ -75,7 +75,8 @@ class Network extends Page
         $network->save([...$network->all(), $this->newAddress]);
 
         $this->newAddress = '';
-        $this->results = $network->probe(fresh: true);
+        ProbeNetworkJob::dispatch();
+        $this->results = $network->probe();
 
         Notification::make()->title('Address added')->success()->send();
     }
@@ -89,7 +90,8 @@ class Network extends Page
             fn (string $candidate): bool => $candidate !== $address,
         ));
 
-        $this->results = $network->probe(fresh: true);
+        ProbeNetworkJob::dispatch();
+        $this->results = $network->probe();
 
         Notification::make()->title('Address removed')->success()->send();
     }
@@ -106,7 +108,8 @@ class Network extends Page
 
         $network->save([...$network->all(), ...$network->detected()]);
 
-        $this->results = $network->probe(fresh: true);
+        ProbeNetworkJob::dispatch();
+        $this->results = $network->probe();
 
         Notification::make()->title('Re-detected this machine\'s addresses')->success()->send();
     }

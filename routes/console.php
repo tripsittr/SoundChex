@@ -67,6 +67,17 @@ Schedule::call(fn () => \App\Models\Notification::prune())
 | Without it the host application cannot tell a scheduler that is running from
 | one that died hours ago — both look like "no tasks due right now".
 */
+/*
+ * How reachable this server is, measured out of band.
+ *
+ * Never from a web request: `artisan serve` is single-threaded, so probing its
+ * own addresses mid-request blocks on the process that would answer and times
+ * out against itself. The dashboard reads the result rather than taking it.
+ */
+Schedule::command('network:probe')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
 Schedule::call(fn () => cache()->put('soundchex.scheduler.heartbeat', now()->timestamp, now()->addMinutes(10)))
     ->everyMinute()
     ->name('scheduler-heartbeat');

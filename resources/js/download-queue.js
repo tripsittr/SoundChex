@@ -130,7 +130,9 @@ async function drain(run) {
         announce('started', { item: entry.item, remaining: waiting.length });
 
         try {
-            const result = await run(entry.item);
+            // The entry's own runner, falling back to the drain's for items
+            // restored from storage — those were written down without one.
+            const result = await (entry.run ?? run)(entry.item);
 
             entry.resolve(result);
             announce('finished', { item: entry.item, remaining: waiting.length });
@@ -209,7 +211,12 @@ export function enqueue(item, run) {
     let reject;
     const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
 
-    waiting.push({ item: { ...item, id: String(item.id) }, resolve, reject });
+    // The runner travels with the entry. `drain()` used to take one runner and
+    // apply it to everything still queued, so whichever enqueue happened to
+    // start the drain decided how *every* later item was fetched — a queue
+    // holding two items with different runners ran the first one's twice, and
+    // the second download silently never happened.
+    waiting.push({ item: { ...item, id: String(item.id) }, run, resolve, reject });
 
     // Counts the download already in flight. Using waiting.length alone
     // reported position 1 for an item queued behind a running download, because

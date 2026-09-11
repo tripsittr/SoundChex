@@ -4,6 +4,7 @@ import { bindDeviceSettings } from './device-settings.js';
 import { watchForNotifications } from './notifications.js';
 import * as downloadQueue from './download-queue.js';
 import { bindDownloadQueueUi } from './download-queue-ui.js';
+import { setupDownloadedFilter } from './downloaded-filter.js';
 import {
     paintIconDownloadStates,
     setupBatchDownload,
@@ -151,6 +152,10 @@ function bindPageScripts() {
     // Repainted per navigation: the delegated listener is registered once, but
     // each new page brings rows whose stored state has not been read yet.
     paintIconDownloadStates();
+
+    // After the repaint, because both read the same IndexedDB and this one
+    // decides what to hide and dim from the answer.
+    setupDownloadedFilter();
 }
 
 document.addEventListener('livewire:navigated', bindPageScripts);

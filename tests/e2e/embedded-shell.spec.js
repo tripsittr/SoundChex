@@ -345,13 +345,29 @@ test.describe('server app', () => {
             body: JSON.stringify({ app: 'soundchex', version: 1 }),
         }));
 
+        // `server.html` hardcodes ORIGIN to port 8000, which is right for a
+        // real install and is not where the test server listens — so the
+        // redirect fired and landed on nothing, and the wait timed out on a
+        // page that had done exactly what it should. Answering the
+        // destination is what makes the assertion about the redirect rather
+        // than about which port the suite happens to use.
+        await page.route('**/127.0.0.1:8000/admin**', (route) => route.fulfill({
+            status: 200,
+            contentType: 'text/html',
+            body: '<!doctype html><title>Admin</title>',
+        }));
+
         // The admin panel is where the server is administered, and it manages
         // the services too — so this page is a fallback rather than a
         // destination. Staying here when the panel is reachable would be a
         // second place to look and a second place to forget.
         await page.goto('http://127.0.0.1:8199/server.html');
 
-        await page.waitForURL(/\/admin/, { timeout: 15000 });
+        // Two seconds, not fifteen. The page redirects immediately on load and
+        // again from a 5s poll, so a long wait passes on the poll even when
+        // the load-time redirect is broken — which it did: removing that
+        // redirect entirely left this test green.
+        await page.waitForURL(/\/admin/, { timeout: 2000 });
 
         expect(page.url()).toContain('/admin');
     });

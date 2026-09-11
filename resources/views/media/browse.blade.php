@@ -62,13 +62,6 @@
                             </svg>
                             <span data-shuffle-label>Shuffle</span>
                         </button>
-
-                        <button type="button" data-download-library data-state="idle" class="songs-action">
-                            <svg class="size-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                            <span data-download-label>Download all</span>
-                        </button>
                     @endif
                 </div>
             </div>
@@ -136,6 +129,22 @@
                                class="browse-filters__checkbox">
                         Wishlist
                     </label>
+
+                    {{-- Applied in the browser, not by the server: what this
+                         device has downloaded lives in IndexedDB and the
+                         server has never been told about it. That also means
+                         it is the one filter that still works with nothing
+                         reachable, which is when it matters most.
+
+                         Outside the form, so submitting the others does not
+                         drop it and it does not become a query string the
+                         server would ignore. --}}
+                    <label class="browse-filters__toggle">
+                        <input type="checkbox"
+                               data-filter-downloaded
+                               class="browse-filters__checkbox">
+                        Downloaded
+                    </label>
                 </div>
             </form>
             </details>
@@ -156,7 +165,9 @@
                             ->values();
                     @endphp
 
-                    <ol class="divide-y divide-base-700/40">
+                    {{-- The queue, once. Every row below points into it by
+                         index rather than carrying its own copy. --}}
+                    <ol class="divide-y divide-base-700/40" data-play-queue="{{ $queue->toJson() }}">
                         @foreach ($items as $index => $item)
                             <x-media.song-row :item="$item" :queue="$queue" :index="$index" />
                         @endforeach

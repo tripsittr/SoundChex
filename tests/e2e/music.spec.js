@@ -17,10 +17,10 @@ test.describe('music browsing', () => {
         await page.goto('/app/albums');
         await page.locator('a[href*="/app/album?"]').first().click();
 
-        await expect(page.locator('[data-play]').first()).toBeVisible();
+        await expect(page.locator('[data-play], [data-play-index]').first()).toBeVisible();
 
         // Playing the album must queue all of it, not just the track clicked.
-        await page.locator('[data-play][data-play-index="0"]').first().click();
+        await page.locator('[data-play-index="0"]').first().click();
 
         await expect.poll(
             () => page.evaluate(() => window.soundchexPlayer?.queue?.length ?? 0),
@@ -141,7 +141,7 @@ test.describe('music browsing', () => {
         await expect(row.locator('.download-btn').first()).toBeVisible();
         // Two: the artwork and the title. The title used to link to the detail
         // page, which put a page load between a tap and hearing the song.
-        await expect(row.locator('[data-play]')).toHaveCount(2);
+        await expect(row.locator('[data-play-index]')).toHaveCount(2);
     });
 
     test('genre rails live on their own tab, not above the songs list', async ({ page }) => {
@@ -224,7 +224,7 @@ test.describe('playing from a row', () => {
     test('tapping the title plays without leaving the page', async ({ page }) => {
         const before = new URL(page.url()).pathname;
 
-        await page.locator('li[data-long-press-menu] button[data-play]').nth(1).click();
+        await page.locator('li[data-long-press-menu] button[data-play-index]').nth(1).click();
 
         await expect.poll(
             () => page.evaluate(() => document.getElementById('np-title')?.textContent?.trim()),

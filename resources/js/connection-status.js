@@ -83,6 +83,13 @@ export function watchConnection() {
 
         online = reachable;
 
+        // Published as well as announced. The events say when it *changed*;
+        // anything arriving later — a page from an SPA swap, rows the offline
+        // shell rebuilt — needs to know what the state *is*, and
+        // `navigator.onLine` cannot answer that (it knows about the interface,
+        // not whether anything is reachable through it).
+        window.soundchexOffline = !reachable;
+
         if (reachable) {
             show('Back online', 'ok');
             document.dispatchEvent(new CustomEvent('soundchex:back-online'));
