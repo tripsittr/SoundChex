@@ -35,14 +35,46 @@ test.describe('download-all diagnostics', () => {
 
     test('a failure says which request failed and why', async ({ page }) => {
         // The server is unreachable rather than slow.
-        await page.route('**/app/downloadable', (route) => route.abort('failed'));
+        //
+        // Reloaded after the route is installed. `beforeEach` has already
+        // navigated, and this spec's *first* test downloads the library — so
+        // the service worker and the page's own module state are warm, and the
+        // listing came back without the route ever being consulted. Landing on
+        // a fresh page with the abort already registered is what makes the
+        // failure the thing under test rather than a race with a warm cache.
+        // Routed on the **context**, not the page. A service worker controls
+        // this origin, and a request it makes on the page's behalf never
+        // reaches `page.route()` — Playwright's default is
+        // `serviceWorkers: 'allow'`, so the listing came back from the worker
+        // and the abort was never consulted. `requestfinished` fired for a
+        // request the route handler had never seen, which is what made this
+        // look like a timing problem rather than an interception one.
+        await page.context().route('**/app/downloadable', (route) => route.abort('failed'));
+        await page.reload();
+        await page.locator('main').waitFor({ timeout: 15000 });
+
+        // Emptied rather than marked. `record('test:reset')` only *appends* an
+        // event, so the buffer still held the previous test's successful
+        // listing — and `sessionStorage` carries it across tests in the same
+        // context. This asserted on someone else's events and the 40-entry cap
+        // decided which.
+        await page.evaluate(() => sessionStorage.removeItem('soundchex.diagnostics'));
 
         const button = page.locator('[data-download-library]').first();
 
         if (await button.count() === 0) test.skip();
 
         await button.click();
-        await page.waitForTimeout(2000);
+
+        // Waits for the failure to be recorded rather than assuming 2s is
+        // enough — the fetch has a 30s timeout behind it, and a fixed sleep
+        // asserts on whatever happens to have landed.
+        await page.waitForFunction(
+            () => (window.soundchexDiagnostics?.events() ?? [])
+                .some((e) => e.kind === 'download:library:failed'),
+            null,
+            { timeout: 20000 },
+        );
 
         // Filtered to this one kind rather than every :failed event. The
         // original asserted across all of them, so an unrelated sync:failed

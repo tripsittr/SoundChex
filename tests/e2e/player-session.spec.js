@@ -41,7 +41,7 @@ test.describe('playback across a full page load', () => {
      * were wrong. If it comes back, this makes the next report the last one.
      */
     const startPlaying = async (page) => {
-        await page.locator('li[data-long-press-menu] button[data-play]').first().click();
+        await page.locator('li[data-long-press-menu] button[data-play-index]').first().click();
 
         const state = () => page.evaluate(() => {
             const el = window.soundchexPlayer?.el;

@@ -108,8 +108,17 @@ export function setupIconDownloads() {
         try {
             await promise;
 
-            button.dataset.state = 'stored';
-            button.setAttribute('aria-label', `${title} downloaded — tap to remove`);
+            // Re-found rather than reused. A library refresh replaces every row
+            // while a download is in flight — `main.replaceChildren()` — so the
+            // element captured at click time is detached by the time this
+            // resolves, and writing `stored` onto it updates nothing anyone can
+            // see. The file is on the device and the icon says it is not.
+            const live = document.querySelector(
+                `[data-download="${CSS.escape(id)}"]:not(#download-toggle)`,
+            ) ?? button;
+
+            live.dataset.state = 'stored';
+            live.setAttribute('aria-label', `${title} downloaded — tap to remove`);
 
             // Only worth a notification when it was queued behind something
             // else: a download that finishes while you are watching the button
@@ -123,8 +132,13 @@ export function setupIconDownloads() {
             // Reported on the button itself: these live in a scrolling list
             // with no status line to write to, so a silent failure is
             // indistinguishable from a download that simply has not finished.
-            button.dataset.state = 'failed';
-            button.setAttribute('aria-label', `Download failed for ${title} — tap to retry`);
+            // Re-found for the same reason as the success path above.
+            const live = document.querySelector(
+                `[data-download="${CSS.escape(id)}"]:not(#download-toggle)`,
+            ) ?? button;
+
+            live.dataset.state = 'failed';
+            live.setAttribute('aria-label', `Download failed for ${title} — tap to retry`);
 
             if (error?.name !== 'AbortError') {
                 console.error('Download failed', error);
@@ -335,6 +349,60 @@ function subject(label) {
     };
 }
 
+/**
+ * Asks about space before a download, and reports what was decided.
+ *
+ * One place rather than three, because the three call sites had drifted into
+ * three different sentences for the same situation and none of them handled a
+ * missing figure at all: `checkSpace()` used to answer an unknown quota with
+ * `fits: true`, so a platform reporting nothing downloaded silently.
+ *
+ * Returns true to proceed. Every outcome is logged with its numbers — a
+ * refusal nobody can explain afterwards is the failure this exists to stop.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function confirmSpace(bytes, description) {
+    if (!(bytes > 0)) return true;
+
+    const space = await checkSpace(bytes);
+
+    log('download:space', {
+        needed: bytes,
+        known: space.known,
+        fits: space.fits,
+        tight: space.tight ?? false,
+        free: space.free,
+    });
+
+    // No figure at all. Ask rather than assume: this used to read as room.
+    if (!space.known) {
+        return window.confirm(
+            `${description} is ${formatBytes(bytes)}.\n\n`
+            + 'This device does not report how much space is free, so this '
+            + 'may not fit.\n\nDownload anyway?',
+        );
+    }
+
+    if (!space.fits) {
+        return window.confirm(
+            `${description} is ${formatBytes(bytes)}, and this device has `
+            + `${formatBytes(space.free)} free.\n\n`
+            + 'There will not be enough room, and the download will probably '
+            + 'fail partway.\n\nTry anyway?',
+        );
+    }
+
+    if (space.tight) {
+        return window.confirm(
+            `${description} is ${formatBytes(bytes)}, which would leave about `
+            + `${formatBytes(space.after)} free on this device.\n\nContinue?`,
+        );
+    }
+
+    return true;
+}
+
 async function runBatch(button, tracks, label) {
     const setBatchLabel = (text) => {
         const el = button.querySelector('[data-download-label]');
@@ -362,24 +430,40 @@ async function runBatch(button, tracks, label) {
     // server reported for each file, so it is a real total rather than a guess.
     const bytes = missing.reduce((sum, track) => sum + (track.size ?? 0), 0);
 
-    if (bytes > 0) {
-        const space = await checkSpace(bytes);
-
-        if (space.known && !space.fits) {
-            const proceed = window.confirm(
-                `${subject(label).text} ${subject(label).verb} ${formatBytes(bytes)}, and this device has about `
-                + `${formatBytes(space.free)} free.\n\nTry anyway?`,
-            );
-
-            if (!proceed) return;
-        }
-    }
+    if (! await confirmSpace(bytes, subject(label).text)) return;
 
     button.dataset.state = 'downloading';
     toast(`Queued ${missing.length} track${missing.length === 1 ? '' : 's'}.`);
 
     let done = 0;
     let failed = 0;
+
+    // Every row this batch will touch shows a spinner straight away.
+    //
+    // Only the batch button was marked before, so downloading a whole album or
+    // library left every song row sitting on the idle arrow until its file
+    // landed — the rows say nothing is happening while the thing that is
+    // happening is downloading them. On a slow route that is minutes of a list
+    // that looks untouched.
+    //
+    // Set from the ids rather than by walking the DOM, because the rows on
+    // screen are one page of a paginated list and the batch is the whole
+    // library: a row that is not rendered yet gets its state when it arrives,
+    // from `paintIconDownloadStates()`.
+    const markRow = (id, state) => {
+        const row = document.querySelector(
+            `[data-download="${CSS.escape(String(id))}"]:not(#download-toggle)`,
+        );
+
+        if (row) row.dataset.state = state;
+    };
+
+    // Tracks whose download failed, so the repaint below does not quietly
+    // return them to idle: IndexedDB has nothing to say about a file that was
+    // never written, and "failed" is information the user needs.
+    const failures = new Set();
+
+    missing.forEach((track) => markRow(track.id, 'downloading'));
 
     const results = missing.map((track) => {
         const { promise } = queue.enqueue(
@@ -392,24 +476,77 @@ async function runBatch(button, tracks, label) {
         );
 
         return promise
-            .then(() => { done += 1; })
-            .catch(() => { failed += 1; })
-            .finally(() => {
+            .then(() => {
+                done += 1;
+
+                // Marked here, from the result, rather than left to the
+                // repaint below. `paintIconDownloadStates()` deliberately
+                // skips any button already reading `downloading` — that guard
+                // is what stops it resetting a transfer in flight to idle —
+                // and every row in this batch was set to `downloading` before
+                // it started. So the repaint skipped precisely the rows whose
+                // outcome it was meant to write, and a finished track sat on
+                // its spinner until the page was navigated away from and back.
+                markRow(track.id, 'stored');
+            })
+            .catch(() => {
+                failed += 1;
+                failures.add(String(track.id));
+                markRow(track.id, 'failed');
+            })
+            .finally(async () => {
                 setBatchLabel(`Downloading ${done + failed} of ${missing.length}`);
-                paintIconDownloadStates();
+
+                // Repaint first, then re-mark what it cannot know about. It
+                // reads IndexedDB, so a track that *failed* is simply absent
+                // there and comes back as `idle` — indistinguishable from one
+                // never asked for. Marking before the repaint loses the state
+                // it just set; marking after keeps it.
+                await paintIconDownloadStates();
+
+                failures.forEach((id) => markRow(id, 'failed'));
             });
     });
 
     await Promise.allSettled(results);
 
-    button.dataset.state = failed === 0 ? 'stored' : 'failed';
-    setBatchLabel(failed === 0 ? 'Downloaded' : `${failed} failed`);
+    // Repaint before the final states, not after. It reads IndexedDB, where a
+    // failed track simply is not — so it returns every one of them to `idle`,
+    // and a batch in which nothing downloaded ended up looking untouched. The
+    // button said `failed` for as long as it took the repaint to resolve.
+    await paintIconDownloadStates();
+
+    // Re-found, not reused. A library refresh mid-batch replaces `main` — and
+    // with it this button — so the element captured when the batch started is
+    // detached by now and writing to it reports nothing. The batch button came
+    // back from the server as `idle`, so a run in which every download failed
+    // read as one that never happened.
+    //
+    // Found by whichever attribute this button carries rather than a fixed
+    // selector: `runBatch()` serves the album and playlist buttons as well,
+    // and a hardcoded `[data-download-library]` wrote the outcome of an album
+    // download onto a button on a different page — or, once that button was
+    // removed, onto nothing at all.
+    const marker = ['data-download-library', 'data-download-batch']
+        .find((name) => button.hasAttribute(name));
+
+    const liveButton = (marker && document.querySelector(`[${marker}]`)) ?? button;
+
+    liveButton.dataset.state = failed === 0 ? 'stored' : 'failed';
+
+    const liveLabel = liveButton.querySelector('[data-download-label]');
+    const finalText = failed === 0 ? 'Downloaded' : `${failed} failed`;
+
+    if (liveLabel) liveLabel.textContent = finalText;
+
+    liveButton.setAttribute('aria-label', finalText);
+
+    // Re-marked after the repaint for the same reason.
+    failures.forEach((id) => markRow(id, 'failed'));
 
     toast(failed === 0
         ? `${subject(label).text} ${subject(label).verb} on this device.`
         : `${done} downloaded, ${failed} failed.`);
-
-    paintIconDownloadStates();
 }
 
 /**
@@ -459,6 +596,10 @@ export async function paintIconDownloadStates() {
 
     if (buttons.length === 0) return;
 
+    // Cleared first: an SPA swap brings buttons this has not read yet, and a
+    // flag left true from the previous page would say they were painted.
+    window.__soundchexDownloadsPainted = false;
+
     const stored = new Set((await list()).map((entry) => String(entry.id)));
 
     buttons.forEach((button) => {
@@ -466,8 +607,30 @@ export async function paintIconDownloadStates() {
 
         if (!id) return;
 
+        // A transfer in flight owns its own button. This reads IndexedDB and
+        // then writes every state, so without this it lands mid-download and
+        // resets the spinner to idle — the download keeps running and the
+        // button says it never started, which is indistinguishable from a tap
+        // that did nothing. It also erases "number 2 in the queue".
+        if (button.dataset.state === 'downloading') return;
+
         button.dataset.state = stored.has(id) ? 'stored' : 'idle';
     });
+
+    // Announced because this lands *after* an await, so anything that set a
+    // state before it resolved is silently overwritten. It runs twice on a
+    // cold load — once from `bindPageScripts()` and again on
+    // `livewire:navigated` — and there was no way to tell it had finished,
+    // which made "the button shows the wrong glyph" a race nobody could see.
+    //
+    // A flag as well as an event: the event is gone by the time anything that
+    // arrives later could listen for it, and "has this run yet?" is the
+    // question being asked.
+    window.__soundchexDownloadsPainted = true;
+
+    document.dispatchEvent(new CustomEvent('soundchex:downloads-painted', {
+        detail: { buttons: buttons.length, stored: stored.size },
+    }));
 }
 
 /**
@@ -526,21 +689,9 @@ export function setupDownloadButton() {
     };
 
     const start = async () => {
-        // The browser's figure is an estimate and platforms differ wildly, so
-        // this reports and the user decides rather than refusing outright.
-        if (sizeHint > 0) {
-            const space = await checkSpace(sizeHint);
-
-            if (space.known && !space.fits) {
-                const proceed = window.confirm(
-                    `${title} is ${formatBytes(sizeHint)}, and this device has about `
-                    + `${formatBytes(space.free)} free.\n\n`
-                    + 'The download will probably fail partway. Try anyway?',
-                );
-
-                if (!proceed) return;
-            }
-        }
+        // Reports and lets the user decide rather than refusing outright —
+        // but an unknown figure now asks too, where it used to say yes.
+        if (! await confirmSpace(sizeHint, title)) return;
 
         controller = new AbortController();
         button.dataset.state = 'downloading';
@@ -664,16 +815,8 @@ export function setupBatchDownload() {
         }
 
         const totalBytes = tracks.reduce((sum, t) => sum + (t.size ?? 0), 0);
-        const space = await checkSpace(totalBytes);
 
-        if (space.known && !space.fits) {
-            const proceed = window.confirm(
-                `This album is ${formatBytes(totalBytes)}, and this device has about `
-                + `${formatBytes(space.free)} free.\n\nTry anyway?`,
-            );
-
-            if (!proceed) return;
-        }
+        if (! await confirmSpace(totalBytes, 'This album')) return;
 
         controller = new AbortController();
         button.dataset.state = 'downloading';

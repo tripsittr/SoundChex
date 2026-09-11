@@ -53,12 +53,25 @@ export async function chooseProfile(page, name) {
  * Waits on the library module rather than a DOM element: it is what the tests
  * reach for, and the last of the bundles to arrive.
  */
-export async function appReady(page, { rows = false } = {}) {
+export async function appReady(page, { rows = false, downloads = false } = {}) {
     await page.waitForFunction(() => window.soundchexLibrary !== undefined, null, { timeout: 20000 });
 
     if (rows) {
         // Server-rendered, so their presence means painted rather than merely
         // booted.
         await page.waitForSelector('li[data-long-press-menu]', { timeout: 20000 });
+    }
+
+    if (downloads) {
+        // `paintIconDownloadStates()` reads IndexedDB and then writes a state
+        // onto every download button, so it lands after rows exist. A test
+        // that sets a state before it resolves has that state overwritten —
+        // which read as "the stylesheet shows the wrong glyph" rather than as
+        // a race. Waits for the repaint to have run at least once.
+        await page.waitForFunction(
+            () => window.__soundchexDownloadsPainted === true,
+            null,
+            { timeout: 20000 },
+        );
     }
 }

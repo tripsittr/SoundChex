@@ -5,7 +5,7 @@ namespace App\Filament\Widgets;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
-use App\Models\MediaPlay;
+use Illuminate\Support\Facades\Cache;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Support\Number;
@@ -48,10 +48,6 @@ class LibraryOverview extends StatsOverviewWidget
             ])
             ->count();
 
-        $playsThisWeek = MediaPlay::query()
-            ->where('created_at', '>=', now()->subWeek())
-            ->count();
-
         return [
             Stat::make('Items in library', Number::format($total))
                 ->description($this->breakdown($counts))
@@ -62,11 +58,6 @@ class LibraryOverview extends StatsOverviewWidget
                 ->description($this->filesOnDisk() . ' files on disk')
                 ->descriptionIcon('heroicon-m-circle-stack')
                 ->color('gray'),
-
-            Stat::make('Plays this week', Number::format($playsThisWeek))
-                ->description($this->playsDescription())
-                ->descriptionIcon('heroicon-m-play')
-                ->color('success'),
 
             Stat::make('Needs review', Number::format($needsAttention))
                 ->description($needsAttention === 0
@@ -94,58 +85,70 @@ class LibraryOverview extends StatsOverviewWidget
             ->implode(' · ');
     }
 
-    /**
-     * Total bytes of every catalogued file.
-     *
-     * Read from disk rather than stored, since files imported in place aren't
-     * copied and their size isn't recorded anywhere.
-     */
     private function formattedStorage(): string
     {
-        $bytes = 0;
-
-        foreach ($this->readableFilePaths() as $path) {
-            $bytes += filesize($path) ?: 0;
-        }
-
-        return Number::fileSize($bytes, precision: 1);
+        return Number::fileSize($this->estimate()['bytes'], precision: 1);
     }
 
     private function filesOnDisk(): int
     {
-        return count($this->readableFilePaths());
+        return $this->estimate()['files'];
     }
 
     /**
-     * @return array<int, string>
+     * Library size, from a sample rather than every file.
+     *
+     * No file size is stored anywhere (S-119), so a real total means one
+     * `filesize()` per item — 8,338 of them, on the page that loads most
+     * often. This samples two hundred and scales, cached for an hour: a
+     * library's size does not change between two page loads, and the previous
+     * version paid the full cost on every one.
+     *
+     * Random rather than the first two hundred, because the earliest imports
+     * here are music and the latest are films — two orders of magnitude apart,
+     * so an ordered sample would be badly biased.
+     *
+     * @return array{bytes: int, files: int}
      */
-    private function readableFilePaths(): array
+    private function estimate(): array
     {
-        // Cached per request: both stats above walk the same list.
-        static $paths = null;
+        return Cache::remember('library_size_estimate', now()->addHour(), function (): array {
+            $files = MediaItem::query()->whereNotNull('file_path')->count();
 
-        if ($paths !== null) {
-            return $paths;
-        }
+            if ($files === 0) {
+                return ['bytes' => 0, 'files' => 0];
+            }
 
-        $paths = MediaItem::query()
-            ->whereNotNull('file_path')
-            ->get()
-            ->map(fn (MediaItem $item) => $item->absoluteFilePath())
-            ->filter()
-            ->all();
+            $seen = 0;
+            $bytes = 0;
 
-        return $paths;
-    }
+            $sample = MediaItem::query()
+                ->whereNotNull('file_path')
+                ->inRandomOrder()
+                ->limit(200)
+                ->get(['id', 'file_path', 'converted_path']);
 
-    private function playsDescription(): string
-    {
-        $allTime = MediaPlay::count();
+            foreach ($sample as $item) {
+                $path = $item->absoluteFilePath();
 
-        if ($allTime === 0) {
-            return 'No plays recorded yet';
-        }
+                if ($path === null || ! is_file($path)) {
+                    continue;
+                }
 
-        return Number::format($allTime) . ' all time';
+                $size = @filesize($path);
+
+                if ($size === false) {
+                    continue;
+                }
+
+                $seen++;
+                $bytes += $size;
+            }
+
+            return [
+                'bytes' => $seen > 0 ? (int) round(($bytes / $seen) * $files) : 0,
+                'files' => $files,
+            ];
+        });
     }
 }

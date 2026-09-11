@@ -12,10 +12,18 @@
                 No artists yet. Tracks need an artist tag to be grouped here.
             </p>
         @else
+            @php
+                // The covers, in one query. `find()` inside the loop was 100
+                // separate lookups on a page of 100 artists.
+                $samples = \App\Models\MediaItem::whereIn('id', $artists->pluck('sample_item_id')->filter())
+                    ->get()
+                    ->keyBy('id');
+            @endphp
+
             <ul class="mt-6 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
                 @foreach ($artists as $artist)
                     @php
-                        $cover = \App\Models\MediaItem::find($artist->sample_item_id)?->coverUrl();
+                        $cover = $samples->get($artist->sample_item_id)?->coverUrl();
                     @endphp
                     <li>
                         <a href="{{ route('media.artist', ['name' => $artist->artist]) }}" class="group block text-center">

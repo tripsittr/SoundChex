@@ -314,7 +314,11 @@ function renderSongs(root, items, title, total = null) {
 
     list.className = 'divide-y divide-base-700/40';
 
-    fill(list, songList(items));
+    // The queue once, on the list — the rows point into it by index.
+    const songs = songList(items);
+
+    list.dataset.playQueue = JSON.stringify(songs.queue);
+    fill(list, songs.rows);
     if (!hasChrome()) wrap.append(banner(items.length));
     // The real count, not the number drawn: saying "60 songs" to someone with
     // thirteen hundred would be a lie in service of a placeholder.
@@ -479,7 +483,11 @@ function renderSearch(root, items, term) {
         const list = document.createElement('ol');
 
         list.className = 'divide-y divide-base-700/40';
-        fill(list, songList(items.filter((item) => item.type === 'music')));
+
+        const songs = songList(items.filter((item) => item.type === 'music'));
+
+        list.dataset.playQueue = JSON.stringify(songs.queue);
+        fill(list, songs.rows);
 
         const others = items.filter((item) => item.type !== 'music');
 

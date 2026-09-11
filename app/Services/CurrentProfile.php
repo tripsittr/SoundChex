@@ -44,19 +44,62 @@ class CurrentProfile
     private ?Profile $resolved = null;
 
     /**
+     * Who `$resolved` was resolved *for*.
+     *
+     * This is a singleton, so the cache outlives a change of identity — and a
+     * cached profile handed to a different viewer is a capped device seeing an
+     * uncapped library. The account and the session's profile id live here;
+     * the token is compared separately, in `$resolvedToken`.
+     */
+    private ?string $resolvedFor = null;
+
+    /**
+     * The access token `$resolved` was resolved under, held rather than keyed.
+     *
+     * Two tokens on one account can name different profiles. Keeping the object
+     * itself both distinguishes them and keeps it alive, so its identity cannot
+     * be recycled onto a different token while this cache still trusts it.
+     */
+    private ?object $resolvedToken = null;
+
+    /**
      * The profile in use, creating a default if the account has none.
      */
     public function get(): ?Profile
     {
-        if ($this->resolved !== null) {
-            return $this->resolved;
-        }
-
         $user = Auth::user();
 
         if ($user === null) {
             return null;
         }
+
+        // The token is held rather than reduced to a key.
+        //
+        // Two tokens on one account can name different profiles, so the account
+        // alone is not enough to tell them apart. The token's *id* is not
+        // enough either: Sanctum's test double reports the same id (`false`)
+        // for every one, which let a second profile read the first's cached
+        // answer — the leak `test_two_profiles_do_not_share_a_cache_entry`
+        // exists to catch, and a capped device seeing an uncapped library.
+        //
+        // Comparing the object itself rather than `spl_object_id()`, because
+        // that id is reused once an object is freed: a token released and
+        // another allocated in its place would match a key it never wrote.
+        // Holding a reference also keeps the object alive, so there is no
+        // window in which reuse could happen.
+        $token = $user->currentAccessToken();
+
+        $key = implode('|', [
+            $user->getAuthIdentifier(),
+            Session::get(self::SESSION_KEY) ?? '-',
+        ]);
+
+        if ($this->resolved !== null && $this->resolvedFor === $key && $this->resolvedToken === $token) {
+            return $this->resolved;
+        }
+
+        $this->resolvedFor = $key;
+        $this->resolvedToken = $token;
 
         // A token request has no session, so without this the API would fall
         // through to defaultFor() — the owner — and hand a capped profile the
@@ -136,6 +179,11 @@ class CurrentProfile
         $profile->forceFill(['last_used_at' => now()])->saveQuietly();
 
         $this->resolved = $profile;
+        // Cleared rather than recomputed: the session was just written, and
+        // the next get() rebuilds the key from it. Leaving a stale key here
+        // would let the *previous* profile's cache answer for this one.
+        $this->resolvedFor = null;
+        $this->resolvedToken = null;
 
         // Anything already holding a resolved profile — a MediaBrowser or
         // ContentGate built earlier in the request — would keep scoping to the
@@ -183,6 +231,8 @@ class CurrentProfile
         Session::forget(self::UNLOCKED_KEY);
 
         $this->resolved = null;
+        $this->resolvedFor = null;
+        $this->resolvedToken = null;
     }
 
     /**

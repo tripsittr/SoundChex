@@ -21,7 +21,13 @@ if [[ "$DB" != /private/tmp/* && "$DB" != /tmp/* ]]; then
   exit 1
 fi
 
-rm -rf "$ROOT" "$DB"
+# The -wal and -shm companions go too. SQLite writes them beside the database,
+# and a run killed mid-transaction leaves them behind — after which a fresh
+# `touch` of the database alone produces an empty file that does not match the
+# stale shared-memory header, and every later bootstrap dies with
+# "disk I/O error" before the migration prints anything. Cost two full suite
+# runs before it was traced to a file the cleanup did not name.
+rm -rf "$ROOT" "$DB" "$DB-wal" "$DB-shm"
 mkdir -p "$ROOT"
 touch "$DB"
 

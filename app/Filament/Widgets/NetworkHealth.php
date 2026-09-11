@@ -30,7 +30,29 @@ class NetworkHealth extends StatsOverviewWidget
     protected function getStats(): array
     {
         $network = app(NetworkAddresses::class);
+
+        // Read rather than measured. Probing here blocks: `artisan serve` is
+        // single-threaded, so a request to this server made while serving a
+        // request waits on the process that would answer it. This widget
+        // reported "0 of 3, clients cannot reach this server" about a server
+        // that answered all three — `network:probe` measures on the scheduler.
         $results = $network->probe();
+
+        // Never measured is not the same as measured and failing, and saying
+        // the second when the first is true is how a dashboard trains people
+        // to ignore it.
+        if (! $network->probed()) {
+            return [
+                Stat::make('Fastest route', 'Not measured')
+                    ->description('Waiting for the scheduler')
+                    ->color('gray'),
+
+                Stat::make('Addresses answering', count($network->all()) . ' known')
+                    ->description('Run network:probe to measure now')
+                    ->color('gray'),
+            ];
+        }
+
         $fastest = collect($results)->firstWhere('reachable', true);
         $reachable = collect($results)->where('reachable', true)->count();
 

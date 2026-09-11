@@ -2,7 +2,7 @@
 
 namespace App\Filament\Pages;
 
-use App\Filament\Concerns\RestrictsToAdmins;
+use App\Filament\Concerns\RestrictsToServerAdmins;
 use App\Jobs\RunTransferJob;
 use App\Models\Transfer;
 use App\Models\TransferRequest;
@@ -24,12 +24,8 @@ use UnitEnum;
  */
 class ServerTransfer extends Page
 {
-    use RestrictsToAdmins;
+    use RestrictsToServerAdmins;
 
-    protected static function requiredPermission(): string
-    {
-        return 'View:ServerTransfer';
-    }
 
     protected string $view = 'filament.pages.server-transfer';
 

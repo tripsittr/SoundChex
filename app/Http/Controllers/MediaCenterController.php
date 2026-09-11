@@ -13,6 +13,7 @@ use App\Services\SearchService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -23,6 +24,19 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 class MediaCenterController extends Controller
 {
+    /**
+     * The largest forward jump counted as listening rather than a seek.
+     *
+     * The player reports at most once every 10 seconds (`reportProgress()`),
+     * so a normal step is ~10 and anything much larger is a scrubber drag or a
+     * tab that was backgrounded and caught up in one go. 90 seconds is
+     * deliberately generous against that 10: a slow request over a relay, or a
+     * phone that suspended the webview for a minute, should still count what
+     * was genuinely played. Beyond it, the movement is not listening and
+     * banking it would let one drag of the scrubber claim a whole track.
+     */
+    private const LISTENED_MAX_STEP = 90;
+
     public function __construct(private readonly MediaBrowser $browser) {}
 
     /**
@@ -73,7 +87,10 @@ class MediaCenterController extends Controller
         }
 
         foreach (MediaItemType::cases() as $type) {
-            $items = $this->browser->rowsForType($type)[0]['items'] ?? collect();
+            // Just this one rail. Asking for the whole browse page and keeping
+            // its first row built four fixed rails and up to four genre rails
+            // per type, then discarded seven of the eight.
+            $items = $this->browser->recentlyAdded($type);
 
             if ($items->isEmpty()) {
                 continue;
@@ -207,8 +224,20 @@ class MediaCenterController extends Controller
 
         // A real file response rather than a stream: it sets Accept-Ranges, so
         // the browser can seek within a track instead of refetching it.
+        // `makeDisposition()` rather than quoting the title by hand.
+        //
+        // `addslashes()` escapes quotes and leaves CRLF untouched, and a title
+        // comes from a file's own tags or a metadata provider — neither of
+        // which this server controls. A newline in one would have ended the
+        // header and begun another, which is header injection with the
+        // library as the payload. Symfony percent-encodes the UTF-8 form and
+        // supplies an ASCII fallback for clients that cannot read it.
         return response()->file($path, [
-            'Content-Disposition' => 'inline; filename="' . addslashes($item->title) . '"',
+            'Content-Disposition' => (new ResponseHeaderBag)->makeDisposition(
+                ResponseHeaderBag::DISPOSITION_INLINE,
+                (string) $item->title,
+                'media',
+            ),
         ]);
     }
 
@@ -276,8 +305,30 @@ class MediaCenterController extends Controller
             ]);
         }
 
+        // How much was actually listened, accumulated from the movement
+        // between saves.
+        //
+        // `position_seconds` cannot answer this: it is overwritten every time,
+        // so a track played twice to 3:00 is indistinguishable from one played
+        // once. And plays × duration counts a ten-second skip as a full
+        // listen, which is the number a statistics page must not get wrong.
+        //
+        // Only forward movement counts, and only movement small enough to be
+        // playback rather than a seek: dragging the scrubber to the end would
+        // otherwise bank the whole track as listened. The cap is generous
+        // against the client's own save interval — a few seconds — so a slow
+        // request or a backgrounded tab still counts, while a jump does not.
+        $advanced = $data['position'] - (int) ($play->position_seconds ?? 0);
+        $listened = ($advanced > 0 && $advanced <= self::LISTENED_MAX_STEP)
+            ? $advanced
+            : 0;
+
         $play->forceFill([
             'position_seconds' => $data['position'],
+            // Null until something is actually listened, so a row that only
+            // ever recorded a seek stays distinguishable from one that played
+            // for no time — and from the 505 rows that predate the column.
+            'listened_seconds' => ($play->listened_seconds ?? 0) + $listened,
             'completed' => $completed,
         ])->save();
 
@@ -359,8 +410,16 @@ class MediaCenterController extends Controller
     {
         $userId = Auth::id();
 
+        // Whose play this is. Stamped here as well as in `saveProgress()`,
+        // because without it 84% of the rows in this table named an account
+        // and not a person — and a household sharing one login is exactly the
+        // case profiles exist for. Every per-profile statistic was reading
+        // one sixth of the data.
+        $profileId = app(CurrentProfile::class)->id();
+
         $recent = $item->plays()
             ->where('user_id', $userId)
+            ->when($profileId, fn ($query) => $query->where('profile_id', $profileId))
             ->where('created_at', '>=', now()->subMinutes(10))
             ->exists();
 
@@ -368,7 +427,10 @@ class MediaCenterController extends Controller
             return;
         }
 
-        $item->plays()->create(['user_id' => $userId]);
+        $item->plays()->create([
+            'user_id' => $userId,
+            'profile_id' => $profileId,
+        ]);
     }
 
     /**

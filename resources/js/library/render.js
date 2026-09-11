@@ -96,11 +96,11 @@ export function poster(item) {
 /**
  * A song row, matching song-row.blade.php.
  *
- * The queue is embedded per row exactly as the server does it, so clicking
- * track five leaves the rest of the list queued behind it — the behaviour that
- * makes an album feel like an album.
+ * Carries only its position. The queue itself is written once onto the list
+ * that holds these — see `songList()` — exactly as the server does it, so
+ * clicking track five still leaves the rest queued behind it.
  */
-export function songRow(item, queue, index) {
+export function songRow(item, index) {
     const row = element('li', 'group flex items-center gap-3 rounded-lg px-2 py-2 transition hover:bg-base-800/60');
 
     row.dataset.longPressMenu = '';
@@ -108,7 +108,6 @@ export function songRow(item, queue, index) {
     const play = element('button', 'relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded bg-base-700');
 
     play.type = 'button';
-    play.dataset.play = JSON.stringify(queue);
     play.dataset.playIndex = String(index);
     play.setAttribute('aria-label', `Play ${item.title ?? ''}`);
     play.append(artwork(item, 'size-full object-cover'));
@@ -119,7 +118,6 @@ export function songRow(item, queue, index) {
     const text = element('button', 'min-w-0 flex-1 text-left');
 
     text.type = 'button';
-    text.dataset.play = JSON.stringify(queue);
     text.dataset.playIndex = String(index);
     text.setAttribute('aria-label', `Play ${item.title ?? ''}`);
 
@@ -226,9 +224,15 @@ export function fill(container, nodes) {
 
 /**
  * A whole list of songs, queue and all.
+ *
+ * Returns the rows *and* the queue to hang on the list element, rather than
+ * embedding the queue in every row. Sixty rows with two play controls each was
+ * 120 copies of the same array built into the DOM — the phone paying the cost
+ * the server page was just relieved of.
  */
 export function songList(items) {
-    const queue = items.map(playerPayload);
-
-    return items.map((item, index) => songRow(item, queue, index));
+    return {
+        rows: items.map((item, index) => songRow(item, index)),
+        queue: items.map(playerPayload),
+    };
 }

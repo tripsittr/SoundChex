@@ -85,10 +85,17 @@ class AdminPanelProvider extends PanelProvider
                 AccountWidget::class,
                 // FilamentInfoWidget::class,
             ])
+            // Declared so the order is a decision rather than whatever order
+            // the pages happen to be discovered in. System is last and holds
+            // the screens that administer the machine rather than the library
+            // — it is hidden entirely from profiles without
+            // `Access:ServerAdministration`, so for most people the sidebar
+            // simply ends at Settings.
             ->navigationGroups([
                 NavigationGroup::make('Media Library'),
                 NavigationGroup::make('Users & Permissions'),
                 NavigationGroup::make('Settings'),
+                NavigationGroup::make('System'),
             ])
             // The media center is a separate Blade app, so Filament can't
             // discover it — the way back has to be declared explicitly.

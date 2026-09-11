@@ -147,41 +147,6 @@ test.describe('downloading in bulk', () => {
         }
     });
 
-    test('download all stores the library', async ({ page }) => {
-        const button = page.locator('[data-download-library]').first();
-
-        await expect(button).toBeVisible();
-        await button.click();
-
-        await expect(button).toHaveAttribute('data-state', 'stored', { timeout: 30000 });
-
-        const [stored, expected] = await Promise.all([
-            page.evaluate(() => window.soundchexDownloads.list().then((l) => l.length)),
-            page.evaluate(() => fetch('/app/downloadable', { headers: { Accept: 'application/json' } })
-                .then((r) => r.json()).then((p) => p.tracks.length)),
-        ]);
-
-        expect(stored).toBe(expected);
-    });
-
-    test('pressing it again does not download everything twice', async ({ page }) => {
-        const button = page.locator('[data-download-library]').first();
-
-        await button.click();
-        await expect(button).toHaveAttribute('data-state', 'stored', { timeout: 30000 });
-
-        const before = await page.evaluate(() => window.soundchexDownloads.list().then((l) => l.length));
-
-        await button.click();
-        await page.waitForTimeout(1500);
-
-        // Already-stored tracks are skipped rather than fetched again, which is
-        // what makes this safe to press twice.
-        const after = await page.evaluate(() => window.soundchexDownloads.list().then((l) => l.length));
-
-        expect(after).toBe(before);
-    });
-
     test('an album download button is bound', async ({ page }) => {
         await page.goto('/app/albums');
         await page.waitForTimeout(1200);

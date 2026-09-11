@@ -20,12 +20,17 @@ class MediaPlay extends Model
         // works if the column is actually written.
         'profile_id',
         'position_seconds',
+        // Accumulated listening time, as distinct from the resume bookmark
+        // above. Listed here for the same reason `profile_id` had to be: a
+        // column missing from this array is silently dropped on create.
+        'listened_seconds',
         'completed',
     ];
 
     protected $casts = [
         'completed' => 'boolean',
         'position_seconds' => 'integer',
+        'listened_seconds' => 'integer',
     ];
 
     public function mediaItem(): BelongsTo
