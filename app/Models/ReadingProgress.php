@@ -19,6 +19,12 @@ class ReadingProgress extends Model
     protected $fillable = [
         'media_item_id',
         'user_id',
+        // Added when profiles arrived, and missed here — so every row was
+        // written with a null profile_id no matter who was reading, and
+        // `updateOrCreate` keyed on the profile quietly dropped it on insert.
+        // A household shared one place in every book, which looks like the
+        // app forgetting where you were rather than like a bug.
+        'profile_id',
         'location',
         'percent',
         'finished',

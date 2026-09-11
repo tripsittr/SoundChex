@@ -1,4 +1,4 @@
-import { log } from './log.js';
+import { log, logFailure } from './log.js';
 
 /**
  * The media player behind both the now-playing bar and the video view.
@@ -198,7 +198,15 @@ export default class MediaPlayer {
         try {
             const { localUrl } = await import('./downloads.js');
             url = await localUrl(item.id);
-        } catch {
+        } catch (error) {
+            // Falling back to the network is the right behaviour, but it is
+            // not free: the user downloaded this track and is now streaming it
+            // over mobile data, with nothing to say why. A failure here means
+            // the store itself is unhappy — a broken transaction, a record
+            // that is not a blob — not merely a file that was never saved,
+            // which `localUrl()` reports by returning null without throwing.
+            logFailure('player:local-source:failed', error, { id: String(item.id) });
+
             return;
         }
 
