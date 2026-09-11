@@ -12,11 +12,18 @@
                 No albums yet. Tracks need an album tag to be grouped here.
             </p>
         @else
+            @php
+                // The covers, in one query. `find()` inside the loop was 60
+                // separate lookups on a page of 60 albums.
+                $samples = \App\Models\MediaItem::whereIn('id', $albums->pluck('sample_item_id')->filter())
+                    ->get()
+                    ->keyBy('id');
+            @endphp
+
             <div class="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
                 @foreach ($albums as $album)
                     @php
-                        $sample = \App\Models\MediaItem::find($album->sample_item_id);
-                        $cover = $sample?->coverUrl();
+                        $cover = $samples->get($album->sample_item_id)?->coverUrl();
                     @endphp
                     <a href="{{ route('media.album', ['artist' => $album->artist, 'album' => $album->album]) }}"
                        class="group block">

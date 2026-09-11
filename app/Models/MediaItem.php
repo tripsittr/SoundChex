@@ -571,7 +571,9 @@ class MediaItem extends Model
                 ->where('album', $meta->album)
                 // Same album title by a different artist is a different record.
                 ->when(filled($meta->artist), fn ($q) => $q->where('artist', $meta->artist)))
-            ->with('musicMetadata')
+            // `plays` too: the detail page turns this into a player payload
+            // per track, and each one asks for a resume position.
+            ->with(['musicMetadata', 'plays'])
             ->get()
             // Sorted in PHP because track_number lives on the joined table and
             // is frequently null for singles.
@@ -602,6 +604,25 @@ class MediaItem extends Model
     public function resumePosition(): ?int
     {
         $profileId = app(CurrentProfile::class)->id();
+
+        // Answered from an already-loaded `plays` relation when there is one,
+        // so a list can eager-load once instead of querying per row. A songs
+        // page builds a payload for every track, and each one asking for
+        // itself was 121 queries on a 48-song page.
+        //
+        // The filtering is duplicated rather than shared because the two run
+        // in different places — SQL there, PHP here — and keeping them in one
+        // expression would mean loading every play row to filter it in memory.
+        if ($this->relationLoaded('plays')) {
+            $play = $this->plays
+                ->when($profileId, fn ($plays) => $plays->where('profile_id', $profileId))
+                ->when(! $profileId, fn ($plays) => $plays->where('user_id', Auth::id()))
+                ->where('completed', false)
+                ->sortByDesc('id')
+                ->first();
+
+            return $play?->position_seconds ?: null;
+        }
 
         $play = $this->plays()
             // Scoped to the profile, not the account: two people sharing a

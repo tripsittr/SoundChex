@@ -45,7 +45,22 @@ export default defineConfig({
             name: 'reseed',
             testMatch: /reseed\.teardown\.js/,
         },
-        { name: 'mobile', use: { ...devices['iPhone 13'] }, testMatch: /(mobile|phone|phone-dl|download-queue|downloads-remove|downloads-batch|mobile-touch|connection-toast|download-logging|library-refresh|server-transfer|player-session|failover)\.spec\.js/ },
+        {
+            name: 'mobile',
+            // Real WebKit — `devices['iPhone 13']` carries
+            // `defaultBrowserType: 'webkit'`, which is the engine these tests
+            // exist to cover.
+            //
+            // Service workers off. A worker controls this origin and answers
+            // requests the page made, and those never reach `page.route()` or
+            // even `context.route()` — so a test that aborts `/app/downloadable`
+            // watched the listing succeed anyway and `requestfinished` fire for
+            // a request its own handler had never seen. Nothing in this
+            // project's specs tests the worker itself; `service-worker.spec.js`
+            // runs on desktop, where it stays enabled.
+            use: { ...devices['iPhone 13'], serviceWorkers: 'block' },
+            testMatch: /(mobile|phone|phone-dl|download-queue|downloaded-filter|downloads-remove|downloads-batch|mobile-touch|connection-toast|download-logging|library-refresh|server-transfer|player-session|failover)\.spec\.js/,
+        },
     ],
     // Two servers: the Laravel app, and a static one for the Tauri shell.
     // The shell's tests prove it works *without* the Laravel one, so it cannot

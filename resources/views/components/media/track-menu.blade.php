@@ -10,10 +10,14 @@
 @php
     use App\Models\Collection as Playlist;
 
-    $playlists = Playlist::query()
+    // Resolved once per request, not once per menu. Every row on a songs page
+    // renders one of these, and each ran the same query — 48 identical fetches
+    // of the same playlist list on one page. The set cannot change while a
+    // page renders, so the first answer stands for all of them.
+    $playlists = once(fn () => Playlist::query()
         ->where('user_id', auth()->id())
         ->orderBy('name')
-        ->get(['id', 'name']);
+        ->get(['id', 'name']));
 
     $payload = $items->map(fn ($item) => $item->playerPayload())->values();
 

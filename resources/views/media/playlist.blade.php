@@ -15,7 +15,10 @@
 @endphp
 
 <x-media.layout :title="$playlist->name">
-    <div class="clears-header mx-auto max-w-4xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8">
+    {{-- The queue, once. Every play control below points into it by index
+         rather than carrying its own copy. --}}
+    <div class="clears-header mx-auto max-w-4xl px-4 pb-16 pt-32 sm:pt-36 sm:px-8"
+         data-play-queue="{{ $queue->toJson() }}">
 
         <div class="flex flex-wrap items-start justify-between gap-4">
             <div class="min-w-0">
@@ -43,7 +46,6 @@
         @if ($tracks->isNotEmpty())
             <div class="mt-6 flex flex-wrap items-center gap-2">
                 <button type="button"
-                        data-play="{{ $queue->toJson() }}"
                         data-play-index="0"
                         class="inline-flex items-center gap-2 rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-accent-hot">
                     <svg class="size-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -53,7 +55,7 @@
                 </button>
 
                 <button type="button"
-                        data-play="{{ $queue->toJson() }}"
+                        data-play-index="0"
                         data-play-shuffle="true"
                         class="inline-flex items-center gap-2 rounded-full border border-base-500 px-5 py-2.5 text-sm font-medium text-ink-200 transition hover:border-ink-500 hover:text-ink-100">
                     <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -98,7 +100,6 @@
                         </button>
 
                         <button type="button"
-                                data-play="{{ $queue->toJson() }}"
                                 data-play-index="{{ $index }}"
                                 class="relative flex size-8 shrink-0 items-center justify-center rounded text-sm tabular-nums text-ink-500 transition hover:bg-base-700 hover:text-ink-100"
                                 aria-label="Play {{ $track->title }}">

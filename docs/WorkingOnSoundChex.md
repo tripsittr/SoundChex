@@ -177,6 +177,54 @@ later wins. Grep for the selector before adding a rule for it.
 hide the mobile tab bar because `.mobile-tabs { display: grid }` came later in
 the cascade. Scope the breakpoint in the stylesheet rather than fighting it.
 
+**`vite build` is not the build.** The real one is
+`npm run build` — `vite build && node scripts/embed-offline-shell.mjs`. Running
+vite alone regenerates the asset manifest but leaves the service worker stamped
+with the *previous* build's digest, so `sw.js` advertises a cache version that
+no longer matches what it would cache. It fails as one puzzling
+`service-worker.spec.js` failure comparing two hex strings, several steps away
+from the rebuild that caused it, and every other test still passes.
+
+**Two correct guards can deadlock.** A finished batch download kept spinning
+because `runBatch()` marks rows `downloading` and the repainter skips buttons
+reading `downloading` — the first so a long batch does not look idle, the
+second so a repaint does not reset a live transfer. Each is right, each has a
+real bug behind it, and together they mean the finished state is never written.
+Neither looks wrong at its own call site. When two pieces of defensive code
+guard the same field, check what happens when both fire.
+
+**When everything reports success and the UI disagrees, the bug is in who may
+write.** The download queue emitted `started → finished → idle`, the fetch
+returned 200 with every byte, and storage had 2.1 GB free. Tracing the download
+harder would have found nothing; the question worth asking was which code path
+was allowed to set the state.
+
+**One run per side is not a bisect when the test is flaky.** A download test
+failed, reverting a suspect change made it pass, and that looked like proof. It
+was not — the original code failed 4 runs in 5, so a single green run was noise.
+Before concluding a change caused a failure, run both sides several times; if
+the answer varies, the test is the problem and the bisect never started.
+
+**A test can fail for doing exactly what it should.** The same test asserted
+that a download queue survived a reload. It did. But `resumeDownloads()` runs on
+load and immediately picks the queue back up, and the fixture files are tiny, so
+the queue had legitimately drained before the assertion ran. The test was
+watching correct behaviour and reporting a regression. When a test fails, check
+what the code is *supposed* to do at that moment before assuming it broke.
+
+**Consistent wrong answers are not a race.** The first theory was a timing race
+against a 4-second timer. Logging the actual value showed the same `["803"]`
+every run — races vary, and that consistency is what pointed at the real cause.
+Log the value before theorising about the clock.
+
+**A green test can be guarding nothing, and it looks identical to one that
+works.** Two tests written this session passed with their fix reverted: one
+asserted a cover path appeared somewhere in the page, but the same item also
+rendered in a rail below; scoped to the right element it still passed, because
+two rows created in the same second tie on `latest()` and SQLite happened to
+break the tie correctly. Revert the fix and watch the test fail — that is the
+only evidence the test is real.
+
 **Editing files with Python string replacement is fragile.** Several edits
 landed in the wrong place or removed a brace, twice producing a file that would
 not parse. Assert the text you expect to find before replacing it, and check the

@@ -10,6 +10,55 @@ import MediaPlayer, { formatTime } from './player.js';
  */
 
 /**
+ * The queue a play control starts, and where to begin in it.
+ *
+ * Two shapes, because a list and a lone button want different things:
+ *
+ *   - `data-play` on the control itself — one track, or a queue small enough
+ *     that repeating it costs nothing. What a poster and the offline shell use.
+ *   - `data-play-queue` on an ancestor — the list's queue, written **once**,
+ *     with each row carrying only its `data-play-index` into it.
+ *
+ * The second exists because the first was used for both. A 48-song page
+ * serialised the same 26 KB queue onto two buttons per row — 96 copies, 2.5 MB
+ * of the 3 MB the page weighed, and a `JSON.parse` of 26 KB on every tap.
+ *
+ * Named `data-play-queue`, not `data-queue`: the track menu already uses that
+ * for the single track the menu acts on, and it sits *inside* each row — so
+ * `closest('[data-queue]')` from a row button would find the menu's one track
+ * and play that instead of the list.
+ *
+ * Nearest wins: a row inside a list with its own `data-play` still means
+ * itself, so a single-track control never picks up the list around it.
+ */
+function queueFor(trigger) {
+    // Parsing happens here rather than in the handler because the handler has
+    // to know there is something to play *before* it swallows the click.
+    // A malformed payload reads the same as no payload: nothing to play.
+    try {
+        const own = trigger.dataset.play;
+
+        if (own !== undefined) {
+            const payload = JSON.parse(own);
+
+            return Array.isArray(payload) ? payload : [payload];
+        }
+
+        const list = trigger.closest('[data-play-queue]');
+
+        // No queue and no payload is a control that is not a play control
+        // after all — a `data-play-index` left on something else.
+        if (!list) return null;
+
+        const queue = JSON.parse(list.dataset.playQueue);
+
+        return Array.isArray(queue) ? queue : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Binds the bar in the *current* document.
  *
  * Deliberately not a module-scope constant. An SPA swap replaces the whole
@@ -179,9 +228,17 @@ function bindNowPlaying() {
 
     // Delegated so buttons rendered after load (or inside rails) still work.
     document.addEventListener('click', (event) => {
-        const trigger = event.target.closest('[data-play]');
+        const trigger = event.target.closest('[data-play], [data-play-index]');
 
         if (!trigger) return;
+
+        // Resolved before the click is swallowed. A `data-play-index` on
+        // something that is not in a list resolves to nothing, and calling
+        // preventDefault() first would eat a click this handler cannot act
+        // on — a link inside one would stop navigating for no visible reason.
+        const items = queueFor(trigger);
+
+        if (items === null) return;
 
         // Play buttons sit inside the poster's link, so the click has to be
         // stopped from bubbling or pressing play would also navigate away.
@@ -189,8 +246,6 @@ function bindNowPlaying() {
         event.stopPropagation();
 
         try {
-            const payload = JSON.parse(trigger.dataset.play);
-            const items = Array.isArray(payload) ? payload : [payload];
             const startIndex = Number(trigger.dataset.playIndex ?? 0);
 
             // "Shuffle this album" is a different intent from "shuffle
@@ -202,7 +257,8 @@ function bindNowPlaying() {
 
             player.play(items, startIndex);
         } catch {
-            // A malformed payload shouldn't break the page.
+            // Starting playback shouldn't break the page. The payload is
+            // already known good — queueFor() parsed it above.
         }
     });
 

@@ -2,7 +2,7 @@
 
 namespace App\Filament\Pages;
 
-use App\Filament\Concerns\RestrictsToAdmins;
+use App\Filament\Concerns\RestrictsToServerAdmins;
 use App\Models\DeviceReport;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -20,12 +20,8 @@ use UnitEnum;
  */
 class DeviceReports extends Page
 {
-    use RestrictsToAdmins;
+    use RestrictsToServerAdmins;
 
-    protected static function requiredPermission(): string
-    {
-        return 'View:DeviceReports';
-    }
 
     protected string $view = 'filament.pages.device-reports';
 

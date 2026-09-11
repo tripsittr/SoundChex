@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\CurrentProfile;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -15,7 +16,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // One per request, because it caches the profile it resolved.
         //
+        // Twenty call sites do `app(CurrentProfile::class)`, and without this
+        // each one built its own instance with an empty cache — so the same
+        // profile was fetched from the database once per call. `/app/music`
+        // ran that query 126 times, `/app` 28, for a value that cannot change
+        // within a request.
+        $this->app->singleton(CurrentProfile::class);
     }
 
     /**

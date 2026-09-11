@@ -79,11 +79,17 @@
         @if ($albums->isNotEmpty())
             <h2 class="mb-4 mt-10 text-lg font-semibold text-ink-100">Albums</h2>
 
+            @php
+                // The covers, in one query rather than one per album.
+                $samples = \App\Models\MediaItem::whereIn('id', $albums->pluck('sample_item_id')->filter())
+                    ->get()
+                    ->keyBy('id');
+            @endphp
+
             <div class="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-5">
                 @foreach ($albums as $album)
                     @php
-                        $sample = \App\Models\MediaItem::find($album->sample_item_id);
-                        $cover = $sample?->coverUrl();
+                        $cover = $samples->get($album->sample_item_id)?->coverUrl();
                     @endphp
                     <a href="{{ route('media.album', ['artist' => $album->artist, 'album' => $album->album]) }}"
                        class="group block">
@@ -107,11 +113,11 @@
         @if ($singles->isNotEmpty())
             <h2 class="mb-2 mt-12 text-lg font-semibold text-ink-100">Singles</h2>
 
-            <ol class="divide-y divide-base-700/60">
+            {{-- This list's queue, once; each row points into it by index. --}}
+            <ol class="divide-y divide-base-700/60" data-play-queue="{{ $queue->toJson() }}">
                 @foreach ($singles as $index => $track)
                     <li data-long-press-menu class="group flex items-center gap-3 py-2.5">
                         <button type="button"
-                                data-play="{{ $queue->toJson() }}"
                                 data-play-index="{{ $index }}"
                                 class="relative flex size-8 shrink-0 items-center justify-center rounded text-sm tabular-nums text-ink-500 transition hover:bg-base-700 hover:text-ink-100"
                                 aria-label="Play {{ $track->title }}">
@@ -138,11 +144,12 @@
                  alone, and every collaboration was invisible. --}}
             <h2 class="mb-2 mt-12 text-lg font-semibold text-ink-100">Appears on</h2>
 
-            <ol class="divide-y divide-base-700/60">
+            {{-- A different queue from Singles above, so it is scoped to this
+                 list rather than shared with it. --}}
+            <ol class="divide-y divide-base-700/60" data-play-queue="{{ $appearsOnQueue->toJson() }}">
                 @foreach ($appearsOn as $index => $track)
                     <li data-long-press-menu class="group flex items-center gap-3 py-2.5">
                         <button type="button"
-                                data-play="{{ $appearsOnQueue->toJson() }}"
                                 data-play-index="{{ $index }}"
                                 class="relative flex size-8 shrink-0 items-center justify-center rounded text-sm tabular-nums text-ink-500 transition hover:bg-base-700 hover:text-ink-100"
                                 aria-label="Play {{ $track->title }}">

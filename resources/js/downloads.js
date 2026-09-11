@@ -170,27 +170,70 @@ export async function storageEstimate() {
 }
 
 /**
- * Whether a file of this size plausibly fits.
+ * Enough left afterwards that the write itself will not fail.
  *
- * Deliberately advisory. The browser's own figure is an estimate, and a 1.9 GB
- * film is fine on a desktop and impossible on iOS — so this reports and the
- * user decides, rather than refusing on a guess.
+ * Sized against the **quota**, not the disk, because that is what this can
+ * see. A browser quota is a slice the engine has set aside — a 1 GB cap on a
+ * 128 GB phone is normal — so a reserve chosen for "the device still works"
+ * would refuse every download on a device with plenty of room. That check
+ * belongs on a real `statvfs` reading and arrives with native storage
+ * (S-107 step 2); until then this only claims what it can measure.
+ *
+ * Deliberately small, and the reason is measurable: the e2e browser reports a
+ * 1,048,576,000-byte quota with 0.98 GB free. A 2 GB reserve refused
+ * everything there, which is what a device-scale margin does to a quota-scale
+ * number.
+ */
+const RESERVE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Below this share of the quota left over, say so.
+ *
+ * A tenth of a 1 GB quota is ~100 MB — small enough to be worth a sentence
+ * before someone fills it, and not so eager that a routine album download
+ * asks a question nobody needs.
+ */
+const TIGHT_FRACTION = 0.1;
+
+/**
+ * Whether a download of this size fits, and what it leaves behind.
+ *
+ * Three outcomes, not two, because "no" and "I cannot tell" are different
+ * answers and were previously the same one:
+ *
+ *   - `known: false` — no figure available. **`fits` is now `false`**, so an
+ *     unknown reads as "ask" rather than "yes". It used to return `true`,
+ *     which meant a platform that reports nothing downloaded 40 GB without a
+ *     word — the failure this is supposed to prevent.
+ *   - `fits: false` — it does not fit, or would leave the device unusable.
+ *   - `tight: true` — it fits, and leaves little. The caller warns rather than
+ *     refuses: a device left nearly full is the user's call to make, but it
+ *     has to be a call rather than a discovery.
+ *
+ * The figure itself is the browser's quota, which is **not** free disk space:
+ * on iOS it is bounded by the ~1 GB IndexedDB cap, so it understates a 128 GB
+ * phone by two orders of magnitude. `space()` on the storage backend replaces
+ * it with a real `statvfs` reading once downloads are native (S-107 step 2);
+ * until then this is the only number available and is treated as advisory.
  */
 export async function checkSpace(bytes) {
     const estimate = await storageEstimate();
 
     if (!estimate || !estimate.quota) {
-        return { known: false, fits: true, free: 0, needed: bytes };
+        // Fails closed. See above: an unknown is a question, not permission.
+        return { known: false, fits: false, tight: false, free: 0, needed: bytes };
     }
 
-    // A margin, because writing right up to the quota tends to fail partway.
-    const headroom = estimate.free - bytes;
+    const after = estimate.free - bytes;
 
     return {
         known: true,
-        fits: headroom > 50 * 1024 * 1024,
+        fits: after > RESERVE_BYTES,
+        // Fits, but leaves under a tenth of the quota — worth saying so.
+        tight: after > RESERVE_BYTES && after < estimate.quota * TIGHT_FRACTION,
         free: estimate.free,
         needed: bytes,
+        after: Math.max(0, after),
     };
 }
 

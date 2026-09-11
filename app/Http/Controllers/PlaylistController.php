@@ -43,7 +43,9 @@ class PlaylistController extends Controller
         // whole thing or — worse — shown everything.
         $tracks = $this->gate
             ->apply($collection->mediaItems()->getQuery())
-            ->with('musicMetadata')
+            // `plays` too: every track here becomes a player payload, which
+            // asks for a resume position.
+            ->with(['musicMetadata', 'plays'])
             ->orderBy('collection_media_item.sort_order')
             ->get();
 

@@ -19,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 
 /**
  * The in-app book reader.
@@ -68,9 +69,16 @@ class ReaderController extends Controller
 
         abort_unless($path !== null, 404);
 
+        // See MediaCenterController::stream() — a title carrying CRLF would
+        // otherwise inject a header, and titles come from file tags and
+        // metadata providers rather than from here.
         return response()->file($path, [
             'Content-Type' => $this->mimeFor($this->format($item)),
-            'Content-Disposition' => 'inline; filename="' . addslashes($item->title) . '"',
+            'Content-Disposition' => (new ResponseHeaderBag)->makeDisposition(
+                ResponseHeaderBag::DISPOSITION_INLINE,
+                (string) $item->title,
+                'book',
+            ),
         ]);
     }
 

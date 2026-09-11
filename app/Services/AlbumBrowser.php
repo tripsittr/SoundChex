@@ -121,7 +121,9 @@ class AlbumBrowser
             ->whereHas('musicMetadata', fn (Builder $q) => $q
                 ->where('artist', $artist)
                 ->where('album', $album))
-            ->with('musicMetadata')
+            // `plays` too: every one of these feeds playerPayload(), which
+            // asks for a resume position and would query per track without it.
+            ->with(['musicMetadata', 'plays'])
             ->get()
             // One comparator rather than sortBy()'s array form.
             //
@@ -164,7 +166,9 @@ class AlbumBrowser
                 ->where(fn (Builder $inner) => $inner
                     ->whereNull('album')
                     ->orWhere('album', '')))
-            ->with('musicMetadata')
+            // `plays` too: every one of these feeds playerPayload(), which
+            // asks for a resume position and would query per track without it.
+            ->with(['musicMetadata', 'plays'])
             ->orderBy('title')
             ->get();
     }
@@ -200,7 +204,9 @@ class AlbumBrowser
             // would list it twice.
             ->whereHas('musicMetadata', fn (Builder $q) => $q
                 ->whereRaw(self::PRIMARY . ' != ?', [$artist]))
-            ->with('musicMetadata')
+            // `plays` too: every one of these feeds playerPayload(), which
+            // asks for a resume position and would query per track without it.
+            ->with(['musicMetadata', 'plays'])
             ->orderBy('title')
             ->get();
     }

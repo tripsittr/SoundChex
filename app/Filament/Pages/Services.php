@@ -2,7 +2,7 @@
 
 namespace App\Filament\Pages;
 
-use App\Filament\Concerns\RestrictsToAdmins;
+use App\Filament\Concerns\RestrictsToServerAdmins;
 use App\Services\HostServices;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -25,12 +25,8 @@ use UnitEnum;
  */
 class Services extends Page
 {
-    use RestrictsToAdmins;
+    use RestrictsToServerAdmins;
 
-    protected static function requiredPermission(): string
-    {
-        return 'View:Services';
-    }
 
     protected string $view = 'filament.pages.services';
 

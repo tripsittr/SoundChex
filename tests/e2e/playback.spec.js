@@ -123,7 +123,7 @@ async function startFirstTrack(page) {
     // The play button only appears on hover and only at desktop widths — it is
     // `hidden ... md:flex` with `opacity-0 group-hover:opacity-100`. Clicking
     // it blind hits an invisible element.
-    const trigger = page.locator('[data-play]').first();
+    const trigger = page.locator('[data-play], [data-play-index]').first();
 
     await trigger.scrollIntoViewIfNeeded();
     await trigger.hover();

@@ -31,4 +31,25 @@ class Dashboard extends BaseDashboard
     {
         return 'View:Dashboard';
     }
+
+    /**
+     * Through to the statistics page.
+     *
+     * The dashboard answers "is this server healthy right now" — counts,
+     * storage, what needs review, what is reachable. Listening over time is a
+     * different question with its own page, and the two were starting to
+     * duplicate each other: "plays this week" lived here and said less than
+     * the statistics page says in a glance.
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            \Filament\Actions\Action::make('statistics')
+                ->label('More stats')
+                ->icon(\Filament\Support\Icons\Heroicon::OutlinedChartBar)
+                ->color('gray')
+                ->url(MusicStatisticsPage::getUrl())
+                ->visible(fn (): bool => MusicStatisticsPage::canAccess()),
+        ];
+    }
 }

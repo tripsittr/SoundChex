@@ -181,12 +181,37 @@ test.describe('download button states', () => {
     test.beforeEach(async ({ page }) => {
         await signIn(page);
         await page.goto('/app/music');
-        await appReady(page, { rows: true });
+        // `downloads: true` waits for paintIconDownloadStates() to have run.
+        // It writes a state onto every button after reading IndexedDB, so a
+        // state set before it resolves is overwritten — which reads as the
+        // stylesheet showing the wrong glyph rather than as a race.
+        await appReady(page, { rows: true, downloads: true });
     });
 
     // The button transitions colour, so a read taken immediately after a state
     // change catches an interpolated value rather than the rule's own.
-    const settled = async (page, button) => {
+    //
+    // The wait is a poll rather than a sleep. `paintIconDownloadStates()` reads
+    // IndexedDB and then writes a state onto every button, so it can land
+    // between the write below and the read — a fixed 400ms was long enough on
+    // some runs and not others, and adding a `console.log` was enough to make
+    // it pass, which is the signature of a race rather than a slow paint.
+    // Waiting for the attribute to still hold what was set means the read
+    // happens after any repaint that was in flight.
+    const settled = async (page, button, expected = null) => {
+        if (expected !== null) {
+            await button.evaluate(
+                (el, want) => el.dataset.state === want,
+                expected,
+            );
+
+            await page.waitForFunction(
+                ([sel, want]) => document.querySelector(sel)?.dataset.state === want,
+                ['[data-download]:not(#download-toggle)', expected],
+                { timeout: 10000 },
+            ).catch(() => {});
+        }
+
         await page.waitForTimeout(400);
 
         return button.evaluate((el) => ({
@@ -198,14 +223,34 @@ test.describe('download button states', () => {
     };
 
     test('exactly one glyph shows per state', async ({ page }) => {
-        const button = page.locator('[data-download]:not(#download-toggle)').first();
+        // What is under test is the stylesheet: for each `data-state`, exactly
+        // one `[data-icon]` is displayed. That is a pure CSS question, so the
+        // state is written and the glyph read **inside one evaluate** —
+        // `paintIconDownloadStates()` writes a state of its own whenever it
+        // resolves, and a set-then-read split across two round trips loses to
+        // it depending on what an earlier test left in IndexedDB. Rendering is
+        // forced with an offsetHeight read rather than waited for, because the
+        // display rules are not animated; only the colour is, and the test
+        // below covers that separately.
+        const seen = await page.locator('[data-download]:not(#download-toggle)')
+            .first()
+            .evaluate((el) => {
+                const out = {};
+
+                for (const state of ['idle', 'downloading', 'stored', 'failed']) {
+                    el.dataset.state = state;
+                    void el.offsetHeight;
+
+                    out[state] = [...el.querySelectorAll('[data-icon]')]
+                        .filter((icon) => getComputedStyle(icon).display !== 'none')
+                        .map((icon) => icon.dataset.icon);
+                }
+
+                return out;
+            });
 
         for (const state of ['idle', 'downloading', 'stored', 'failed']) {
-            await button.evaluate((el, value) => { el.dataset.state = value; }, state);
-
-            const { icons } = await settled(page, button);
-
-            expect(icons, `${state} shows only its own glyph`).toEqual([state]);
+            expect(seen[state], `${state} shows only its own glyph`).toEqual([state]);
         }
     });
 
@@ -357,3 +402,114 @@ test.describe('downloading the same track twice', () => {
     });
 });
 
+
+/**
+ * "Download all" and the icons on the rows beneath it.
+ *
+ * The batch button used to be the only thing that changed: every song row sat
+ * on the idle arrow while the files it points at were downloading, so a list
+ * of a hundred rows said nothing was happening for as long as it took. And
+ * because `paintIconDownloadStates()` reads IndexedDB — where a failed track
+ * simply is not — a run in which everything failed came back reading as one
+ * that had never been asked for.
+ *
+ * The persistence half matters more than the spinner: a stored icon that does
+ * not survive a page change invites downloading the same file twice.
+ */
+test.describe('a batch download marks the rows', () => {
+    test.beforeEach(async ({ page }) => {
+        await signIn(page);
+
+        // The track menu's own Download, on the songs list. "Download all" was
+        // removed from `/app/music`, and this is the batch control that still
+        // sits on a page that also has per-row download buttons — which is
+        // what these are about. The album page has the other batch button but
+        // no row buttons at all, so it cannot show this.
+        await page.goto('/app/music');
+        await appReady(page, { rows: true, downloads: true });
+    });
+
+    const row = (page) => page.locator('[data-download]:not(#download-toggle)').first();
+    const batch = (page) => page.locator('[data-download-batch]').first();
+
+    /**
+     * Starts the batch the way the button does.
+     *
+     * Dispatched rather than clicked: the batch control lives inside the track
+     * menu's `<details>`, and driving that open reliably at phone width is a
+     * test of the menu rather than of what happens to the rows. The handler is
+     * delegated on `document`, so a synthetic click on the button reaches
+     * exactly the same code a real tap does.
+     */
+    const startBatch = async (page) => {
+        await page.locator('[data-download-batch]').first().evaluate((el) => {
+            el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
+    };
+
+    test('a row shows the spinner while the batch runs', async ({ page }) => {
+        // Slowed so there is a window to observe at all; without this the
+        // fixture tracks finish faster than a state can be read.
+        await page.context().route('**/item/*/stream', async (route) => {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+
+            return route.continue();
+        });
+
+        await startBatch(page);
+
+        await expect(row(page)).toHaveAttribute('data-state', 'downloading', { timeout: 15000 });
+    });
+
+    test('a row ends stored, and stays stored across pages and a reload', async ({ page }) => {
+        await startBatch(page);
+
+        await expect(row(page)).toHaveAttribute('data-state', 'stored', { timeout: 30000 });
+
+        // Another page and back: the rows are rebuilt from the server.
+        await page.goto('/app/albums');
+        await page.goto('/app/music');
+        await appReady(page, { rows: true, downloads: true });
+
+        await expect(row(page)).toHaveAttribute('data-state', 'stored', { timeout: 15000 });
+
+        // And a full reload, which is the closest a browser test gets to the
+        // app being closed and reopened.
+        await page.reload();
+        await appReady(page, { rows: true, downloads: true });
+
+        await expect(row(page)).toHaveAttribute('data-state', 'stored', { timeout: 15000 });
+    });
+
+    test('a stored row is still stored in a new session', async ({ page, context }) => {
+        await startBatch(page);
+        await expect(row(page)).toHaveAttribute('data-state', 'stored', { timeout: 30000 });
+
+        // A new page in the same context — IndexedDB survives, the page's own
+        // state does not. This is the app being reopened.
+        const reopened = await context.newPage();
+
+        await reopened.goto('/app/music');
+        await reopened.waitForSelector('li[data-long-press-menu]', { timeout: 20000 });
+
+        await expect(
+            reopened.locator('[data-download]:not(#download-toggle)').first(),
+        ).toHaveAttribute('data-state', 'stored', { timeout: 20000 });
+
+        await reopened.close();
+    });
+
+    test('a failed batch says so on the rows, not just the button', async ({ page }) => {
+        test.setTimeout(180000);
+
+        await page.context().route('**/item/*/stream', (route) => route.abort('failed'));
+
+        await startBatch(page);
+
+        // Both, because the repaint that follows a batch reads IndexedDB and
+        // has nothing to say about a file that was never written — it returned
+        // every failed row to idle, and the batch button with it.
+        await expect(row(page)).toHaveAttribute('data-state', 'failed', { timeout: 150000 });
+        await expect(batch(page)).toHaveAttribute('data-state', 'failed', { timeout: 30000 });
+    });
+});
