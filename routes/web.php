@@ -42,13 +42,21 @@ Route::get('/', fn () => redirect()->route(
 | stayed there — a second and a third on every page, for the rest of the
 | session, with no way out short of retyping the address.
 |
-| CORS-open and unauthenticated for the same reason as the identity endpoint:
-| it says only where this server is, which anyone who can already reach it can
-| discover by looking at their own connection.
+| Signed-in only, unlike the identity endpoint below. The old comment argued
+| that anyone who can reach the server already knows where it is — but this
+| lists *every* address: reaching the tailnet name does not reveal the LAN IP,
+| and reaching the LAN does not reveal the tailnet hostname. To an outsider on
+| any one route, the rest of the list is a map of ways into the household.
+|
+| The only caller is `failover.js`, a same-origin fetch from pages that are
+| themselves behind auth, so the session cookie is already on the request —
+| and its `!response.ok` branch falls back to the stored list, so a signed-out
+| fetch degrades rather than breaks. No CORS header: nothing cross-origin has
+| any business asking.
 */
 Route::get('/soundchex-addresses.json', fn () => response()
-    ->json(['addresses' => app(App\Services\NetworkAddresses::class)->all()])
-    ->header('Access-Control-Allow-Origin', '*'))
+    ->json(['addresses' => app(App\Services\NetworkAddresses::class)->all()]))
+    ->middleware('auth')
     ->name('addresses');
 
 Route::get('/soundchex.json', function () {

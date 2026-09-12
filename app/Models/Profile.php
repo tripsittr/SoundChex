@@ -175,6 +175,16 @@ class Profile extends Model
      */
     public const SERVER_ADMINISTRATION = 'Access:ServerAdministration';
 
+    /**
+     * Administering the library: the content tier, below the machine.
+     *
+     * The floor for the management panel. A profile with this curates the
+     * catalogue — metadata, uploads, settings, statistics, the resources — and
+     * one without it cannot reach the panel at all. Server administration is a
+     * separate, higher grant for the machine underneath.
+     */
+    public const LIBRARY_ADMINISTRATION = 'Access:LibraryAdministration';
+
     public function can(string $permission): bool
     {
         if ($this->isOwner()) {
@@ -184,6 +194,20 @@ class Profile extends Model
         return $this->permissions()
             ->where('name', $permission)
             ->exists();
+    }
+
+    /**
+     * Whether this profile may reach the management panel.
+     *
+     * Server administration implies it: someone trusted with the machine is
+     * trusted with the library on it. This is the single check the panel and
+     * every content screen share, so "can this profile see the admin side?"
+     * has one answer rather than one per page.
+     */
+    public function canAdministerLibrary(): bool
+    {
+        return $this->can(self::LIBRARY_ADMINISTRATION)
+            || $this->can(self::SERVER_ADMINISTRATION);
     }
 
     /**

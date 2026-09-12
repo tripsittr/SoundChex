@@ -27,7 +27,13 @@ class Dashboard extends BaseDashboard
      * everyone but the owner, which looks like working access control right
      * up until a granted admin is locked out.
      */
-    protected static function requiredPermission(): string
+    /**
+     * The narrow key. Library admins reach the dashboard through the floor;
+     * this is the grantable `View:Dashboard` for a member given the landing
+     * page without the rest of the panel. The default derivation would ask
+     * for `Access:Dashboard`, which is not a real permission.
+     */
+    protected static function requiredPermission(): ?string
     {
         return 'View:Dashboard';
     }
