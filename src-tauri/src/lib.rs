@@ -91,7 +91,12 @@ fn service_running(key: String) -> bool {
 pub fn run() {
     let builder = tauri::Builder::default()
         // Notifications are desktop and mobile both, so this is unconditional.
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_notification::init())
+        // Opens external links in the user's own browser. A webview has no
+        // tabs, so `target="_blank"` does nothing at all here — every link out
+        // of the app is silently dead without this, including the Integrations
+        // page's buttons for Radarr, Sonarr and Lidarr.
+        .plugin(tauri_plugin_opener::init());
 
     // Desktop only. iOS and Android install through their own mechanisms, and
     // the plugin has no implementation there.
