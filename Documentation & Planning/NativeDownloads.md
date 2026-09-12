@@ -1,5 +1,10 @@
 # Native downloads
 
+> **Superseded — historical reference.** Its storage design became Step 1–2 of the rebuild. The live plan is
+> [OfflineRebuild.md](OfflineRebuild.md), with a tickable breakdown in
+> [OfflineRebuildTasks.md](OfflineRebuildTasks.md). Kept for the reasoning
+> behind the decisions, not as work to execute.
+
 Store downloaded media in the app's own storage on the device, rather than in
 IndexedDB, so the limit is free space rather than a browser quota.
 
