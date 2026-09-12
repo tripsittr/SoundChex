@@ -17,8 +17,15 @@ use App\Services\CurrentProfile;
  * the owner profile short-circuits so a household can never be left with
  * nobody able to administer it.
  *
- * A resource states which permission it needs by overriding
- * `requiredPermission()`; the default covers pages, which have one gate each.
+ * **The gate is library administration.** Every screen using this trait is
+ * content administration, and the question each asks is the same — "may this
+ * profile curate the library?" — so they share one answer. The older
+ * per-screen names (`ViewAny:Music`, `Access:BulkUpload`) were never created
+ * as permissions, which silently made these screens owner-only; a profile
+ * holding library administration now reaches all of them, and a member or
+ * uploader reaches none. A screen that genuinely needs a narrower grant can
+ * still override `requiredPermission()`, which is then required *in addition*
+ * to the library-admin floor.
  */
 trait RestrictsToAdmins
 {
@@ -30,16 +37,36 @@ trait RestrictsToAdmins
             return false;
         }
 
-        return $profile->can(static::requiredPermission());
+        // Library administration is the broad key: it opens every content
+        // screen at once, which is what an admin profile holds.
+        if ($profile->canAdministerLibrary()) {
+            return true;
+        }
+
+        // Otherwise a profile reaches a screen only by holding that screen's
+        // own permission — the narrow grant, for a member trusted with one
+        // thing and not the panel at large. A screen with no permission of its
+        // own (the default) is library-admin-only, since there is no narrow
+        // key to hold.
+        $permission = static::requiredPermission();
+
+        return $permission !== null && $profile->can($permission);
     }
 
     /**
-     * The permission this screen needs.
+     * The *narrow* permission that also opens this screen, or null.
      *
-     * Named from the class so every resource does not have to declare one:
-     * MusicResource asks for ViewAny:Music, BulkUpload for Access:BulkUpload.
+     * Library administration opens everything; this is the alternative key for
+     * a profile trusted with one screen and not the panel at large. Derived
+     * from the class name — `MusicResource` → `ViewAny:Music` — so a resource
+     * need not declare one, matching the names Shield generates and the
+     * `AccessControlTest` relies on.
+     *
+     * Null for a screen with no such permission: a page whose name yields
+     * nothing grantable is library-admin-only, which is the safe default
+     * rather than inventing a key nobody can hold.
      */
-    protected static function requiredPermission(): string
+    protected static function requiredPermission(): ?string
     {
         $class = class_basename(static::class);
 
@@ -47,9 +74,6 @@ trait RestrictsToAdmins
             return 'ViewAny:' . str_replace('Resource', '', $class);
         }
 
-        // "LibrarySettingsPage" would ask for a permission that does not
-        // exist and fail closed, so the Page suffix is dropped to match the
-        // generated names.
         return 'Access:' . preg_replace('/Page$/', '', $class);
     }
 
