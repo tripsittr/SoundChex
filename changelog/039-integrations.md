@@ -72,6 +72,24 @@ offer, name the command, never ship.
 - `storage/app/arr` and `storage/app/arr-downloads` are gitignored, as is
   `docker/arr/.env`.
 
+## Fixed after first review
+
+**The Set up buttons did nothing.** The modal was bound with `:visible` on a
+Livewire property, which renders the markup with a hidden class and never runs
+the Alpine handler that shows it — Filament's modal opens on an `open-modal`
+browser event. It now dispatches that event.
+
+Worth recording *how* it shipped: twelve tests passed. Every one asserted what
+`edit()` put in the component's state, and none asserted that anything
+appeared. A test that checks the server did its half is not a test that the
+feature works.
+
+**The metadata list was fifteen unsorted rows.** Now grouped by what each
+provider is *for* — Film & TV, Music, Lyrics, Books, Artwork — in a declared
+order, with connected providers first within each group. A configured provider
+is the one with something to say, and burying it under eight unconfigured ones
+made the page look emptier than it was.
+
 ## Still wrong
 
 - The page reads; it does not write. You cannot add a film to Radarr from a
@@ -86,8 +104,18 @@ offer, name the command, never ship.
 
 ## Tests
 
-**PHP 544** (12 new), covering the gate, the not-running case, a missing key
+**PHP 551** (19 new), covering the gate, the not-running case, a missing key
 told apart from a stopped app, health warnings, the set-up/unlink round trip,
 that keys are stored encrypted, that the modal never shows a stored key, and
 that acquisition keys are namespaced away from metadata keys so unlink cannot
 clear the wrong row.
+
+Three of those are new after the modal bug, and assert that opening, closing and
+saving dispatch the browser events the modal actually listens for.
+
+**One ordering test was written twice before it meant anything.** Comparing
+rendered order to declared order passes whether the sort runs or not, because
+the sources happen to be declared in the same sequence as `GROUP_ORDER` — it
+passed with the ordering reverted, twice. The assertion that has teeth is that a
+group missing from `GROUP_ORDER` is dropped rather than silently appended, which
+is the one behaviour build order cannot imitate.

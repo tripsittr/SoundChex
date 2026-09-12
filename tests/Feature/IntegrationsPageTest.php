@@ -140,6 +140,122 @@ class IntegrationsPageTest extends TestCase
 
     /* ------------------------------------------------- set up and unlink -- */
 
+    public function test_opening_the_modal_dispatches_the_event_that_shows_it(): void
+    {
+        // The test that was missing. Twelve passing tests covered what `edit()`
+        // put in the component's state and none covered whether anything
+        // appeared — so a modal bound to `:visible` instead of the event it
+        // actually listens for shipped looking fully tested. The button did
+        // nothing and every assertion was green.
+        $this->asOwner();
+
+        Livewire::test(Integrations::class)
+            ->call('edit', 'tmdb_api_key')
+            ->assertDispatched('open-modal', id: 'integration');
+    }
+
+    public function test_closing_dispatches_the_close_event(): void
+    {
+        $this->asOwner();
+
+        Livewire::test(Integrations::class)
+            ->call('edit', 'tmdb_api_key')
+            ->call('closeModal')
+            ->assertDispatched('close-modal', id: 'integration')
+            ->assertSet('editing', null);
+    }
+
+    public function test_saving_closes_the_modal_rather_than_leaving_it_open(): void
+    {
+        $this->asOwner();
+
+        Livewire::test(Integrations::class)
+            ->call('edit', 'tmdb_api_key')
+            ->set('editingKey', 'a-key')
+            ->call('saveModal')
+            ->assertDispatched('close-modal', id: 'integration');
+    }
+
+    /* ------------------------------------------------------------ order -- */
+
+    public function test_groups_follow_the_declared_order(): void
+    {
+        $this->asOwner();
+
+        $page = app(Integrations::class);
+        $page->load();
+
+        $groups = array_keys($page->groupedRows());
+
+        $expected = array_values(array_filter(
+            Integrations::GROUP_ORDER,
+            fn (string $g): bool => in_array($g, $groups, true),
+        ));
+
+        $this->assertSame($expected, $groups);
+        $this->assertSame('Acquisition', $groups[0], 'Acquisition should lead: it is the only group this page can change.');
+    }
+
+    public function test_an_unlisted_group_is_dropped_rather_than_appended(): void
+    {
+        // This is the assertion with teeth, and the reason the test above is
+        // weaker than it looks: the sources happen to be *declared* in the
+        // same sequence as GROUP_ORDER, so comparing rendered order to
+        // declared order passes whether the sort runs or not. Two attempts at
+        // that assertion proved nothing before this was measured directly.
+        //
+        // Iterating GROUP_ORDER rather than the built rows has one observable
+        // consequence that build order cannot fake: a group nobody listed does
+        // not appear at all. That is deliberate — a provider added with a typo
+        // in its group should be noticed as missing, not quietly tacked onto
+        // the end of the page where it looks intentional.
+        $this->asOwner();
+
+        $page = app(Integrations::class);
+        $page->load();
+
+        $groups = array_keys($page->groupedRows());
+
+        foreach ($groups as $group) {
+            $this->assertContains(
+                $group,
+                Integrations::GROUP_ORDER,
+                "'{$group}' is rendered but not declared in GROUP_ORDER.",
+            );
+        }
+    }
+
+    public function test_connected_providers_sort_above_unconfigured_ones(): void
+    {
+        // A configured provider is the one with something to say. Burying it
+        // under eight unconfigured ones makes the page look emptier than it is.
+        app(SettingsService::class)->set('omdb_api_key', 'a-key', encrypt: true);
+
+        $this->asOwner();
+
+        $page = app(Integrations::class);
+        $page->load();
+
+        $film = collect($page->groupedRows()['Film & TV']);
+
+        $this->assertSame('OMDb', $film->first()['label']);
+        $this->assertTrue($film->first()['connected']);
+    }
+
+    public function test_the_declared_order_survives_the_connected_sort(): void
+    {
+        // Stability matters: with nothing connected, the recommended order is
+        // the whole value of the list.
+        $this->asOwner();
+
+        $page = app(Integrations::class);
+        $page->load();
+
+        $labels = collect($page->groupedRows()['Film & TV'])->pluck('label')->all();
+
+        $this->assertSame(['TMDB', 'TVDB', 'OMDb', 'Trakt'], $labels);
+    }
+
     public function test_setting_up_stores_the_key_encrypted(): void
     {
         $this->asOwner();

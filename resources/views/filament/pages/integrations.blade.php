@@ -1,8 +1,9 @@
 <x-filament-panels::page>
 
     @php
-        /** Grouped so acquisition and metadata read as two lists, not fifteen rows. */
-        $groups = collect($this->rows())->groupBy('group');
+        /** Grouped and ordered on the page object, so the order is a decision
+            rather than whatever `groupBy()` happened to return. */
+        $groups = $this->groupedRows();
     @endphp
 
     @if (! $this->anyRunning())
@@ -35,7 +36,7 @@
         <x-filament::section>
             <x-slot name="heading">{{ $group }}</x-slot>
             <x-slot name="description">
-                {{ $rows->where('connected', true)->count() }} of {{ $rows->count() }} connected
+                {{ collect($rows)->where('connected', true)->count() }} of {{ count($rows) }} connected
             </x-slot>
 
             <ul role="list" class="divide-y divide-gray-100 dark:divide-white/10">
@@ -99,11 +100,7 @@
          modal per integration would be fifteen copies of one form. --}}
     @php $editing = $this->editingRow(); @endphp
 
-    <x-filament::modal
-        id="integration"
-        :visible="$editing !== null"
-        width="lg"
-        display-classes="block">
+    <x-filament::modal id="integration" width="lg">
 
         @if ($editing)
             <x-slot name="heading">{{ $editing['label'] }}</x-slot>

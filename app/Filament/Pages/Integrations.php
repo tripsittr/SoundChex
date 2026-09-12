@@ -81,12 +81,20 @@ class Integrations extends Page
     {
         $this->editing = $key;
         $this->editingKey = '';
+
+        // Filament's modal is opened by a browser event, not by a property.
+        // Binding `:visible` to state looks like it should work and does
+        // nothing — the markup renders with the hidden class and no Alpine
+        // handler ever runs, so the button appeared dead.
+        $this->dispatch('open-modal', id: 'integration');
     }
 
     public function closeModal(): void
     {
         $this->editing = null;
         $this->editingKey = '';
+
+        $this->dispatch('close-modal', id: 'integration');
     }
 
     /**
@@ -177,6 +185,57 @@ class Integrations extends Page
         return [...$this->acquisitionRows(), ...$this->metadataRows()];
     }
 
+    /**
+     * The groups, in the order they should be read.
+     *
+     * Fixed rather than derived from the rows: `groupBy()` returns them in
+     * whatever order they were built, which is an implementation detail and
+     * would reshuffle the page the moment a provider is added in the middle.
+     *
+     * Acquisition leads because it is the only group this page can change.
+     *
+     * @return array<int, string>
+     */
+    public const GROUP_ORDER = [
+        'Acquisition',
+        'Film & TV',
+        'Music',
+        'Lyrics',
+        'Books',
+        'Artwork',
+    ];
+
+    /**
+     * Rows grouped and ordered for display, connected first within each group.
+     *
+     * Connected first because a configured provider is the one with something
+     * to say — a version, a warning, a queue — and burying it under eight
+     * unconfigured ones makes the page look emptier than it is.
+     *
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function groupedRows(): array
+    {
+        $grouped = collect($this->rows())->groupBy('group');
+
+        $out = [];
+
+        foreach (self::GROUP_ORDER as $group) {
+            if (! $grouped->has($group)) {
+                continue;
+            }
+
+            $out[$group] = $grouped[$group]
+                ->sortByDesc('connected')
+                // Stable within each half, so the recommended order above
+                // survives the sort rather than being scrambled by it.
+                ->values()
+                ->all();
+        }
+
+        return $out;
+    }
+
     /** @return array<int, array<string, mixed>> */
     private function acquisitionRows(): array
     {
@@ -216,29 +275,40 @@ class Integrations extends Page
     {
         $settings = app(SettingsService::class);
 
+        // Grouped by what they are *for*, not alphabetically. Twelve providers
+        // in one flat list is a wall of names — someone here is asking "what
+        // improves my films?", and the grouping answers that directly.
+        //
+        // Within each group, the most useful first: TMDB before OMDb because
+        // it covers both films and television, MusicBrainz-adjacent sources
+        // before lyrics, and so on. Order is a recommendation.
         $sources = [
-            'tmdb_api_key' => ['TMDB', 'Films and television'],
-            'omdb_api_key' => ['OMDb', 'Films'],
-            'tvdb_api_key' => ['TVDB', 'Television'],
-            'trakt_client_secret' => ['Trakt', 'Watch history'],
-            'spotify_client_secret' => ['Spotify', 'Music'],
-            'discogs_token' => ['Discogs', 'Releases and credits'],
-            'lastfm_api_key' => ['Last.fm', 'Music'],
-            'genius_api_key' => ['Genius', 'Lyrics'],
-            'musixmatch_api_key' => ['Musixmatch', 'Lyrics'],
-            'fanart_tv_api_key' => ['Fanart.tv', 'Artwork'],
-            'acoustid_api_key' => ['AcoustID', 'Audio fingerprints'],
-            'google_books_api_key' => ['Google Books', 'Books'],
+            'tmdb_api_key' => ['TMDB', 'Films and television', 'Film & TV'],
+            'tvdb_api_key' => ['TVDB', 'Television', 'Film & TV'],
+            'omdb_api_key' => ['OMDb', 'Films, ratings', 'Film & TV'],
+            'trakt_client_secret' => ['Trakt', 'Watch history', 'Film & TV'],
+
+            'spotify_client_secret' => ['Spotify', 'Albums and artists', 'Music'],
+            'discogs_token' => ['Discogs', 'Releases and credits', 'Music'],
+            'lastfm_api_key' => ['Last.fm', 'Listening data', 'Music'],
+            'acoustid_api_key' => ['AcoustID', 'Identifies untagged audio', 'Music'],
+
+            'genius_api_key' => ['Genius', 'Lyrics', 'Lyrics'],
+            'musixmatch_api_key' => ['Musixmatch', 'Lyrics', 'Lyrics'],
+
+            'google_books_api_key' => ['Google Books', 'Books', 'Books'],
+
+            'fanart_tv_api_key' => ['Fanart.tv', 'Posters and backdrops', 'Artwork'],
         ];
 
         $rows = [];
 
-        foreach ($sources as $key => [$label, $detail]) {
+        foreach ($sources as $key => [$label, $detail, $group]) {
             $connected = filled($settings->get($key));
 
             $rows[] = [
                 'key' => $key,
-                'group' => 'Metadata',
+                'group' => $group,
                 'label' => $label,
                 'detail' => $detail,
                 'connected' => $connected,
