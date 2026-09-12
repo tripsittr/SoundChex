@@ -51,7 +51,13 @@ backend is live.
   migration to the interface is deferred to later steps (marked `[~]` above).
 - **Ship:** PR; browser behaviour unchanged, native backend not yet live.
 
-## Step 2 — Native storage on iOS (~2 days) · needs Step 1
+## Step 2 — Native storage on iOS (~2 days) · needs Step 1 · **BLOCKED: needs an iPhone**
+
+> This step cannot be done from a development machine. Its first task is to
+> *prove on a real device* that Tauri's asset protocol honours range requests —
+> the plan's largest risk — and the whole step is verified by downloading a
+> >1 GB file on an iPhone and seeking in it. There is no honest way to build or
+> confirm this without the hardware. Left for a session with a device.
 
 - [ ] **First, de-risk:** prove Tauri's asset protocol honours range requests on
       a real device. If it does not, stop — seeking in a downloaded film would
@@ -81,7 +87,14 @@ backend is live.
       error path. `cargo test --lib` green.
 - **Shipped** as its own PR ahead of Step 2, since it needs no device.
 
-## Step 3 — One database, three stores (~1 day) · needs Step 1
+## Step 3 — One database, three stores (~1 day) · needs Step 1 · **NEXT, unblocked**
+
+> Doable from a browser/WebKit — no device needed. Not started here because it
+> is a gigabyte-scale, data-touching migration across three well-tested modules,
+> and the safe way to do it is a dedicated session with the migration built
+> defensively (copy → verify count and bytes → only then release the old
+> databases), not rushed after a run of other steps. It is the right next thing
+> to build.
 
 - [ ] Collapse `soundchex-downloads`, `soundchex-library`, `soundchex-writes`
       into one database with three object stores and one connection manager
