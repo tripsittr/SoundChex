@@ -76,7 +76,7 @@ class ArrServices
         return Cache::remember(
             self::CACHE_PREFIX . $name,
             (int) config('arr.cache_seconds', 15),
-            fn (): array => $base + $this->probe($name, $app['url'], $key),
+            fn (): array => $base + $this->probe($name, $app['url'], $key, $app['api'] ?? 'v3'),
         );
     }
 
@@ -85,21 +85,21 @@ class ArrServices
      *
      * @return array<string, mixed>
      */
-    private function probe(string $name, string $url, string $key): array
+    private function probe(string $name, string $url, string $key, string $api): array
     {
         try {
-            $system = $this->get($url, $key, '/api/v3/system/status');
+            $system = $this->get($url, $key, "/api/{$api}/system/status");
 
             if ($system === null) {
                 return $this->offline($name, 'Not running.');
             }
 
-            $queue = $this->get($url, $key, '/api/v3/queue', ['pageSize' => 1]);
+            $queue = $this->get($url, $key, "/api/{$api}/queue", ['pageSize' => 1]);
 
             // Health warnings are the thing worth surfacing: an app that is up
             // but cannot reach its download client looks fine from outside and
             // silently does nothing.
-            $health = $this->get($url, $key, '/api/v3/health') ?? [];
+            $health = $this->get($url, $key, "/api/{$api}/health") ?? [];
 
             return [
                 'running' => true,
