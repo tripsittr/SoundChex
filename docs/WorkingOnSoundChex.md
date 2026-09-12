@@ -199,6 +199,22 @@ returned 200 with every byte, and storage had 2.1 GB free. Tracing the download
 harder would have found nothing; the question worth asking was which code path
 was allowed to set the state.
 
+**Livewire strips inline event handlers when it morphs.** A button inside a
+Livewire-rendered modal carried an `onclick` that never ran — including the
+diagnostic added to find out why it never ran. Six fixes were applied to a
+handler that never executed. Behaviour that must survive a morph goes in a
+delegated listener on `document`, keyed off a data attribute.
+
+**A webview is not a browser, and the difference is silent.** `target="_blank"`
+and `window.open` are ignored in a Tauri webview — no error, no tab. External
+links there need the opener plugin, the capability granted, *and* the page's
+exact origin in `remote.urls`: Tauri treats `127.0.0.1` and `localhost` as
+different origins. Every one of those layers fails as "nothing happened."
+
+**Test where the user is.** Three fixes were verified green in Playwright — a
+browser — for a bug that only existed in the packaged app. Ask "where are you
+clicking?" after the first failed fix, not the fourth.
+
 **A missing `$fillable` entry fails silently and looks like forgetfulness.**
 `reading_progress` keyed rows on `profile_id`, but the column was never added to
 the model's `$fillable`, so mass assignment dropped it on every insert. Nothing
