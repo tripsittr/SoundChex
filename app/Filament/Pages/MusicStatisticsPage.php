@@ -27,7 +27,15 @@ class MusicStatisticsPage extends Page
 {
     use RestrictsToAdmins;
 
-    protected static function requiredPermission(): string
+    /**
+     * The narrow key, for a member trusted with statistics and nothing else.
+     *
+     * Library admins reach it through the floor; this is the alternative for a
+     * profile granted `View:MusicStatisticsPage` without the whole panel. The
+     * name is the `View:` form, which is what is grantable — the default
+     * derivation would ask for `Access:MusicStatisticsPage`, which is not.
+     */
+    protected static function requiredPermission(): ?string
     {
         return 'View:MusicStatisticsPage';
     }

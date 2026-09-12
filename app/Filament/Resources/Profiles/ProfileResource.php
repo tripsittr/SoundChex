@@ -99,10 +99,16 @@ class ProfileResource extends Resource
 
                     CheckboxList::make('permissions')
                         ->relationship('permissions', 'name')
+                        // Friendly labels and an ordering that puts the two
+                        // tiers that matter first, so the owner is choosing
+                        // "Library administration" rather than reading
+                        // `Access:LibraryAdministration` off a raw list.
+                        ->options(fn (): array => self::permissionOptions())
+                        ->descriptions(self::permissionDescriptions())
                         ->searchable()
                         ->bulkToggleable()
-                        ->columns(2)
-                        ->helperText('Nothing is granted by default.')
+                        ->columns(1)
+                        ->helperText('Nothing is granted by default. Library administration lets a profile into the management panel; server administration adds the machine — services, transfers, network, acquisition. Profiles with neither stay in the media center.')
                         ->hidden(fn (Get $get): bool => (bool) $get('is_owner')),
 
                     TextInput::make('pin')
@@ -244,5 +250,67 @@ class ProfileResource extends Resource
         $data['user_id'] ??= auth()->id();
 
         return $data;
+    }
+
+    /**
+     * Readable names for the permission checkboxes, keyed by permission id.
+     *
+     * A relationship CheckboxList keys its options by the related model's id,
+     * so these must too. The two administration tiers get proper names and
+     * lead; anything else keeps its raw permission name rather than vanishing,
+     * because hiding a grantable permission is worse than an ugly label.
+     *
+     * @return array<int, string>
+     */
+    protected static function permissionOptions(): array
+    {
+        $labels = self::permissionLabels();
+
+        return \App\Models\Profile::query()->getConnection()
+            ->table('permissions')
+            ->orderByRaw(self::permissionOrdering())
+            ->pluck('name', 'id')
+            ->map(fn (string $name): string => $labels[$name] ?? $name)
+            ->all();
+    }
+
+    /**
+     * Helper text under each checkbox, keyed by permission id.
+     *
+     * @return array<int, string>
+     */
+    protected static function permissionDescriptions(): array
+    {
+        $text = [
+            \App\Models\Profile::LIBRARY_ADMINISTRATION =>
+                'Into the management panel: metadata, uploads, library settings, statistics and the catalogue.',
+            \App\Models\Profile::SERVER_ADMINISTRATION =>
+                'The machine underneath: services, server transfer, network and acquisition. Implies library administration.',
+        ];
+
+        return \App\Models\Profile::query()->getConnection()
+            ->table('permissions')
+            ->pluck('name', 'id')
+            ->map(fn (string $name): ?string => $text[$name] ?? null)
+            ->filter()
+            ->all();
+    }
+
+    /** @return array<string, string> */
+    private static function permissionLabels(): array
+    {
+        return [
+            \App\Models\Profile::LIBRARY_ADMINISTRATION => 'Library administration',
+            \App\Models\Profile::SERVER_ADMINISTRATION => 'Server administration',
+        ];
+    }
+
+    /** The two tiers first, then everything else by name. */
+    private static function permissionOrdering(): string
+    {
+        $lib = \App\Models\Profile::LIBRARY_ADMINISTRATION;
+        $srv = \App\Models\Profile::SERVER_ADMINISTRATION;
+
+        return "CASE name WHEN '{$lib}' THEN 0 WHEN '{$srv}' THEN 1 ELSE 2 END, name";
     }
 }
