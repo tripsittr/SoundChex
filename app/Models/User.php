@@ -79,15 +79,23 @@ class User extends Authenticatable implements FilamentUser
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        // The household shares one login, so the account cannot decide who may
-        // reach the panel — everyone signing in is the same account. Every
-        // resource and page inside refuses individually based on the current
-        // profile's permissions; see Filament\Concerns\RestrictsToAdmins.
+        // The household shares one login, so the account cannot decide this —
+        // everyone signing in is the same account. The *current profile* does.
         //
-        // Gating here on a role instead left a member holding a granted
-        // permission blocked at the door, which made profile permissions
-        // unusable for the case they exist for.
-        return true;
+        // Blocked at the door unless the profile holds *some* admin-side
+        // permission. A profile with none — a plain member or uploader — never
+        // sees the panel chrome, rather than being admitted and bounced from
+        // each page in turn. A profile with a narrow grant (say ViewAny:Music)
+        // still gets in, and the per-screen gate then lets it reach only what
+        // it holds; library and server admins clear it broadly. With no profile
+        // chosen yet (the picker runs first) the panel stays reachable so the
+        // picker can load, and the per-screen gate refuses everything inside.
+        $profile = app(\App\Services\CurrentProfile::class)->get();
+
+        return $profile === null
+            || $profile->isOwner()
+            || $profile->canAdministerLibrary()
+            || $profile->permissions()->exists();
     }
 
     /**
