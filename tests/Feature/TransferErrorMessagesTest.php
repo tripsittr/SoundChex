@@ -14,8 +14,12 @@ use Tests\TestCase;
  *
  * cURL's messages are accurate and useless. "error 60: unable to get local
  * issuer certificate" is exactly right and says nothing about what to do — it
- * was the first thing a real transfer between two machines hit, and it reads
- * as a network problem when it is a missing file on the machine asking.
+ * was the first thing a real transfer between two machines hit.
+ *
+ * It used to point at php.ini: Windows PHP shipped with no CA bundle. The app
+ * now supplies one globally (S-75), so this error no longer means a missing
+ * bundle — it means the remote's certificate is genuinely unverifiable, and
+ * the message says so instead of sending people to edit a file that is fine.
  */
 class TransferErrorMessagesTest extends TestCase
 {
@@ -25,7 +29,7 @@ class TransferErrorMessagesTest extends TestCase
     {
         $this->assertMessage(
             'cURL error 60: SSL certificate problem: unable to get local issuer certificate',
-            'CA bundle',
+            'could not verify',
         );
     }
 

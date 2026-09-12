@@ -90,14 +90,18 @@ class TransferReceiver
     {
         $message = $error->getMessage();
 
-        // Windows PHP ships with no CA bundle, so every outbound HTTPS request
-        // fails this way until php.ini is pointed at one.
+        // Windows PHP ships with no CA bundle. The app now supplies one
+        // globally (AppServiceProvider points every Http call at the
+        // ca-bundle package's pem), so seeing this error means something
+        // rarer: the remote's certificate is genuinely bad, its clock or
+        // this machine's is wrong, or something is intercepting TLS. Blaming
+        // php.ini here sent people to fix a thing that is no longer broken.
         if (str_contains($message, 'local issuer certificate')
             || str_contains($message, 'certificate verify failed')
             || str_contains($message, 'error 60')) {
-            return 'This machine cannot verify certificates, so it cannot reach that '
-                . 'server over HTTPS. PHP needs a CA bundle — set curl.cainfo and '
-                . 'openssl.cafile in php.ini. See docs/SettingUpOnWindows.md.';
+            return 'This machine could not verify that server\'s certificate. '
+                . 'The certificate may be expired or self-signed, a clock may be '
+                . 'wrong on either end, or a proxy is intercepting TLS.';
         }
 
         if (str_contains($message, 'Could not resolve host')) {
