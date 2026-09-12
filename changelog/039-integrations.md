@@ -112,6 +112,28 @@ sidesteps the trap.
 Third control in this feature that rendered and did nothing, so the test asserts
 the mechanism rather than the presence of markup — it fails against the `<a>`.
 
+**The "Open" button inside the desktop app — five layers deep.** The button
+worked in every browser and did nothing in the packaged app, and it took six
+attempts because each layer failed silently and three of them were real bugs
+that were still not the blocker:
+
+1. A second Alpine instance (media-center.js started one over Livewire's),
+   which killed every directive in the panel. Real; fixed; not the blocker.
+2. The opener plugin was not installed on the Rust side. Real; fixed; not the
+   blocker.
+3. `remote.urls` allowed `localhost` but the app navigates to `127.0.0.1`,
+   which Tauri treats as a different origin — every plugin call was denied.
+   Real; fixed; still not the blocker.
+4. An installed build that predated fix 3, so the fix was never running.
+5. The actual blocker: **Livewire strips inline `onclick` handlers when it
+   morphs the modal**, so none of the code above ever executed — including the
+   diagnostic meant to reveal why. The behaviour now lives in a delegated
+   listener on `document`, keyed off `data-open-external`, which Livewire
+   cannot touch. In a browser the anchor still behaves as a plain link.
+
+The lesson written into `docs/WorkingOnSoundChex.md`: when a control renders
+and does nothing, put a probe where the framework cannot strip it, first.
+
 ## Still wrong
 
 - The page reads; it does not write. You cannot add a film to Radarr from a

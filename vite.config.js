@@ -20,6 +20,7 @@ export default defineConfig({
                 'resources/js/library-refresh.js',
                 'resources/js/playlist-reorder.js',
                 'resources/js/upload-progress.js',
+                'resources/js/external-links.js',
                 'resources/js/library/index.js',
                 'resources/css/upload-progress.css',
                 'resources/js/navigate.js',

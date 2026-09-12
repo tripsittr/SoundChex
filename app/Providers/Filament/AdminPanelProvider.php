@@ -61,6 +61,11 @@ class AdminPanelProvider extends PanelProvider
                 fn (): string => (string) app(Vite::class)([
                     'resources/js/upload-progress.js',
                     'resources/css/upload-progress.css',
+                    // External links. A Tauri webview has no tabs, so
+                    // `target="_blank"` is silently ignored and every link out
+                    // of the panel is dead in the packaged app — which is where
+                    // the Integrations page's "Open" buttons are used.
+                    'resources/js/external-links.js',
                 ]),
             )
             // The media center's accent, so buttons, links, focus rings and

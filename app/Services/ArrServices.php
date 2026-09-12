@@ -61,7 +61,7 @@ class ArrServices
             'name' => $name,
             'label' => $app['label'],
             'kind' => $app['kind'],
-            'url' => $app['url'],
+            'url' => $this->url($name),
         ];
 
         $key = $this->apiKey($name);
@@ -76,7 +76,7 @@ class ArrServices
         return Cache::remember(
             self::CACHE_PREFIX . $name,
             (int) config('arr.cache_seconds', 15),
-            fn (): array => $base + $this->probe($name, $app['url'], $key, $app['api'] ?? 'v3'),
+            fn (): array => $base + $this->probe($name, $this->url($name), $key, $app['api'] ?? 'v3'),
         );
     }
 
@@ -151,6 +151,27 @@ class ArrServices
      * every other credential in this app lives; env only so a headless install
      * can be configured without opening a browser.
      */
+    /**
+     * Where this app actually lives.
+     *
+     * Settings first, then config, then the documented default. The default is
+     * loopback because that is where our own compose stack puts it — but these
+     * apps are installed a dozen other ways: natively through Homebrew, on a
+     * Synology or unRAID box, in someone else's Docker stack, or on a different
+     * machine entirely. None of those are on 127.0.0.1 from here, so the
+     * address has to be editable without touching a file on the server.
+     */
+    public function url(string $name): string
+    {
+        $stored = $this->settings->get("arr.{$name}.url");
+
+        if (is_string($stored) && $stored !== '') {
+            return rtrim($stored, '/');
+        }
+
+        return rtrim((string) config("arr.apps.{$name}.url"), '/');
+    }
+
     private function apiKey(string $name): ?string
     {
         $stored = $this->settings->get("arr.{$name}.api_key");

@@ -1,14 +1,18 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Minimal surface. The shell adds no privileged commands of its own: everything the user sees is the web app. Notifications are the exception, because there is no web equivalent inside a Tauri webview.",
+  "description": "Minimal surface. The shell adds no privileged commands of its own: everything the user sees is the web app. Notifications are the exception, because there is no web equivalent inside a Tauri webview; the opener is a second, because a webview has no tabs and target=_blank is silently ignored. NOTE: `remote.urls` must list the origin the window actually navigates to. The server app loads server.html and then sends the window to ORIGIN, which is http://127.0.0.1:8000 \u2014 and Tauri treats that as a different origin from http://localhost:8000 even though both resolve to the same machine. With only localhost listed, every plugin call from the admin panel was denied and the click simply did nothing, with no error anywhere. SECOND NOTE: `windows` is required, not optional. Tauri's resolver (`resolve_access` in tauri's ipc/authority.rs) admits a command only when a `webviews` or `windows` glob matches, and an omitted key is an empty list that matches nothing — so without this key every command in this file was denied everywhere, local pages included, again with no error anywhere. The standard template's `\"windows\": [\"main\"]` is not decoration.",
+  "windows": ["*"],
   "permissions": [
     "core:default",
     "notification:default",
-    "updater:default"
+    "updater:default",
+    "opener:default"
   ],
   "remote": {
     "urls": [
+      "http://127.0.0.1:*/*",
+      "http://127.0.0.1:*",
       "http://localhost:*",
       "http://localhost:*/*",
       "http://:a.:b.:c.:d:*",
