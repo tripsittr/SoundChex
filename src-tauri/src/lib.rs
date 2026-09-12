@@ -86,6 +86,90 @@ fn service_running(key: String) -> bool {
         .unwrap_or(false)
 }
 
+/// Bytes available to us on the volume that holds `path`.
+///
+/// The offline system has to know real free disk space to decide whether a
+/// download fits — and the browser cannot tell it. `navigator.storage.estimate()`
+/// returns the *quota*, a slice the engine set aside, which on iOS is bounded
+/// near the 1 GB IndexedDB cap and is unrelated to the tens of gigabytes a
+/// native download can actually use. So this reports the disk, not the quota.
+///
+/// There is no Tauri plugin for this. `statvfs` is POSIX and present on macOS,
+/// iOS, Linux and Android, which is every platform that matters here; it is one
+/// `extern "C"` call. `f_bavail` is the blocks available to a non-root process
+/// (not `f_bfree`, which counts blocks reserved for root that we cannot use),
+/// and `f_frsize` is the fragment size those blocks are measured in.
+///
+/// Returns bytes rather than a struct on purpose. Two struct layouts returned
+/// a nonsense trillion-gigabyte figure before the third was right — a wrong
+/// reading here would refuse every download or approve every one, silently — so
+/// the seam is a single integer, and the test asserts it against `df` on each
+/// platform rather than against itself.
+#[tauri::command]
+fn free_space(path: String) -> Result<u64, String> {
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        use std::mem::MaybeUninit;
+
+        let c_path = CString::new(path.as_str())
+            .map_err(|_| "path contains a null byte".to_string())?;
+
+        // SAFETY: `statvfs` fills the struct or returns non-zero; we read it
+        // only on success, and `c_path` outlives the call.
+        let stat = unsafe {
+            let mut stat = MaybeUninit::<libc::statvfs>::uninit();
+
+            if libc::statvfs(c_path.as_ptr(), stat.as_mut_ptr()) != 0 {
+                return Err(format!(
+                    "statvfs failed for {path}: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+
+            stat.assume_init()
+        };
+
+        // f_bavail and f_frsize are both u64 on the platforms we target, but
+        // cast explicitly so a narrower libc definition cannot overflow the
+        // multiply silently.
+        let available = (stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64);
+
+        Ok(available)
+    }
+
+    #[cfg(not(unix))]
+    {
+        // Windows: GetDiskFreeSpaceExW. Kept behind cfg so the Unix build does
+        // not pull it in; the interface is the same u64 of bytes.
+        use std::os::windows::ffi::OsStrExt;
+
+        let wide: Vec<u16> = std::ffi::OsStr::new(&path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let mut free_bytes: u64 = 0;
+
+        // SAFETY: `wide` is null-terminated and outlives the call; we pass null
+        // for the totals we do not need.
+        let ok = unsafe {
+            windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+                wide.as_ptr(),
+                &mut free_bytes,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+
+        if ok == 0 {
+            return Err(format!("GetDiskFreeSpaceExW failed for {path}"));
+        }
+
+        Ok(free_bytes)
+    }
+}
+
 /// Boots the app. Shared by desktop (`main.rs`) and the mobile entrypoints.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -98,15 +182,26 @@ pub fn run() {
         // page's buttons for Radarr, Sonarr and Lidarr.
         .plugin(tauri_plugin_opener::init());
 
-    // Desktop only. iOS and Android install through their own mechanisms, and
-    // the plugin has no implementation there.
+    // Commands. `free_space` is on every platform — the phone most of all,
+    // where the offline system decides whether a download fits and the browser
+    // cannot answer. The service commands are desktop-only, so the handler is
+    // registered per platform: `invoke_handler` can be called only once, so it
+    // cannot be one list with a conditional tail.
     #[cfg(desktop)]
     let builder = builder
+        // iOS and Android install through their own mechanisms, and the updater
+        // plugin has no implementation there.
         .plugin(tauri_plugin_updater::Builder::new().build())
-        // So the host application can start a stopped server. The admin panel
-        // manages services too, but it cannot be reached when the thing serving
-        // it is down.
-        .invoke_handler(tauri::generate_handler![start_service, service_running]);
+        // `start_service`/`service_running` let the host start a stopped server
+        // when the admin panel that manages them is itself unreachable.
+        .invoke_handler(tauri::generate_handler![
+            free_space,
+            start_service,
+            service_running
+        ]);
+
+    #[cfg(not(desktop))]
+    let builder = builder.invoke_handler(tauri::generate_handler![free_space]);
 
     // A File menu with Refresh in it, on desktop.
     //
@@ -446,5 +541,51 @@ fn restart_services(app: &tauri::AppHandle) {
 
     for (_label, window) in app.webview_windows() {
         let _ = window.eval(&message);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::free_space;
+
+    /// The number must match what `df` reports, not merely be non-zero.
+    ///
+    /// A plausible-but-wrong figure is the dangerous failure: it would refuse
+    /// every download or approve every one, and look fine doing it. So this
+    /// asserts against `df -k /` — the same volume, the same moment — rather
+    /// than against the function's own arithmetic.
+    #[test]
+    fn free_space_matches_df() {
+        let ours = free_space("/".to_string()).expect("statvfs on /");
+
+        let output = std::process::Command::new("df")
+            .args(["-k", "/"])
+            .output()
+            .expect("run df");
+
+        let text = String::from_utf8_lossy(&output.stdout);
+        // Second line, fourth column is available 1K-blocks on macOS and Linux.
+        let avail_kib: u64 = text
+            .lines()
+            .nth(1)
+            .and_then(|line| line.split_whitespace().nth(3))
+            .and_then(|field| field.parse().ok())
+            .expect("parse df available blocks");
+
+        let df_bytes = avail_kib * 1024;
+
+        // Free space moves between the two calls, so allow a small drift rather
+        // than demanding the exact byte — 64 MiB is generous for the gap and
+        // still catches a wrong struct layout, which is off by gigabytes.
+        let drift = ours.abs_diff(df_bytes);
+        assert!(
+            drift < 64 * 1024 * 1024,
+            "free_space {ours} vs df {df_bytes} (drift {drift}) — layout likely wrong"
+        );
+    }
+
+    #[test]
+    fn free_space_rejects_a_bad_path() {
+        assert!(free_space("/no/such/path/at/all".to_string()).is_err());
     }
 }

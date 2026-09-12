@@ -65,19 +65,21 @@ backend is live.
       mid-file; confirm free-space ceiling is tens of GB.
 - **Ship:** PR; device-tested, with the range-request proof in the description.
 
-## Step 2a — Real disk numbers (~0.5 day) · needs Step 2 (pairs with it)
+## Step 2a — Real disk numbers (~0.5 day) · DONE (built ahead of Step 2)
 
-- [ ] Add a `free_space(path) -> u64` Tauri command (bytes available), using
-      `statvfs` on macOS/iOS/Linux/Android and `GetDiskFreeSpaceExW` on Windows.
-      No crate needed; follows the existing `start_service` command pattern.
-- [ ] Watch the Darwin struct-layout trap: `f_bsize`/`f_frsize` are 64-bit,
-      block counts 32-bit. Return bytes, not a struct.
-- [ ] `space()` in the storage interface reads this natively, `estimate()` only
-      in a browser.
-- **Verify:** the command's result matches `df -k` exactly on each platform
-      (it did on this Mac: 7.1 GB of 494.4 GB). Test asserts against `df`, not
-      against itself.
-- **Ship:** folded into the Step 2 PR or its own small one.
+- [x] `free_space(path) -> u64` Tauri command added, `statvfs` on Unix
+      (macOS/iOS/Linux/Android), `GetDiskFreeSpaceExW` on Windows. No plugin;
+      `libc` / `windows-sys` only. Registered on every platform.
+- [x] Darwin trap avoided by using `f_bavail × f_frsize` and returning bytes,
+      not a struct. Verified byte-exact against `df -k /` on this Mac.
+- [x] `space()` reads the native disk figure inside Tauri (`source: 'disk'`)
+      and falls back to `estimate()` (`source: 'quota'`) in a browser — so the
+      space gate stops reading the ~1 GB browser quota on the phone even before
+      the native storage backend lands.
+- [x] **Verified:** Rust `free_space_matches_df` asserts against `df` (byte
+      match, small drift allowed), `free_space_rejects_a_bad_path` covers the
+      error path. `cargo test --lib` green.
+- **Shipped** as its own PR ahead of Step 2, since it needs no device.
 
 ## Step 3 — One database, three stores (~1 day) · needs Step 1
 
