@@ -1,5 +1,10 @@
 # Native offline bridge
 
+> **Superseded — historical reference.** Its background-transfer design became Step 4 of the rebuild. The live plan is
+> [OfflineRebuild.md](OfflineRebuild.md), with a tickable breakdown in
+> [OfflineRebuildTasks.md](OfflineRebuildTasks.md). Kept for the reasoning
+> behind the decisions, not as work to execute.
+
 Keep the Tauri UI. Move only the parts the web platform genuinely cannot do —
 storage, background transfer and background audio — into a native plugin behind
 a narrow interface.

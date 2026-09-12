@@ -61,6 +61,22 @@ export default defineConfig({
             use: { ...devices['iPhone 13'], serviceWorkers: 'block' },
             testMatch: /(mobile|phone|phone-dl|download-queue|downloaded-filter|downloads-remove|downloads-batch|mobile-touch|connection-toast|download-logging|library-refresh|server-transfer|player-session|failover)\.spec\.js/,
         },
+        {
+            // The offline system on the engine it exists for.
+            //
+            // The `mobile` project blocks service workers to keep route
+            // interception honest, but the offline shell, the library mirror
+            // and the downloads store are *what breaks on WebKit* — the class
+            // of bug (Blob handling, closed connections, the ~1 GB IndexedDB
+            // cap) that Chromium hides and Safari on iOS does not. So these run
+            // here, on WebKit, with the worker enabled, which is how a device
+            // actually behaves. Chromium keeps running them under `desktop`; a
+            // spec that passes on one engine and fails on the other is exactly
+            // the signal this project buys.
+            name: 'mobile-offline',
+            use: { ...devices['iPhone 13'] },
+            testMatch: /(offline|offline-shell|offline-probe|offline-quota|library-mirror|write-queue|service-worker)\.spec\.js/,
+        },
     ],
     // Two servers: the Laravel app, and a static one for the Tauri shell.
     // The shell's tests prove it works *without* the Laravel one, so it cannot
