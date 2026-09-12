@@ -44,16 +44,54 @@ import {
  * real files. Detected by the Tauri globals, the same way `device-settings.js`
  * and `external-links.js` decide — capability, not user-agent.
  */
-export function detectBackend() {
-    const isTauri = typeof window !== 'undefined'
+function isTauri() {
+    return typeof window !== 'undefined'
         && (window.__TAURI_INTERNALS__ !== undefined || window.__TAURI__ !== undefined);
+}
 
-    // Native is not built yet (Step 2), so even inside Tauri we use indexeddb
-    // for now. The detection is here so that turning it on is a one-line change
-    // rather than a new decision spread across call sites.
+export function detectBackend() {
+    // Native *storage* is not built yet (Step 2), so even inside Tauri we store
+    // in IndexedDB for now. The detection is here so that turning it on is a
+    // one-line change rather than a new decision spread across call sites.
     const nativeReady = false;
 
-    return isTauri && nativeReady ? 'native' : 'indexeddb';
+    return isTauri() && nativeReady ? 'native' : 'indexeddb';
+}
+
+/**
+ * Real free disk bytes from the shell, or null outside the app.
+ *
+ * The `free_space` Tauri command (Step 2a) answers this from `statvfs` and
+ * matches `df` to the byte. It is available even while storage is still
+ * IndexedDB, so the *number* the space gate reads becomes real on the phone
+ * ahead of the storage backend itself — the browser quota was the wrong source
+ * regardless of where the bytes land.
+ *
+ * @returns {Promise<number|null>}
+ */
+async function nativeFreeSpace() {
+    if (!isTauri()) {
+        return null;
+    }
+
+    try {
+        const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI_INTERNALS__?.invoke;
+
+        if (typeof invoke !== 'function') {
+            return null;
+        }
+
+        // The app's own storage volume. '/' is a safe stand-in for "the disk
+        // this app writes to" on the platforms that have one root; the native
+        // storage backend will pass its actual media directory at Step 2.
+        const bytes = await invoke('free_space', { path: '/' });
+
+        return typeof bytes === 'number' && bytes >= 0 ? bytes : null;
+    } catch {
+        // No shell, or the command is not registered on this build. Fall back
+        // to the quota rather than failing the gate.
+        return null;
+    }
 }
 
 /**
@@ -99,6 +137,17 @@ const indexeddb = {
      * backend answers this from `statvfs` and sets `known: true`.
      */
     async space() {
+        // The real disk first, when the shell can answer. This is the fix for
+        // the space gate reading the browser quota (bounded near 1 GB on iOS)
+        // instead of the tens of gigabytes actually free — the number is wrong
+        // wherever the bytes are stored, so it is corrected here even while
+        // storage is still IndexedDB.
+        const disk = await nativeFreeSpace();
+
+        if (disk !== null) {
+            return { known: true, free: disk, total: null, source: 'disk' };
+        }
+
         const estimate = await storageEstimate();
 
         if (!estimate || !estimate.quota) {
