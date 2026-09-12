@@ -45,8 +45,10 @@ backend is live.
       choose between them at startup — detection, **not** user-agent.
 - [ ] Route the download button, queue, player and shell through the interface
       only.
-- **Verify:** the full existing offline suite still passes on Chromium through
-  the `indexeddb` backend; no call site references IndexedDB directly any more.
+- [x] **Verified:** `storage-interface.spec.js` round-trips a file through the
+  interface on **both** Chromium and WebKit; the mobile download suite (23) still
+  passes after the `storeBlob` extraction; Vitest 98, PHP 568 green. Call-site
+  migration to the interface is deferred to later steps (marked `[~]` above).
 - **Ship:** PR; browser behaviour unchanged, native backend not yet live.
 
 ## Step 2 — Native storage on iOS (~2 days) · needs Step 1

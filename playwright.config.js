@@ -75,7 +75,7 @@ export default defineConfig({
             // the signal this project buys.
             name: 'mobile-offline',
             use: { ...devices['iPhone 13'] },
-            testMatch: /(offline|offline-shell|offline-probe|offline-quota|library-mirror|write-queue|service-worker)\.spec\.js/,
+            testMatch: /(offline|offline-shell|offline-probe|offline-quota|storage-interface|library-mirror|write-queue|service-worker)\.spec\.js/,
         },
     ],
     // Two servers: the Laravel app, and a static one for the Tauri shell.

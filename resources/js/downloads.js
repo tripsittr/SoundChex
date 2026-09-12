@@ -337,12 +337,42 @@ async function runDownload({ id, url, meta = {}, onProgress, signal, force = fal
 
     const blob = new Blob(chunks, { type });
 
-    // Stored as an ArrayBuffer with its type beside it, not as a Blob.
-    //
-    // Safari aborts the transaction when a Blob is put into IndexedDB, and
-    // does it with a null error — so a download appeared to fail for no
-    // reason, and the bytes that had just been written were rolled back. This
-    // is why downloads worked in Chrome and never on the phone.
+    const stored = await storeBlob(String(id), blob, { type, ...meta });
+
+    logEvent('download:stored', {
+        id: String(id),
+        size: stored.size,
+        ms: Date.now() - startedAt,
+        // A mismatch here means the transfer was truncated and the file is
+        // stored short — which plays as a track that stops early rather than
+        // as an error anyone would notice.
+        expected: total || null,
+        truncated: total > 0 && stored.size !== total,
+    });
+
+    return stored;
+}
+
+/**
+ * Writes one blob and its metadata to the store.
+ *
+ * The single write primitive, extracted so the storage interface
+ * (`offline/storage.js`) has one thing to call and the ArrayBuffer workaround
+ * lives in exactly one place.
+ *
+ * Stored as an ArrayBuffer with its type beside it, not as a Blob: Safari
+ * aborts the transaction when a Blob is put into IndexedDB, and does it with a
+ * null error — so a download appeared to fail for no reason and the bytes just
+ * written were rolled back. This is why downloads worked in Chrome and never on
+ * the phone.
+ *
+ * @param {string} id
+ * @param {Blob} blob
+ * @param {object} meta  type, and anything the download list shows
+ * @returns {Promise<{ id: string, size: number }>}
+ */
+export async function storeBlob(id, blob, meta = {}) {
+    const type = meta.type || blob.type || 'application/octet-stream';
     const buffer = await blob.arrayBuffer();
 
     await transaction(BLOB_STORE, 'readwrite', (store) => store.put(
@@ -358,17 +388,6 @@ async function runDownload({ id, url, meta = {}, onProgress, signal, force = fal
         downloadedAt: Date.now(),
         ...meta,
     }));
-
-    logEvent('download:stored', {
-        id: String(id),
-        size: blob.size,
-        ms: Date.now() - startedAt,
-        // A mismatch here means the transfer was truncated and the file is
-        // stored short — which plays as a track that stops early rather than
-        // as an error anyone would notice.
-        expected: total || null,
-        truncated: total > 0 && blob.size !== total,
-    });
 
     return { id: String(id), size: blob.size };
 }
