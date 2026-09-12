@@ -118,6 +118,34 @@
                     </div>
                 @endif
 
+                @if ($editing['group'] === 'Acquisition')
+                    {{-- The address, because loopback is only right for our own
+                         compose stack. These apps are also installed natively,
+                         on a Synology or unRAID box, inside someone else's
+                         Docker stack, or on a different machine entirely — none
+                         of which answer on 127.0.0.1 from here. --}}
+                    <div>
+                        <label class="mb-1 block text-sm font-medium" for="integration-url">
+                            Address
+                        </label>
+
+                        <x-filament::input.wrapper>
+                            <x-filament::input
+                                id="integration-url"
+                                type="url"
+                                wire:model="editingUrl"
+                                autocomplete="off"
+                                placeholder="http://127.0.0.1:8686" />
+                        </x-filament::input.wrapper>
+
+                        <p class="mt-2 text-xs opacity-60">
+                            Where {{ $editing['label'] }} is reachable from this
+                            server. Another machine on the network works — use
+                            its address rather than localhost.
+                        </p>
+                    </div>
+                @endif
+
                 <div>
                     <label class="mb-1 block text-sm font-medium" for="integration-key">
                         API key
@@ -144,22 +172,20 @@
                 </div>
 
                 @if ($editing['connected_url'])
-                    {{-- Opened with Alpine rather than by following an <a>.
-                         The modal wraps its contents in `x-trap`, which holds
-                         focus inside the dialog — a link that moves focus to a
-                         new tab fights that trap and the navigation is lost, so
-                         the link rendered correctly and did nothing when
-                         clicked. Dispatching the open ourselves sidesteps the
-                         trap entirely.
+                    {{-- No inline handler. Livewire morphs this modal's DOM
+                         and strips `onclick`, so every attempt that put the
+                         behaviour in an attribute never ran at all — which is
+                         why a dead click produced no error and no alert.
 
-                         `noopener,noreferrer` because the opened page gets a
-                         handle on this one otherwise. --}}
-                    <button
-                        type="button"
-                        class="fi-link fi-size-sm fi-color fi-color-primary fi-text-color-600 dark:fi-text-color-400 text-sm font-medium"
-                        x-on:click="window.open(@js($editing['connected_url']), '_blank', 'noopener,noreferrer')">
+                         A marked-up link plus a delegated listener on
+                         `document`, which Livewire cannot touch. --}}
+                    <a href="{{ $editing['connected_url'] }}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       data-open-external="{{ $editing['connected_url'] }}"
+                       class="fi-link fi-size-sm inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:underline dark:text-primary-400">
                         Open {{ $editing['label'] }} &rarr;
-                    </button>
+                    </a>
                 @endif
             </div>
 

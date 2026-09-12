@@ -87,8 +87,19 @@ Alpine.data('rail', () => ({
     },
 }));
 
-window.Alpine = Alpine;
-Alpine.start();
+// Only if nothing else has already started one.
+//
+// Livewire ships its own Alpine, so on an admin page this would be the second
+// instance — and Alpine binds no directives when two are running. Every
+// x-on:click and wire:click in the panel silently stops working, which presents
+// as buttons that render correctly and do nothing rather than as an error.
+//
+// It happens on an ordinary navigation from /app into /admin, because this
+// bundle is still in memory.
+if (! window.Alpine) {
+    window.Alpine = Alpine;
+    Alpine.start();
+}
 
 /**
  * Register the service worker so the media center is installable.

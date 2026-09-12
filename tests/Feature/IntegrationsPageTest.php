@@ -140,14 +140,14 @@ class IntegrationsPageTest extends TestCase
 
     public function test_a_connected_app_offers_a_working_way_to_open_it(): void
     {
-        // Third time this feature shipped a control that rendered and did
-        // nothing, so this asserts the mechanism rather than the presence of
-        // some markup.
+        // Third control in this feature that rendered and did nothing, and the
+        // first two "fixes" for it were wrong: the cause was never this markup.
+        // `media-center.js` called `Alpine.start()` unconditionally, so
+        // navigating from /app into /admin left two Alpine instances running —
+        // and Alpine binds no directives when that happens. Everything
+        // depending on it was inert.
         //
-        // It cannot be an <a>: the modal wraps its contents in Alpine's
-        // `x-trap`, which holds focus inside the dialog and swallows a
-        // navigation that moves focus to a new tab. The link rendered
-        // perfectly and was inert when clicked.
+        // So this asserts the control needs no JavaScript at all.
         $this->withKeys();
 
         Http::fake([
@@ -162,19 +162,27 @@ class IntegrationsPageTest extends TestCase
             ->call('edit', 'lidarr')
             ->html();
 
-        // Opened by script, not by following a href out of a focus trap.
-        $this->assertStringContainsString('window.open', $html);
+        // A plain anchor with a real href. Not Alpine, not window.open: both
+        // were tried and both were dead, because navigating from the media
+        // center into the panel used to leave two Alpine instances running and
+        // Alpine binds no directives at all when that happens.
+        $this->assertMatchesRegularExpression(
+            '/<a[^>]+href="http:\/\/127\.0\.0\.1:8686"[^>]*>/',
+            $html,
+            'The open control must be a real link, not something that needs JavaScript.',
+        );
 
-        // At the right address, and without handing the opened page a handle
-        // on this one.
-        $this->assertStringContainsString('127.0.0.1:8686', $html);
+        // Without handing the opened page a handle on this one.
         $this->assertStringContainsString('noopener', $html);
     }
 
     public function test_an_unreachable_app_offers_no_open_control(): void
     {
-        // Nothing to open. A button that leads to a refused connection is
-        // worse than no button.
+        // Nothing to open. A link to a refused connection is worse than none.
+        //
+        // Asserted on the *link*, not on the address: the address appears
+        // either way now, in the field that lets someone correct it, which is
+        // exactly what an unreachable app needs.
         $this->withKeys();
 
         Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('refused'));
@@ -185,7 +193,10 @@ class IntegrationsPageTest extends TestCase
             ->call('edit', 'lidarr')
             ->html();
 
-        $this->assertStringNotContainsString('window.open', $html);
+        $this->assertDoesNotMatchRegularExpression(
+            '/<a[^>]+href="http:\/\/127\.0\.0\.1:8686"/',
+            $html,
+        );
     }
 
     /* ----------------------------------------------------- api versions -- */

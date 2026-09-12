@@ -58,6 +58,14 @@ class Integrations extends Page
     /** The key being typed in the modal. Never pre-filled — see `edit()`. */
     public string $editingKey = '';
 
+    /**
+     * The address being typed in the modal.
+     *
+     * Pre-filled, unlike the key: it is not a secret, and someone correcting a
+     * port should not have to retype the whole URL.
+     */
+    public string $editingUrl = '';
+
     public function mount(): void
     {
         $this->load();
@@ -82,6 +90,12 @@ class Integrations extends Page
         $this->editing = $key;
         $this->editingKey = '';
 
+        // Only acquisition apps have an address. A metadata provider is a
+        // public API at a fixed URL we ship.
+        $this->editingUrl = array_key_exists($key, config('arr.apps', []))
+            ? app(ArrServices::class)->url($key)
+            : '';
+
         // Filament's modal is opened by a browser event, not by a property.
         // Binding `:visible` to state looks like it should work and does
         // nothing — the markup renders with the hidden class and no Alpine
@@ -93,6 +107,7 @@ class Integrations extends Page
     {
         $this->editing = null;
         $this->editingKey = '';
+        $this->editingUrl = '';
 
         $this->dispatch('close-modal', id: 'integration');
     }
@@ -114,15 +129,51 @@ class Integrations extends Page
     /** Saves whatever the modal is editing, app key or metadata key alike. */
     public function saveModal(): void
     {
-        $key = trim($this->editingKey);
+        if ($this->editing === null) {
+            return;
+        }
 
-        if ($key === '' || $this->editing === null) {
+        $key = trim($this->editingKey);
+        $isApp = array_key_exists($this->editing, config('arr.apps', []));
+
+        // The address is saved on its own, because a wrong one is the more
+        // likely fault: these apps are installed natively, on a NAS, in
+        // someone else's Docker stack or on another machine, and none of those
+        // are on the loopback address we default to. Making someone re-enter a
+        // working key to correct a port would be a poor trade.
+        if ($isApp) {
+            $url = trim($this->editingUrl);
+
+            if ($url !== '' && ! filter_var($url, FILTER_VALIDATE_URL)) {
+                Notification::make()->title('That does not look like a URL.')->warning()->send();
+
+                return;
+            }
+
+            if ($url !== '') {
+                app(SettingsService::class)->set("arr.{$this->editing}.url", rtrim($url, '/'));
+            }
+        }
+
+        if ($key === '') {
+            // A URL-only save is a complete action, not a failed one.
+            if ($isApp && trim($this->editingUrl) !== '') {
+                app(ArrServices::class)->forget();
+
+                $label = $this->editingRow()['label'] ?? 'Integration';
+
+                $this->closeModal();
+                $this->load();
+
+                Notification::make()->title($label . ' address saved.')->success()->send();
+
+                return;
+            }
+
             Notification::make()->title('Enter a key first.')->warning()->send();
 
             return;
         }
-
-        $isApp = array_key_exists($this->editing, config('arr.apps', []));
 
         // Encrypted either way. An acquisition key is full control over that
         // app; a metadata key is someone's paid API quota.
