@@ -4,9 +4,13 @@ Replace the downloads and offline system entirely. It does not work on the
 device it was built for, and the reasons are structural rather than a list of
 bugs to keep fixing.
 
-Supersedes `NativeDownloads.md` (S-06) and absorbs `NativeOfflineBridge.md`
-(S-07). Both are still right about the destination; neither is enough on its
-own, and the parts they defer are the parts that are actually broken.
+**This is the authoritative plan (S-107).** It supersedes `NativeDownloads.md`
+(S-06) and absorbs `NativeOfflineBridge.md` (S-07) — both now carry a superseded
+banner and are kept only for the reasoning behind their decisions.
+`NativeClients.md` settled the served-vs-bundled question (served, kept) and is
+likewise historical. The tickable, per-step breakdown lives in
+[OfflineRebuildTasks.md](OfflineRebuildTasks.md); this document is the *why* and
+the shape, that one is the *what to do next*.
 
 ---
 

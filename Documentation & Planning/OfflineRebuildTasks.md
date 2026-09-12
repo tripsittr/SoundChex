@@ -18,13 +18,15 @@ system until Step 6, so the app keeps working throughout.
 
 The point is a **red** suite that describes the real bug. Today's green is the bug.
 
-- [ ] Add `offline`, `offline-shell`, `offline-probe`, `library-mirror`,
-      `write-queue`, `service-worker` to the `mobile` project's `testMatch` in
-      `playwright.config.js`.
+- [x] Added a `mobile-offline` WebKit project (service worker enabled) running
+      `offline`, `offline-shell`, `offline-probe`, `offline-quota`,
+      `library-mirror`, `write-queue`, `service-worker`. A separate project
+      rather than the `mobile` testMatch, because `mobile` blocks the worker.
 - [ ] Keep the same specs running on Chromium too (a pass-on-one, fail-on-other
       split is the signal being bought).
-- [ ] Add one spec that writes past 1 GB and asserts the failure is **reported**,
-      not swallowed.
+- [x] `offline-quota.spec.js` writes past the quota and asserts the failure is
+      named. Chromium reports `QuotaExceededError`; WebKit rejects with a bare
+      `Error` — the exact defect the storage layer must fix.
 - **Verify:** the new WebKit runs are red, and the failure messages name a
   quota/write failure rather than timing out silently.
 - **Ship:** PR with the failing specs; no production code changed.
