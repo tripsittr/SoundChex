@@ -1,5 +1,10 @@
 # Native clients, or not
 
+> **Superseded — historical reference.** Its served-vs-bundled decision is settled: served, kept. The live plan is
+> [OfflineRebuild.md](OfflineRebuild.md), with a tickable breakdown in
+> [OfflineRebuildTasks.md](OfflineRebuildTasks.md). Kept for the reasoning
+> behind the decisions, not as work to execute.
+
 Whether to build iOS and Android apps against the API and keep the web app for
 desktop and browsers.
 
