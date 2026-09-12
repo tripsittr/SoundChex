@@ -58,6 +58,7 @@ return [
             // inside each app, and this machine is on a tailnet.
             'url' => env('RADARR_URL', 'http://127.0.0.1:7878'),
             'key' => env('RADARR_API_KEY'),
+            'api' => 'v3',
             'media_type' => \App\Enums\MediaItemType::Movie,
         ],
 
@@ -66,6 +67,7 @@ return [
             'kind' => 'TV',
             'url' => env('SONARR_URL', 'http://127.0.0.1:8989'),
             'key' => env('SONARR_API_KEY'),
+            'api' => 'v3',
             'media_type' => \App\Enums\MediaItemType::Show,
         ],
 
@@ -74,6 +76,11 @@ return [
             'kind' => 'Music',
             'url' => env('LIDARR_URL', 'http://127.0.0.1:8686'),
             'key' => env('LIDARR_API_KEY'),
+            // v1, not v3. Radarr and Sonarr moved to v3; Lidarr never did, and
+            // assuming they matched made a running Lidarr report itself as
+            // stopped — every call 404'd and a 404 is indistinguishable from
+            // nothing listening. Verified against 2.5.3: v1 answers, v3 does not.
+            'api' => 'v1',
             'media_type' => \App\Enums\MediaItemType::Music,
         ],
 

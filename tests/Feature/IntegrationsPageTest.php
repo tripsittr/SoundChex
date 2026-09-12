@@ -138,6 +138,66 @@ class IntegrationsPageTest extends TestCase
             ->assertSee('TMDB');
     }
 
+    /* ----------------------------------------------------- api versions -- */
+
+    public function test_each_app_is_asked_on_the_api_version_it_actually_speaks(): void
+    {
+        // Lidarr is v1. Radarr and Sonarr moved to v3 and Lidarr never did,
+        // and assuming all three matched made a *running* Lidarr report itself
+        // as stopped: every call 404'd, and a 404 is indistinguishable from
+        // nothing listening on the port.
+        //
+        // The faked HTTP in the tests above could not catch it — they matched
+        // `*/api/v3/*` and so asserted against the assumption rather than
+        // against the API. This asserts the URL actually requested.
+        $this->withKeys();
+
+        Http::fake([
+            '*/system/status' => Http::response(['version' => '1.2.3']),
+            '*/queue*' => Http::response(['totalRecords' => 0]),
+            '*/health' => Http::response([]),
+        ]);
+
+        $service = app(\App\Services\ArrServices::class);
+        $service->forget();
+        $service->all();
+
+        $expected = [
+            'radarr' => 'v3',
+            'sonarr' => 'v3',
+            'lidarr' => 'v1',
+        ];
+
+        foreach ($expected as $app => $version) {
+            $host = parse_url((string) config("arr.apps.{$app}.url"), PHP_URL_PORT);
+
+            Http::assertSent(fn ($request): bool => str_contains($request->url(), ":{$host}/api/{$version}/system/status"));
+        }
+    }
+
+    public function test_a_health_warning_names_what_is_missing(): void
+    {
+        // The case this exists for: up, reachable, and quietly doing nothing
+        // because it has no indexer or no download client. Both are real
+        // warnings a fresh Lidarr reports.
+        $this->withKeys();
+
+        Http::fake([
+            '*/system/status' => Http::response(['version' => '2.5.3']),
+            '*/queue*' => Http::response(['totalRecords' => 0]),
+            '*/health' => Http::response([
+                ['type' => 'warning', 'message' => 'No download client is available'],
+                ['type' => 'warning', 'message' => 'No indexers available with RSS sync enabled'],
+            ]),
+        ]);
+
+        $status = app(\App\Services\ArrServices::class)->status('lidarr');
+
+        $this->assertTrue($status['running']);
+        $this->assertCount(2, $status['warnings']);
+        $this->assertContains('No download client is available', $status['warnings']);
+    }
+
     /* ------------------------------------------------- set up and unlink -- */
 
     public function test_opening_the_modal_dispatches_the_event_that_shows_it(): void

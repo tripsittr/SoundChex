@@ -90,6 +90,18 @@ order, with connected providers first within each group. A configured provider
 is the one with something to say, and burying it under eight unconfigured ones
 made the page look emptier than it was.
 
+**Lidarr reported itself as not running while it was running.** Its API is
+`v1`; Radarr and Sonarr moved to `v3` and Lidarr never did. Every call 404'd,
+and a 404 is indistinguishable from nothing listening on the port — so a
+perfectly healthy Lidarr showed as stopped. The version is now a property of
+each app rather than a hardcoded assumption.
+
+This is precisely the failure the "unverified against real containers" note
+below predicted, and it survived 19 passing tests because the faked HTTP matched
+`*/api/v3/*` — asserting against the assumption rather than against the API. The
+new test asserts the URL actually requested, and fails against the version that
+shipped.
+
 ## Still wrong
 
 - The page reads; it does not write. You cannot add a film to Radarr from a
@@ -97,14 +109,14 @@ made the page look emptier than it was.
   four API clients to keep working against apps that version independently.
 - Health is polled on render with a 15-second cache. There is no push, so a
   queue that empties between renders still reads as full for up to 15 seconds.
-- **Unverified against real running containers.** The stack validates, and the
-  service is covered by faked HTTP, but no image has been pulled on this
-  machine — so version parsing and health-warning shapes are tested against
-  what the API documents rather than against what it returns.
+- ~~Unverified against real running containers.~~ **Now verified.** All four
+  containers run; Lidarr 2.5.3 reports its version, queue and health warnings
+  through the page. Radarr and Sonarr are up but have no key entered yet, so
+  their probes are still only exercised by faked HTTP.
 
 ## Tests
 
-**PHP 551** (19 new), covering the gate, the not-running case, a missing key
+**PHP 553** (21 new), covering the gate, the not-running case, a missing key
 told apart from a stopped app, health warnings, the set-up/unlink round trip,
 that keys are stored encrypted, that the modal never shows a stored key, and
 that acquisition keys are namespaced away from metadata keys so unlink cannot
