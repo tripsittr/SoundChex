@@ -138,6 +138,56 @@ class IntegrationsPageTest extends TestCase
             ->assertSee('TMDB');
     }
 
+    public function test_a_connected_app_offers_a_working_way_to_open_it(): void
+    {
+        // Third time this feature shipped a control that rendered and did
+        // nothing, so this asserts the mechanism rather than the presence of
+        // some markup.
+        //
+        // It cannot be an <a>: the modal wraps its contents in Alpine's
+        // `x-trap`, which holds focus inside the dialog and swallows a
+        // navigation that moves focus to a new tab. The link rendered
+        // perfectly and was inert when clicked.
+        $this->withKeys();
+
+        Http::fake([
+            '*/system/status' => Http::response(['version' => '2.5.3']),
+            '*/queue*' => Http::response(['totalRecords' => 0]),
+            '*/health' => Http::response([]),
+        ]);
+
+        $this->asOwner();
+
+        $html = Livewire::test(Integrations::class)
+            ->call('edit', 'lidarr')
+            ->html();
+
+        // Opened by script, not by following a href out of a focus trap.
+        $this->assertStringContainsString('window.open', $html);
+
+        // At the right address, and without handing the opened page a handle
+        // on this one.
+        $this->assertStringContainsString('127.0.0.1:8686', $html);
+        $this->assertStringContainsString('noopener', $html);
+    }
+
+    public function test_an_unreachable_app_offers_no_open_control(): void
+    {
+        // Nothing to open. A button that leads to a refused connection is
+        // worse than no button.
+        $this->withKeys();
+
+        Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('refused'));
+
+        $this->asOwner();
+
+        $html = Livewire::test(Integrations::class)
+            ->call('edit', 'lidarr')
+            ->html();
+
+        $this->assertStringNotContainsString('window.open', $html);
+    }
+
     /* ----------------------------------------------------- api versions -- */
 
     public function test_each_app_is_asked_on_the_api_version_it_actually_speaks(): void

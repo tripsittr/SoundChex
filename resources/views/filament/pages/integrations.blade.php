@@ -144,11 +144,22 @@
                 </div>
 
                 @if ($editing['connected_url'])
-                    <p class="text-sm">
-                        <x-filament::link :href="$editing['connected_url']" target="_blank" rel="noopener">
-                            Open {{ $editing['label'] }}
-                        </x-filament::link>
-                    </p>
+                    {{-- Opened with Alpine rather than by following an <a>.
+                         The modal wraps its contents in `x-trap`, which holds
+                         focus inside the dialog — a link that moves focus to a
+                         new tab fights that trap and the navigation is lost, so
+                         the link rendered correctly and did nothing when
+                         clicked. Dispatching the open ourselves sidesteps the
+                         trap entirely.
+
+                         `noopener,noreferrer` because the opened page gets a
+                         handle on this one otherwise. --}}
+                    <button
+                        type="button"
+                        class="fi-link fi-size-sm fi-color fi-color-primary fi-text-color-600 dark:fi-text-color-400 text-sm font-medium"
+                        x-on:click="window.open(@js($editing['connected_url']), '_blank', 'noopener,noreferrer')">
+                        Open {{ $editing['label'] }} &rarr;
+                    </button>
                 @endif
             </div>
 

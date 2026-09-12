@@ -102,6 +102,16 @@ below predicted, and it survived 19 passing tests because the faked HTTP matched
 new test asserts the URL actually requested, and fails against the version that
 shipped.
 
+**The "Open Lidarr" button in the modal did nothing.** It was an `<a>` with
+`target="_blank"`, and it rendered perfectly — correct `href`, correct target.
+The modal wraps its contents in Alpine's `x-trap`, which holds focus inside the
+dialog; a navigation that moves focus to a new tab fights that trap and is
+swallowed. It now opens with `window.open(..., 'noopener,noreferrer')`, which
+sidesteps the trap.
+
+Third control in this feature that rendered and did nothing, so the test asserts
+the mechanism rather than the presence of markup — it fails against the `<a>`.
+
 ## Still wrong
 
 - The page reads; it does not write. You cannot add a film to Radarr from a
@@ -116,7 +126,7 @@ shipped.
 
 ## Tests
 
-**PHP 553** (21 new), covering the gate, the not-running case, a missing key
+**PHP 555** (23 new), covering the gate, the not-running case, a missing key
 told apart from a stopped app, health warnings, the set-up/unlink round trip,
 that keys are stored encrypted, that the modal never shows a stored key, and
 that acquisition keys are namespaced away from metadata keys so unlink cannot
