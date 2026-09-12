@@ -13,6 +13,12 @@ import {
     setupDownloadButton,
     setupIconDownloads,
 } from './download-button.js';
+// The offline storage interface. Imported for its side effect: it registers
+// `window.soundchexStorage` and chooses a backend once, so anything offline
+// talks to one seam rather than reaching into IndexedDB directly (Step 1 of
+// the offline rebuild). Nothing else routes through it yet — later steps
+// migrate the call sites.
+import './offline/storage.js';
 import Alpine from 'alpinejs';
 
 /**
