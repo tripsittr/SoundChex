@@ -170,6 +170,186 @@ fn free_space(path: String) -> Result<u64, String> {
     }
 }
 
+/// The directory downloaded media lives in, created if absent.
+///
+/// `Library/Application Support/<bundle>/media/` on iOS, via Tauri's
+/// `app_data_dir` — not `Caches/` (the OS purges it under pressure, taking
+/// downloads with it) and not `Documents/` (surfaced in the Files app, which
+/// invites the user or the OS to move a file the app is still tracking).
+///
+/// A single directory of flat files keyed by id: no nesting to reason about,
+/// and `remove`/`exists` are one `std::fs` call each.
+#[cfg(mobile)]
+fn media_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    use tauri::Manager;
+
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("no app data dir: {e}"))?
+        .join("media");
+
+    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create {dir:?}: {e}"))?;
+
+    Ok(dir)
+}
+
+/// The on-disk path for one media id, refusing anything that could escape the
+/// media directory.
+///
+/// The id comes from the web layer, so it is untrusted. A `..` or a slash in it
+/// would let a download write outside the sandbox — so the id must be a single
+/// plain path component and nothing else. Verified by comparing the id to its
+/// own file-name form.
+#[cfg(mobile)]
+fn media_path(app: &tauri::AppHandle, id: &str) -> Result<std::path::PathBuf, String> {
+    safe_media_path(&media_dir(app)?, id)
+}
+
+/// Joins `id` under `dir`, refusing anything that could escape it.
+///
+/// Pure and Tauri-free so the traversal defence can be tested directly rather
+/// than only through the command. The id is a single plain path component and
+/// nothing else — no separator, no `..`, no `.` — and the joined path's parent
+/// must still be `dir`, which catches anything the character check missed.
+///
+/// Not gated on `mobile`, so the test suite (which builds for the host) can
+/// reach it; it is tiny and pulls in nothing platform-specific. `allow(dead_code)`
+/// because on a non-mobile, non-test build its only caller (`media_path`) is
+/// compiled out, but the function must still exist for the tests.
+#[allow(dead_code)]
+fn safe_media_path(dir: &std::path::Path, id: &str) -> Result<std::path::PathBuf, String> {
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id == ".." || id == "." {
+        return Err(format!("unsafe media id: {id:?}"));
+    }
+
+    let path = dir.join(id);
+
+    match path.parent() {
+        Some(parent) if parent == dir => Ok(path),
+        _ => Err(format!("media id escapes the media directory: {id:?}")),
+    }
+}
+
+/// Marks a file so the OS does not back it up or sync it to iCloud.
+///
+/// Downloaded media is a local cache of the server's library, not the user's
+/// own data — backing up tens of gigabytes of it would be wrong, and iCloud
+/// may refuse or evict it. On Apple platforms this is the `com.apple.metadata:`
+/// extended attribute the `NSURLIsExcludedFromBackupKey` sets; a single
+/// `setxattr` with the documented value has the same effect without linking
+/// Foundation.
+///
+/// Gated on `mobile` as well as Apple, because its only caller (`media_save`)
+/// is mobile-only — on desktop macOS the attribute exists but nothing writes
+/// downloads there, so compiling it would be dead code.
+#[cfg(all(target_vendor = "apple", mobile))]
+fn exclude_from_backup(path: &std::path::Path) {
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = match std::ffi::CString::new(path.as_os_str().as_bytes()) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let name = c"com.apple.metadata:com_apple_backup_excludeItem";
+    // The value Time Machine and iCloud check for is this exact string.
+    let value = b"com.apple.backupd";
+
+    // SAFETY: all pointers are valid for the length given; a failure is
+    // non-fatal (the file is stored either way), so the result is ignored.
+    unsafe {
+        libc::setxattr(
+            c_path.as_ptr(),
+            name.as_ptr(),
+            value.as_ptr() as *const libc::c_void,
+            value.len(),
+            0,
+            0,
+        );
+    }
+}
+
+/// Writes bytes to a media file and excludes it from backup.
+///
+/// Written to a temporary name and renamed into place, so a crash mid-write
+/// never leaves a half-file that reads as a complete download — the same
+/// "a metadata row must imply a real file" guarantee the IndexedDB path keeps.
+///
+/// Returns the absolute path, which is what the asset protocol serves back.
+#[cfg(mobile)]
+#[tauri::command]
+fn media_save(app: tauri::AppHandle, id: String, bytes: Vec<u8>) -> Result<String, String> {
+    let path = media_path(&app, &id)?;
+    let tmp = path.with_extension("part");
+
+    std::fs::write(&tmp, &bytes).map_err(|e| format!("write failed: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("rename failed: {e}"))?;
+
+    #[cfg(target_vendor = "apple")]
+    exclude_from_backup(&path);
+
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Whether a media file is genuinely on disk (and non-empty).
+#[cfg(mobile)]
+#[tauri::command]
+fn media_exists(app: tauri::AppHandle, id: String) -> Result<bool, String> {
+    let path = media_path(&app, &id)?;
+
+    Ok(std::fs::metadata(&path).map(|m| m.len() > 0).unwrap_or(false))
+}
+
+/// The absolute path for a stored id, or null when it is not there.
+#[cfg(mobile)]
+#[tauri::command]
+fn media_path_for(app: tauri::AppHandle, id: String) -> Result<Option<String>, String> {
+    let path = media_path(&app, &id)?;
+
+    Ok(if path.is_file() {
+        Some(path.to_string_lossy().into_owned())
+    } else {
+        None
+    })
+}
+
+/// Deletes a media file. Absent is success — the end state is what was asked.
+#[cfg(mobile)]
+#[tauri::command]
+fn media_remove(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let path = media_path(&app, &id)?;
+
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("remove failed: {e}")),
+    }
+}
+
+/// Every stored id and its size, for rebuilding the downloads list.
+#[cfg(mobile)]
+#[tauri::command]
+fn media_list(app: tauri::AppHandle) -> Result<Vec<(String, u64)>, String> {
+    let dir = media_dir(&app)?;
+    let mut out = Vec::new();
+
+    for entry in std::fs::read_dir(&dir).map_err(|e| format!("read_dir failed: {e}"))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+
+        // Skip half-written `.part` files: they are not downloads yet.
+        if name.ends_with(".part") {
+            continue;
+        }
+
+        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        out.push((name, size));
+    }
+
+    Ok(out)
+}
+
 /// Boots the app. Shared by desktop (`main.rs`) and the mobile entrypoints.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -200,8 +380,19 @@ pub fn run() {
             service_running
         ]);
 
+    // Mobile: free_space plus the native media store (Step 2 of the offline
+    // rebuild). The store lives here rather than in JavaScript because only the
+    // native side can write real files outside the ~1 GB IndexedDB ceiling and
+    // mark them excluded from backup.
     #[cfg(not(desktop))]
-    let builder = builder.invoke_handler(tauri::generate_handler![free_space]);
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        free_space,
+        media_save,
+        media_exists,
+        media_path_for,
+        media_remove,
+        media_list
+    ]);
 
     // A File menu with Refresh in it, on desktop.
     //
@@ -587,5 +778,39 @@ mod tests {
     #[test]
     fn free_space_rejects_a_bad_path() {
         assert!(free_space("/no/such/path/at/all".to_string()).is_err());
+    }
+
+    use super::safe_media_path;
+    use std::path::Path;
+
+    #[test]
+    fn safe_media_path_accepts_a_plain_id() {
+        let dir = Path::new("/tmp/media");
+        let path = safe_media_path(dir, "12345").expect("plain id");
+
+        assert_eq!(path, dir.join("12345"));
+    }
+
+    #[test]
+    fn safe_media_path_refuses_traversal() {
+        let dir = Path::new("/tmp/media");
+
+        // Every shape that could write outside the media directory.
+        for bad in ["..", ".", "../secret", "a/b", "a\\b", "/etc/passwd", ""] {
+            assert!(
+                safe_media_path(dir, bad).is_err(),
+                "expected {bad:?} to be refused",
+            );
+        }
+    }
+
+    #[test]
+    fn safe_media_path_keeps_the_parent_inside_the_dir() {
+        // A benign-looking id that still resolves within the directory is fine;
+        // the parent check is what guarantees it.
+        let dir = Path::new("/tmp/media");
+        let path = safe_media_path(dir, "film-2024.mp4").expect("dotted id");
+
+        assert_eq!(path.parent(), Some(dir));
     }
 }
