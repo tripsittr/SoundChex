@@ -35,6 +35,7 @@ import {
     list as idbList,
     storageEstimate,
     storeBlob as idbStoreBlob,
+    storeMeta as idbStoreBlobMeta,
 } from '../downloads.js';
 
 /**
@@ -49,13 +50,52 @@ function isTauri() {
         && (window.__TAURI_INTERNALS__ !== undefined || window.__TAURI__ !== undefined);
 }
 
-export function detectBackend() {
-    // Native *storage* is not built yet (Step 2), so even inside Tauri we store
-    // in IndexedDB for now. The detection is here so that turning it on is a
-    // one-line change rather than a new decision spread across call sites.
-    const nativeReady = false;
+/**
+ * Whether the native media commands are actually present in this build.
+ *
+ * A capability probe, not a flag and not a user-agent check: it invokes the
+ * cheapest native command (`media_exists` on a sentinel id) and sees whether
+ * the shell answers. That is true only inside an app whose Rust side carries
+ * the Step 2 commands — a browser has no bridge, and an older shell built
+ * before Step 2 rejects the unknown command. So native turns on exactly where
+ * it works and nowhere else, with no version to keep in sync.
+ *
+ * Cached after the first probe; the answer cannot change within a session.
+ */
+let nativeProbe = null;
 
-    return isTauri() && nativeReady ? 'native' : 'indexeddb';
+async function nativeAvailable() {
+    if (nativeProbe !== null) {
+        return nativeProbe;
+    }
+
+    if (!isTauri()) {
+        nativeProbe = false;
+
+        return false;
+    }
+
+    try {
+        // A harmless call: does this id exist? We do not care about the answer,
+        // only that the command is registered and returns rather than throwing
+        // "command not found".
+        await invoke('media_exists', { id: '__probe__' });
+        nativeProbe = true;
+    } catch {
+        nativeProbe = false;
+    }
+
+    return nativeProbe;
+}
+
+/**
+ * Chooses the backend, probing for native support first.
+ *
+ * Async because the native probe is — it invokes a command. `storage()` awaits
+ * this once at startup and caches the result.
+ */
+export async function detectBackend() {
+    return (await nativeAvailable()) ? 'native' : 'indexeddb';
 }
 
 /**
@@ -163,44 +203,134 @@ const indexeddb = {
     },
 };
 
-/** The native backend, filled in at Step 2. Declared so the contract is whole. */
+/** Invokes a Tauri command, or throws if there is no shell to invoke it in. */
+function invoke(command, args) {
+    const fn = window.__TAURI__?.core?.invoke ?? window.__TAURI_INTERNALS__?.invoke;
+
+    if (typeof fn !== 'function') {
+        return Promise.reject(new Error(`no Tauri bridge for ${command}`));
+    }
+
+    return fn(command, args);
+}
+
+/**
+ * The native backend (Step 2).
+ *
+ * Real files on the device's disk, written and served by the Rust commands in
+ * `src-tauri/src/lib.rs`. This is the fix for the ~1 GB IndexedDB ceiling: the
+ * store is the filesystem, so the limit is free disk space.
+ *
+ * The blob is serialised to a byte array for `media_save`. That does hold the
+ * file in memory for the length of the write — the streaming form
+ * (`resume`/chunked `save`) is a later refinement; for now it matches what the
+ * IndexedDB path already did, on a store that is not capped at a gigabyte.
+ */
 const native = {
     name: 'native',
-    save() { throw new Error('native storage is not built yet (Step 2)'); },
-    open() { throw new Error('native storage is not built yet (Step 2)'); },
-    has() { throw new Error('native storage is not built yet (Step 2)'); },
-    remove() { throw new Error('native storage is not built yet (Step 2)'); },
-    list() { throw new Error('native storage is not built yet (Step 2)'); },
-    space() { throw new Error('native storage is not built yet (Step 2)'); },
+
+    async save(id, blob, { type = 'application/octet-stream', ...meta } = {}) {
+        const buffer = await blob.arrayBuffer();
+        const bytes = Array.from(new Uint8Array(buffer));
+
+        const path = await invoke('media_save', { id: String(id), bytes });
+
+        // Metadata still lives in IndexedDB — it is small, and the download
+        // list is built from it. Only the bytes moved to disk. Written after
+        // the file, so a metadata row always implies a real file, exactly as
+        // the IndexedDB backend guarantees.
+        await idbStoreBlobMeta(String(id), { size: blob.size, type, path, ...meta });
+
+        return { id: String(id), size: blob.size };
+    },
+
+    async open(id) {
+        const path = await invoke('media_path_for', { id: String(id) });
+
+        if (!path) {
+            return null;
+        }
+
+        // Tauri's asset protocol turns a file path into a URL the webview can
+        // load and — the part that matters for film — seek within, because it
+        // honours range requests. `convertFileSrc` builds that URL.
+        const convert = window.__TAURI__?.core?.convertFileSrc;
+
+        return typeof convert === 'function' ? convert(path) : null;
+    },
+
+    async has(id) {
+        return invoke('media_exists', { id: String(id) });
+    },
+
+    async remove(id) {
+        await invoke('media_remove', { id: String(id) });
+        await idbRemove(String(id));
+    },
+
+    async list() {
+        // The metadata rows are the list; the native store confirms the file is
+        // still there, dropping any row whose file the OS reclaimed.
+        const rows = await idbList();
+        const onDisk = new Set(
+            (await invoke('media_list', {})).map(([name]) => String(name)),
+        );
+
+        return rows.filter((row) => onDisk.has(String(row.id)));
+    },
+
+    async space() {
+        // The real disk, via the Step 2a command — the whole point of native
+        // storage is that the ceiling is the disk, not the browser quota.
+        const free = await nativeFreeSpace();
+
+        if (free === null) {
+            return { known: false, free: 0, total: null, source: 'disk' };
+        }
+
+        return { known: true, free, total: null, source: 'disk' };
+    },
 };
 
 const backends = { indexeddb, native };
 
-let active = null;
+let activePromise = null;
 
-/** The live backend, chosen once. */
-export function storage() {
-    if (active === null) {
-        const chosen = detectBackend();
-        active = backends[chosen] ?? indexeddb;
+/**
+ * The live backend, resolved once.
+ *
+ * Async because choosing it probes for native support. Every interface call
+ * awaits this, so the backend is settled before the first `save`/`open`. The
+ * probe runs a single time; after that the resolved promise is returned.
+ */
+export function resolveStorage() {
+    if (activePromise === null) {
+        activePromise = detectBackend().then((chosen) => {
+            const backend = backends[chosen] ?? indexeddb;
 
-        logEvent('storage:backend', { backend: active.name });
+            logEvent('storage:backend', { backend: backend.name });
+
+            return backend;
+        });
     }
 
-    return active;
+    return activePromise;
 }
 
-// The interface, as free functions, so callers import what they use rather than
-// reaching through an object. Each forwards to the live backend.
-export const save = (id, source, meta) => storage().save(id, source, meta);
-export const open = (id) => storage().open(id);
-export const has = (id) => storage().has(id);
-export const remove = (id) => storage().remove(id);
-export const list = () => storage().list();
-export const space = () => storage().space();
+// The interface, as free functions. Each awaits the chosen backend, then
+// forwards — so a caller never has to know the choice is async.
+export const save = async (id, source, meta) => (await resolveStorage()).save(id, source, meta);
+export const open = async (id) => (await resolveStorage()).open(id);
+export const has = async (id) => (await resolveStorage()).has(id);
+export const remove = async (id) => (await resolveStorage()).remove(id);
+export const list = async () => (await resolveStorage()).list();
+export const space = async () => (await resolveStorage()).space();
+
+/** The live backend's name, once resolved. For diagnostics and the specs. */
+export const backendName = async () => (await resolveStorage()).name;
 
 if (typeof window !== 'undefined') {
     // Exposed for the offline specs, which assert which backend is live and
     // that the interface is reachable without importing a bundle.
-    window.soundchexStorage = { save, open, has, remove, list, space, backend: () => storage().name };
+    window.soundchexStorage = { save, open, has, remove, list, space, backend: backendName };
 }

@@ -15,7 +15,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `protocol-asset` serves downloaded media files back to the webview with range
+# support, so a downloaded film can seek — the whole point of native storage
+# (offline rebuild Step 2). Scoped to the media directory in tauri.conf.json.
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 # Opens a URL in the user's real browser. A webview has no tabs, so

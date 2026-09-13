@@ -21,6 +21,8 @@ test.describe('the offline storage interface', () => {
         await page.waitForFunction(() => window.soundchexStorage !== undefined, null, { timeout: 20000 });
 
         const backend = await page.evaluate(() => window.soundchexStorage.backend());
+        // backend() resolves the async probe; in a browser there is no native
+        // bridge, so it settles on indexeddb.
 
         // In a browser (and in Tauri until Step 2) it is IndexedDB.
         expect(backend).toBe('indexeddb');
