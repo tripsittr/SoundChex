@@ -393,6 +393,25 @@ export async function storeBlob(id, blob, meta = {}) {
 }
 
 /**
+ * Writes only the metadata row, not the bytes.
+ *
+ * The native backend (offline rebuild Step 2) stores the file on disk and keeps
+ * its metadata here — the download list is built from these rows, and they are
+ * small. Written the same shape `storeBlob` writes, minus the blob, so `list()`
+ * treats a native download and an IndexedDB one identically.
+ *
+ * @param {string} id
+ * @param {object} meta  size, type, and anything the list shows
+ */
+export async function storeMeta(id, meta = {}) {
+    await transaction(META_STORE, 'readwrite', (store) => store.put({
+        id: String(id),
+        downloadedAt: Date.now(),
+        ...meta,
+    }));
+}
+
+/**
  * A blob URL for a stored file, or null when it isn't there.
  *
  * Callers must revoke the URL when finished — a live URL pins the whole file
