@@ -42,6 +42,12 @@ class AlbumBrowser
             ->groupBy('music_metadata.album', 'music_metadata.artist')
             ->orderByRaw('LOWER(music_metadata.artist)')
             ->orderByRaw('LOWER(music_metadata.album)')
+            // Tiebreakers on the exact group keys, so two albums that differ
+            // only in case do not swap places between pages and duplicate. The
+            // case-folded order decides what a human sees; these decide the
+            // ties it leaves, deterministically.
+            ->orderBy('music_metadata.artist')
+            ->orderBy('music_metadata.album')
             ->paginate($perPage);
     }
 
@@ -84,6 +90,9 @@ class AlbumBrowser
             ->selectRaw('MIN(media_items.id) as sample_item_id')
             ->groupBy(DB::raw(self::PRIMARY))
             ->orderByRaw('LOWER(' . self::PRIMARY . ')')
+            // Tiebreaker on the exact group key: two artists whose names differ
+            // only in case must not trade pages and duplicate.
+            ->orderByRaw(self::PRIMARY)
             ->paginate($perPage);
     }
 
