@@ -314,7 +314,18 @@ class MediaBrowser
             $query->where('wishlist', true);
         }
 
-        return $query->latest()->paginate($perPage)->withQueryString();
+        // `latest()` alone is not a stable order. 1,124 tracks here share one
+        // `created_at` — a whole import lands in the same second — and a
+        // paginator over a non-unique sort returns tied rows in whatever order
+        // the engine pleases, which differs between the query for page 1 and
+        // the query for page 2. The result is songs repeating across pages and
+        // others never appearing. `id` is the tiebreaker: unique, so the total
+        // order is deterministic and every row falls on exactly one page.
+        return $query
+            ->latest()
+            ->orderByDesc('media_items.id')
+            ->paginate($perPage)
+            ->withQueryString();
     }
 
     /**
