@@ -51,25 +51,34 @@ backend is live.
   migration to the interface is deferred to later steps (marked `[~]` above).
 - **Ship:** PR; browser behaviour unchanged, native backend not yet live.
 
-## Step 2 — Native storage on iOS (~2 days) · needs Step 1 · **BLOCKED: needs an iPhone**
+## Step 2 — Native storage on iOS (~2 days) · CODE DONE, one check needs a device
 
-> This step cannot be done from a development machine. Its first task is to
-> *prove on a real device* that Tauri's asset protocol honours range requests —
-> the plan's largest risk — and the whole step is verified by downloading a
-> >1 GB file on an iPhone and seeking in it. There is no honest way to build or
-> confirm this without the hardware. Left for a session with a device.
+> Built and verified everything a simulator and unit tests can reach. The
+> single outstanding item is the on-device seek test — the plan's largest risk
+> — which genuinely needs an iPhone. The code is in place and ready for it.
 
-- [ ] **First, de-risk:** prove Tauri's asset protocol honours range requests on
-      a real device. If it does not, stop — seeking in a downloaded film would
-      break, which is worse than today.
-- [ ] Write the `native` backend: files in `Library/Application Support/media/`,
-      marked `isExcludedFromBackup` (not `Caches/`, not `Documents/`).
-- [ ] Serve files back through the asset protocol; confirm a film seeks without
-      being resident in memory.
-- [ ] Capability detection selects `native` on device, `indexeddb` in a browser.
-- **Verify:** on an iPhone, download a file larger than 1 GB, play it, and seek
-      mid-file; confirm free-space ceiling is tens of GB.
-- **Ship:** PR; device-tested, with the range-request proof in the description.
+- [x] Wrote the `native` backend, both halves: Rust commands
+      (`media_save`/`media_exists`/`media_path_for`/`media_remove`/`media_list`
+      in `lib.rs`) writing flat files under `$APPDATA/media/`, path-traversal
+      safe, atomic (`.part` then rename), marked excluded-from-backup via
+      `setxattr`; and the JS backend in `storage.js` calling them.
+- [x] Serve files back: `assetProtocol` enabled and scoped to `$APPDATA/media/**`
+      in `tauri.conf.json`, the `protocol-asset` feature added, CSP updated for
+      `asset:` sources; `open()` returns a `convertFileSrc` URL.
+- [x] Capability detection: an async **probe** (`media_exists('__probe__')`)
+      picks `native` where the commands answer and `indexeddb` everywhere else —
+      no flag, no user-agent, turns on exactly where it works.
+- [x] **Verified without a device:** the iOS bundle builds, installs and
+      **launches on the iOS 26 simulator without crashing** (command handler
+      registered cleanly); `cargo test --lib` covers the path-traversal defence
+      and the disk-space command; the browser path is unchanged (storage-
+      interface 3/3, Vitest 98).
+- [ ] **STILL NEEDS AN IPHONE:** download a file >1 GB, play it, seek mid-file,
+      and confirm the asset protocol honours the range request. If it does not,
+      `open()` must fall back rather than serve a film that cannot scrub. This is
+      the one thing the simulator cannot prove.
+- **Ship:** PR with what is verified stated plainly, and the seek check called
+      out as pending a device.
 
 ## Step 2a — Real disk numbers (~0.5 day) · DONE (built ahead of Step 2)
 
