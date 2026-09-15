@@ -196,7 +196,7 @@ export default class MediaPlayer {
         let url = null;
 
         try {
-            const { localUrl } = await import('./downloads.js');
+            const { localUrl } = await import('./offline/storage.js');
             url = await localUrl(item.id);
         } catch (error) {
             // Falling back to the network is the right behaviour, but it is

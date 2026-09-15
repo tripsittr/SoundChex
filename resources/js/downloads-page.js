@@ -1,4 +1,5 @@
-import { formatBytes, list, remove, storageEstimate } from './downloads.js';
+import { list, remove } from './offline/storage.js';
+import { formatBytes, storageEstimate } from './downloads.js';
 
 /**
  * The offline downloads screen.
