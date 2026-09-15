@@ -9,14 +9,21 @@ import { log, logFailure, loggedFetch } from './log.js';
  * route, short enough to say so rather than hang.
  */
 const LIBRARY_LIST_TIMEOUT = 30000;
+// Storage operations go through the backend abstraction, so a phone stores to
+// real disk (native) and a browser to IndexedDB, without this file knowing
+// which. `checkSpace`/`formatBytes` stay in downloads.js — pure helpers the
+// space gate uses; `space()` from the abstraction is the disk-aware number the
+// gate will move to in a later layer.
 import {
-    checkSpace,
     download,
-    formatBytes,
     isDownloaded,
     list,
     localUrl,
     remove,
+} from './offline/storage.js';
+import {
+    checkSpace,
+    formatBytes,
 } from './downloads.js';
 
 // Exposed for the browser tests, which drive the real download path — fetch,

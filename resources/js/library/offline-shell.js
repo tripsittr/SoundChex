@@ -262,7 +262,7 @@ async function renderDownloadsOnly(root) {
     let stored = [];
 
     try {
-        const { list } = await import('../downloads.js');
+        const { list } = await import('../offline/storage.js');
 
         stored = await list();
     } catch {

@@ -35,7 +35,7 @@ import {
     list as idbList,
     storageEstimate,
     storeBlob as idbStoreBlob,
-    storeMeta as idbStoreBlobMeta,
+    download as idbDownload,
 } from '../downloads.js';
 
 /**
@@ -226,22 +226,71 @@ function invoke(command, args) {
  * (`resume`/chunked `save`) is a later refinement; for now it matches what the
  * IndexedDB path already did, on a store that is not capped at a gigabyte.
  */
+/** Bytes per chunk streamed across the IPC bridge. 4 MB balances calls vs peak memory. */
+const CHUNK = 4 * 1024 * 1024;
+
 const native = {
     name: 'native',
 
-    async save(id, blob, { type = 'application/octet-stream', ...meta } = {}) {
-        const buffer = await blob.arrayBuffer();
-        const bytes = Array.from(new Uint8Array(buffer));
+    /**
+     * Streams a blob to disk a chunk at a time, then writes its manifest.
+     *
+     * A film is gigabytes: turning the whole thing into one JS byte array and
+     * one Rust `Vec` (what the old single-shot `media_save` did) needs it in
+     * memory twice and is why large downloads were impossible on the phone. So
+     * the blob is read through its own stream and appended in `CHUNK`-sized
+     * pieces — nothing bigger than a chunk is ever resident on either side.
+     *
+     * The manifest (`meta`) is written to disk beside the bytes, so the
+     * download list is self-describing and needs no IndexedDB.
+     */
+    async save(id, blob, { type = 'application/octet-stream', onProgress, ...meta } = {}) {
+        const key = String(id);
+        const total = blob.size;
+        let written = 0;
 
-        const path = await invoke('media_save', { id: String(id), bytes });
+        // Fresh start: clear any half-written remnant from an interrupted try.
+        await invoke('media_remove', { id: key });
 
-        // Metadata still lives in IndexedDB — it is small, and the download
-        // list is built from it. Only the bytes moved to disk. Written after
-        // the file, so a metadata row always implies a real file, exactly as
-        // the IndexedDB backend guarantees.
-        await idbStoreBlobMeta(String(id), { size: blob.size, type, path, ...meta });
+        const reader = blob.stream().getReader();
 
-        return { id: String(id), size: blob.size };
+        try {
+            for (;;) {
+                const { done, value } = await reader.read();
+
+                if (done) {
+                    break;
+                }
+
+                // A reader chunk can exceed CHUNK; slice it so no single IPC
+                // call carries an unbounded buffer.
+                for (let offset = 0; offset < value.length; offset += CHUNK) {
+                    const slice = value.subarray(offset, offset + CHUNK);
+
+                    await invoke('media_append', { id: key, chunk: Array.from(slice) });
+
+                    written += slice.length;
+                    onProgress?.(written, total);
+                }
+            }
+        } catch (error) {
+            // Leave nothing half-written behind on failure.
+            await invoke('media_remove', { id: key }).catch(() => {});
+
+            throw error;
+        }
+
+        const manifest = JSON.stringify({
+            id: key,
+            size: total,
+            type,
+            downloadedAt: Date.now(),
+            ...meta,
+        });
+
+        const path = await invoke('media_finalize', { id: key, metaJson: manifest });
+
+        return { id: key, size: total, path };
     },
 
     async open(id) {
@@ -265,18 +314,27 @@ const native = {
 
     async remove(id) {
         await invoke('media_remove', { id: String(id) });
-        await idbRemove(String(id));
     },
 
     async list() {
-        // The metadata rows are the list; the native store confirms the file is
-        // still there, dropping any row whose file the OS reclaimed.
-        const rows = await idbList();
-        const onDisk = new Set(
-            (await invoke('media_list', {})).map(([name]) => String(name)),
-        );
+        // Straight off disk: one row per bytes file, its size, and its manifest
+        // parsed back. No IndexedDB — this is why the list is correct offline
+        // and visible to the shell without the old origin-probe iframe.
+        const entries = await invoke('media_list', {});
 
-        return rows.filter((row) => onDisk.has(String(row.id)));
+        return entries.map(([name, size, manifestJson]) => {
+            let meta = {};
+
+            try {
+                meta = manifestJson ? JSON.parse(manifestJson) : {};
+            } catch {
+                // A corrupt manifest still lists the file — better a download
+                // with a bare id than a real file missing from the list.
+                meta = {};
+            }
+
+            return { id: String(name), size, ...meta };
+        });
     },
 
     async space() {
@@ -317,6 +375,100 @@ export function resolveStorage() {
     return activePromise;
 }
 
+/**
+ * Fetches a URL and stores it, through whichever backend is live.
+ *
+ * The one entry point the download UI and queue call, replacing the direct
+ * `downloads.js` `download()` that pinned everything to IndexedDB. It keeps the
+ * fetch, progress and truncation checks the old path had, but the bytes land
+ * wherever the active backend puts them — real disk on a phone, IndexedDB in a
+ * browser.
+ *
+ * Native streams the response body straight to disk a chunk at a time
+ * (`media_append`), so a multi-gigabyte film is never held whole in memory. The
+ * IndexedDB backend keeps its proven collect-then-store path, which the browser
+ * needs anyway.
+ *
+ * @param {{id:string,url:string,meta?:object,onProgress?:Function,signal?:AbortSignal,force?:boolean}} options
+ */
+export async function download({ id, url, meta = {}, onProgress, signal, force = false }) {
+    const backend = await resolveStorage();
+
+    // Already stored: nothing to transfer. The check is the backend's, so it is
+    // right wherever the bytes live.
+    if (!force && await backend.has(String(id))) {
+        onProgress?.(1, 1);
+
+        return { id: String(id), alreadyStored: true };
+    }
+
+    // The browser path stays exactly as it was — proven, and the only option
+    // where there is no native store.
+    if (backend.name !== 'native') {
+        return idbDownload({ id, url, meta, onProgress, signal, force });
+    }
+
+    const response = await fetch(url, { signal });
+
+    if (!response.ok) {
+        throw new Error(`Download failed (${response.status})`);
+    }
+
+    const total = Number(response.headers.get('content-length')) || 0;
+    const type = response.headers.get('content-type') || meta.type || 'application/octet-stream';
+
+    const key = String(id);
+
+    // Fresh start, then stream the body chunk by chunk to disk.
+    await invoke('media_remove', { id: key });
+
+    const reader = response.body.getReader();
+    let written = 0;
+
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+
+            if (done) {
+                break;
+            }
+
+            for (let offset = 0; offset < value.length; offset += CHUNK) {
+                const slice = value.subarray(offset, offset + CHUNK);
+
+                await invoke('media_append', { id: key, chunk: Array.from(slice) });
+
+                written += slice.length;
+                onProgress?.(written, total);
+            }
+        }
+    } catch (error) {
+        await invoke('media_remove', { id: key }).catch(() => {});
+
+        throw error;
+    }
+
+    const manifest = JSON.stringify({
+        id: key,
+        size: written,
+        type,
+        downloadedAt: Date.now(),
+        ...meta,
+    });
+
+    const path = await invoke('media_finalize', { id: key, metaJson: manifest });
+
+    logEvent('download:stored', {
+        id: key,
+        size: written,
+        expected: total || null,
+        truncated: total > 0 && written !== total,
+        backend: 'native',
+    });
+
+    return { id: key, size: written, path };
+}
+
 // The interface, as free functions. Each awaits the chosen backend, then
 // forwards — so a caller never has to know the choice is async.
 export const save = async (id, source, meta) => (await resolveStorage()).save(id, source, meta);
@@ -325,6 +477,11 @@ export const has = async (id) => (await resolveStorage()).has(id);
 export const remove = async (id) => (await resolveStorage()).remove(id);
 export const list = async () => (await resolveStorage()).list();
 export const space = async () => (await resolveStorage()).space();
+
+// The names the existing callers already use, aliased so migrating a file to
+// this module is an import swap rather than a rename through its whole body.
+export const localUrl = open;
+export const isDownloaded = has;
 
 /** The live backend's name, once resolved. For diagnostics and the specs. */
 export const backendName = async () => (await resolveStorage()).name;

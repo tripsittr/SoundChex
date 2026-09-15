@@ -190,7 +190,7 @@ async function resolveLocalFile(itemId, fallback) {
     if (!itemId || !window.indexedDB) return fallback;
 
     try {
-        const { localUrl } = await import('./downloads.js');
+        const { localUrl } = await import('./offline/storage.js');
         const url = await localUrl(itemId);
 
         if (!url) return fallback;

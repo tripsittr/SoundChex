@@ -431,7 +431,7 @@ async function preferDownloadedVideo(video, itemId) {
     let url = null;
 
     try {
-        const { localUrl } = await import('./downloads.js');
+        const { localUrl } = await import('./offline/storage.js');
         url = await localUrl(itemId);
     } catch (error) {
         // Falls back to streaming, which is the right behaviour and entirely
