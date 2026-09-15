@@ -87,6 +87,74 @@ class HostServicesTest extends TestCase
         $this->assertSame('', app(HostServices::class)->log('not-a-service'));
     }
 
+    public function test_the_agent_path_never_collapses_to_the_root_directory(): void
+    {
+        // The bug: with no HOME in the environment — launchd itself, the desktop
+        // shell's service command, cron — the agent path collapsed from
+        // `$HOME/Library/LaunchAgents/...` to the root `/Library/LaunchAgents`,
+        // which no non-root process may write, and the failure named a path the
+        // user never chose. The path must resolve under a real home or be null;
+        // it must never point at the system directory.
+        //
+        // Exercised through reflection rather than `install()`, which loads
+        // launchctl — these tests must not start or stop the machine's own
+        // services, as the class comment says.
+        $method = new \ReflectionMethod(HostServices::class, 'agentPath');
+        $host = app(HostServices::class);
+
+        $originalServer = $_SERVER['HOME'] ?? null;
+        $originalEnv = getenv('HOME');
+
+        unset($_SERVER['HOME']);
+        putenv('HOME=');
+
+        try {
+            $path = $method->invoke($host, 'com.soundchex.serve');
+
+            // Either the passwd fallback found the real home (a path under it),
+            // or nothing did (null). Never the root directory.
+            if ($path !== null) {
+                $this->assertNotSame(
+                    0,
+                    strpos($path, '/Library/LaunchAgents'),
+                    'agent path must not begin at the root LaunchAgents directory',
+                );
+                $this->assertStringEndsWith(
+                    '/Library/LaunchAgents/com.soundchex.serve.plist',
+                    $path,
+                );
+            }
+        } finally {
+            if ($originalServer !== null) {
+                $_SERVER['HOME'] = $originalServer;
+            }
+
+            putenv($originalEnv === false ? 'HOME' : "HOME={$originalEnv}");
+        }
+    }
+
+    public function test_a_normal_home_gives_a_path_under_it(): void
+    {
+        $method = new \ReflectionMethod(HostServices::class, 'agentPath');
+        $host = app(HostServices::class);
+
+        $originalServer = $_SERVER['HOME'] ?? null;
+        $_SERVER['HOME'] = '/Users/someone';
+
+        try {
+            $this->assertSame(
+                '/Users/someone/Library/LaunchAgents/com.soundchex.serve.plist',
+                $method->invoke($host, 'com.soundchex.serve'),
+            );
+        } finally {
+            if ($originalServer !== null) {
+                $_SERVER['HOME'] = $originalServer;
+            } else {
+                unset($_SERVER['HOME']);
+            }
+        }
+    }
+
     public function test_the_log_is_tailed_rather_than_read_whole(): void
     {
         // ~/Library/Logs, where the agents write: the repository sits under

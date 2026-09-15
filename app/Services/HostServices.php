@@ -46,7 +46,8 @@ class HostServices
         $out = [];
 
         foreach (self::SERVICES as $key => $service) {
-            $installed = is_file($this->agentPath($service['label']));
+            $path = $this->agentPath($service['label']);
+            $installed = $path !== null && is_file($path);
             $running = $installed && $this->isLoaded($service['label']);
 
             $out[$key] = [
@@ -98,6 +99,14 @@ class HostServices
         $source = base_path('Documentation & Planning/' . $service['label'] . '.plist');
         $target = $this->agentPath($service['label']);
 
+        if ($target === null) {
+            $this->lastError = 'Could not find your home directory, so there is '
+                . 'nowhere safe to install the service. Start the server from a '
+                . 'normal login session rather than a bare launchd context.';
+
+            return false;
+        }
+
         if (! is_file($source)) {
             $this->lastError = "No plist at {$source}";
 
@@ -137,11 +146,13 @@ class HostServices
             return false;
         }
 
-        if (! is_file($this->agentPath($service['label']))) {
+        $target = $this->agentPath($service['label']);
+
+        if ($target === null || ! is_file($target)) {
             return $this->install($key);
         }
 
-        $this->run(['launchctl', 'load', $this->agentPath($service['label'])]);
+        $this->run(['launchctl', 'load', $target]);
         $this->run(['launchctl', 'start', $service['label']]);
 
         return $this->isLoaded($service['label']);
@@ -161,7 +172,11 @@ class HostServices
             return false;
         }
 
-        $this->run(['launchctl', 'unload', $this->agentPath($service['label'])]);
+        $target = $this->agentPath($service['label']);
+
+        if ($target !== null) {
+            $this->run(['launchctl', 'unload', $target]);
+        }
 
         return ! $this->isLoaded($service['label']);
     }
@@ -186,7 +201,16 @@ class HostServices
         // TCC and a launchd agent has no UI to prompt with, so a job told to
         // redirect output into a folder there is dropped with EX_CONFIG before
         // its program ever runs — which is exactly what happened, silently.
-        $path = ($_SERVER['HOME'] ?? getenv('HOME')) . '/Library/Logs/SoundChex/' . $key . '.log';
+        //
+        // The same HOME resolution as the agent path: an empty HOME here would
+        // read from `/Library/Logs`, the root path, and always find nothing.
+        $home = $this->homeDir();
+
+        if ($home === null) {
+            return 'Nothing logged yet.';
+        }
+
+        $path = $home . '/Library/Logs/SoundChex/' . $key . '.log';
 
         if (! is_file($path)) {
             return 'Nothing logged yet.';
@@ -225,9 +249,52 @@ class HostServices
         return PHP_OS_FAMILY === 'Darwin';
     }
 
-    private function agentPath(string $label): string
+    /**
+     * The user's LaunchAgents path for a service, or null if HOME is unknown.
+     *
+     * LaunchAgents belong under the user's home. When this runs from a context
+     * that carries no `HOME` — launchd itself, the desktop shell's service
+     * command, cron — `getenv('HOME')` is empty, and the old
+     * `$home . '/Library/LaunchAgents/...'` collapsed to the *root*
+     * `/Library/LaunchAgents`, which no non-root process may write. The copy
+     * then failed with a message naming a path the user never chose. So HOME is
+     * resolved from every source it might live in, and a genuinely empty result
+     * returns null rather than a path pointing at the system directory.
+     *
+     * `??` alone was not enough: `$_SERVER['HOME']` can be the empty string
+     * rather than unset, which `??` passes straight through.
+     */
+    private function agentPath(string $label): ?string
     {
-        return ($_SERVER['HOME'] ?? getenv('HOME')) . '/Library/LaunchAgents/' . $label . '.plist';
+        $home = $this->homeDir();
+
+        if ($home === null) {
+            return null;
+        }
+
+        return $home . '/Library/LaunchAgents/' . $label . '.plist';
+    }
+
+    /** The user's home directory, from whichever source actually holds it. */
+    private function homeDir(): ?string
+    {
+        foreach ([$_SERVER['HOME'] ?? null, getenv('HOME') ?: null] as $candidate) {
+            if (is_string($candidate) && $candidate !== '') {
+                return rtrim($candidate, '/');
+            }
+        }
+
+        // Last resort: the passwd entry, which is set even when the environment
+        // is not. Present on the macOS this feature is limited to.
+        if (function_exists('posix_getpwuid') && function_exists('posix_getuid')) {
+            $entry = posix_getpwuid(posix_getuid());
+
+            if (is_array($entry) && ! empty($entry['dir'])) {
+                return rtrim($entry['dir'], '/');
+            }
+        }
+
+        return null;
     }
 
     private function isLoaded(string $label): bool
