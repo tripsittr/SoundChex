@@ -262,10 +262,28 @@ async function renderDownloadsOnly(root) {
     let stored = [];
 
     try {
-        const { list } = await import('../offline/storage.js');
+        const { list, backendName } = await import('../offline/storage.js');
+
+        // Recorded where the connect screen can show it: this path fails
+        // silently on a device with no console, and "nothing saved" looked the
+        // same whether the store was empty or the code to read it had thrown.
+        window.__soundchexOfflineDiag = { step: 'imported', backend: null, count: null, error: null };
+
+        try {
+            window.__soundchexOfflineDiag.backend = await backendName();
+        } catch (e) {
+            window.__soundchexOfflineDiag.backend = `backend? ${e?.message ?? e}`;
+        }
 
         stored = await list();
-    } catch {
+        window.__soundchexOfflineDiag.step = 'listed';
+        window.__soundchexOfflineDiag.count = stored.length;
+    } catch (error) {
+        window.__soundchexOfflineDiag = {
+            step: 'failed',
+            error: String(error?.message ?? error).slice(0, 200),
+        };
+
         return false;
     }
 

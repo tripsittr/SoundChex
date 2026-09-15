@@ -69,8 +69,19 @@ async function nativeAvailable() {
         return nativeProbe;
     }
 
-    if (!isTauri()) {
+    const tauri = isTauri();
+
+    logEvent('storage:probe:start', {
+        isTauri: tauri,
+        hasGlobalTauri: typeof window !== 'undefined' && !!window.__TAURI__,
+        hasInternals: typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__,
+        hasCoreInvoke: typeof window !== 'undefined' && !!window.__TAURI__?.core?.invoke,
+        hasConvertFileSrc: typeof window !== 'undefined' && !!window.__TAURI__?.core?.convertFileSrc,
+    });
+
+    if (!tauri) {
         nativeProbe = false;
+        logEvent('storage:probe:result', { native: false, why: 'not-tauri' });
 
         return false;
     }
@@ -79,10 +90,19 @@ async function nativeAvailable() {
         // A harmless call: does this id exist? We do not care about the answer,
         // only that the command is registered and returns rather than throwing
         // "command not found".
-        await invoke('media_exists', { id: '__probe__' });
+        const answer = await invoke('media_exists', { id: '__probe__' });
         nativeProbe = true;
-    } catch {
+        logEvent('storage:probe:result', { native: true, probeAnswer: answer });
+    } catch (error) {
         nativeProbe = false;
+        // The reason, recorded: a swallowed probe failure is exactly why a
+        // device fell back to IndexedDB and showed an empty offline library
+        // with no explanation.
+        logEvent('storage:probe:result', {
+            native: false,
+            why: 'probe-threw',
+            error: String(error?.message ?? error).slice(0, 200),
+        });
     }
 
     return nativeProbe;
@@ -203,15 +223,53 @@ const indexeddb = {
     },
 };
 
-/** Invokes a Tauri command, or throws if there is no shell to invoke it in. */
-function invoke(command, args) {
+/**
+ * Invokes a Tauri command, or throws if there is no shell to invoke it in.
+ *
+ * Every call and its outcome is logged (chunk sizes summarised, not dumped), so
+ * a failure on a device with no console still leaves a readable trail of which
+ * command failed and why. This is the difference between "downloads don't work"
+ * and "media_finalize threw: nothing streamed for …".
+ */
+async function invoke(command, args) {
     const fn = window.__TAURI__?.core?.invoke ?? window.__TAURI_INTERNALS__?.invoke;
 
     if (typeof fn !== 'function') {
-        return Promise.reject(new Error(`no Tauri bridge for ${command}`));
+        logEvent('storage:invoke:no-bridge', { command });
+
+        throw new Error(`no Tauri bridge for ${command}`);
     }
 
-    return fn(command, args);
+    // Summarise args so a 4 MB chunk is not written to the log a million times.
+    const summary = {};
+
+    for (const [key, value] of Object.entries(args ?? {})) {
+        summary[key] = Array.isArray(value) ? `[${value.length} bytes]` : value;
+    }
+
+    try {
+        const result = await fn(command, args);
+
+        // Bulk, frequent calls (append) log only at debug volume; the rest
+        // record their result shape.
+        if (command !== 'media_append') {
+            logEvent('storage:invoke:ok', {
+                command,
+                args: summary,
+                result: Array.isArray(result) ? `[${result.length} entries]` : result,
+            });
+        }
+
+        return result;
+    } catch (error) {
+        logEvent('storage:invoke:fail', {
+            command,
+            args: summary,
+            error: String(error?.message ?? error).slice(0, 200),
+        });
+
+        throw error;
+    }
 }
 
 /**

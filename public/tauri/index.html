@@ -140,6 +140,16 @@
     <p class="hint">
         Addresses are stored on this device only.
     </p>
+
+    <!-- Temporary on-device debug: this webview has no console, so the log is
+         read here. Loads the ring-buffer viewer from the offline bundle and
+         shows every storage/download event recorded this session. -->
+    <p class="hint" style="margin-top:1.5rem">
+        <button type="button" id="show-log"
+                style="background:none;border:0;color:#6d5efc;text-decoration:underline;font:inherit;padding:0;cursor:pointer">
+            Show debug log
+        </button>
+    </p>
 </main>
 
 <script type="module">
@@ -152,7 +162,7 @@
      * reinstall. Handed to the app so a device running an old shell is visible
      * rather than merely suspected.
      */
-    const SHELL_BUILD = '16e1fc974a3d';
+    const SHELL_BUILD = '277bdb319e32';
 
 
     /** The native app's version, as declared in tauri.conf.json. */
@@ -609,9 +619,45 @@
             // which is the failure this whole path exists to prevent.
             document.getElementById('connect-screen')?.removeAttribute('hidden');
             document.body.classList.remove('offline-standalone');
-            say('Nothing is saved on this device yet, so there is nothing to open offline.', true);
+
+            // Temporary on-device diagnostic: this webview has no console, so a
+            // silent "nothing saved" could mean an empty store or a thrown
+            // error, and there was no way to tell which. The offline shell
+            // records what happened on window.__soundchexOfflineDiag.
+            const diag = window.__soundchexOfflineDiag;
+            const detail = diag
+                ? ` [${diag.step}; backend=${diag.backend ?? '?'}; count=${diag.count ?? '?'}; err=${diag.error ?? 'none'}]`
+                : ' [no diag — renderEmbedded threw before the shell ran]';
+
+            say('Nothing is saved on this device yet, so there is nothing to open offline.' + detail, true);
         }
     }
+
+    // Shows the on-device log. If the logger is not loaded yet (the offline
+    // path pulls it in with the bundle), load the offline shell first so its
+    // log.js sets window.soundchexShowLog, then open the viewer.
+    document.getElementById('show-log')?.addEventListener('click', async () => {
+        if (typeof window.soundchexShowLog === 'function') {
+            window.soundchexShowLog();
+
+            return;
+        }
+
+        try {
+            const manifest = await fetch('./offline/manifest.json').then((r) => r.json());
+            const entry = manifest['resources/js/library/index.js'];
+
+            if (entry) await import(`./offline/${entry.file}`);
+        } catch {
+            // Ignored — the fallback below reports if it still is not there.
+        }
+
+        if (typeof window.soundchexShowLog === 'function') {
+            window.soundchexShowLog();
+        } else {
+            say('Log viewer is not available in this build.', true);
+        }
+    });
 
     document.getElementById('add-alt')?.addEventListener('click', () => {
         const extra = normalise(document.getElementById('alt-host').value);
