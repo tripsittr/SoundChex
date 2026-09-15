@@ -51,6 +51,31 @@ function isTauri() {
 }
 
 /**
+ * Waits up to `timeout` ms for the Tauri bridge to appear.
+ *
+ * On the remote server origin the bridge is injected by an all-frames init
+ * script whose timing is *not* guaranteed to beat the app's own scripts (Tauri's
+ * own docs say so). So a probe that runs the instant the module loads can find
+ * no `window.__TAURI__` and wrongly conclude there is no native storage —
+ * exactly the failure that sent every download to IndexedDB. Polling briefly
+ * closes that race; in a real browser the bridge never appears and this returns
+ * false after the timeout, costing one short wait at startup.
+ */
+async function waitForBridge(timeout = 3000) {
+    if (typeof window === 'undefined') return false;
+
+    const start = Date.now();
+
+    while (Date.now() - start < timeout) {
+        if (isTauri()) return true;
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    return isTauri();
+}
+
+/**
  * Whether the native media commands are actually present in this build.
  *
  * A capability probe, not a flag and not a user-agent check: it invokes the
@@ -69,15 +94,25 @@ async function nativeAvailable() {
         return nativeProbe;
     }
 
-    const tauri = isTauri();
-
     logEvent('storage:probe:start', {
-        isTauri: tauri,
+        isTauri: isTauri(),
         hasGlobalTauri: typeof window !== 'undefined' && !!window.__TAURI__,
         hasInternals: typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__,
         hasCoreInvoke: typeof window !== 'undefined' && !!window.__TAURI__?.core?.invoke,
         hasConvertFileSrc: typeof window !== 'undefined' && !!window.__TAURI__?.core?.convertFileSrc,
+        // Whether the app was opened by the native shell — the shell appends
+        // this to the URL. Lets us wait for the bridge only where it is coming,
+        // rather than making a plain browser pay a 3s startup wait.
+        fromShell: typeof window !== 'undefined' && /[?&]shell=/.test(window.location.search),
     });
+
+    // In the app (opened by the shell), the bridge may not be injected yet on
+    // the remote origin — wait for it. In a plain browser there is no shell
+    // marker, so do not wait.
+    const fromShell = typeof window !== 'undefined' && /[?&]shell=/.test(window.location.search);
+    const tauri = fromShell ? await waitForBridge() : isTauri();
+
+    logEvent('storage:probe:bridge', { waited: fromShell, present: tauri });
 
     if (!tauri) {
         nativeProbe = false;
