@@ -764,7 +764,10 @@ export function setupDownloadButton() {
                 // cancelled download leaves no partial file behind.
                 say('Download cancelled.');
             } else {
-                say('Download failed. Check the connection and try again.', 'bad');
+                // The actual reason, on screen: this webview has no console, so
+                // "check the connection" hid whatever really failed (a missing
+                // native command, a storage error, an HTTP status).
+                say(`Download failed: ${String(error?.message ?? error).slice(0, 160)}`, 'bad');
             }
 
             await render();
