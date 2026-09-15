@@ -8,20 +8,6 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "SoundChex",
-        "width": 1280,
-        "height": 820,
-        "minWidth": 380,
-        "minHeight": 560,
-        "resizable": true,
-        "fullscreen": false,
-        "theme": "Dark",
-        "url": "index.html",
-        "label": "main"
-      }
-    ],
     "security": {
       "csp": "default-src 'self' https: http: ; img-src 'self' https: http: data: blob: asset: http://asset.localhost ; media-src 'self' https: http: blob: asset: http://asset.localhost ; style-src 'self' 'unsafe-inline' https: http: ; script-src 'self' 'unsafe-inline' https: http: ; connect-src 'self' https: http: asset: http://asset.localhost ",
       "assetProtocol": {

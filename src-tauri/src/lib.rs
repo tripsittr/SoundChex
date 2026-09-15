@@ -506,6 +506,19 @@ fn media_manifest(app: tauri::AppHandle, id: String) -> Result<String, String> {
     Ok(std::fs::read_to_string(manifest_path(&app, &id)?).unwrap_or_default())
 }
 
+/// The `@tauri-apps/api` bridge, injected into every frame.
+///
+/// The reason native storage did nothing on the phone: the app is served from a
+/// *remote* origin (the user's `.ts.net` server), and Tauri v2 does not inject
+/// `window.__TAURI__` into remote pages — `remote.urls` in the capability only
+/// *authorises* the commands, it does not put the bridge on the page. So the web
+/// app had no `invoke` to call and every download silently fell back to
+/// IndexedDB. This is the IIFE build of the API, injected on all frames so it
+/// reaches the page after `window.location.replace` sends the webview to the
+/// server. Built by `scripts/build-tauri-bridge.mjs`.
+#[cfg(mobile)]
+const TAURI_BRIDGE: &str = include_str!("../assets/tauri-bridge.iife.js");
+
 /// Boots the app. Shared by desktop (`main.rs`) and the mobile entrypoints.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -517,6 +530,35 @@ pub fn run() {
         // of the app is silently dead without this, including the Integrations
         // page's buttons for Radarr, Sonarr and Lidarr.
         .plugin(tauri_plugin_opener::init());
+
+    // The main window is built here rather than from `tauri.conf.json`, because
+    // an init script cannot be added to a config-created window after the fact —
+    // and injecting the Tauri bridge on all frames is the whole point on mobile,
+    // where the app is served from a remote origin that otherwise has no
+    // `window.__TAURI__`. Desktop builds the same window without the script.
+    let builder = builder.setup(|app| {
+        use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+        let mut win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            .title("SoundChex");
+
+        #[cfg(desktop)]
+        {
+            win = win
+                .inner_size(1280.0, 820.0)
+                .min_inner_size(380.0, 560.0)
+                .resizable(true);
+        }
+
+        #[cfg(mobile)]
+        {
+            win = win.initialization_script_for_all_frames(TAURI_BRIDGE);
+        }
+
+        win.build()?;
+
+        Ok(())
+    });
 
     // Commands. `free_space` is on every platform — the phone most of all,
     // where the offline system decides whether a download fits and the browser

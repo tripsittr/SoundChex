@@ -3,7 +3,7 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build && node scripts/embed-offline-shell.mjs",
+        "build": "vite build && node scripts/embed-offline-shell.mjs && node scripts/build-tauri-bridge.mjs",
         "dev": "vite",
         "test": "vitest run",
         "test:watch": "vitest",
