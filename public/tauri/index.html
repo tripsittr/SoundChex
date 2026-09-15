@@ -162,7 +162,7 @@
      * reinstall. Handed to the app so a device running an old shell is visible
      * rather than merely suspected.
      */
-    const SHELL_BUILD = '277bdb319e32';
+    const SHELL_BUILD = 'd6a2951fdc2d';
 
 
     /** The native app's version, as declared in tauri.conf.json. */
@@ -633,25 +633,52 @@
         }
     }
 
-    // Shows the on-device log. If the logger is not loaded yet (the offline
-    // path pulls it in with the bundle), load the offline shell first so its
-    // log.js sets window.soundchexShowLog, then open the viewer.
-    document.getElementById('show-log')?.addEventListener('click', async () => {
-        if (typeof window.soundchexShowLog === 'function') {
-            window.soundchexShowLog();
-
-            return;
-        }
-
+    // Shows the on-device log. Self-contained: reads the ring buffer straight
+    // from this origin's localStorage, so it needs no bundle import (which
+    // could throw on the connect screen before the logger ever loaded). Note it
+    // shows only the tauri:// origin's log — downloads happen on the server
+    // origin and land in the on-disk debug.log instead, which is pulled off the
+    // device directly.
+    document.getElementById('show-log')?.addEventListener('click', () => {
         try {
-            const manifest = await fetch('./offline/manifest.json').then((r) => r.json());
-            const entry = manifest['resources/js/library/index.js'];
+            document.getElementById('sc-log')?.remove();
 
-            if (entry) await import(`./offline/${entry.file}`);
-        } catch {
-            // Ignored — the fallback below reports if it still is not there.
+            let entries = [];
+
+            try {
+                entries = JSON.parse(localStorage.getItem('soundchex.log') ?? '[]');
+            } catch (e) {
+                entries = [];
+            }
+
+            const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const panel = document.createElement('div');
+
+            panel.id = 'sc-log';
+            panel.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0b0f;color:#f4f4f5;font:11px/1.45 ui-monospace,Menlo,monospace;padding:1rem;overflow:auto';
+
+            const rows = entries.slice().reverse().map((e) =>
+                `<div style="border-top:1px solid #1e1e28;padding:.4rem 0">
+                    <div style="color:#6d5efc">${esc(new Date(e.at).toLocaleTimeString())} · ${esc(e.kind)}</div>
+                    <div style="color:#c8c8d0;word-break:break-all">${esc(JSON.stringify(e.detail))}</div>
+                </div>`).join('');
+
+            panel.innerHTML =
+                `<div style="display:flex;gap:.5rem;margin-bottom:.75rem">
+                    <strong style="flex:1;font-size:13px">tauri:// log · ${entries.length}</strong>
+                    <button id="sc-log-close" style="min-height:40px;padding:0 1rem;border-radius:8px;border:1px solid #2a2a36;background:#1e1e28;color:#f4f4f5">Close</button>
+                </div>
+                ${entries.length === 0 ? '<div style="color:#8b8b96">Nothing logged on this origin yet.</div>' : rows}`;
+
+            document.body.append(panel);
+            panel.querySelector('#sc-log-close')?.addEventListener('click', () => panel.remove());
+        } catch (e) {
+            say('Log viewer failed: ' + (e && e.message), true);
         }
+    });
 
+    // Kept for the app origin, where the full logger is loaded.
+    document.getElementById('show-log-full')?.addEventListener('click', async () => {
         if (typeof window.soundchexShowLog === 'function') {
             window.soundchexShowLog();
         } else {
