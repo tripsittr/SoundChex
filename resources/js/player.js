@@ -160,9 +160,54 @@ export default class MediaPlayer {
         // for a film is gigabytes. Released before the next one is created.
         this.releaseLocalSource();
 
-        this.el.src = item.src;
+        const token = ++this.loadToken;
 
-        // Resume where playback stopped, unless it was effectively finished.
+        // Local-first, then network. The old order set the network `src`
+        // immediately and swapped the local file in afterwards — which offline
+        // meant every downloaded track first errored on the unreachable server
+        // URL before the local source landed. So: resolve a local copy up front,
+        // and only fall to the network when there isn't one. The lookup is a
+        // single `has()` then a path resolve, fast enough to precede playback;
+        // the common non-downloaded case still goes straight to the network.
+        this.loadWithLocalFirst(item, token);
+
+        this.emit('trackchange', item);
+        this.updateMediaSession(item);
+    }
+
+    /**
+     * Sets the audio source, preferring a downloaded copy.
+     *
+     * Kept off `load()` so `load()` stays synchronous for its callers; the token
+     * guards against a track the listener skipped past while this resolved.
+     */
+    async loadWithLocalFirst(item, token) {
+        let localUrl = null;
+
+        try {
+            const storage = await import('./offline/storage.js');
+
+            if (await storage.has(item.id)) {
+                localUrl = await storage.open(item.id);
+            }
+        } catch (error) {
+            logFailure('player:local-source:failed', error, { id: String(item.id) });
+        }
+
+        // Skipped while we resolved — abandon this load.
+        if (token !== this.loadToken) {
+            if (localUrl && localUrl.startsWith('blob:')) URL.revokeObjectURL(localUrl);
+
+            return;
+        }
+
+        if (localUrl) {
+            this.localSourceUrl = localUrl;
+            this.el.src = localUrl;
+        } else {
+            this.el.src = item.src;
+        }
+
         if (item.resumeAt && item.resumeAt > 5) {
             this.el.currentTime = item.resumeAt;
         }
@@ -171,76 +216,19 @@ export default class MediaPlayer {
             // Autoplay policies block playback until the user interacts; the
             // UI still shows the loaded track, so pressing play works.
         });
-
-        this.emit('trackchange', item);
-        this.updateMediaSession(item);
-
-        // Swapped in after playback starts rather than awaited before it: the
-        // lookup is fast but not instant, and blocking every track on an
-        // IndexedDB read would add a stutter for the common case of a file
-        // that was never downloaded.
-        this.preferLocalSource(item);
-    }
-
-    /**
-     * Plays from the downloaded copy when there is one.
-     *
-     * Same player either way — an offline track shouldn't need a separate
-     * mode. Falls back silently to the network source already loaded.
-     */
-    async preferLocalSource(item) {
-        if (!item?.id || !window.indexedDB) return;
-
-        const token = ++this.loadToken;
-
-        let url = null;
-
-        try {
-            const { localUrl } = await import('./offline/storage.js');
-            url = await localUrl(item.id);
-        } catch (error) {
-            // Falling back to the network is the right behaviour, but it is
-            // not free: the user downloaded this track and is now streaming it
-            // over mobile data, with nothing to say why. A failure here means
-            // the store itself is unhappy — a broken transaction, a record
-            // that is not a blob — not merely a file that was never saved,
-            // which `localUrl()` reports by returning null without throwing.
-            logFailure('player:local-source:failed', error, { id: String(item.id) });
-
-            return;
-        }
-
-        // The listener may have skipped tracks while that resolved.
-        if (!url || token !== this.loadToken) {
-            if (url) URL.revokeObjectURL(url);
-
-            return;
-        }
-
-        const position = this.el.currentTime;
-        // The listener's intent, not the element's momentary state: on a fresh
-        // page the restore has called play() but the element has not started
-        // yet, so reading el.paused here reported "not playing" and the local
-        // source was swapped in and left sitting silent.
-        const wasPlaying = this.wantedPlaying ?? !this.el.paused;
-
-        this.localSourceUrl = url;
-        this.el.src = url;
-
-        this.el.addEventListener('loadedmetadata', () => {
-            // Changing src resets position, and playback may already have
-            // started from the network.
-            if (position > 0) this.el.currentTime = position;
-            if (wasPlaying) this.el.play().catch(() => {});
-        }, { once: true });
-
-        this.emit('localsource', item);
     }
 
     releaseLocalSource() {
         if (!this.localSourceUrl) return;
 
-        URL.revokeObjectURL(this.localSourceUrl);
+        // Only blob URLs need revoking. The native backend returns an asset://
+        // URL (convertFileSrc), which is not an object URL — revoking it is a
+        // no-op, but guarding keeps the intent clear and avoids pretending the
+        // two are the same.
+        if (this.localSourceUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(this.localSourceUrl);
+        }
+
         this.localSourceUrl = null;
     }
 
