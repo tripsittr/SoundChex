@@ -32,7 +32,7 @@ planned-but-unbuilt "Phase 3" (`library/index.js:14-18`). This finishes it.
 
 ## Plan — independently shippable pieces, each device-verified
 
-### Piece 1 — Offline playback of downloaded tracks
+### Piece 1 — Offline playback of downloaded tracks — ✅ VERIFIED ON DEVICE 15 Sep
 
 `player.load()` sets the network `src` first and only then swaps in the local
 file, so offline a downloaded track briefly errors on the dead network URL
