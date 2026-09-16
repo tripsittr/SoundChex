@@ -204,6 +204,15 @@ export async function signOut() {
 
     setToken(null);
     await mirror.clear();
+
+    // Tell the service worker to drop the cached pages too — they are this
+    // account's authenticated screens and must not be reachable offline by
+    // whoever signs in next.
+    try {
+        navigator.serviceWorker?.controller?.postMessage({ tell: 'soundchex:signed-out' });
+    } catch {
+        // No worker in control — nothing cached under it to clear.
+    }
 }
 
 /**

@@ -4,6 +4,7 @@ import { preRender, serverReachable, takeOver } from './offline-shell.js';
 import * as writes from './write-queue.js';
 import * as query from './query.js';
 import * as sync from './sync.js';
+import { prewarm } from './prewarm.js';
 import { ensurePlayback } from '../now-playing.js';
 
 /**
@@ -76,6 +77,11 @@ function scheduleSync() {
         // Dispatched rather than logged, so a UI can show "synced" or
         // "offline" without this module knowing anything about the DOM.
         document.dispatchEvent(new CustomEvent('soundchex:synced', { detail: result }));
+
+        // With the mirror up to date, warm the pages so every screen is cached
+        // for offline — the user does not have to have visited them. After
+        // sync, so the crawl knows every album, artist and item to fetch.
+        prewarm();
     });
 }
 

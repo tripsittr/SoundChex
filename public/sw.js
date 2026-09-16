@@ -19,8 +19,15 @@
 // content-hashed, which usually makes that harmless — but a stale stylesheet
 // kept serving alongside fresh HTML, so a page referencing new class names was
 // styled by a sheet that did not have them. The header disappeared.
-const VERSION = 'd63d2f803bb0';
+const VERSION = '8dd19ad05cee';
 const ASSET_CACHE = `soundchex-assets-${VERSION}`;
+
+// The real /app pages, cached as they are visited or crawled so offline shows
+// the actual page. NOT versioned by build — a page's usefulness offline outlives
+// a frontend deploy, and network-first means online never serves a stale one.
+// Pruned by count (prunePageCache) and cleared on sign-out.
+const PAGE_CACHE = 'soundchex-pages';
+const PAGE_CACHE_MAX = 400;
 const OFFLINE_URL = '/offline.html';
 
 /**
@@ -49,8 +56,32 @@ self.addEventListener('message', (event) => {
     if (event.data?.ask === 'soundchex:events') {
         event.source?.postMessage({ soundchexEvents: workerEvents });
     }
+
+    // Sign-out clears the cached pages: they are one account's authenticated
+    // views, and the next person to use this device must not reach them offline.
+    if (event.data?.tell === 'soundchex:signed-out') {
+        event.waitUntil?.(caches.delete(PAGE_CACHE));
+        caches.delete(PAGE_CACHE);
+    }
 });
 const PROBE_URL = '/offline-probe.html';
+
+/**
+ * Keeps the page cache bounded to the most-recent PAGE_CACHE_MAX entries.
+ *
+ * The Cache API preserves insertion order, so the first keys are the oldest.
+ * Pages are tens of KB, so even 400 is small, but an unbounded cache of every
+ * page ever seen would still creep.
+ */
+async function prunePageCache(cache) {
+    const keys = await cache.keys();
+
+    if (keys.length <= PAGE_CACHE_MAX) return;
+
+    for (const req of keys.slice(0, keys.length - PAGE_CACHE_MAX)) {
+        await cache.delete(req);
+    }
+}
 
 self.addEventListener('install', (event) => {
     event.waitUntil(
@@ -71,7 +102,12 @@ self.addEventListener('activate', (event) => {
         caches.keys()
             .then((keys) => Promise.all(
                 keys
-                    .filter((key) => key.startsWith('soundchex-') && key !== ASSET_CACHE)
+                    // The page cache is kept across builds — its pages are still
+                    // the right pages to show offline after a deploy, and
+                    // network-first refreshes each as it is visited.
+                    .filter((key) => key.startsWith('soundchex-')
+                        && key !== ASSET_CACHE
+                        && key !== PAGE_CACHE)
                     .map((key) => caches.delete(key)),
             ))
             .then(() => self.clients.claim()),
@@ -114,20 +150,41 @@ self.addEventListener('fetch', (event) => {
             return;
         }
 
-        const isDownloadsPage = url.pathname === '/app/downloads';
+        // Every /app page is cached as it is fetched and served from that cache
+        // offline — so offline shows the *real* page, the same Blade HTML with
+        // the same styling and scripts, identical to online. Network-first keeps
+        // it honest: online always gets the fresh page, so a stale copy only
+        // appears offline, where a slightly-old real page is exactly what
+        // "identical offline" means. The cache is this device's own
+        // authenticated view (per-origin, per-device), so nothing leaks.
+        //
+        // A background crawler (library/prewarm.js) fetches the main pages while
+        // online so they are cached before the network is ever gone — the user
+        // does not have to have visited a page for it to work offline.
+        const isAppPage = url.pathname === '/app' || url.pathname.startsWith('/app/');
+
+        // Match by pathname, ignoring the query. The native shell opens /app as
+        // /app?shell=…, so a cached /app and a navigated /app?shell=… would not
+        // match and offline fell straight through. Normalise the key on write,
+        // ignoreSearch on read.
+        const pageKey = new Request(url.origin + url.pathname, { headers: request.headers });
 
         event.respondWith(
             fetchWithRetry(request)
                 .then((response) => {
-                    if (isDownloadsPage && response.ok) {
+                    if (isAppPage && response.ok && response.type === 'basic') {
                         const copy = response.clone();
-                        caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy));
+
+                        caches.open(PAGE_CACHE).then(async (cache) => {
+                            await cache.put(pageKey, copy);
+                            await prunePageCache(cache);
+                        });
                     }
 
                     return response;
                 })
-                .catch(() => (isDownloadsPage
-                    ? caches.match(request).then((hit) => hit ?? offlinePageFor(url))
+                .catch(() => (isAppPage
+                    ? caches.match(pageKey, { ignoreSearch: true }).then((hit) => hit ?? offlinePageFor(url))
                     : offlinePageFor(url))),
         );
 
