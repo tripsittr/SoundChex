@@ -17,8 +17,7 @@
     "allow-media-path-for",
     "allow-media-remove",
     "allow-media-list",
-    "allow-media-manifest",
-    "allow-debug-log"
+    "allow-media-manifest"
   ],
   "remote": {
     "urls": [

@@ -141,15 +141,6 @@
         Addresses are stored on this device only.
     </p>
 
-    <!-- Temporary on-device debug: this webview has no console, so the log is
-         read here. Loads the ring-buffer viewer from the offline bundle and
-         shows every storage/download event recorded this session. -->
-    <p class="hint" style="margin-top:1.5rem">
-        <button type="button" id="show-log"
-                style="background:none;border:0;color:#6d5efc;text-decoration:underline;font:inherit;padding:0;cursor:pointer">
-            Show debug log
-        </button>
-    </p>
 </main>
 
 <script type="module">
@@ -162,7 +153,7 @@
      * reinstall. Handed to the app so a device running an old shell is visible
      * rather than merely suspected.
      */
-    const SHELL_BUILD = '1b6326cf3aee';
+    const SHELL_BUILD = '3ac892b9d7b1';
 
 
     /** The native app's version, as declared in tauri.conf.json. */
@@ -623,71 +614,9 @@
             document.getElementById('connect-screen')?.removeAttribute('hidden');
             document.body.classList.remove('offline-standalone');
 
-            // Temporary on-device diagnostic: this webview has no console, so a
-            // silent "nothing saved" could mean an empty store or a thrown
-            // error, and there was no way to tell which. The offline shell
-            // records what happened on window.__soundchexOfflineDiag.
-            const diag = window.__soundchexOfflineDiag;
-            const detail = diag
-                ? ` [${diag.step}; backend=${diag.backend ?? '?'}; count=${diag.count ?? '?'}; err=${diag.error ?? 'none'}]`
-                : ' [no diag — renderEmbedded threw before the shell ran]';
-
-            say('Nothing is saved on this device yet, so there is nothing to open offline.' + detail, true);
+            say('Nothing is saved on this device yet, so there is nothing to open offline.', true);
         }
     }
-
-    // Shows the on-device log. Self-contained: reads the ring buffer straight
-    // from this origin's localStorage, so it needs no bundle import (which
-    // could throw on the connect screen before the logger ever loaded). Note it
-    // shows only the tauri:// origin's log — downloads happen on the server
-    // origin and land in the on-disk debug.log instead, which is pulled off the
-    // device directly.
-    document.getElementById('show-log')?.addEventListener('click', () => {
-        try {
-            document.getElementById('sc-log')?.remove();
-
-            let entries = [];
-
-            try {
-                entries = JSON.parse(localStorage.getItem('soundchex.log') ?? '[]');
-            } catch (e) {
-                entries = [];
-            }
-
-            const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const panel = document.createElement('div');
-
-            panel.id = 'sc-log';
-            panel.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0b0b0f;color:#f4f4f5;font:11px/1.45 ui-monospace,Menlo,monospace;padding:1rem;overflow:auto';
-
-            const rows = entries.slice().reverse().map((e) =>
-                `<div style="border-top:1px solid #1e1e28;padding:.4rem 0">
-                    <div style="color:#6d5efc">${esc(new Date(e.at).toLocaleTimeString())} · ${esc(e.kind)}</div>
-                    <div style="color:#c8c8d0;word-break:break-all">${esc(JSON.stringify(e.detail))}</div>
-                </div>`).join('');
-
-            panel.innerHTML =
-                `<div style="display:flex;gap:.5rem;margin-bottom:.75rem">
-                    <strong style="flex:1;font-size:13px">tauri:// log · ${entries.length}</strong>
-                    <button id="sc-log-close" style="min-height:40px;padding:0 1rem;border-radius:8px;border:1px solid #2a2a36;background:#1e1e28;color:#f4f4f5">Close</button>
-                </div>
-                ${entries.length === 0 ? '<div style="color:#8b8b96">Nothing logged on this origin yet.</div>' : rows}`;
-
-            document.body.append(panel);
-            panel.querySelector('#sc-log-close')?.addEventListener('click', () => panel.remove());
-        } catch (e) {
-            say('Log viewer failed: ' + (e && e.message), true);
-        }
-    });
-
-    // Kept for the app origin, where the full logger is loaded.
-    document.getElementById('show-log-full')?.addEventListener('click', async () => {
-        if (typeof window.soundchexShowLog === 'function') {
-            window.soundchexShowLog();
-        } else {
-            say('Log viewer is not available in this build.', true);
-        }
-    });
 
     document.getElementById('add-alt')?.addEventListener('click', () => {
         const extra = normalise(document.getElementById('alt-host').value);

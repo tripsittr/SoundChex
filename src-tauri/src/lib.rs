@@ -194,33 +194,6 @@ fn media_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(dir)
 }
 
-/// Appends one line to a debug log on disk, for reading off a device.
-///
-/// Temporary. The webview has no console and its two origins (the tauri:// shell
-/// and the server) keep separate localStorage, so no in-page log can show what
-/// both did. This writes to one file in the app data dir that either origin can
-/// append to and that `devicectl` can pull, which is the only channel that sees
-/// the whole picture. Best-effort: a logging failure must never break a
-/// download.
-#[cfg(mobile)]
-#[tauri::command]
-fn debug_log(app: tauri::AppHandle, line: String) -> Result<(), String> {
-    use std::io::Write;
-    use tauri::Manager;
-
-    let Ok(dir) = app.path().app_data_dir() else {
-        return Ok(());
-    };
-
-    let _ = std::fs::create_dir_all(&dir);
-    let path = dir.join("debug.log");
-
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(file, "{line}");
-    }
-
-    Ok(())
-}
 
 /// The on-disk path for one media id, refusing anything that could escape the
 /// media directory.
@@ -593,8 +566,7 @@ pub fn run() {
         media_path_for,
         media_remove,
         media_list,
-        media_manifest,
-        debug_log
+        media_manifest
     ]);
 
     // A File menu with Refresh in it, on desktop.
