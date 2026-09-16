@@ -140,6 +140,7 @@
     <p class="hint">
         Addresses are stored on this device only.
     </p>
+
 </main>
 
 <script type="module">
@@ -152,7 +153,7 @@
      * reinstall. Handed to the app so a device running an old shell is visible
      * rather than merely suspected.
      */
-    const SHELL_BUILD = '9edd96b003dc';
+    const SHELL_BUILD = '3ac892b9d7b1';
 
 
     /** The native app's version, as declared in tauri.conf.json. */
@@ -425,7 +426,10 @@
         // entered later becomes a candidate rather than replacing the first.
         rememberCandidates([...candidates(), origin]);
 
-        window.location.replace(origin);
+        // Carries the shell marker so the app knows to wait for the injected
+        // Tauri bridge before probing for native storage — without it the probe
+        // races the injection and falls back to IndexedDB.
+        window.location.replace(withShellBuild(origin));
     });
 
     /**
@@ -477,7 +481,7 @@
         // evicted — the navigation fails and the embedded shell still catches
         // it.
         if (await originHasData(origin)) {
-            window.location.replace(origin + '/app');
+            window.location.replace(withShellBuild(origin + '/app'));
 
             return;
         }
@@ -609,6 +613,7 @@
             // which is the failure this whole path exists to prevent.
             document.getElementById('connect-screen')?.removeAttribute('hidden');
             document.body.classList.remove('offline-standalone');
+
             say('Nothing is saved on this device yet, so there is nothing to open offline.', true);
         }
     }
@@ -761,7 +766,10 @@
 
             if (host && await reachable(host)) {
                 localStorage.setItem(KEY, host);
-                window.location.replace(host);
+                // The shell marker: this fast path (a remembered address) is the
+                // one taken on almost every launch, and without the marker the
+                // app never waited for the bridge and stored to IndexedDB.
+                window.location.replace(withShellBuild(host));
 
                 return;
             }

@@ -7,7 +7,17 @@
     "core:default",
     "notification:default",
     "updater:default",
-    "opener:default"
+    "opener:default",
+    "allow-free-space",
+    "allow-media-save",
+    "allow-media-append",
+    "allow-media-finalize",
+    "allow-media-write-manifest",
+    "allow-media-exists",
+    "allow-media-path-for",
+    "allow-media-remove",
+    "allow-media-list",
+    "allow-media-manifest"
   ],
   "remote": {
     "urls": [

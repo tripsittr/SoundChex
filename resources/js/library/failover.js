@@ -81,6 +81,15 @@ export function candidates() {
  * it.
  */
 export async function learnAddresses() {
+    // Only meaningful on the server's own origin, where /soundchex-addresses.json
+    // exists. On the tauri:// connect screen the fetch resolves to
+    // tauri://localhost/… — not a valid URL to fetch — and threw "the string did
+    // not match the expected pattern", logged as a failure on every load. The
+    // connect screen has its own candidate list and does not need this.
+    if (typeof location !== 'undefined' && location.protocol !== 'http:' && location.protocol !== 'https:') {
+        return stored();
+    }
+
     try {
         const response = await fetch('/soundchex-addresses.json', { cache: 'no-store' });
 
