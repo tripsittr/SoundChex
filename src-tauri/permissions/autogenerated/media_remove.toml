@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-remove"
+description = "Enables the media_remove command without any pre-configured scope."
+commands.allow = ["media_remove"]
+
+[[permission]]
+identifier = "deny-media-remove"
+description = "Denies the media_remove command without any pre-configured scope."
+commands.deny = ["media_remove"]
