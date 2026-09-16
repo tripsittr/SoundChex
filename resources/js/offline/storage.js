@@ -94,18 +94,7 @@ async function nativeAvailable() {
         return nativeProbe;
     }
 
-    const href = typeof window !== 'undefined' ? window.location.href : '';
     const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
-
-    logEvent('storage:probe:start', {
-        href: href.slice(0, 120),
-        ua: ua.slice(0, 160),
-        isTauri: isTauri(),
-        hasGlobalTauri: typeof window !== 'undefined' && !!window.__TAURI__,
-        hasInternals: typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__,
-        hasCoreInvoke: typeof window !== 'undefined' && !!window.__TAURI__?.core?.invoke,
-        fromShell: typeof window !== 'undefined' && /[?&]shell=/.test(window.location.search),
-    });
 
     // Wait for the bridge whenever there is any sign of the native app: the
     // shell marker on the URL, OR a wry/Tauri user-agent (which survives
@@ -117,13 +106,6 @@ async function nativeAvailable() {
         || (typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__);
 
     const tauri = looksNative ? await waitForBridge() : isTauri();
-
-    logEvent('storage:probe:bridge', {
-        waited: looksNative,
-        fromShell,
-        present: tauri,
-        hasGlobalTauriAfter: typeof window !== 'undefined' && !!window.__TAURI__,
-    });
 
     if (!tauri) {
         nativeProbe = false;
@@ -281,33 +263,21 @@ async function invoke(command, args) {
     const fn = window.__TAURI__?.core?.invoke ?? window.__TAURI_INTERNALS__?.invoke;
 
     if (typeof fn !== 'function') {
-        logEvent('storage:invoke:no-bridge', { command });
-
         throw new Error(`no Tauri bridge for ${command}`);
     }
 
-    // Summarise args so a 4 MB chunk is not written to the log a million times.
-    const summary = {};
-
-    for (const [key, value] of Object.entries(args ?? {})) {
-        summary[key] = Array.isArray(value) ? `[${value.length} bytes]` : value;
-    }
-
     try {
-        const result = await fn(command, args);
+        return await fn(command, args);
+    } catch (error) {
+        // Only failures are logged — a native command that throws is the thing
+        // worth seeing, and success on every append would drown it. Args are
+        // summarised so a 4 MB chunk is not written into the log.
+        const summary = {};
 
-        // Bulk, frequent calls (append) log only at debug volume; the rest
-        // record their result shape.
-        if (command !== 'media_append') {
-            logEvent('storage:invoke:ok', {
-                command,
-                args: summary,
-                result: Array.isArray(result) ? `[${result.length} entries]` : result,
-            });
+        for (const [key, value] of Object.entries(args ?? {})) {
+            summary[key] = Array.isArray(value) ? `[${value.length} bytes]` : value;
         }
 
-        return result;
-    } catch (error) {
         logEvent('storage:invoke:fail', {
             command,
             args: summary,

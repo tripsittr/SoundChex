@@ -30,32 +30,11 @@ export function log(kind, detail = {}) {
     }
 
     // A second, always-on sink that does not depend on the diagnostics module.
-    // The connect screen (tauri://) never loads diagnostics, so every storage
-    // and download log there went nowhere — which is exactly the code we most
-    // need to see on a device with no console. This ring buffer lives in
-    // localStorage on whatever origin is running, and `showLog()` renders it.
+    // The connect screen (tauri://) never loads diagnostics, so its storage and
+    // download logs went nowhere — the code hardest to see on a device with no
+    // console. This ring buffer lives in localStorage on whatever origin is
+    // running, and `showLog()` (five-tap top-left) renders it.
     ring(kind, detail);
-
-    // A third sink, on a device: one file on disk both origins append to, which
-    // devicectl can pull. localStorage is per-origin, so downloads (server
-    // origin) and the offline shell (tauri://) otherwise land in two separate
-    // logs; this is the only channel that shows the whole sequence. Temporary.
-    diskLog(kind, detail);
-}
-
-/** Appends to the on-disk debug log through the Tauri command. Fire-and-forget. */
-function diskLog(kind, detail) {
-    try {
-        const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI_INTERNALS__?.invoke;
-
-        if (typeof invoke !== 'function') return;
-
-        const line = `${new Date().toISOString()} ${location.pathname} ${kind} ${JSON.stringify(detail)}`;
-
-        invoke('debug_log', { line }).catch(() => {});
-    } catch {
-        // No shell or the command is absent — the other sinks still record.
-    }
 }
 
 const RING_KEY = 'soundchex.log';

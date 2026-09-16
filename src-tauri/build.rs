@@ -18,7 +18,6 @@ fn main() {
                 "media_remove",
                 "media_list",
                 "media_manifest",
-                "debug_log",
             ]),
         ),
     )
