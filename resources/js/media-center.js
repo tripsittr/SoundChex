@@ -35,17 +35,26 @@
         }
     } catch { /* command absent — the badge still shows */ }
 
+    // The badge is opt-in now that the bridge is confirmed working: set
+    // localStorage 'soundchex.debug' = '1' to show it. Kept because it is the
+    // fastest way to check the bridge on a device, but off the normal UI.
     try {
-        const badge = document.createElement('div');
+        const debugOn = (() => {
+            try { return localStorage.getItem('soundchex.debug') === '1'; } catch { return false; }
+        })();
 
-        badge.textContent = invoke ? 'TAURI ✓' : 'TAURI ✗';
-        badge.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:99999;font:11px ui-monospace,Menlo,monospace;background:'
-            + (invoke ? '#124d1f' : '#5b1420') + ';color:#fff;padding:3px 8px;border-radius:6px;opacity:.9;pointer-events:none';
+        if (debugOn) {
+            const badge = document.createElement('div');
 
-        const paint = () => document.body && document.body.append(badge);
+            badge.textContent = invoke ? 'TAURI ✓' : 'TAURI ✗';
+            badge.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:99999;font:11px ui-monospace,Menlo,monospace;background:'
+                + (invoke ? '#124d1f' : '#5b1420') + ';color:#fff;padding:3px 8px;border-radius:6px;opacity:.9;pointer-events:none';
 
-        if (document.body) paint();
-        else document.addEventListener('DOMContentLoaded', paint);
+            const paint = () => document.body && document.body.append(badge);
+
+            if (document.body) paint();
+            else document.addEventListener('DOMContentLoaded', paint);
+        }
     } catch { /* never break the page */ }
 })();
 
