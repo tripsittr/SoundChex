@@ -65,7 +65,90 @@ function queueFor(trigger) {
  * body, and a reference captured once would keep pointing at the detached
  * element from the previous page — the bar would render but never update.
  */
+/**
+ * Creates the player singleton and binds playback, without needing the bar.
+ *
+ * The `data-play` click delegation and the player object are what make anything
+ * play; the now-playing *bar* is only their readout. Splitting them out lets the
+ * offline shell — which renders its own screens and has no server-rendered bar —
+ * start playback of a downloaded track by calling this. Online, `bindNowPlaying`
+ * calls it too, so there is one player and one set of delegated handlers.
+ *
+ * Idempotent: the player is reused from `window`, and the document-level
+ * delegation is bound exactly once (guarded by `window.soundchexDelegated`).
+ *
+ * @returns {MediaPlayer}
+ */
+export function ensurePlayback() {
+    const player = window.soundchexPlayer ?? new MediaPlayer({
+        // The progress-report URL. Online the bar carries the template; offline
+        // there is no bar and no server to report to, so fall back to the known
+        // route shape. Reporting fails harmlessly offline.
+        progressUrlFor: (item) => {
+            const bar = document.getElementById('now-playing');
+            const template = bar?.dataset.progressTemplate;
+
+            return template
+                ? template.replace('__ID__', item.id)
+                : `/app/item/${item.id}/progress`;
+        },
+    });
+
+    window.soundchexPlayer = player;
+
+    // Delegated on `document`, which survives an SPA swap, so bound exactly once.
+    if (!window.soundchexDelegated) {
+        window.soundchexDelegated = true;
+        bindPlayDelegation(player);
+    }
+
+    return player;
+}
+
+/** The `data-play` / keyboard delegation, bound once on `document`. */
+function bindPlayDelegation(player) {
+    document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('[data-play], [data-play-index]');
+
+        if (!trigger) return;
+
+        const items = queueFor(trigger);
+
+        if (items === null) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        try {
+            const startIndex = Number(trigger.dataset.playIndex ?? 0);
+
+            if (trigger.dataset.playShuffle !== undefined && !player.shuffle) {
+                player.toggleShuffle();
+            }
+
+            player.play(items, startIndex);
+        } catch {
+            // Starting playback shouldn't break the page.
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.target.matches('input, textarea, select')) return;
+
+        if (event.code === 'Space') {
+            event.preventDefault();
+            player.toggle();
+        }
+
+        if (event.code === 'ArrowRight' && event.shiftKey) player.seek(player.el.currentTime + 10);
+        if (event.code === 'ArrowLeft' && event.shiftKey) player.seek(player.el.currentTime - 10);
+    });
+}
+
 function bindNowPlaying() {
+    // The player and play-button delegation exist with or without the bar.
+    const player = ensurePlayback();
+
     const bar = document.getElementById('now-playing');
 
     if (!bar) return;
@@ -76,21 +159,6 @@ function bindNowPlaying() {
     // page's detached element while the live bar sat unwritten. Handlers read
     // through `current` instead, which each run replaces.
     const current = (window.soundchexBar ??= {});
-
-    // Reused across navigations rather than recreated.
-    //
-    // Livewire swaps the whole body, which re-executes this module — and the
-    // <audio> element lives on this object, created in JS rather than markup,
-    // so @persist cannot protect it. A new MediaPlayer here would mean a new
-    // <audio>, and playback would stop on every link exactly as it did before.
-    //
-    // The object survives because `window` does. Only the DOM bindings below
-    // are re-attached to the incoming markup.
-    const player = window.soundchexPlayer ?? new MediaPlayer({
-        progressUrlFor: (item) => bar.dataset.progressTemplate.replace('__ID__', item.id),
-    });
-
-    window.soundchexPlayer = player;
 
     // Anything that decorates the player — the full-screen sheet — may have
     // loaded before this module did, so announce readiness rather than relying
@@ -212,70 +280,8 @@ function bindNowPlaying() {
         ui.duration.textContent = formatTime(player.el.duration);
     }
 
-    /* ------------------------------------------------------- play buttons */
-
-    // These two are delegated on `document`, which survives an SPA swap — so
-    // unlike the bindings above they must be attached exactly once. Re-adding
-    // them per navigation would stack handlers and fire one click N times.
-    //
-    // The flag lives on `window` for the same reason the player does: body and
-    // its dataset are replaced by the swap, so a marker there would reset and
-    // defeat the guard. They close over the singleton player, so binding once
-    // stays correct.
-    if (window.soundchexDelegated) return;
-
-    window.soundchexDelegated = true;
-
-    // Delegated so buttons rendered after load (or inside rails) still work.
-    document.addEventListener('click', (event) => {
-        const trigger = event.target.closest('[data-play], [data-play-index]');
-
-        if (!trigger) return;
-
-        // Resolved before the click is swallowed. A `data-play-index` on
-        // something that is not in a list resolves to nothing, and calling
-        // preventDefault() first would eat a click this handler cannot act
-        // on — a link inside one would stop navigating for no visible reason.
-        const items = queueFor(trigger);
-
-        if (items === null) return;
-
-        // Play buttons sit inside the poster's link, so the click has to be
-        // stopped from bubbling or pressing play would also navigate away.
-        event.preventDefault();
-        event.stopPropagation();
-
-        try {
-            const startIndex = Number(trigger.dataset.playIndex ?? 0);
-
-            // "Shuffle this album" is a different intent from "shuffle
-            // whatever is playing", so the trigger turns the mode on rather
-            // than the user setting it first and pressing play second.
-            if (trigger.dataset.playShuffle !== undefined && !player.shuffle) {
-                player.toggleShuffle();
-            }
-
-            player.play(items, startIndex);
-        } catch {
-            // Starting playback shouldn't break the page. The payload is
-            // already known good — queueFor() parsed it above.
-        }
-    });
-
-    /* ---------------------------------------------------------- keyboard */
-
-    document.addEventListener('keydown', (event) => {
-        if (event.target.matches('input, textarea, select')) return;
-
-        if (event.code === 'Space') {
-            event.preventDefault();
-            player.toggle();
-        }
-
-        // Arrow keys scrub, matching how most players behave.
-        if (event.code === 'ArrowRight' && event.shiftKey) player.seek(player.el.currentTime + 10);
-        if (event.code === 'ArrowLeft' && event.shiftKey) player.seek(player.el.currentTime - 10);
-    });
+    // The play-button and keyboard delegation is bound once by ensurePlayback()
+    // (called at the top of this function), independent of the bar.
 }
 
 // Re-bound after every swap, because the incoming markup carries a fresh bar

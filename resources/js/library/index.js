@@ -4,6 +4,7 @@ import { preRender, serverReachable, takeOver } from './offline-shell.js';
 import * as writes from './write-queue.js';
 import * as query from './query.js';
 import * as sync from './sync.js';
+import { ensurePlayback } from '../now-playing.js';
 
 /**
  * The offline library, as one surface.
@@ -138,6 +139,13 @@ function paintAhead() {
 
 if (!window.soundchexLibraryBound) {
     window.soundchexLibraryBound = true;
+
+    // Playback, without waiting for a server-rendered now-playing bar. Offline
+    // (on the tauri:// shell) the app rebuilds its own screens and there is no
+    // bar to bind, so download-and-play did nothing — the player was never
+    // created and no handler listened for `data-play`. This creates the player
+    // and binds the play buttons; the bar, when there is one, decorates it.
+    ensurePlayback();
 
     paintAhead();
 
