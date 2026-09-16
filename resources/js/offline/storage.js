@@ -94,25 +94,36 @@ async function nativeAvailable() {
         return nativeProbe;
     }
 
+    const href = typeof window !== 'undefined' ? window.location.href : '';
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+
     logEvent('storage:probe:start', {
+        href: href.slice(0, 120),
+        ua: ua.slice(0, 160),
         isTauri: isTauri(),
         hasGlobalTauri: typeof window !== 'undefined' && !!window.__TAURI__,
         hasInternals: typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__,
         hasCoreInvoke: typeof window !== 'undefined' && !!window.__TAURI__?.core?.invoke,
-        hasConvertFileSrc: typeof window !== 'undefined' && !!window.__TAURI__?.core?.convertFileSrc,
-        // Whether the app was opened by the native shell — the shell appends
-        // this to the URL. Lets us wait for the bridge only where it is coming,
-        // rather than making a plain browser pay a 3s startup wait.
         fromShell: typeof window !== 'undefined' && /[?&]shell=/.test(window.location.search),
     });
 
-    // In the app (opened by the shell), the bridge may not be injected yet on
-    // the remote origin — wait for it. In a plain browser there is no shell
-    // marker, so do not wait.
+    // Wait for the bridge whenever there is any sign of the native app: the
+    // shell marker on the URL, OR a wry/Tauri user-agent (which survives
+    // navigation to the remote origin even before the bridge global is
+    // injected). A plain browser matches neither and pays no wait.
     const fromShell = typeof window !== 'undefined' && /[?&]shell=/.test(window.location.search);
-    const tauri = fromShell ? await waitForBridge() : isTauri();
+    const looksNative = fromShell
+        || /wry|tauri/i.test(ua)
+        || (typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__);
 
-    logEvent('storage:probe:bridge', { waited: fromShell, present: tauri });
+    const tauri = looksNative ? await waitForBridge() : isTauri();
+
+    logEvent('storage:probe:bridge', {
+        waited: looksNative,
+        fromShell,
+        present: tauri,
+        hasGlobalTauriAfter: typeof window !== 'undefined' && !!window.__TAURI__,
+    });
 
     if (!tauri) {
         nativeProbe = false;
