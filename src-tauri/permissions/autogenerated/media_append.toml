@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-append"
+description = "Enables the media_append command without any pre-configured scope."
+commands.allow = ["media_append"]
+
+[[permission]]
+identifier = "deny-media-append"
+description = "Denies the media_append command without any pre-configured scope."
+commands.deny = ["media_append"]
