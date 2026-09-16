@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-media-write-manifest"
+description = "Enables the media_write_manifest command without any pre-configured scope."
+commands.allow = ["media_write_manifest"]
+
+[[permission]]
+identifier = "deny-media-write-manifest"
+description = "Denies the media_write_manifest command without any pre-configured scope."
+commands.deny = ["media_write_manifest"]

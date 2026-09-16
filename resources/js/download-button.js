@@ -9,14 +9,22 @@ import { log, logFailure, loggedFetch } from './log.js';
  * route, short enough to say so rather than hang.
  */
 const LIBRARY_LIST_TIMEOUT = 30000;
+// Storage operations go through the backend abstraction, so a phone stores to
+// real disk (native) and a browser to IndexedDB, without this file knowing
+// which. `checkSpace`/`formatBytes` stay in downloads.js — pure helpers the
+// space gate uses; `space()` from the abstraction is the disk-aware number the
+// gate will move to in a later layer.
 import {
-    checkSpace,
     download,
-    formatBytes,
     isDownloaded,
     list,
     localUrl,
     remove,
+    space,
+} from './offline/storage.js';
+import {
+    checkSpace,
+    formatBytes,
 } from './downloads.js';
 
 // Exposed for the browser tests, which drive the real download path — fetch,
@@ -362,21 +370,26 @@ function subject(label) {
  *
  * @returns {Promise<boolean>}
  */
+/** A tenth of the disk left free is "tight"; below ~200 MB never fits. */
+const DISK_RESERVE = 200 * 1024 * 1024;
+const DISK_TIGHT_FRACTION = 0.1;
+
 async function confirmSpace(bytes, description) {
     if (!(bytes > 0)) return true;
 
-    const space = await checkSpace(bytes);
+    const spaceResult = await spaceFor(bytes);
 
     log('download:space', {
         needed: bytes,
-        known: space.known,
-        fits: space.fits,
-        tight: space.tight ?? false,
-        free: space.free,
+        known: spaceResult.known,
+        fits: spaceResult.fits,
+        tight: spaceResult.tight ?? false,
+        free: spaceResult.free,
+        source: spaceResult.source,
     });
 
     // No figure at all. Ask rather than assume: this used to read as room.
-    if (!space.known) {
+    if (!spaceResult.known) {
         return window.confirm(
             `${description} is ${formatBytes(bytes)}.\n\n`
             + 'This device does not report how much space is free, so this '
@@ -384,23 +397,57 @@ async function confirmSpace(bytes, description) {
         );
     }
 
-    if (!space.fits) {
+    if (!spaceResult.fits) {
         return window.confirm(
             `${description} is ${formatBytes(bytes)}, and this device has `
-            + `${formatBytes(space.free)} free.\n\n`
+            + `${formatBytes(spaceResult.free)} free.\n\n`
             + 'There will not be enough room, and the download will probably '
             + 'fail partway.\n\nTry anyway?',
         );
     }
 
-    if (space.tight) {
+    if (spaceResult.tight) {
         return window.confirm(
             `${description} is ${formatBytes(bytes)}, which would leave about `
-            + `${formatBytes(space.after)} free on this device.\n\nContinue?`,
+            + `${formatBytes(spaceResult.after)} free on this device.\n\nContinue?`,
         );
     }
 
     return true;
+}
+
+/**
+ * How much room a download of `bytes` would leave — from the real disk where
+ * the shell can answer, the browser quota otherwise.
+ *
+ * This is the fix for movies refusing to download on the phone: the browser
+ * quota is bounded near 1 GB on iOS, so any film read as "will not fit" and the
+ * download was blocked before it began — even with tens of gigabytes actually
+ * free. `space()` from the storage abstraction reports the disk on a device, so
+ * the gate finally sees the real ceiling. Falls back to the quota-based
+ * `checkSpace()` in a browser, where there is no disk figure.
+ *
+ * Returns the same shape `checkSpace()` did, so the caller is unchanged.
+ */
+async function spaceFor(bytes) {
+    const disk = await space();
+
+    if (disk.known && disk.source === 'disk') {
+        const after = disk.free - bytes;
+
+        return {
+            known: true,
+            fits: after > DISK_RESERVE,
+            tight: after > DISK_RESERVE && after < disk.free * DISK_TIGHT_FRACTION,
+            free: disk.free,
+            after: Math.max(0, after),
+            needed: bytes,
+            source: 'disk',
+        };
+    }
+
+    // Browser (or a shell that could not answer): the quota-based check.
+    return { ...await checkSpace(bytes), source: 'quota' };
 }
 
 async function runBatch(button, tracks, label) {
@@ -717,7 +764,10 @@ export function setupDownloadButton() {
                 // cancelled download leaves no partial file behind.
                 say('Download cancelled.');
             } else {
-                say('Download failed. Check the connection and try again.', 'bad');
+                // The actual reason, on screen: this webview has no console, so
+                // "check the connection" hid whatever really failed (a missing
+                // native command, a storage error, an HTTP status).
+                say(`Download failed: ${String(error?.message ?? error).slice(0, 160)}`, 'bad');
             }
 
             await render();

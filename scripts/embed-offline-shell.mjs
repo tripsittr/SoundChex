@@ -40,6 +40,15 @@ function collect(key, seen = new Set()) {
     seen.add(key);
 
     for (const imported of entry.imports ?? []) collect(imported, seen);
+
+    // Dynamic imports too, or a chunk loaded with `import(...)` at runtime is
+    // left out of the bundle and fails on the device. The offline shell reads
+    // the download list through `import('../offline/storage.js')` — a dynamic
+    // import — so without this the storage module was simply absent, and a
+    // device holding downloads showed nothing offline because the code that
+    // lists them never loaded.
+    for (const imported of entry.dynamicImports ?? []) collect(imported, seen);
+
     for (const css of entry.css ?? []) seen.add(`css:${css}`);
 
     return seen;

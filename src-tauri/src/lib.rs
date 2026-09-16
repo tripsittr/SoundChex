@@ -194,6 +194,7 @@ fn media_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(dir)
 }
 
+
 /// The on-disk path for one media id, refusing anything that could escape the
 /// media directory.
 ///
@@ -270,11 +271,29 @@ fn exclude_from_backup(path: &std::path::Path) {
     }
 }
 
-/// Writes bytes to a media file and excludes it from backup.
+/// The manifest sidecar path for an id: the bytes file with `.meta` appended.
+///
+/// The store is self-describing — each download's title, kind, artwork and size
+/// live in a JSON file *next to the bytes*, not in IndexedDB. So the download
+/// list is read straight off disk and survives anything that clears browser
+/// storage, and the shell can see downloads across the origin boundary that
+/// used to need an iframe probe.
+#[cfg(mobile)]
+fn manifest_path(app: &tauri::AppHandle, id: &str) -> Result<std::path::PathBuf, String> {
+    let bytes = media_path(app, id)?;
+    let mut name = bytes.file_name().unwrap_or_default().to_os_string();
+    name.push(".meta");
+
+    Ok(bytes.with_file_name(name))
+}
+
+/// Writes bytes to a media file in one shot and excludes it from backup.
 ///
 /// Written to a temporary name and renamed into place, so a crash mid-write
-/// never leaves a half-file that reads as a complete download — the same
-/// "a metadata row must imply a real file" guarantee the IndexedDB path keeps.
+/// never leaves a half-file that reads as a complete download. Kept for small
+/// files (a track, artwork); large files stream through `media_append` /
+/// `media_finalize` instead, so a film never has to sit in memory as one buffer
+/// on both sides of the IPC bridge.
 ///
 /// Returns the absolute path, which is what the asset protocol serves back.
 #[cfg(mobile)]
@@ -290,6 +309,89 @@ fn media_save(app: tauri::AppHandle, id: String, bytes: Vec<u8>) -> Result<Strin
     exclude_from_backup(&path);
 
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Appends one chunk to a media file being streamed to disk.
+///
+/// A film is gigabytes; serialising it as a single byte array through the IPC
+/// bridge would need it whole in memory twice (JS array and Rust `Vec`), which
+/// is exactly what the old single-shot `media_save` did and what made large
+/// downloads impossible on the phone. So the JS side reads the response body a
+/// chunk at a time and appends each here, and nothing larger than one chunk is
+/// ever resident.
+///
+/// The first call (when no `.part` exists) truncates; every later one appends.
+/// `media_finalize` renames the finished `.part` into place.
+#[cfg(mobile)]
+#[tauri::command]
+fn media_append(app: tauri::AppHandle, id: String, chunk: Vec<u8>) -> Result<(), String> {
+    use std::io::Write;
+
+    let path = media_path(&app, &id)?;
+    let tmp = path.with_extension("part");
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&tmp)
+        .map_err(|e| format!("open for append failed: {e}"))?;
+
+    file.write_all(&chunk).map_err(|e| format!("append failed: {e}"))?;
+
+    Ok(())
+}
+
+/// Finishes a streamed download: renames the `.part` into place, writes its
+/// manifest, and excludes both from backup.
+///
+/// `meta_json` is the manifest the download list is built from — title, kind,
+/// artwork id, size and the rest — stored verbatim beside the bytes. Written
+/// only after the rename, so a manifest on disk always implies finished bytes.
+///
+/// Returns the absolute path the asset protocol serves.
+#[cfg(mobile)]
+#[tauri::command]
+fn media_finalize(app: tauri::AppHandle, id: String, meta_json: String) -> Result<String, String> {
+    let path = media_path(&app, &id)?;
+    let tmp = path.with_extension("part");
+
+    if !tmp.is_file() {
+        return Err(format!("nothing streamed for {id:?}"));
+    }
+
+    std::fs::rename(&tmp, &path).map_err(|e| format!("rename failed: {e}"))?;
+
+    let manifest = manifest_path(&app, &id)?;
+    std::fs::write(&manifest, meta_json.as_bytes())
+        .map_err(|e| format!("manifest write failed: {e}"))?;
+
+    #[cfg(target_vendor = "apple")]
+    {
+        exclude_from_backup(&path);
+        exclude_from_backup(&manifest);
+    }
+
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Writes just the manifest for an id whose bytes are already stored.
+///
+/// The single-shot `media_save` path (music, artwork) stores bytes without a
+/// manifest; this attaches one so those downloads list the same way streamed
+/// ones do. Separate from `media_save` so the byte write stays a pure,
+/// well-tested primitive.
+#[cfg(mobile)]
+#[tauri::command]
+fn media_write_manifest(app: tauri::AppHandle, id: String, meta_json: String) -> Result<(), String> {
+    let manifest = manifest_path(&app, &id)?;
+
+    std::fs::write(&manifest, meta_json.as_bytes())
+        .map_err(|e| format!("manifest write failed: {e}"))?;
+
+    #[cfg(target_vendor = "apple")]
+    exclude_from_backup(&manifest);
+
+    Ok(())
 }
 
 /// Whether a media file is genuinely on disk (and non-empty).
@@ -314,11 +416,15 @@ fn media_path_for(app: tauri::AppHandle, id: String) -> Result<Option<String>, S
     })
 }
 
-/// Deletes a media file. Absent is success — the end state is what was asked.
+/// Deletes a media file and its manifest. Absent is success.
 #[cfg(mobile)]
 #[tauri::command]
 fn media_remove(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let path = media_path(&app, &id)?;
+
+    // The manifest and any stray `.part` go too, so nothing is orphaned.
+    let _ = std::fs::remove_file(manifest_path(&app, &id)?);
+    let _ = std::fs::remove_file(path.with_extension("part"));
 
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(()),
@@ -327,10 +433,16 @@ fn media_remove(app: tauri::AppHandle, id: String) -> Result<(), String> {
     }
 }
 
-/// Every stored id and its size, for rebuilding the downloads list.
+/// Every stored download, as `(id, size, manifest_json)`.
+///
+/// The list is read straight from disk: one entry per bytes file, its size, and
+/// the manifest sidecar's contents (empty string when a download predates
+/// manifests or is a bare artwork blob). This is what makes the store
+/// self-describing — the download list needs no IndexedDB and is correct
+/// offline and across the origin boundary.
 #[cfg(mobile)]
 #[tauri::command]
-fn media_list(app: tauri::AppHandle) -> Result<Vec<(String, u64)>, String> {
+fn media_list(app: tauri::AppHandle) -> Result<Vec<(String, u64, String)>, String> {
     let dir = media_dir(&app)?;
     let mut out = Vec::new();
 
@@ -338,17 +450,47 @@ fn media_list(app: tauri::AppHandle) -> Result<Vec<(String, u64)>, String> {
         let entry = entry.map_err(|e| e.to_string())?;
         let name = entry.file_name().to_string_lossy().into_owned();
 
-        // Skip half-written `.part` files: they are not downloads yet.
-        if name.ends_with(".part") {
+        // Bytes files only: skip half-written `.part` and manifest `.meta`
+        // sidecars, which are read as a download's metadata, not as downloads.
+        if name.ends_with(".part") || name.ends_with(".meta") {
             continue;
         }
 
         let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-        out.push((name, size));
+
+        // The manifest beside it, if any. Read best-effort: a missing or
+        // unreadable manifest lists the download with empty metadata rather
+        // than dropping a real file from the list.
+        let manifest = manifest_path(&app, &name)
+            .ok()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .unwrap_or_default();
+
+        out.push((name, size, manifest));
     }
 
     Ok(out)
 }
+
+/// One download's manifest JSON, or empty string if it has none.
+#[cfg(mobile)]
+#[tauri::command]
+fn media_manifest(app: tauri::AppHandle, id: String) -> Result<String, String> {
+    Ok(std::fs::read_to_string(manifest_path(&app, &id)?).unwrap_or_default())
+}
+
+/// The `@tauri-apps/api` bridge, injected into every frame.
+///
+/// The reason native storage did nothing on the phone: the app is served from a
+/// *remote* origin (the user's `.ts.net` server), and Tauri v2 does not inject
+/// `window.__TAURI__` into remote pages — `remote.urls` in the capability only
+/// *authorises* the commands, it does not put the bridge on the page. So the web
+/// app had no `invoke` to call and every download silently fell back to
+/// IndexedDB. This is the IIFE build of the API, injected on all frames so it
+/// reaches the page after `window.location.replace` sends the webview to the
+/// server. Built by `scripts/build-tauri-bridge.mjs`.
+#[cfg(mobile)]
+const TAURI_BRIDGE: &str = include_str!("../assets/tauri-bridge.iife.js");
 
 /// Boots the app. Shared by desktop (`main.rs`) and the mobile entrypoints.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -361,6 +503,35 @@ pub fn run() {
         // of the app is silently dead without this, including the Integrations
         // page's buttons for Radarr, Sonarr and Lidarr.
         .plugin(tauri_plugin_opener::init());
+
+    // The main window is built here rather than from `tauri.conf.json`, because
+    // an init script cannot be added to a config-created window after the fact —
+    // and injecting the Tauri bridge on all frames is the whole point on mobile,
+    // where the app is served from a remote origin that otherwise has no
+    // `window.__TAURI__`. Desktop builds the same window without the script.
+    let builder = builder.setup(|app| {
+        use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+        let mut win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            .title("SoundChex");
+
+        #[cfg(desktop)]
+        {
+            win = win
+                .inner_size(1280.0, 820.0)
+                .min_inner_size(380.0, 560.0)
+                .resizable(true);
+        }
+
+        #[cfg(mobile)]
+        {
+            win = win.initialization_script_for_all_frames(TAURI_BRIDGE);
+        }
+
+        win.build()?;
+
+        Ok(())
+    });
 
     // Commands. `free_space` is on every platform — the phone most of all,
     // where the offline system decides whether a download fits and the browser
@@ -388,10 +559,14 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         free_space,
         media_save,
+        media_append,
+        media_finalize,
+        media_write_manifest,
         media_exists,
         media_path_for,
         media_remove,
-        media_list
+        media_list,
+        media_manifest
     ]);
 
     // A File menu with Refresh in it, on desktop.
