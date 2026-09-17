@@ -190,7 +190,10 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/playlists', [PlaylistController::class, 'index'])->name('api.playlists');
         Route::post('/playlists', [PlaylistController::class, 'store'])->name('api.playlists.store');
         Route::get('/playlists/{collection}', [PlaylistController::class, 'show'])->name('api.playlists.show');
+        Route::patch('/playlists/{collection}', [PlaylistController::class, 'update'])->name('api.playlists.update');
         Route::delete('/playlists/{collection}', [PlaylistController::class, 'destroy'])->name('api.playlists.destroy');
+        Route::put('/playlists/{collection}/order', [PlaylistController::class, 'reorder'])->name('api.playlists.reorder');
+        Route::post('/playlists/{collection}/cover', [PlaylistController::class, 'uploadCover'])->name('api.playlists.cover');
         Route::post('/playlists/{collection}/items', [PlaylistController::class, 'addItem'])->name('api.playlists.items.add');
         Route::delete('/playlists/{collection}/items/{item}', [PlaylistController::class, 'removeItem'])->name('api.playlists.items.remove');
     });
