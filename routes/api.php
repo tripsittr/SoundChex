@@ -1,5 +1,8 @@
 <?php
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 use App\Http\Controllers\Api\Transfer\RequestController as TransferRequestController;
 use App\Http\Controllers\Api\Transfer\SourceController as TransferSourceController;
 use App\Http\Controllers\Api\LibraryController;

@@ -186,7 +186,25 @@ run if its paths are not scratch paths.
 
 ## Licence
 
-MIT.
+**GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).** The full
+text is in [LICENSE](LICENSE).
 
-Your media is not. SoundChex is a library for files you already have; it
-neither acquires them nor helps you to.
+SoundChex is free and open source. You may run, study, modify and share it. The
+AGPL adds one thing over the ordinary GPL: **if you run a modified version and
+let other people use it over a network, you must offer those users the complete
+corresponding source** — modifications included. So improvements to SoundChex
+stay open, even when it is offered as a hosted service.
+
+The application is the open-source part; any paid **SoundChex network/relay
+service** is a separate product built around it, and does not change these terms
+for the app itself.
+
+**Getting the source of a running instance.** Every SoundChex server exposes the
+complete corresponding source of the exact build it is running — see the *About*
+page in the app, which links to this repository at the running version. If you
+modify SoundChex and host it for others, you must make your modified source
+available to those users in the same way (a link in the app or on your site
+satisfies AGPL §13).
+
+Your media is not covered by any of this. SoundChex is a library for files you
+already have; it neither acquires them nor helps you to.

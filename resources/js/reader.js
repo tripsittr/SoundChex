@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 import { logFailure } from './log.js';
 import ePub from 'epubjs';
 import { AnnotationStore } from './reader/annotations.js';

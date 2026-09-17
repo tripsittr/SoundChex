@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 import { watchForBuilds } from './build-watch.js';
 import { showDiagnostics, watchForProblems } from './diagnostics.js';
 import { bindDeviceSettings } from './device-settings.js';
