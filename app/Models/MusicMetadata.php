@@ -68,11 +68,15 @@ class MusicMetadata extends Model
         'spotify_id',
         'discogs_release_id',
         'energy',
+        'lyrics',
+        'lyrics_synced',
+        'lyrics_checked_at',
     ];
 
     protected $casts = [
         'bpm' => 'float',
         'energy' => 'integer',
+        'lyrics_checked_at' => 'datetime',
     ];
 
     public function mediaItem(): BelongsTo

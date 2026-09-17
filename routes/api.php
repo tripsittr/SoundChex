@@ -4,7 +4,9 @@ use App\Http\Controllers\Api\Transfer\RequestController as TransferRequestContro
 use App\Http\Controllers\Api\Transfer\SourceController as TransferSourceController;
 use App\Http\Controllers\Api\LibraryController;
 use App\Http\Controllers\Api\DeviceReportController;
+use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ServerHealthController;
 use App\Http\Controllers\Api\UpdateController;
 use App\Http\Middleware\LoopbackOnly;
@@ -58,6 +60,13 @@ Route::prefix('v1')->group(function (): void {
         ->middleware(LoopbackOnly::class)
         ->name('api.server.health');
 
+
+    // The account's profiles, to pick one before a token is minted. Verifies
+    // credentials, so it is throttled like the token endpoint — confirming a
+    // password by returning profiles is as much a login as returning a token.
+    Route::post('/profiles', [ProfileController::class, 'index'])
+        ->middleware('throttle:10,1')
+        ->name('api.profiles');
 
     // Issued with credentials and a profile; throttled in the controller as
     // well, because a token is longer-lived than a session and this endpoint
@@ -128,5 +137,28 @@ Route::prefix('v1')->group(function (): void {
             ->name('api.notifications');
         Route::match(['get', 'post'], '/library/delta', [LibraryController::class, 'delta'])
             ->name('api.library.delta');
+
+        // Playback: the bytes (with Range support for seeking), and the resume
+        // position. Streaming is throttled apart from the rest — a single film
+        // is many ranged requests by design, so it uses the same lenient
+        // `stream` limiter the web route does.
+        Route::get('/items/{item}/stream', [MediaController::class, 'stream'])
+            ->middleware('throttle:stream')
+            ->name('api.items.stream');
+        Route::get('/items/{item}/progress', [MediaController::class, 'progress'])
+            ->name('api.items.progress');
+        // Lyrics: fetched and cached from a provider (LRCLIB by default).
+        Route::get('/items/{item}/lyrics', [MediaController::class, 'lyrics'])
+            ->name('api.items.lyrics');
+        Route::post('/items/{item}/progress', [MediaController::class, 'saveProgress'])
+            ->name('api.items.progress.save');
+
+        // Library search, covering titles, people, dialogue and book text.
+        Route::get('/search', [MediaController::class, 'search'])->name('api.search');
+
+        // Switching profile from a signed-in device — no password, because the
+        // token already proves the account. The list needs no password either.
+        Route::get('/profiles/mine', [ProfileController::class, 'mine'])->name('api.profiles.mine');
+        Route::post('/profiles/switch', [ProfileController::class, 'switch'])->name('api.profiles.switch');
     });
 });

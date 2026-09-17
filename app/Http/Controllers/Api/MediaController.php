@@ -1,0 +1,226 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Resources\MediaItemResource;
+use App\Models\MediaItem;
+use App\Services\ContentGate;
+use App\Services\CurrentProfile;
+use App\Services\LyricsService;
+use App\Services\SearchService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\ResponseHeaderBag;
+
+/**
+ * The client-facing media API for the native app.
+ *
+ * The web app serves streaming, progress and search behind the session guard
+ * (routes/web.php), which a token-only native client cannot reach. These are the
+ * same operations under `auth:sanctum`, reusing the models and services the web
+ * controllers use so behaviour — the content-rating gate, range streaming, the
+ * offline-replay staleness rule — stays identical across the two front ends.
+ */
+class MediaController extends Controller
+{
+    /** Past this fraction, a title counts as finished — see saveProgress. */
+    private const COMPLETE_FRACTION = 0.95;
+
+    /** The largest forward jump counted as listening rather than a seek. */
+    private const LISTENED_MAX_STEP = 90;
+
+    /**
+     * The media bytes, with HTTP Range support so the app can seek.
+     *
+     * Identical to MediaCenterController@stream but reached with a bearer token.
+     * A `BinaryFileResponse` sets Accept-Ranges and answers a ranged request with
+     * 206 Partial Content, which is what lets AVPlayer scrub without refetching.
+     */
+    public function stream(MediaItem $item): BinaryFileResponse
+    {
+        abort_unless(app(ContentGate::class)->allows($item), 404);
+
+        $path = $item->playbackPath();
+
+        abort_unless($path !== null, 404);
+
+        $this->recordPlay($item);
+
+        return response()->file($path, [
+            // makeDisposition percent-encodes the title and supplies an ASCII
+            // fallback, so a newline in a tag cannot inject a header.
+            'Content-Disposition' => (new ResponseHeaderBag)->makeDisposition(
+                ResponseHeaderBag::DISPOSITION_INLINE,
+                (string) $item->title,
+                'media',
+            ),
+        ]);
+    }
+
+    /**
+     * The resume position for an item, for this profile.
+     *
+     * The web app never needed a read endpoint — the position rode along in the
+     * page it rendered. A native player has no such page, so it asks here before
+     * playing to resume where it stopped.
+     */
+    public function progress(MediaItem $item): JsonResponse
+    {
+        $play = $this->recentPlay($item);
+
+        return response()->json([
+            'position' => (int) ($play?->position_seconds ?? 0),
+            'completed' => (bool) ($play?->completed ?? false),
+        ]);
+    }
+
+    /**
+     * Records a playback position. Mirrors MediaCenterController@saveProgress,
+     * including the offline-replay staleness guard and listened-time accounting,
+     * so the same client logic drives both front ends.
+     */
+    public function saveProgress(Request $request, MediaItem $item): JsonResponse
+    {
+        $data = $request->validate([
+            'position' => ['required', 'integer', 'min:0'],
+            'duration' => ['nullable', 'integer', 'min:0'],
+            'recorded_at' => ['nullable', 'date'],
+        ]);
+
+        $play = $this->recentPlay($item);
+
+        $duration = $data['duration'] ?? 0;
+        $completed = $duration > 0 && $data['position'] >= $duration * self::COMPLETE_FRACTION;
+
+        // A replayed (offline-queued) write applies only if it is newer than
+        // what is stored, or it would undo progress made since. Checked before
+        // the row is created — creating first would stamp updated_at with "now".
+        $recordedAt = isset($data['recorded_at'])
+            ? Carbon::parse($data['recorded_at'])
+            : now();
+
+        if ($play !== null && $play->updated_at !== null && $recordedAt->lt($play->updated_at)) {
+            return response()->json([
+                'completed' => (bool) $play->completed,
+                'stale' => true,
+            ]);
+        }
+
+        if ($play === null) {
+            $play = $item->plays()->create([
+                'user_id' => Auth::id(),
+                'profile_id' => app(CurrentProfile::class)->id(),
+            ]);
+        }
+
+        // Only forward movement small enough to be playback counts as listened,
+        // so a scrub to the end does not bank the whole track.
+        $advanced = $data['position'] - (int) ($play->position_seconds ?? 0);
+        $listened = ($advanced > 0 && $advanced <= self::LISTENED_MAX_STEP) ? $advanced : 0;
+
+        $play->forceFill([
+            'position_seconds' => $data['position'],
+            'listened_seconds' => ($play->listened_seconds ?? 0) + $listened,
+            'completed' => $completed,
+        ])->save();
+
+        return response()->json(['completed' => $completed]);
+    }
+
+    /**
+     * Search the library, as JSON.
+     *
+     * Wraps SearchService — the same engine the web search page uses, which
+     * covers titles, people, dialogue, book text and tags — and flattens its
+     * grouped result into the media items the app renders. The service applies
+     * the content gate itself, so a capped profile never sees a gated hit.
+     */
+    public function search(Request $request, SearchService $search): JsonResponse
+    {
+        $term = (string) $request->query('q', '');
+
+        $result = $search->search($term);
+
+        // Collect the MediaItems out of every group that carries them (titles,
+        // dialogue, pages, and each person's own items), de-duplicated by id and
+        // capped so a broad term cannot return the whole library.
+        $items = collect($result['groups'])
+            ->flatMap(function (array $group): iterable {
+                return collect($group['results'])->flatMap(function ($row): iterable {
+                    if (($row['kind'] ?? null) === 'item' && isset($row['item'])) {
+                        return [$row['item']];
+                    }
+
+                    // People and other grouped rows carry their own items.
+                    return collect($row['items'] ?? $row['results'] ?? [])
+                        ->filter(fn ($candidate): bool => $candidate instanceof MediaItem);
+                });
+            })
+            ->unique('id')
+            ->take(60)
+            ->values();
+
+        return response()->json([
+            'query' => $result['query'],
+            'items' => MediaItemResource::collection($items),
+        ]);
+    }
+
+    /**
+     * The lyrics for a track, fetched and cached from a provider on first ask.
+     *
+     * Only music, and only what the content gate allows. Returns `{ lyrics }`,
+     * which is null when the track has none — the app shows the section only when
+     * there is something to show, so a null is a normal answer, not an error.
+     */
+    public function lyrics(MediaItem $item, LyricsService $lyrics): JsonResponse
+    {
+        abort_unless(app(ContentGate::class)->allows($item), 404);
+
+        return response()->json([
+            'lyrics' => $lyrics->lyricsFor($item),
+        ]);
+    }
+
+    // MARK: - Shared helpers (the same shape MediaCenterController uses)
+
+    /** The recent play row for this item and profile, or null. */
+    private function recentPlay(MediaItem $item)
+    {
+        $userId = Auth::id();
+        $profileId = app(CurrentProfile::class)->id();
+
+        return $item->plays()
+            ->when($profileId, fn ($query) => $query->where('profile_id', $profileId))
+            ->when(! $profileId, fn ($query) => $query->where('user_id', $userId))
+            ->where('updated_at', '>=', now()->subHours(6))
+            ->latest('id')
+            ->first();
+    }
+
+    /** One play row per listening session, not per position update. */
+    private function recordPlay(MediaItem $item): void
+    {
+        $userId = Auth::id();
+        $profileId = app(CurrentProfile::class)->id();
+
+        $recent = $item->plays()
+            ->where('user_id', $userId)
+            ->when($profileId, fn ($query) => $query->where('profile_id', $profileId))
+            ->where('created_at', '>=', now()->subMinutes(10))
+            ->exists();
+
+        if ($recent) {
+            return;
+        }
+
+        $item->plays()->create([
+            'user_id' => $userId,
+            'profile_id' => $profileId,
+        ]);
+    }
+}
