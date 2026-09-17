@@ -167,6 +167,23 @@ Route::prefix('v1')->group(function (): void {
         Route::middleware(\App\Http\Middleware\EnsureApiAdmin::class)->prefix('admin')->group(function (): void {
             Route::get('/stats', [\App\Http\Controllers\Api\AdminController::class, 'stats'])
                 ->name('api.admin.stats');
+            // View/edit a media item's core fields and type metadata.
+            Route::get('/items/{item}', [\App\Http\Controllers\Api\AdminController::class, 'item'])
+                ->name('api.admin.item');
+            Route::patch('/items/{item}', [\App\Http\Controllers\Api\AdminController::class, 'updateItem'])
+                ->name('api.admin.item.update');
+            // Manage the account's profiles (household members).
+            Route::get('/profiles', [\App\Http\Controllers\Api\AdminController::class, 'profiles'])
+                ->name('api.admin.profiles');
+            Route::post('/profiles', [\App\Http\Controllers\Api\AdminController::class, 'storeProfile'])
+                ->name('api.admin.profiles.store');
+            Route::patch('/profiles/{profile}', [\App\Http\Controllers\Api\AdminController::class, 'updateProfile'])
+                ->name('api.admin.profiles.update');
+            Route::delete('/profiles/{profile}', [\App\Http\Controllers\Api\AdminController::class, 'destroyProfile'])
+                ->name('api.admin.profiles.destroy');
+            // Add media: queue a library scan of the watched folders.
+            Route::post('/scan', [\App\Http\Controllers\Api\AdminController::class, 'scan'])
+                ->name('api.admin.scan');
         });
 
         // Playlists (Collections), account-scoped and gated per track.
