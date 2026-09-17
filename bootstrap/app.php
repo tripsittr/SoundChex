@@ -19,6 +19,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // would throttle every remote visitor as one shared IP.
         $middleware->trustProxies(at: '*');
 
+        // Generate URLs that match the address each request came in on, rather
+        // than the single one in APP_URL — this server answers on a LAN address,
+        // a tailnet IP and a Funnel hostname at once. Runs on web and API both,
+        // since the API hands back stream and artwork URLs. Prepended so the
+        // corrected root is in place before anything downstream builds a URL.
+        // (CLI/queue have no request; server:detect-address keeps APP_URL sane
+        // for them.)
+        $middleware->web(prepend: [\App\Http\Middleware\SetAppUrl::class]);
+        $middleware->api(prepend: [\App\Http\Middleware\SetAppUrl::class]);
+
         // The library sync ships every visible item, which for a real library
         // is hundreds of kilobytes — six times more than it needs to be.
         $middleware->api(append: [
