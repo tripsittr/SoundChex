@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\LibraryController;
 use App\Http\Controllers\Api\DeviceReportController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PlaylistController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ServerHealthController;
 use App\Http\Controllers\Api\UpdateController;
@@ -160,5 +161,13 @@ Route::prefix('v1')->group(function (): void {
         // token already proves the account. The list needs no password either.
         Route::get('/profiles/mine', [ProfileController::class, 'mine'])->name('api.profiles.mine');
         Route::post('/profiles/switch', [ProfileController::class, 'switch'])->name('api.profiles.switch');
+
+        // Playlists (Collections), account-scoped and gated per track.
+        Route::get('/playlists', [PlaylistController::class, 'index'])->name('api.playlists');
+        Route::post('/playlists', [PlaylistController::class, 'store'])->name('api.playlists.store');
+        Route::get('/playlists/{collection}', [PlaylistController::class, 'show'])->name('api.playlists.show');
+        Route::delete('/playlists/{collection}', [PlaylistController::class, 'destroy'])->name('api.playlists.destroy');
+        Route::post('/playlists/{collection}/items', [PlaylistController::class, 'addItem'])->name('api.playlists.items.add');
+        Route::delete('/playlists/{collection}/items/{item}', [PlaylistController::class, 'removeItem'])->name('api.playlists.items.remove');
     });
 });
