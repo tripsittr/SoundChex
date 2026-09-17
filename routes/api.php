@@ -4,7 +4,10 @@ use App\Http\Controllers\Api\Transfer\RequestController as TransferRequestContro
 use App\Http\Controllers\Api\Transfer\SourceController as TransferSourceController;
 use App\Http\Controllers\Api\LibraryController;
 use App\Http\Controllers\Api\DeviceReportController;
+use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PlaylistController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ServerHealthController;
 use App\Http\Controllers\Api\UpdateController;
 use App\Http\Middleware\LoopbackOnly;
@@ -58,6 +61,13 @@ Route::prefix('v1')->group(function (): void {
         ->middleware(LoopbackOnly::class)
         ->name('api.server.health');
 
+
+    // The account's profiles, to pick one before a token is minted. Verifies
+    // credentials, so it is throttled like the token endpoint — confirming a
+    // password by returning profiles is as much a login as returning a token.
+    Route::post('/profiles', [ProfileController::class, 'index'])
+        ->middleware('throttle:10,1')
+        ->name('api.profiles');
 
     // Issued with credentials and a profile; throttled in the controller as
     // well, because a token is longer-lived than a session and this endpoint
@@ -128,5 +138,60 @@ Route::prefix('v1')->group(function (): void {
             ->name('api.notifications');
         Route::match(['get', 'post'], '/library/delta', [LibraryController::class, 'delta'])
             ->name('api.library.delta');
+
+        // Playback: the bytes (with Range support for seeking), and the resume
+        // position. Streaming is throttled apart from the rest — a single film
+        // is many ranged requests by design, so it uses the same lenient
+        // `stream` limiter the web route does.
+        Route::get('/items/{item}/stream', [MediaController::class, 'stream'])
+            ->middleware('throttle:stream')
+            ->name('api.items.stream');
+        Route::get('/items/{item}/progress', [MediaController::class, 'progress'])
+            ->name('api.items.progress');
+        // Lyrics: fetched and cached from a provider (LRCLIB by default).
+        Route::get('/items/{item}/lyrics', [MediaController::class, 'lyrics'])
+            ->name('api.items.lyrics');
+        Route::post('/items/{item}/progress', [MediaController::class, 'saveProgress'])
+            ->name('api.items.progress.save');
+
+        // Library search, covering titles, people, dialogue and book text.
+        Route::get('/search', [MediaController::class, 'search'])->name('api.search');
+
+        // Switching profile from a signed-in device — no password, because the
+        // token already proves the account. The list needs no password either.
+        Route::get('/profiles/mine', [ProfileController::class, 'mine'])->name('api.profiles.mine');
+        Route::post('/profiles/switch', [ProfileController::class, 'switch'])->name('api.profiles.switch');
+
+        // Admin surface for the app — gated to an administering profile by
+        // EnsureApiAdmin, not by anything the client sends.
+        Route::middleware(\App\Http\Middleware\EnsureApiAdmin::class)->prefix('admin')->group(function (): void {
+            Route::get('/stats', [\App\Http\Controllers\Api\AdminController::class, 'stats'])
+                ->name('api.admin.stats');
+            // View/edit a media item's core fields and type metadata.
+            Route::get('/items/{item}', [\App\Http\Controllers\Api\AdminController::class, 'item'])
+                ->name('api.admin.item');
+            Route::patch('/items/{item}', [\App\Http\Controllers\Api\AdminController::class, 'updateItem'])
+                ->name('api.admin.item.update');
+            // Manage the account's profiles (household members).
+            Route::get('/profiles', [\App\Http\Controllers\Api\AdminController::class, 'profiles'])
+                ->name('api.admin.profiles');
+            Route::post('/profiles', [\App\Http\Controllers\Api\AdminController::class, 'storeProfile'])
+                ->name('api.admin.profiles.store');
+            Route::patch('/profiles/{profile}', [\App\Http\Controllers\Api\AdminController::class, 'updateProfile'])
+                ->name('api.admin.profiles.update');
+            Route::delete('/profiles/{profile}', [\App\Http\Controllers\Api\AdminController::class, 'destroyProfile'])
+                ->name('api.admin.profiles.destroy');
+            // Add media: queue a library scan of the watched folders.
+            Route::post('/scan', [\App\Http\Controllers\Api\AdminController::class, 'scan'])
+                ->name('api.admin.scan');
+        });
+
+        // Playlists (Collections), account-scoped and gated per track.
+        Route::get('/playlists', [PlaylistController::class, 'index'])->name('api.playlists');
+        Route::post('/playlists', [PlaylistController::class, 'store'])->name('api.playlists.store');
+        Route::get('/playlists/{collection}', [PlaylistController::class, 'show'])->name('api.playlists.show');
+        Route::delete('/playlists/{collection}', [PlaylistController::class, 'destroy'])->name('api.playlists.destroy');
+        Route::post('/playlists/{collection}/items', [PlaylistController::class, 'addItem'])->name('api.playlists.items.add');
+        Route::delete('/playlists/{collection}/items/{item}', [PlaylistController::class, 'removeItem'])->name('api.playlists.items.remove');
     });
 });
