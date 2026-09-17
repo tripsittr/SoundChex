@@ -78,6 +78,19 @@ Schedule::command('network:probe')
     ->everyFiveMinutes()
     ->withoutOverlapping();
 
+/*
+ * Keeps APP_URL pointed at a real address of this machine.
+ *
+ * Only when it is unset or the install default — a deliberately-set address (a
+ * public tunnel, a reverse proxy) is left alone, since detection cannot know
+ * about those. This is what makes the downloaded desktop app zero-config and
+ * stops the "server moved networks, the phone can't find it" recurrence without
+ * anyone editing .env. Hourly is plenty; an address does not change often.
+ */
+Schedule::command('server:detect-address')
+    ->hourly()
+    ->withoutOverlapping();
+
 Schedule::call(fn () => cache()->put('soundchex.scheduler.heartbeat', now()->timestamp, now()->addMinutes(10)))
     ->everyMinute()
     ->name('scheduler-heartbeat');
