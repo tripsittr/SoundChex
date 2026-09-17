@@ -349,6 +349,8 @@ class Integrations extends Page
             'genius_api_key' => ['Genius', 'Lyrics', 'Lyrics'],
             'musixmatch_api_key' => ['Musixmatch', 'Lyrics', 'Lyrics'],
 
+            'opensubtitles_api_key' => ['OpenSubtitles', 'Subtitles', 'Subtitles'],
+
             'google_books_api_key' => ['Google Books', 'Books', 'Books'],
 
             'fanart_tv_api_key' => ['Fanart.tv', 'Posters and backdrops', 'Artwork'],
