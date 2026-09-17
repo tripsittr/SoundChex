@@ -8,6 +8,21 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
 
 ---
 
+## Step L — Apply the AGPLv3 licence (independent; can happen now)
+
+The licence choice (AGPLv3, S-151) can land before any server work.
+
+- [ ] Add `LICENSE` (the full AGPLv3 text) at the repo root.
+- [ ] Set the licence field where declared (`composer.json` `"license"`,
+  `package.json`, `src-tauri/Cargo.toml` / `tauri.conf.json`).
+- [ ] README: state AGPLv3 and the "app is AGPL, the network service is the paid
+  product" model, so contributors and forkers understand the terms up front.
+- [ ] Per-file AGPL headers where practical (or a NOTICE + a single header
+  policy), and a `THIRD-PARTY-LICENSES.txt` scaffold to fill as bundling lands.
+- **Verify:** `LICENSE` present and correct; licence metadata consistent across
+  the manifests; README states it. (Owner is separately obtaining formal/legal
+  confirmation.)
+
 ## Step 0 — Prove the stack by hand (no product changes)
 
 - [ ] Run the existing app on this machine behind **Caddy → php-fpm** manually,
@@ -77,22 +92,19 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
   (which currently assume `tailscale serve` → plaintext 8000).
 - **Verify:** remote access over HTTPS works through Caddy; the docs match.
 
-## Step 8 — FFmpeg licensing decision (defer bundling for v1)
+## Step 8 — Bundle full ffmpeg (AGPLv3 makes this trivial)
 
-ffmpeg is **not bundled today** (user-installed via PATH; degrades gracefully),
-so the server bundle stays clean without touching it. **Default for the first
-ship: keep it user-installed** — transcoding/subtitles need a manual ffmpeg, and
-that is a documented prerequisite, not a plug-and-play regression for the core
-app.
+Under AGPLv3, GPL ffmpeg is compatible, so **bundle the full build** — no
+LGPL/OpenH264/VP9 work, and `MediaTranscoder` keeps its current code path
+(`h264_videotoolbox` when present, `libx264` fallback, `libmp3lame`, native
+`aac`) unchanged.
 
-If/when bundled transcoding is wanted:
-- [ ] Produce an **LGPL** static ffmpeg (no `--enable-gpl`), and **replace the
-  `libx264` software fallback in `MediaTranscoder::resolveEncoder()` with
-  OpenH264** (`libopenh264` — Cisco, BSD, patent-covered binary). Keep
-  `libmp3lame`, native `aac`, and `h264_videotoolbox` (all LGPL-clean).
-- **Verify:** the bundled `ffmpeg -buildconf` shows no `--enable-gpl` / no x264;
-  a software H.264 transcode still produces a browser-playable MP4 via OpenH264;
-  `THIRD-PARTY-LICENSES.txt` matches.
+- [ ] Produce/obtain a **full static ffmpeg** (with `--enable-gpl`, libx264,
+  libmp3lame) per platform and bundle it alongside the runtime; point
+  `FFMPEG_PATH`/`FFPROBE_PATH` at the bundled binary by relative path.
+- **Verify:** a software H.264 transcode (no hardware encoder) produces a
+  browser-playable MP4 via `libx264`; music → mp3 works; `ffprobe` detection
+  works; `THIRD-PARTY-LICENSES.txt` lists ffmpeg + its GPL notice.
 
 ## Step 9 — Migration + cutover + docs
 

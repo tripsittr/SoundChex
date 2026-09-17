@@ -40,50 +40,62 @@ and a hand-configured CA bundle before the server runs at all.
 The goal: **installing the product installs a working, production-grade server**,
 with the runtime version and extensions under our control, not the host's.
 
-## What "plug and play" legally allows us to bundle
+## Licensing decision (17 Sep 2026): AGPLv3, bundle full ffmpeg
 
-Everything in the PHP-FPM + Caddy stack is permissively licensed and
-redistributable in a commercial product. The one obligation is attribution: a
-`THIRD-PARTY-LICENSES.txt` in every installer and app bundle.
+**SoundChex is licensed AGPLv3.** The app is free and open source; the paid
+product is the **relay/tunnel network only** (SCNet) — an encrypted pipe between
+a user's own server and their own devices. Our infrastructure never encodes,
+stores, or serves user media.
 
-| Component | License | Redistribute in a paid app? |
+Two consequences settle everything below:
+
+1. **AGPL is GPL-compatible, so we bundle full GPL ffmpeg** — hardware encoders
+   *and* the `libx264` software fallback, best quality, simplest code. The
+   earlier LGPL-ffmpeg / OpenH264 / VP9 gymnastics existed only to avoid GPL
+   for a closed/sold app; that constraint is gone. See Step 8.
+2. **AGPL (not plain GPL) is deliberate.** GPL's copyleft is triggered by
+   *distribution*; running software as a network service is not distribution
+   (the "SaaS loophole"). AGPL §13 closes it: anyone who lets users interact with
+   the software **over a network** must offer them the source, modifications
+   included. This protects the "open app, monetise the hosted network" model — a
+   competitor can host SoundChex, but cannot host a **secretly-improved** fork
+   against us; their improvements come back. Same reason MongoDB/Grafana/
+   Nextcloud/GitLab-core use AGPL.
+
+**H.264 patents are a separate layer from copyright, and open-sourcing does not
+grant patent rights** — but our exposure is negligible because: the network
+product is relay-only (our servers never touch H.264), the app is free to end
+users (H.264's patent licence exempts free-to-end-user products), and the user
+is the party doing the encoding on their own media (the VLC/Handbrake posture).
+**Action on the owner: a one-time IP-lawyer confirmation before monetising the
+network at scale.** Not a blocker for building.
+
+## What "plug and play" lets us bundle
+
+Everything in the PHP-FPM + Caddy stack is redistributable, and under AGPLv3 the
+bundled GPL ffmpeg is fine too. The one obligation is attribution: a
+`THIRD-PARTY-LICENSES.txt` in every installer and app bundle, plus the project's
+own `LICENSE` (AGPLv3) and per-file notices.
+
+| Component | License | Bundle under AGPLv3? |
 |---|---|---|
 | PHP (interpreter + php-fpm) | PHP License 3.01 | Yes — permissive; keep the notice |
 | Caddy | Apache 2.0 | Yes — keep NOTICE + LICENSE |
 | Caddy's Go deps | mostly MIT / BSD / Apache | Yes |
 | SQLite | Public domain | Yes — no obligation |
-| **FFmpeg** (transcode, separate concern) | **LGPL if built without `--enable-gpl`; GPL otherwise** | **Only an LGPL build.** A GPL ffmpeg (x264/x265) forces the whole app to GPL. |
+| **FFmpeg (full, GPL — with x264)** | **GPL** | **Yes** — GPL-compatible with AGPLv3; bundle the full build |
 
-**The one real trap is FFmpeg**, which the queue worker shells out to for
-transcoding. It is not part of the web-server layer, but it is the component
-that can poison redistribution.
+**FFmpeg is no longer a trap** under AGPLv3 — GPL is compatible, so we bundle a
+**full ffmpeg** (hardware encoders + `libx264` software fallback + `libmp3lame` +
+native `aac`) and the transcoder keeps its current code path unchanged. It is
+used for video transcoding (`MediaTranscoder`, browser-incompatible files →
+H.264 MP4), subtitle extraction/conversion (`SubtitleImporter`), and `ffprobe`
+codec detection.
 
-**Current state (17 Sep 2026): ffmpeg is NOT bundled — it is user-installed.**
-`config/transcode.php` defaults `FFMPEG_PATH`/`FFPROBE_PATH` to bare `ffmpeg`/
-`ffprobe` on PATH; `MediaTranscoder::available()` degrades gracefully when it is
-absent (the UI says "ffmpeg is not installed"). So there is **zero ffmpeg
-licensing exposure today** — we distribute nothing. Used for: video transcoding
-(`MediaTranscoder`, browser-incompatible files → H.264 MP4), subtitle
-extraction/conversion (`SubtitleImporter`), and `ffprobe` codec detection.
-
-The catch is what the transcoder *asks for* the moment ffmpeg is bundled:
-
-| Codec requested | Build flag | If bundled |
-|---|---|---|
-| `libx264` (software H.264 fallback, `resolveEncoder()`) | `--enable-gpl` | ☠️ **GPL — poisons the app** |
-| `libmp3lame` (music → mp3) | `--enable-libmp3lame` | LGPL — OK |
-| `h264_videotoolbox` (Apple HW), native `aac` | built-in | ✅ clean |
-
-`libx264` is the fallback on every host without Apple's hardware encoder — i.e.
-all Windows/Linux and Intel Macs — so a bundled ffmpeg that supports the current
-code path is necessarily GPL.
-
-**Recommended for the initial ship: keep ffmpeg user-installed** (option 1),
-isolating the GPL question from the server work — the PHP+Caddy bundle stays
-100% clean, and only transcoding/subtitles need a manual ffmpeg. Bundled
-transcoding is a follow-up: an **LGPL ffmpeg** (no `--enable-gpl`, no x264) with
-the `libx264` fallback replaced by **OpenH264** (Cisco, BSD, patent-covered).
-Tracked as Step 8.
+For reference, today ffmpeg is **not** bundled — `config/transcode.php` defaults
+`FFMPEG_PATH`/`FFPROBE_PATH` to bare `ffmpeg`/`ffprobe` on PATH and
+`MediaTranscoder::available()` degrades gracefully when absent. The bundled
+server changes that to a shipped full ffmpeg so transcoding works out of the box.
 
 ## The runtime we must bundle, precisely
 
@@ -162,5 +174,5 @@ Nothing is done until, on each of macOS / Windows / Linux:
 - A **5 MB** upload succeeds (the cap is ours now).
 - The queue worker and scheduler run under the new supervision.
 - The S-123/S-87/S-93 network-probe paths pass against the concurrent server.
-- `THIRD-PARTY-LICENSES.txt` is present and complete; the bundled ffmpeg (if
-  any) is an LGPL build.
+- The project ships an AGPLv3 `LICENSE`; `THIRD-PARTY-LICENSES.txt` is present
+  and complete (PHP, Caddy + Go deps, SQLite, full GPL ffmpeg).
