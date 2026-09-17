@@ -1,5 +1,8 @@
 <?php
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 /**
  * Filename parsing rules — used by the FileTagger source when a file carries
  * no usable embedded tags.

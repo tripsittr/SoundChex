@@ -1,5 +1,8 @@
 <?php
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 use App\Http\Controllers\AnnotationController;
 use App\Http\Controllers\AlbumController;
 use App\Http\Controllers\AuthController;
