@@ -25,13 +25,58 @@ class PlaylistController extends Controller
 
     public function index(): View
     {
+        $playlists = Collection::query()
+            ->where('user_id', Auth::id())
+            ->withCount('mediaItems')
+            ->orderBy('name')
+            ->get();
+
         return view('media.playlists', [
-            'playlists' => Collection::query()
-                ->where('user_id', Auth::id())
-                ->withCount('mediaItems')
-                ->orderBy('name')
-                ->get(),
+            'playlists' => $playlists,
+            // Up to four track covers per playlist, for the mosaic fallback when
+            // a playlist has no cover image of its own. Built in one grouped pass
+            // rather than a query per card.
+            'mosaics' => $this->mosaics($playlists),
         ]);
+    }
+
+    /**
+     * Up to four cover URLs for each playlist, keyed by playlist id — the
+     * mosaic fallback. One query for the pivot rows, one for the items, then
+     * grouped in memory: no per-playlist query.
+     *
+     * @param  \Illuminate\Support\Collection<int, Collection>  $playlists
+     * @return array<int, array<int, string>>
+     */
+    private function mosaics(\Illuminate\Support\Collection $playlists): array
+    {
+        $ids = $playlists->pluck('id');
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $rows = \Illuminate\Support\Facades\DB::table('collection_media_item')
+            ->whereIn('collection_id', $ids)
+            ->orderBy('sort_order')
+            ->get(['collection_id', 'media_item_id']);
+
+        $itemIds = $rows->pluck('media_item_id')->unique();
+        $covers = MediaItem::whereIn('id', $itemIds)->get()
+            ->mapWithKeys(fn (MediaItem $i) => [$i->id => $i->coverUrl()]);
+
+        $out = [];
+        foreach ($rows as $row) {
+            $url = $covers[$row->media_item_id] ?? null;
+            if ($url === null) {
+                continue;
+            }
+            $out[$row->collection_id] ??= [];
+            if (count($out[$row->collection_id]) < 4) {
+                $out[$row->collection_id][] = $url;
+            }
+        }
+
+        return $out;
     }
 
     public function show(Collection $collection): View
@@ -52,6 +97,9 @@ class PlaylistController extends Controller
         return view('media.playlist', [
             'playlist' => $collection,
             'tracks' => $tracks,
+            // For the header cover's mosaic fallback when the playlist has no
+            // image of its own — the first few tracks' covers, in order.
+            'mosaic' => $tracks->map(fn (MediaItem $t) => $t->coverUrl())->filter()->take(4)->values(),
         ]);
     }
 
@@ -77,10 +125,24 @@ class PlaylistController extends Controller
     {
         $this->owned($collection);
 
-        $collection->update($request->validate([
-            'name' => ['required', 'string', 'max:120'],
-            'description' => ['nullable', 'string', 'max:1000'],
-        ]));
+        $data = $request->validate([
+            'name' => ['sometimes', 'required', 'string', 'max:120'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'cover' => ['sometimes', 'image', 'max:5120'], // 5 MB
+        ]);
+
+        // The cover is a file, not a fillable column — handle it separately and
+        // replace any previous one so old files don't linger.
+        if ($request->hasFile('cover')) {
+            $old = $collection->artwork_path;
+            $collection->artwork_path = $request->file('cover')->store('playlist-covers', 'public');
+            if ($old && $old !== $collection->artwork_path) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($old);
+            }
+        }
+
+        $collection->fill(array_intersect_key($data, array_flip(['name', 'description'])));
+        $collection->save();
 
         return back()->with('status', 'Playlist updated.');
     }
