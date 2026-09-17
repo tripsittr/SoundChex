@@ -162,6 +162,13 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/profiles/mine', [ProfileController::class, 'mine'])->name('api.profiles.mine');
         Route::post('/profiles/switch', [ProfileController::class, 'switch'])->name('api.profiles.switch');
 
+        // Admin surface for the app — gated to an administering profile by
+        // EnsureApiAdmin, not by anything the client sends.
+        Route::middleware(\App\Http\Middleware\EnsureApiAdmin::class)->prefix('admin')->group(function (): void {
+            Route::get('/stats', [\App\Http\Controllers\Api\AdminController::class, 'stats'])
+                ->name('api.admin.stats');
+        });
+
         // Playlists (Collections), account-scoped and gated per track.
         Route::get('/playlists', [PlaylistController::class, 'index'])->name('api.playlists');
         Route::post('/playlists', [PlaylistController::class, 'store'])->name('api.playlists.store');
