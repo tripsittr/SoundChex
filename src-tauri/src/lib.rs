@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 //! The SoundChex shell.
 //!
 //! Deliberately thin. The application is the Laravel server — this wraps it in

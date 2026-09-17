@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 namespace App\Policies;
 
 use Filament\Facades\Filament;

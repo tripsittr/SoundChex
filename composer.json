@@ -2,9 +2,9 @@
     "$schema": "https://getcomposer.org/schema.json",
     "name": "soundchex/soundchex",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
-    "keywords": ["laravel", "framework"],
-    "license": "MIT",
+    "description": "SoundChex — a self-hosted media server.",
+    "keywords": ["media-server", "self-hosted", "laravel"],
+    "license": "AGPL-3.0-or-later",
     "require": {
         "php": "^8.3",
         "bezhansalleh/filament-shield": "^4.2",
