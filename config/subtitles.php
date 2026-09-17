@@ -1,5 +1,8 @@
 <?php
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 /**
  * Caption and subtitle handling for films and episodes.
  *

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 import * as mirror from './mirror.js';
 import * as failover from './failover.js';
 import { preRender, serverReachable, takeOver } from './offline-shell.js';

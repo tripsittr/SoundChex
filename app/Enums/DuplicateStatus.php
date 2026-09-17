@@ -1,5 +1,8 @@
 <?php
 
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 namespace App\Enums;
 
 use Filament\Support\Contracts\HasColor;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 SoundChex
+
 /**
  * Bringing a page that is already open up to date.
  *
