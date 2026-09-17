@@ -267,6 +267,49 @@ class AlbumAndPlaylistTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_update_can_change_the_description_without_renaming(): void
+    {
+        $playlist = $this->playlist('Keep this name');
+
+        $this->patch(route('media.playlists.update', $playlist), [
+            'name' => 'Keep this name',
+            'description' => 'Late-night driving',
+        ])->assertRedirect();
+
+        $fresh = $playlist->fresh();
+        $this->assertSame('Keep this name', $fresh->name);
+        $this->assertSame('Late-night driving', $fresh->description);
+    }
+
+    public function test_update_stores_an_uploaded_cover(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('public');
+        $playlist = $this->playlist();
+
+        $this->patch(route('media.playlists.update', $playlist), [
+            'name' => $playlist->name,
+            'cover' => \Illuminate\Http\UploadedFile::fake()->image('cover.jpg', 500, 500),
+        ])->assertRedirect();
+
+        $path = $playlist->fresh()->artwork_path;
+        $this->assertNotNull($path);
+        \Illuminate\Support\Facades\Storage::disk('public')->assertExists($path);
+        $this->assertNotNull($playlist->fresh()->artworkUrl());
+    }
+
+    public function test_another_household_cannot_update_a_playlist(): void
+    {
+        $playlist = $this->playlist();
+
+        $stranger = User::factory()->create();
+        $this->actingAs($stranger);
+
+        $this->patch(route('media.playlists.update', $playlist), ['name' => 'Hijacked'])
+            ->assertNotFound();
+
+        $this->assertNotSame('Hijacked', $playlist->fresh()->name);
+    }
+
     /* --------------------------------------------------------- artist --- */
 
     public function test_the_artist_page_shows_albums_and_singles(): void
