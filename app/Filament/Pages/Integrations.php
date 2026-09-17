@@ -19,15 +19,14 @@ use UnitEnum;
  * spread across a settings page, an env file and a container that may or may
  * not be running — and nothing said which.
  *
- * **It configures the acquisition apps and only points at the rest.** Metadata
- * sources keep their own page under Settings, deliberately: they are read-only
- * API keys and enriching the catalogue *is* library administration, so a
- * profile trusted with the library can manage them. Radarr, Sonarr and Lidarr
- * are not that — they reach the network, spend disk and decide what arrives on
- * this machine, which is why this page sits behind the server-administration
- * gate. Merging the two would mean either locking metadata keys away from the
- * people who should have them, or opening acquisition to people who should
- * not. Listing both and linking out costs one click and keeps the line.
+ * **It configures both the acquisition apps and the metadata sources.** The
+ * separate "Metadata Sources" page was folded into this one — the keys are
+ * managed here now. Radarr, Sonarr and Lidarr reach the network, spend disk and
+ * decide what arrives on this machine; a metadata provider is a read-only API
+ * key that only enriches the catalogue. They are different kinds of thing, so
+ * the page keeps them in separate sections, but a single place to configure
+ * every external service someone would look for is worth more than the tidiness
+ * of splitting them by which admin gate each sits behind.
  *
  * **Not running is normal.** Most installs have no Docker, and this page says
  * so plainly rather than presenting an error, because there is nothing wrong.
@@ -313,12 +312,12 @@ class Integrations extends Page
     }
 
     /**
-     * The metadata providers.
+     * The metadata providers, configured here.
      *
-     * Listed here, configured on their own page. They belong to library
-     * administration — enriching the catalogue is what a library admin does —
-     * while this page is gated to server administration, so moving the form
-     * here would lock those keys away from the people who should have them.
+     * Folded in from the old standalone "Metadata Sources" page: enriching the
+     * catalogue is library administration, and these read-only API keys live
+     * alongside the acquisition apps now so there is one place for every
+     * external service.
      *
      * @return array<int, array<string, mixed>>
      */
