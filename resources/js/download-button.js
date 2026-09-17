@@ -801,35 +801,6 @@ export function setupDownloadButton() {
 }
 
 /**
- * Points a media element at a stored copy when one exists.
- *
- * The same player either way — an offline film shouldn't need a separate mode.
- * Returns a cleanup function that revokes the blob URL, which must be called:
- * a live URL pins the whole file in memory.
- */
-export async function useLocalSource(element, id) {
-    if (!element || !id || !window.indexedDB) return () => {};
-
-    const url = await localUrl(id);
-
-    if (!url) return () => {};
-
-    const wasPlaying = !element.paused;
-    const position = element.currentTime;
-
-    element.src = url;
-
-    // Restoring position matters here: switching source resets it, and this
-    // may run after playback has already started from the network.
-    element.addEventListener('loadedmetadata', () => {
-        if (position > 0) element.currentTime = position;
-        if (wasPlaying) element.play().catch(() => {});
-    }, { once: true });
-
-    return () => URL.revokeObjectURL(url);
-}
-
-/**
  * Downloads a whole album in one action.
  *
  * An album is a dozen taps otherwise. Tracks are fetched one at a time rather
