@@ -100,8 +100,13 @@
             </div>
         </div>
 
+        {{-- Filter to just the tracks that are downloaded (S-116). --}}
+        <div class="mt-8 flex justify-end">
+            @include('media.partials.downloaded-toggle')
+        </div>
+
         {{-- Track listing. --}}
-        <ol class="mt-10 divide-y divide-base-700/60">
+        <ol class="mt-2 divide-y divide-base-700/60">
             @php $disc = null; @endphp
 
             @foreach ($tracks as $index => $track)

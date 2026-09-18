@@ -110,8 +110,17 @@
             </div>
         @endif
 
+        {{-- One Downloaded filter for every track row on the page — Singles and
+             Appears-on both (S-116). The script filters all
+             `li[data-long-press-menu]` rows, so a single control covers both. --}}
+        @if ($singles->isNotEmpty() || $appearsOn->isNotEmpty())
+            <div class="mt-12 flex justify-end">
+                @include('media.partials.downloaded-toggle')
+            </div>
+        @endif
+
         @if ($singles->isNotEmpty())
-            <h2 class="mb-2 mt-12 text-lg font-semibold text-ink-100">Singles</h2>
+            <h2 class="mb-2 mt-6 text-lg font-semibold text-ink-100">Singles</h2>
 
             {{-- This list's queue, once; each row points into it by index. --}}
             <ol class="divide-y divide-base-700/60" data-play-queue="{{ $queue->toJson() }}">
