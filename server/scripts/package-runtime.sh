@@ -93,8 +93,20 @@ fi
 # --- archive --------------------------------------------------------------
 echo "==> archiving"
 ARCHIVE="${NAME}.tar.gz"; [ "$OS" = "windows" ] && ARCHIVE="${NAME}.zip"
-( cd "$OUT_DIR" && \
-  if [ "$OS" = "windows" ]; then zip -qr "$ARCHIVE" "$NAME"; else tar -czf "$ARCHIVE" "$NAME"; fi )
+(
+  cd "$OUT_DIR"
+  if [ "$OS" = "windows" ]; then
+    # Git-bash on the Windows runner has no `zip` CLI; prefer it if present,
+    # else fall back to PowerShell's Compress-Archive (always available).
+    if command -v zip >/dev/null 2>&1; then
+      zip -qr "$ARCHIVE" "$NAME"
+    else
+      powershell -NoProfile -Command "Compress-Archive -Path '${NAME}' -DestinationPath '${ARCHIVE}' -Force"
+    fi
+  else
+    tar -czf "$ARCHIVE" "$NAME"
+  fi
+)
 # Checksum the archive only (never the .sha256 itself).
 ( cd "$OUT_DIR" && { shasum -a 256 "$ARCHIVE" 2>/dev/null || sha256sum "$ARCHIVE"; } > "${NAME}.sha256" )
 echo "==> done: ${OUT_DIR}/${ARCHIVE}"
