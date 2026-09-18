@@ -21,6 +21,7 @@ env:
   EXTENSIONS: 'bcmath,ctype,curl,dom,exif,fileinfo,filter,gd,gmp,iconv,intl,mbstring,opcache,openssl,pcntl,pdo,pdo_sqlite,phar,session,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib'
 
 jobs:
+  # POSIX targets: php-fpm behind Caddy, the proven flow.
   build:
     strategy:
       fail-fast: false
@@ -30,7 +31,6 @@ jobs:
           - { os: ubuntu-24.04-arm, spc_os: linux,   arch: aarch64, spc_bin: spc-linux-aarch64 }
           - { os: macos-latest,     spc_os: macos,   arch: aarch64, spc_bin: spc-macos-aarch64 }
           - { os: macos-13,         spc_os: macos,   arch: x86_64,  spc_bin: spc-macos-x86_64 }
-          - { os: windows-latest,   spc_os: windows, arch: x86_64,  spc_bin: spc-windows-x64.exe }
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.spc_os }}-${{ matrix.arch }}
     defaults:
@@ -79,44 +79,69 @@ jobs:
           rm -rf source/sqlite
           ./spc extract sqlite
 
-      - name: Build PHP (cli + fpm on POSIX; cli only on Windows)
-        run: |
-          if [ "${{ matrix.spc_os }}" = "windows" ]; then
-            ./spc build "$EXTENSIONS" --build-cli
-          else
-            ./spc build "$EXTENSIONS" --build-cli --build-fpm
-          fi
+      - name: Build PHP (cli + fpm)
+        run: ./spc build "$EXTENSIONS" --build-cli --build-fpm
 
-      - name: Package runtime (POSIX)
-        if: matrix.spc_os != 'windows'
+      - name: Package runtime
         run: |
           mkdir -p dist
           server/scripts/package-runtime.sh \
             "${{ matrix.spc_os }}" "${{ matrix.arch }}" \
             buildroot/bin/php buildroot/bin/php-fpm dist
 
-      # Windows: no php-fpm SAPI. Ship php.exe + caddy; php-cgi packaging + the
-      # Caddy php_fastcgi-to-php-cgi story is a Step-4 follow-up.
-      - name: Package runtime (Windows)
-        if: matrix.spc_os == 'windows'
-        run: |
-          mkdir -p dist
-          server/scripts/package-runtime.sh \
-            windows "${{ matrix.arch }}" \
-            buildroot/bin/php.exe buildroot/bin/php.exe dist || true
-
       - uses: actions/upload-artifact@v4
         with:
           name: soundchex-server-${{ matrix.spc_os }}-${{ matrix.arch }}
           path: |
             dist/soundchex-server-*.tar.gz
+            dist/soundchex-server-*.sha256
+          if-no-files-found: warn
+
+  # Windows: PHP ships no php-fpm SAPI, and static-php-cli documents only cli +
+  # micro for Windows (no fpm, no cgi). So the POSIX "Caddy -> php-fpm" shape
+  # doesn't port. We build the Windows php.exe CLI (achievable + useful: the
+  # queue worker, scheduler and artisan all run on it) and package it with Caddy;
+  # the HTTP-serving front (FrankenPHP embed, or a FastCGI shim) is resolved in
+  # Step 4's Windows service work. Runs in pwsh for correct Windows path handling.
+  build-windows:
+    runs-on: windows-latest
+    name: windows-x86_64
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch spc
+        run: curl -fsSL -o spc.exe "https://dl.static-php.dev/static-php-cli/spc-bin/nightly/spc-windows-x64.exe"
+
+      - name: Doctor (installs php-sdk-binary-tools, strawberry-perl, nasm)
+        run: .\spc.exe doctor --auto-fix --no-interaction
+
+      - name: Download sources
+        run: .\spc.exe download --for-extensions="$env:EXTENSIONS" --with-php="$env:PHP_VERSION" --prefer-pre-built
+
+      - name: Build PHP CLI
+        run: .\spc.exe build "$env:EXTENSIONS" --build-cli
+
+      - name: Package (php.exe + caddy, no fpm)
+        shell: bash
+        run: |
+          mkdir -p dist
+          server/scripts/package-runtime.sh windows x86_64 \
+            buildroot/bin/php.exe buildroot/bin/php.exe dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soundchex-server-windows-x86_64
+          path: |
             dist/soundchex-server-*.zip
             dist/soundchex-server-*.sha256
           if-no-files-found: warn
 
   release:
     if: startsWith(github.ref, 'refs/tags/server-v')
-    needs: build
+    needs: [build, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
