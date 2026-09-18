@@ -70,6 +70,81 @@ fn start_service(key: String, repo: String) -> Result<String, String> {
     }
 }
 
+/// The bundled-server supervisor (S-151 Step 5). The Server app carries the
+/// runtime as resources and spawns it directly, rather than loading host plists.
+#[cfg(desktop)]
+mod supervisor;
+
+/// Resolve the bundled runtime layout from the app's resource dir.
+///
+/// Tauri unpacks `bundle.resources` under the resource directory, so the runtime
+/// bin/ and the app's `server/templates` are both found relative to it. `app_dir`
+/// is where `artisan` lives; in a packaged app that is the resource dir, and in
+/// `tauri dev` it is the repo root two levels up from `src-tauri`.
+#[cfg(desktop)]
+fn resolve_layout(app: &tauri::AppHandle, listen: String) -> Result<supervisor::Layout, String> {
+    use tauri::Manager;
+
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("no resource dir: {e}"))?;
+
+    // The bundled runtime lives under resources/runtime/bin; in dev, fall back to
+    // a RUNTIME_DIR env pointing at a locally-built bundle.
+    let bin_dir = std::env::var("SOUNDCHEX_RUNTIME_BIN")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| resource_dir.join("runtime").join("bin"));
+
+    // The app root: packaged, the resource dir holds artisan; in dev, the repo.
+    let app_dir = if resource_dir.join("artisan").exists() {
+        resource_dir.clone()
+    } else {
+        std::env::var("SOUNDCHEX_APP_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| resource_dir.clone())
+    };
+
+    let run_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("no app data dir: {e}"))?
+        .join("server");
+
+    Ok(supervisor::Layout {
+        bin_dir,
+        app_dir,
+        run_dir,
+        listen,
+    })
+}
+
+/// Start the bundled server stack (Server app).
+#[cfg(desktop)]
+#[tauri::command]
+fn server_start(
+    app: tauri::AppHandle,
+    sup: tauri::State<'_, supervisor::Supervisor>,
+    listen: Option<String>,
+) -> Result<(), String> {
+    let layout = resolve_layout(&app, listen.unwrap_or_else(|| ":8000".into()))?;
+    sup.start(layout)
+}
+
+/// Stop the bundled server stack.
+#[cfg(desktop)]
+#[tauri::command]
+fn server_stop(sup: tauri::State<'_, supervisor::Supervisor>) -> Result<(), String> {
+    sup.stop()
+}
+
+/// What the supervised stack is doing.
+#[cfg(desktop)]
+#[tauri::command]
+fn server_status(sup: tauri::State<'_, supervisor::Supervisor>) -> supervisor::Status {
+    sup.status()
+}
+
 /// Whether an agent is currently loaded.
 #[cfg(desktop)]
 #[tauri::command]
@@ -546,12 +621,19 @@ pub fn run() {
         // iOS and Android install through their own mechanisms, and the updater
         // plugin has no implementation there.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // The bundled-server supervisor (Server app). Shared state so start/stop/
+        // status all address the one running stack.
+        .manage(supervisor::Supervisor::default())
         // `start_service`/`service_running` let the host start a stopped server
         // when the admin panel that manages them is itself unreachable.
+        // `server_*` drive the bundled runtime the Server app ships (S-151 Step 5).
         .invoke_handler(tauri::generate_handler![
             free_space,
             start_service,
-            service_running
+            service_running,
+            server_start,
+            server_stop,
+            server_status
         ]);
 
     // Mobile: free_space plus the native media store (Step 2 of the offline

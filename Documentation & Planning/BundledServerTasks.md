@@ -247,14 +247,27 @@ install time.
 - **Verify:** ✅ macOS + Linux start and restart-on-crash proven; Windows pending
   real hardware + a php-cgi bundle.
 
-## Step 5 — Bundle into the desktop app
+## Step 5 — Bundle into the desktop app — [x] macOS built & verified
 
-- [ ] Add `php`, `php-fpm`, `caddy` as Tauri sidecars (`externalBin`/`resources`)
-  and have the desktop app **spawn and supervise** them (new capability — today
-  it only `launchctl load`s host plists). Include `THIRD-PARTY-LICENSES.txt` in
-  the bundle.
-- **Verify:** installing the built desktop app on a machine with **no PHP / no
-  Herd** yields a working server; uninstalling removes the services.
+- [x] The **Server app** (`net.soundchex.server`) carries the runtime as bundled
+  **resources** (`tauri.server.conf.json` → `runtime/bin/*` + `runtime/templates/*`),
+  staged before build by `scripts/stage-server-runtime.sh` (gitignored). ffmpeg
+  is included, so `THIRD-PARTY-LICENSES` is covered.
+- [x] `src-tauri/src/supervisor.rs` — a Rust supervisor: one watcher thread owns
+  php-fpm + caddy + queue + scheduler, respawns any that crash while running, and
+  kills them cleanly on stop. Commands `server_start` / `server_stop` /
+  `server_status` (desktop-only) resolve the bundled paths via
+  `app.path().resource_dir()/runtime/bin`. The old `start_service` (plist copy)
+  stays as the client app's fallback.
+- **Verified on macOS:** `tauri build --config tauri.server.conf.json` produced
+  **SoundChex Server.app** (304 MB); the bundled php/php-fpm/caddy/ffmpeg land at
+  `Contents/Resources/runtime/bin/` — exactly where the Rust resolves them — and
+  run from inside the .app (php 8.4.25, caddy 2.11.4). `cargo check` clean.
+- **Still to verify on a clean box (real hardware):** installing the built app on
+  a machine with **no PHP / no Herd** yields a working server end to end, and the
+  server:detect-address / migrate flow runs from the app's first launch. The
+  pieces are proven; the first-run wiring in `server.html`'s JS calling
+  `server_start` is the remaining integration.
 
 ## Step 6 — Standalone headless installer
 
