@@ -40,6 +40,9 @@ Thumbs.db
 !CLA.md
 !COMMERCIAL-LICENSE.md
 !REPOS.md
+# Legal drafts (commercial licence agreement, etc.) belong in git.
+!legal/
+!legal/**/*.md
 !resources/markdown/
 !resources/markdown/**
 # Plans are the record of what was built and why. Versioning them is the
