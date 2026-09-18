@@ -56,22 +56,27 @@ jobs:
       - name: Download sources (prebuilt libs)
         run: ./spc download --for-extensions="$EXTENSIONS" --with-php="$PHP_VERSION" --prefer-pre-built
 
+      # Fetch the sqlite SOURCE tarball (plain download, no --prefer-pre-built),
+      # then drop the prebuilt sqlite lock entry + archive so the build uses the
+      # source (which sets SQLITE_ENABLE_COLUMN_METADATA), and extract it.
       - name: Force sqlite from source (column metadata)
         run: |
+          ./spc download sqlite --ignore-cache-sources=sqlite
           python3 - <<'PY'
           import json, os, glob
           lock = 'downloads/.lock.json'
           d = json.load(open(lock))
-          # Drop any prebuilt sqlite entry (keys like sqlite-<os>-<arch>--default),
-          # keep the plain "sqlite" source entry.
-          for k in [k for k in d if k.startswith('sqlite-') and k != 'sqlite']:
+          # Drop the prebuilt sqlite entry (sqlite-<os>-<arch>--default); keep the
+          # plain "sqlite" source entry that the download above just added.
+          for k in [k for k in list(d) if k.startswith('sqlite-') and k != 'sqlite']:
               d.pop(k, None)
           json.dump(d, open(lock, 'w'), indent=2)
-          # Remove any prebuilt sqlite archive so extract uses the source tarball.
           for f in glob.glob('downloads/sqlite-*-*.txz'):
               os.remove(f)
+          assert 'sqlite' in d, 'sqlite source entry missing after download'
           print('sqlite pinned to source')
           PY
+          rm -rf source/sqlite
           ./spc extract sqlite
 
       - name: Build PHP (cli + fpm on POSIX; cli only on Windows)
