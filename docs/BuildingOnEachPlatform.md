@@ -10,6 +10,12 @@ and the handful of places the server asks the operating system a question.
 
 ## What has actually been built
 
+Two different things build per platform: the **client/desktop app** (the Tauri
+window) and the **bundled server runtime** (php-fpm + Caddy + ffmpeg, S-151).
+They are tracked separately below because they are at different stages.
+
+**Client / desktop app** (the Tauri app):
+
 | Target | Built | Notes |
 | --- | --- | --- |
 | **macOS** | yes, repeatedly | `.dmg` and `.app`, both the client and the server app |
@@ -18,9 +24,19 @@ and the handful of places the server asks the operating system a question.
 | **Linux** | **no** | Same |
 | **Android** | **no** | No Tauri project generated yet |
 
-Anything marked "no" is a set of instructions, not a promise. They are written
-from Tauri's requirements rather than from a build anyone has watched succeed
-here.
+**Bundled server runtime** (S-151 — `.github/workflows/build-server.yml`):
+
+| Target | Built in CI | Notes |
+| --- | --- | --- |
+| **macOS** (arm64, x86_64) | yes | Full runtime + php-fpm + Caddy + GPL ffmpeg; verified locally |
+| **Linux** (x86_64, aarch64) | yes | Static musl build, runs on Debian/Ubuntu/Alpine/Fedora |
+| **Windows** (x86_64) | yes (CLI) | `php.exe` builds; no php-fpm SAPI on Windows, so the HTTP front needs php-cgi (a follow-up) |
+| **Android** | n/a | The server does not run on Android |
+
+So the *server runtime* now builds for every desktop OS in CI. The
+client/desktop *app* below is still only built on macOS and iOS. Anything marked
+"no" there is a set of instructions, not a promise — written from Tauri's
+requirements rather than from a build anyone has watched succeed here.
 
 ---
 
@@ -241,8 +257,10 @@ A Windows binary needs the MSVC linker and the Windows SDK, and the `.msi`
 bundler is WiX, which expects Windows. `cargo-xwin` covers the Rust half and
 not the bundling.
 
-So: build on the platform, or use a CI runner per platform. There is no CI
-configured yet.
+So: build on the platform, or use a CI runner per platform. There is now CI for
+the **bundled server runtime** — `.github/workflows/build-server.yml` builds it
+on a runner per OS (spc can't cross-compile). The **client/desktop app** does
+not have CI yet; it is still built by hand on macOS.
 
 ---
 
