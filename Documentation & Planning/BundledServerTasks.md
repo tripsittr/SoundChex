@@ -286,19 +286,25 @@ Three TLS modes, and the bundled `Caddyfile` supports all three:
 - **Verify:** ✅ forwarded-TLS path proven; `RemoteAccess.md` updated with the
   bundled-server note.
 
-## Step 8 — Bundle full ffmpeg (AGPLv3 makes this trivial)
+## Step 8 — Bundle full ffmpeg — [x] DONE
 
-Under AGPLv3, GPL ffmpeg is compatible, so **bundle the full build** — no
-LGPL/OpenH264/VP9 work, and `MediaTranscoder` keeps its current code path
-(`h264_videotoolbox` when present, `libx264` fallback, `libmp3lame`, native
-`aac`) unchanged.
-
-- [ ] Produce/obtain a **full static ffmpeg** (with `--enable-gpl`, libx264,
-  libmp3lame) per platform and bundle it alongside the runtime; point
-  `FFMPEG_PATH`/`FFPROBE_PATH` at the bundled binary by relative path.
-- **Verify:** a software H.264 transcode (no hardware encoder) produces a
-  browser-playable MP4 via `libx264`; music → mp3 works; `ffprobe` detection
-  works; `THIRD-PARTY-LICENSES.txt` lists ffmpeg + its GPL notice.
+- [x] The packaging script (`package-runtime.sh`) now fetches a **full static GPL
+  ffmpeg + ffprobe** per platform (`--enable-gpl`, libx264, libmp3lame) and drops
+  them in the bundle's `bin/`: macOS from ffmpeg.martin-riedl.de (native
+  per-arch), Linux/Windows from BtbN/FFmpeg-Builds. `SKIP_FFMPEG=1` opts out.
+  The script asserts the GPL/x264/mp3lame config on POSIX.
+- [x] `config/transcode.php` auto-detects a bundled ffmpeg **beside the PHP
+  binary** (the cacert convention: `dirname(PHP_BINARY)/ffmpeg`), so the bundled
+  runtime transcodes with zero config. An explicit `FFMPEG_PATH`/`FFPROBE_PATH`
+  still wins; else it falls back to PATH.
+- **Verify:** ✅ built a macOS bundle with ffmpeg (63 MB each binary); the bundled
+  ffmpeg does a real **libx264 H.264 encode** to a valid MP4 (ffprobe reads
+  `h264`) and an **mp3 encode** via libmp3lame; the app config resolves to the
+  bundled binary under the bundled php; env-override + PATH-fallback tested.
+  `THIRD-PARTY-LICENSES.txt` now carries the ffmpeg GPL notice (+ libx264 GPL,
+  libmp3lame LGPL, and the H.264-patent note).
+- **Note:** ffmpeg adds ~120 MB to a bundle. Acceptable for a media server;
+  `SKIP_FFMPEG=1` builds a lean runtime for hosts that already have ffmpeg.
 
 ## Step 9 — Migration + cutover + docs
 

@@ -39,8 +39,21 @@ CA certificate bundle (cacert.pem)
     Mozilla's CA certificate store, distributed under MPL 2.0.
 
 -------------------------------------------------------------------------------
-NOTE ON FFMPEG (added in Step 8, not yet in this bundle)
-    When the full GPL FFmpeg build is bundled (S-151 Step 8), it is licensed
-    GPL-3.0 (with --enable-gpl, libx264, libmp3lame). GPL is compatible with
-    AGPLv3. Its notice and the notices of libx264 (GPL) and libmp3lame (LGPL)
-    will be added here at that time.
+FFmpeg  (full GPL build — ffmpeg + ffprobe)
+    License: GPL (GNU General Public License), version 3.
+    https://www.ffmpeg.org/legal.html
+    This bundle ships a FULL FFmpeg build configured with --enable-gpl,
+    including libx264 and libmp3lame. GPL-3.0 is compatible with SoundChex's
+    AGPL-3.0-or-later license. Corresponding source for FFmpeg is available from
+    https://www.ffmpeg.org/download.html and its git repository.
+    Bundled codec/library components and their licenses:
+      - libx264           GPL-2.0-or-later (H.264 software encoder)
+      - libmp3lame (LAME) LGPL-2.1-or-later (MP3 encoder)
+      - FFmpeg's own code GPL-3.0 (with --enable-gpl)
+    macOS builds: ffmpeg.martin-riedl.de (static, per-arch).
+    Linux/Windows builds: github.com/BtbN/FFmpeg-Builds (static, GPL).
+
+    NOTE ON PATENTS: H.264 (AVC) is covered by patents separate from copyright.
+    SoundChex is free to end users and the encoding is performed by the user on
+    their own media (the VLC/Handbrake posture); see BundledServer.md for the
+    project's reasoning. This notice concerns copyright licenses only.
