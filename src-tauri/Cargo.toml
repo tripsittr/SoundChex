@@ -30,6 +30,9 @@ tauri-plugin-opener = "2"
 # generate_context! expands the updater's configuration into code that parses
 # JSON, so this is required even though nothing here uses it directly.
 serde_json = "1"
+# Serialize the bundled-server supervisor's Status back to the Server app's UI
+# (S-151 Step 5).
+serde = { version = "1", features = ["derive"] }
 
 # `statvfs` for the free_space command, on every Unix platform we target —
 # macOS, iOS, Linux, Android. One extern "C" call; no larger dependency (like

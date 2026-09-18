@@ -13,5 +13,11 @@
         "minHeight": 520
       }
     ]
+  },
+  "bundle": {
+    "resources": {
+      "runtime/bin/*": "runtime/bin/",
+      "runtime/templates/*": "runtime/templates/"
+    }
   }
 }
