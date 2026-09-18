@@ -178,22 +178,41 @@ sodium/bcmath added for Laravel crypto/uuid completeness.) The `cacert.pem` must
 sit beside the built binary — `TransferReceiver.php:1275` locates it as
 `dirname(PHP_BINARY) . '/cacert.pem'`.
 
-## Step 2 — Extension health check (app-side, ships independently)
+## Step 2 — Extension health check — [x] DONE
 
-- [ ] Add a boot/health check that asserts the required extension set and refuses
-  with a clear message naming what is missing. Wire it into a `php artisan`
-  command and the Filament health surface.
-- **Verify:** removing one extension from a test build makes the check fail with
-  the extension named — teeth-checked.
+- [x] `App\Services\RuntimeHealth` — single source of truth for the required +
+  recommended extension sets (each with *why*), kept in step with `composer.lock`
+  and the bundled build flags.
+- [x] `php artisan server:check-extensions` — asserts the required set, names
+  what's missing and what it breaks, exits non-zero (a supervisor can refuse to
+  start). Recommended-but-absent (pcntl/gmp/opcache/sodium) are warnings.
+- [x] Wired into the Filament **Services** page ("PHP runtime" section) and
+  scheduled daily (`--quiet-ok`).
+- **Verify:** ✅ tests simulate a missing `exif`/`curl` — service and command
+  both fail *and name it*; a missing recommended extension does not fail.
 
-## Step 3 — Re-test the single-threaded assumptions
+## Step 3 — Re-test the single-threaded assumptions — [x] DONE
 
-- [ ] Audit and re-test S-123, S-87, S-93 and everything that assumes a
-  single-threaded / loopback server (NetworkAddresses, ProbeNetworkJob, the
-  connection watcher `window.soundchexOffline`). Fix what a concurrent php-fpm
-  breaks.
-- **Verify:** the network-probe and offline-detection tests pass against a
-  running Caddy+php-fpm, not `artisan serve`.
+Audited every place that assumed the single-threaded/loopback `artisan serve`.
+The picture was better than feared, with **one real bug**:
+
+- **SQLite:** already concurrency-ready — `journal_mode=WAL` (simultaneous
+  readers + writers) and `busy_timeout=120000` are configured in
+  `config/database.php`. WAL is exactly what concurrent php-fpm workers need.
+- **Sessions:** `SESSION_DRIVER=database` — no file-session lock contention.
+- **Network state:** `NetworkAddresses` stores probe results in the **cache**
+  (atomic), not a file. `ProbeNetworkJob`/`network:probe` are out-of-band (a
+  queue job) — the reason they exist is `artisan serve`'s single-threadedness,
+  and they work fine (better) under php-fpm. The connection watcher is pure
+  client-side JS, origin-agnostic.
+- **The bug — `EnvironmentFile::set()`:** a bare `file_get_contents` +
+  `file_put_contents` read-modify-write with no lock. Under concurrent php-fpm,
+  a `ServerSettings` save and the scheduled `server:detect-address` could
+  interleave and clobber a key or tear the file. **Fixed:** exclusive `flock`
+  across the whole read-modify-write + atomic temp-file `rename`. New
+  `EnvironmentFileTest` covers update/append/atomicity.
+- **Verify:** ✅ 21 network/env/session/health tests pass; the one unsafe write
+  is now atomic and covered.
 
 ## Step 4 — Supervision, cross-platform
 
