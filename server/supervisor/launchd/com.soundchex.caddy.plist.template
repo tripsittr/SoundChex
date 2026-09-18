@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SoundChex bundled server — Caddy (launchd, macOS). S-151 Step 4.
+  Placeholders ({{...}}) are substituted at install time by the supervisor
+  installer so the bundle can live anywhere. Caddy owns the port and reverse-
+  proxies PHP to the bundled php-fpm; it replaces the old `artisan serve`.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.soundchex.caddy</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{RUNTIME_DIR}}/bin/caddy</string>
+		<string>run</string>
+		<string>--config</string>
+		<string>{{CONFIG_DIR}}/Caddyfile</string>
+		<string>--adapter</string>
+		<string>caddyfile</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>SOUNDCHEX_ROOT</key>
+		<string>{{APP_PUBLIC}}</string>
+		<key>SOUNDCHEX_FPM</key>
+		<string>127.0.0.1:9100</string>
+		<key>SOUNDCHEX_LISTEN</key>
+		<string>{{LISTEN}}</string>
+		<key>SOUNDCHEX_LOG</key>
+		<string>{{LOG_DIR}}/caddy-access.log</string>
+		<key>XDG_DATA_HOME</key>
+		<string>{{DATA_DIR}}</string>
+		<key>XDG_CONFIG_HOME</key>
+		<string>{{CONFIG_DIR}}</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>{{LOG_DIR}}/caddy.log</string>
+	<key>StandardOutPath</key>
+	<string>{{LOG_DIR}}/caddy.log</string>
+	<key>WorkingDirectory</key>
+	<string>{{APP_DIR}}</string>
+</dict>
+</plist>

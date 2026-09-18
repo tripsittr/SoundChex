@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SoundChex bundled server — queue worker (launchd, macOS). S-151 Step 4.
+  Runs artisan queue:work with the BUNDLED php, not Herd's. Placeholders
+  substituted at install time.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.soundchex.queue</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{RUNTIME_DIR}}/bin/php</string>
+		<string>{{APP_DIR}}/artisan</string>
+		<string>queue:work</string>
+		<string>--tries=1</string>
+		<string>--timeout=21900</string>
+	</array>
+	<key>KeepAlive</key>
+	<true/>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>{{LOG_DIR}}/queue.log</string>
+	<key>StandardOutPath</key>
+	<string>{{LOG_DIR}}/queue.log</string>
+	<key>WorkingDirectory</key>
+	<string>{{APP_DIR}}</string>
+</dict>
+</plist>

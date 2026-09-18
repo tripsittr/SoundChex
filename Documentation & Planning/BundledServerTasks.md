@@ -214,15 +214,38 @@ The picture was better than feared, with **one real bug**:
 - **Verify:** ✅ 21 network/env/session/health tests pass; the one unsafe write
   is now atomic and covered.
 
-## Step 4 — Supervision, cross-platform
+## Step 4 — Supervision, cross-platform — [~] macOS + Linux verified; Windows authored
 
-- [ ] Replace the three Herd-pathed plists with a supervisor that starts Caddy +
-  php-fpm + queue + scheduler from **bundled binaries by relative path**:
-  launchd (macOS), systemd units (Linux — currently unwritten), a real Windows
-  service (not NSSM-in-docs). Reconcile with `HostServices.php` and the Tauri
-  service-control UI.
-- **Verify:** on each OS the services start at boot, restart on crash, and stop
-  cleanly; the Services admin page reflects real state.
+New home: `server/supervisor/` (launchd / systemd / windows templates) +
+`server/scripts/install-services.sh` + `uninstall-services.sh`. The topology is
+now **four** supervised processes — Caddy, php-fpm, queue, scheduler — each run
+from **bundled binaries by relative path** (no Herd), placeholders filled at
+install time.
+
+- [x] **macOS (launchd) — verified natively on this machine.** Installed
+  test-labelled fpm+caddy services from a locally-built bundle; Caddy (:8400) →
+  php-fpm (9101) served **HTTP 200 `sapi=fpm-fcgi`**; killing php-fpm had launchd
+  **restart it** (new pid) with the stack still serving 200. Live services were
+  never touched; test services cleaned up.
+- [x] **Linux (systemd) — verified via Docker.** All four unit templates render
+  with bundled paths and no leftover placeholders; the fpm+caddy the units
+  describe boot and serve **HTTP 200 `sapi=fpm-fcgi` upload=25M** in a Debian
+  container (also runs on Ubuntu/Alpine/Fedora — the static musl build is
+  distro-portable).
+- [~] **Windows — authored, unverified from this Mac.** `install-services.ps1`
+  registers the queue + scheduler as real services (bundled `php.exe`, restart-
+  on-crash via `sc.exe failure`) and installs Caddy **if** a `php-cgi.exe` is
+  present. It is not yet: Windows has no php-fpm SAPI, so the HTTP front needs a
+  `php-cgi` build added to the Windows bundle (a Step-1/4 follow-up). The script
+  says so loudly. **To verify on the owner's Windows Server.**
+- **Gotcha fixed:** the runtime `php-fpm.conf` had no `user`/`group`, so php-fpm
+  refuses to start when a system service runs its master as root. Added
+  `user`/`group` (filled by the installer; ignored harmlessly when unprivileged).
+- **Still to do:** reconcile `HostServices.php` (it still copies the old
+  Herd-pathed plists from `Documentation & Planning/`) to these bundled
+  templates — deferred to **Step 5**, where the bundle's install path is concrete.
+- **Verify:** ✅ macOS + Linux start and restart-on-crash proven; Windows pending
+  real hardware + a php-cgi bundle.
 
 ## Step 5 — Bundle into the desktop app
 

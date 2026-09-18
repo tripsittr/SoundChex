@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SoundChex bundled server — scheduler (launchd, macOS). S-151 Step 4.
+  Runs artisan schedule:work with the BUNDLED php. Placeholders substituted at
+  install time.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.soundchex.scheduler</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{RUNTIME_DIR}}/bin/php</string>
+		<string>{{APP_DIR}}/artisan</string>
+		<string>schedule:work</string>
+	</array>
+	<key>KeepAlive</key>
+	<true/>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>{{LOG_DIR}}/scheduler.log</string>
+	<key>StandardOutPath</key>
+	<string>{{LOG_DIR}}/scheduler.log</string>
+	<key>WorkingDirectory</key>
+	<string>{{APP_DIR}}</string>
+</dict>
+</plist>
