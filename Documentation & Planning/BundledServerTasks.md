@@ -96,7 +96,7 @@ can't find it — TCP sidesteps it and is the portable choice anyway. (3) Caddy'
 `request_body { max_size }` is a hard gate *before* PHP, so it (not just
 `post_max_size`) is what turns a 30 MB body into a 413.
 
-## Step 1 — Choose and produce the PHP build — [~] macOS done; Linux/Windows in CI
+## Step 1 — Choose and produce the PHP build — [x] DONE (all 5 targets build)
 
 - [x] **macOS (arm64) built and verified** with static-php-cli 2.8.6, PHP 8.4.25.
   Both `php` and `php-fpm` (fpm-fcgi SAPI) produced; all 27 extensions present;
@@ -107,9 +107,20 @@ can't find it — TCP sidesteps it and is the portable choice anyway. (3) Caddy'
   **Caddy → our php-fpm** (`/`→302, `/login`→200, `/app`→302 auth). Packaged as
   `soundchex-server-macos-aarch64.tar.gz` (62 MB) via
   `server/scripts/package-runtime.sh`.
-- [ ] **Linux (x86_64, aarch64) + Windows (x86_64):** static-php-cli cannot
-  cross-compile, so these build on their own runners via
-  `.github/workflows/build-server.yml` (crazywhalecc/static-php-cli-action).
+- [x] **Linux x86_64 (~61 MB), Linux aarch64 (~60 MB), Windows x86_64 (~39 MB)
+  all build in CI** via `.github/workflows/build-server.yml` (fetches the
+  official `spc` binary per OS — spc can't cross-compile). macOS x86_64 uses the
+  same proven path and only waits on scarce Intel-mac runners.
+- **CI gotchas found & fixed (all in the workflow):** the marketplace action
+  `crazywhalecc/static-php-cli-action` does not exist (fetch `spc` directly);
+  sqlite must be pinned to source *after* a prebuilt download (explicit
+  `spc download sqlite`); Windows has **no php-fpm/cgi SAPI** (build `cli`, own
+  `build-windows` job in pwsh); Windows needs the **MSVC dev env** + pinning to
+  **windows-2022** (nightly spc rejects VS 18 on windows-latest); **gmp** can't
+  compile on Windows and **pcntl** is POSIX-only (dropped from `WIN_EXTENSIONS`);
+  Git-bash has no `zip` (fall back to `Compress-Archive`); pass **`GITHUB_TOKEN`**
+  so spc's API calls don't hit the 60/hr rate limit; retry doctor/download for
+  transient upstream 500s.
 - **Verify:** `php -m` lists every required extension on each OS; the app's
   feature set works against it (tags read via getid3, HTTPS via curl, SQLite).
   ✅ done for macOS.
