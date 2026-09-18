@@ -14,6 +14,19 @@
  * source file is the user's own copy.
  */
 
+/*
+ * Prefer a bundled binary sitting beside the PHP binary — the same convention
+ * TransferReceiver uses for cacert.pem. When SoundChex runs under its bundled
+ * server runtime, `dirname(PHP_BINARY)/ffmpeg` is the full GPL ffmpeg shipped in
+ * the bundle (S-151 Step 8), so transcoding works out of the box with no config.
+ * An explicit FFMPEG_PATH/FFPROBE_PATH still wins; otherwise fall back to PATH.
+ */
+$bundledBinary = static function (string $name): string {
+    $beside = dirname(PHP_BINARY).DIRECTORY_SEPARATOR.$name.(PHP_OS_FAMILY === 'Windows' ? '.exe' : '');
+
+    return is_file($beside) ? $beside : $name;
+};
+
 return [
     /*
     |--------------------------------------------------------------------------
@@ -21,8 +34,8 @@ return [
     |--------------------------------------------------------------------------
     */
 
-    'ffmpeg' => env('FFMPEG_PATH', 'ffmpeg'),
-    'ffprobe' => env('FFPROBE_PATH', 'ffprobe'),
+    'ffmpeg' => env('FFMPEG_PATH') ?: $bundledBinary('ffmpeg'),
+    'ffprobe' => env('FFPROBE_PATH') ?: $bundledBinary('ffprobe'),
 
     /*
     |--------------------------------------------------------------------------

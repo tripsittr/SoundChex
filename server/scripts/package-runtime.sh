@@ -72,6 +72,49 @@ cp "$CADDY_TMP/caddy${EXE}" "$STAGE/bin/caddy${EXE}"
 chmod +x "$STAGE/bin/caddy${EXE}" 2>/dev/null || true
 rm -rf "$CADDY_TMP"
 
+# --- Full GPL ffmpeg (S-151 Step 8) ---------------------------------------
+# Under AGPLv3, GPL ffmpeg is compatible, so we bundle a FULL static build with
+# libx264 (software H.264 fallback) and libmp3lame. MediaTranscoder then works
+# out of the box; FFMPEG_PATH/FFPROBE_PATH point here by relative path. Set
+# SKIP_FFMPEG=1 to build a smaller runtime without it.
+if [ "${SKIP_FFMPEG:-0}" != "1" ]; then
+  FF_TMP="$(mktemp -d)"
+  echo "    fetching full GPL ffmpeg + ffprobe"
+  case "${OS}_${ARCH}" in
+    macos_aarch64|macos_x86_64)
+      MR_ARCH="arm64"; [ "$ARCH" = "x86_64" ] && MR_ARCH="amd64"
+      curl -fsSL -o "$FF_TMP/ffmpeg.zip"  "https://ffmpeg.martin-riedl.de/redirect/latest/macos/${MR_ARCH}/release/ffmpeg.zip"
+      curl -fsSL -o "$FF_TMP/ffprobe.zip" "https://ffmpeg.martin-riedl.de/redirect/latest/macos/${MR_ARCH}/release/ffprobe.zip"
+      unzip -q -o "$FF_TMP/ffmpeg.zip"  -d "$FF_TMP"
+      unzip -q -o "$FF_TMP/ffprobe.zip" -d "$FF_TMP"
+      cp "$FF_TMP/ffmpeg" "$STAGE/bin/ffmpeg"; cp "$FF_TMP/ffprobe" "$STAGE/bin/ffprobe"
+      ;;
+    linux_x86_64|linux_aarch64)
+      BTBN="linux64"; [ "$ARCH" = "aarch64" ] && BTBN="linuxarm64"
+      curl -fsSL -o "$FF_TMP/ff.tar.xz" \
+        "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-${BTBN}-gpl.tar.xz"
+      tar -xJf "$FF_TMP/ff.tar.xz" -C "$FF_TMP"
+      FFDIR="$(find "$FF_TMP" -maxdepth 1 -type d -name 'ffmpeg-*' | head -1)"
+      cp "$FFDIR/bin/ffmpeg" "$STAGE/bin/ffmpeg"; cp "$FFDIR/bin/ffprobe" "$STAGE/bin/ffprobe"
+      ;;
+    windows_x86_64)
+      curl -fsSL -o "$FF_TMP/ff.zip" \
+        "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+      unzip -q -o "$FF_TMP/ff.zip" -d "$FF_TMP"
+      FFDIR="$(find "$FF_TMP" -maxdepth 1 -type d -name 'ffmpeg-*' | head -1)"
+      cp "$FFDIR/bin/ffmpeg.exe" "$STAGE/bin/ffmpeg.exe"; cp "$FFDIR/bin/ffprobe.exe" "$STAGE/bin/ffprobe.exe"
+      ;;
+  esac
+  chmod +x "$STAGE/bin/ffmpeg${EXE}" "$STAGE/bin/ffprobe${EXE}" 2>/dev/null || true
+  rm -rf "$FF_TMP"
+  # Assert it is a GPL build with the codecs the transcoder needs (POSIX only —
+  # can't run the target ffmpeg on a cross-OS packaging host).
+  if [ "$OS" != "windows" ] && [ -x "$STAGE/bin/ffmpeg" ]; then
+    FF_CFG="$("$STAGE/bin/ffmpeg" -version 2>/dev/null | tr ' ' '\n' | grep -E 'enable-(gpl|libx264|libmp3lame)' | sort -u | tr '\n' ' ')"
+    echo "    ffmpeg: ${FF_CFG:-(could not read config — cross-arch?)}"
+  fi
+fi
+
 # --- config templates + notices -------------------------------------------
 cp "$HERE/templates/Caddyfile" "$STAGE/Caddyfile"
 cp "$HERE/templates/php-fpm.conf" "$STAGE/php-fpm.conf"
