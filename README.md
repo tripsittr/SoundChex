@@ -186,8 +186,15 @@ run if its paths are not scratch paths.
 
 ## Licence
 
-**GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later).** The full
-text is in [LICENSE](LICENSE).
+SoundChex is **dual-licensed** — see [LICENSING.md](LICENSING.md):
+
+- **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)** — the
+  open-source licence, free of charge (full text in [LICENSE](LICENSE)); or
+- a **commercial licence** for those who cannot or do not wish to comply with the
+  AGPLv3 (e.g. embedding it in a closed-source product, or hosting a service
+  without publishing modifications). Contact **licensing@soundchex.app**.
+
+Most people use SoundChex under the AGPLv3 and owe nothing.
 
 SoundChex is free and open source. You may run, study, modify and share it. The
 AGPL adds one thing over the ordinary GPL: **if you run a modified version and
