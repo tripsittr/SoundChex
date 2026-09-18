@@ -103,8 +103,11 @@ jobs:
   # queue worker, scheduler and artisan all run on it) and package it with Caddy;
   # the HTTP-serving front (FrankenPHP embed, or a FastCGI shim) is resolved in
   # Step 4's Windows service work. Runs in pwsh for correct Windows path handling.
+  # Pinned to windows-2022 (VS 2022): the nightly spc's doctor recognizes only
+  # VS 2019/2022, and windows-latest has moved to VS 18 which it rejects with
+  # "Visual Studio not installed". Revisit when spc supports VS 18.
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     name: windows-x86_64
     defaults:
       run:
