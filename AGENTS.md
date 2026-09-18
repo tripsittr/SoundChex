@@ -107,23 +107,27 @@ choice looks strange, it usually prevented a specific bug; say which.
 
 ### 5. Everything gets an issue
 
-`Documentation & Planning/Issues.md` holds every piece of tracked work. An
-"issue" here is anything we decide to build or change — a feature, a fix, a
-bug, a piece of cleanup. A feature request gets an entry exactly as a defect
-does.
+Tracking now lives in the **admin panel on the landing site** (the
+`SoundChexWebsite` repo — Filament, `/admin` → **Tracker** / **Board**), backed
+by an `items` table, **not** in `Documentation & Planning/Issues.md` (which is
+now a pointer; the historical S-NN entries were imported into the tracker). An
+"issue" here is anything we decide to build or change — a feature, a fix, a bug,
+a piece of cleanup. A feature request is tracked exactly as a defect is.
 
-- **Write the entry before the work starts.** A sentence is enough.
-- **Move it before starting the next thing**, not at the end of a session.
-  Finishing something and moving on is how the file goes stale and stops being
-  worth reading.
-- **Sections run In progress → Open → Deferred → Done.** Done is last because
-  it is read least; Deferred sits above it because a decision *not* to do
-  something is live information, and is otherwise re-argued every few months.
-- **Ids are `S-nn` and never reused.** Entries move between sections; nothing
-  is deleted.
-- **A Done entry carries the commit and what verified it** — not "this
-  commit", which means nothing to anyone reading it later.
-- **Verify a status against the code before trusting it.** Two entries were
+- **Log the item before the work starts.** A sentence is enough. Add it in the
+  panel, or from the website repo with `php artisan track:issue` (interactive, or
+  with flags: `--platform --type --status --repo --ref --publish`).
+- **Set `platform` and `repo`** so it lands in the right place (this server/
+  desktop work is `platform=server-desktop`, `repo=SoundChex`).
+- **Advance the item's `status`** (Planned → In progress → Shipped/Done, or
+  Deferred) as the work moves — on the Board, drag the card between columns.
+  "Shipped" is user-facing complete (on the public roadmap); "Done" is an
+  internal closed ticket.
+- **Promote to the public roadmap** by flipping `published` on the item — the
+  same record appears on the site's `/roadmap`.
+- **Historical id references** (`S-nn`) are preserved as the item's `ref`; keep
+  citing them in commits/changelogs.
+- **Verify a status against the code before trusting it.** Two entries were once
   wrong within a day of being written: one said `/login` had no rate limiting
   when it has always had it, another said the update check was broken when the
   device reports showed it working. Both were written from memory rather than
