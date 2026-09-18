@@ -112,8 +112,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # spc's doctor detects Visual Studio via vswhere but needs the MSVC dev
+      # environment activated; without it, doctor reports "Visual Studio not
+      # installed" even though windows-latest ships VS 2022. This sets up the
+      # x64 developer environment (vcvars) for the whole job.
+      - name: Set up MSVC dev environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Fetch spc
-        run: curl -fsSL -o spc.exe "https://dl.static-php.dev/static-php-cli/spc-bin/nightly/spc-windows-x64.exe"
+        run: curl.exe -fsSL -o spc.exe "https://dl.static-php.dev/static-php-cli/spc-bin/nightly/spc-windows-x64.exe"
 
       - name: Doctor (installs php-sdk-binary-tools, strawberry-perl, nasm)
         run: .\spc.exe doctor --auto-fix --no-interaction
