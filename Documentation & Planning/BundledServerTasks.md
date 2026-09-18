@@ -263,12 +263,28 @@ install time.
 - **Verify:** a headless box (no desktop app) serves `/app` over HTTPS after the
   installer runs.
 
-## Step 7 — TLS reconciliation
+## Step 7 — TLS reconciliation — [x] DONE
 
-- [ ] Decide and implement Caddy's TLS story vs the Tailscale cert / a real
-  domain / Caddy's local CA. Update `RemoteAccess.md` and `DirectRemoteAccess.md`
-  (which currently assume `tailscale serve` → plaintext 8000).
-- **Verify:** remote access over HTTPS works through Caddy; the docs match.
+Three TLS modes, and the bundled `Caddyfile` supports all three:
+
+1. **Behind a TLS proxy (default).** `tailscale serve` / SCNet / a reverse proxy
+   terminates HTTPS and forwards to Caddy's plaintext listener — the *same* shape
+   as today, Caddy just replacing `artisan serve`. The catch: Caddy must **trust**
+   the proxy to honor its `X-Forwarded-Proto`, which Laravel's `trustProxies` (on,
+   `at: '*'`) reads to build `https://` URLs. Added
+   `trusted_proxies static private_ranges 100.64.0.0/10` (LAN + Tailscale CGNAT)
+   to the bundled Caddyfile.
+2. **Direct with a real domain.** Remove `auto_https off`, set the site label to
+   the domain — Caddy provisions Let's Encrypt automatically.
+3. **Direct on a LAN, no domain.** `tls internal` serves Caddy's local CA cert.
+
+- **Gotcha found & fixed:** without `trusted_proxies`, Caddy's `php_fastcgi`
+  passes its *own* (plaintext) scheme to PHP, so `X-Forwarded-Proto: https` from
+  the proxy was ignored and the app would generate `http://` URLs. With it,
+  verified in Docker: a request carrying `X-Forwarded-Proto: https` reaches PHP
+  as `https` (HTTP 200).
+- **Verify:** ✅ forwarded-TLS path proven; `RemoteAccess.md` updated with the
+  bundled-server note.
 
 ## Step 8 — Bundle full ffmpeg (AGPLv3 makes this trivial)
 

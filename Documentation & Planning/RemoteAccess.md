@@ -181,6 +181,20 @@ sudo tailscale serve --bg 8000
 the forwarded HTTPS scheme rather than generating `http://` URLs behind the
 proxy.
 
+> **Bundled server (S-151 Step 7).** With the bundled runtime, **Caddy** replaces
+> `artisan serve` — it owns the port and reverse-proxies to php-fpm. The remote
+> story is otherwise identical: Caddy serves plaintext on the local port and
+> `tailscale serve` (or SCNet / a reverse proxy) still terminates TLS in front.
+> The one thing to get right is that Caddy must *trust* that proxy so it forwards
+> the `X-Forwarded-Proto` Laravel reads. The bundled `Caddyfile` sets
+> `trusted_proxies static private_ranges 100.64.0.0/10` (LAN ranges +
+> Tailscale's CGNAT range) for exactly this. Verified: a request carrying
+> `X-Forwarded-Proto: https` through the bundled Caddy reaches PHP as `https`, so
+> `SetAppUrl` generates `https://` URLs. For a **direct domain** (no proxy),
+> remove `auto_https off`, set the site label to the domain, and Caddy
+> provisions Let's Encrypt itself; for a **LAN with no domain**, `tls internal`
+> serves Caddy's local CA cert.
+
 ### Keeping it running
 
 `php artisan serve` is single-threaded and dies with its terminal. Fine while

@@ -10,13 +10,26 @@
 #   {$SOUNDCHEX_LISTEN}  the bind address (e.g. :8000, or :443 with TLS in Step 7)
 #   {$SOUNDCHEX_LOG}     access-log file path
 #
-# TLS is deliberately OFF here — Step 7 reconciles Caddy's TLS story (its local
-# CA vs the Tailscale cert vs a real domain). For now the supervisor terminates
-# plaintext and something in front (tailscale serve / SCNet) handles TLS.
+# TLS (S-151 Step 7). Three modes, chosen by how you reach the server:
+#
+#  1. Behind a TLS proxy (DEFAULT here) — tailscale serve / SCNet / a reverse
+#     proxy terminates HTTPS and forwards to this plaintext listener. The
+#     trusted_proxies option below makes Caddy honor the proxy's
+#     X-Forwarded-Proto/Host, which Laravel's trustProxies reads to generate
+#     https:// URLs. private_ranges covers LAN reverse proxies; 100.64.0.0/10 is
+#     Tailscale's CGNAT range.
+#  2. Direct with a real domain — remove `auto_https off`, change the site label
+#     from {$SOUNDCHEX_LISTEN} to your domain (e.g. media.example.com), and Caddy
+#     provisions a Let's Encrypt cert automatically. Drop trusted_proxies then.
+#  3. Direct on a LAN with no domain — use `tls internal` on the site to serve
+#     Caddy's local CA cert (which each client must trust once).
 
 {
 	admin off
 	auto_https off
+	servers {
+		trusted_proxies static private_ranges 100.64.0.0/10
+	}
 }
 
 {$SOUNDCHEX_LISTEN} {
