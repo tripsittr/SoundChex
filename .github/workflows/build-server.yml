@@ -54,14 +54,14 @@ jobs:
       # introspection needs and spc's sanity check rejects. We drop the prebuilt
       # sqlite lock entry so spc uses the source tarball.
       - name: Download sources (prebuilt libs)
-        run: ./spc download --for-extensions="$EXTENSIONS" --with-php="$PHP_VERSION" --prefer-pre-built
+        run: ./spc download --for-extensions="$EXTENSIONS" --with-php="$PHP_VERSION" --prefer-pre-built --retry=3
 
       # Fetch the sqlite SOURCE tarball (plain download, no --prefer-pre-built),
       # then drop the prebuilt sqlite lock entry + archive so the build uses the
       # source (which sets SQLITE_ENABLE_COLUMN_METADATA), and extract it.
       - name: Force sqlite from source (column metadata)
         run: |
-          ./spc download sqlite --ignore-cache-sources=sqlite
+          ./spc download sqlite --ignore-cache-sources=sqlite --retry=3
           python3 - <<'PY'
           import json, os, glob
           lock = 'downloads/.lock.json'
@@ -132,14 +132,23 @@ jobs:
       - name: Fetch spc
         run: curl.exe -fsSL -o spc.exe "https://dl.static-php.dev/static-php-cli/spc-bin/nightly/spc-windows-x64.exe"
 
+      # doctor --auto-fix downloads php-sdk-binary-tools / nasm, which
+      # occasionally 500s from the upstream mirror. Retry a few times.
       - name: Doctor (installs php-sdk-binary-tools, strawberry-perl, nasm)
-        run: .\spc.exe doctor --auto-fix --no-interaction
+        run: |
+          for ($i=1; $i -le 4; $i++) {
+            .\spc.exe doctor --auto-fix --no-interaction
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "doctor attempt $i failed (exit $LASTEXITCODE); retrying in 15s..."
+            Start-Sleep -Seconds 15
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # gmp cannot be compiled on Windows by spc ("not supported to compile").
       # It is optional for us (ramsey/uuid only *suggests* it for perf), so the
       # Windows build drops it. Everything else in the set is Windows-buildable.
       - name: Download sources
-        run: .\spc.exe download --for-extensions="$env:WIN_EXTENSIONS" --with-php="$env:PHP_VERSION" --prefer-pre-built
+        run: .\spc.exe download --for-extensions="$env:WIN_EXTENSIONS" --with-php="$env:PHP_VERSION" --prefer-pre-built --retry=3
 
       - name: Build PHP CLI
         run: .\spc.exe build "$env:WIN_EXTENSIONS" --build-cli
