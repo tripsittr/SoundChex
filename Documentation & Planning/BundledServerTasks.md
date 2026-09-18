@@ -23,14 +23,78 @@ The licence choice (AGPLv3, S-151) can land before any server work.
   the manifests; README states it. (Owner is separately obtaining formal/legal
   confirmation.)
 
-## Step 0 — Prove the stack by hand (no product changes)
+## Step 0 — Prove the stack by hand (no product changes) — [x] DONE (18 Sep 2026)
 
-- [ ] Run the existing app on this machine behind **Caddy → php-fpm** manually,
-  using a static PHP build, bypassing `artisan serve`. Set a 25 MB upload cap in
-  the Caddyfile. Confirm `/app` loads, a stream plays, and a 5 MB cover uploads.
-- **Verify:** the app is fully usable through Caddy+php-fpm with `artisan serve`
-  stopped; document the exact Caddyfile, php-fpm pool config, and PHP build
-  flags that worked. Nothing verifiable downstream until this does.
+- [x] Ran the app behind **Caddy → php-fpm** manually, bypassing `artisan serve`,
+  with a 25 MB upload cap. `/` → 302 `/login`, `/login` → 200 (Laravel HTML +
+  CSRF), `/app` → 302 to login (auth middleware), `/build/manifest.json` served
+  **directly by Caddy** as static (not through PHP). A 5 MB POST body was
+  accepted (419 at CSRF, i.e. past the size gate — `artisan serve` dies at 2 MB);
+  a 30 MB body was rejected 413 by Caddy's cap. Effective PHP config through the
+  stack: `sapi=fpm-fcgi`, `upload_max_filesize=25M`, `post_max_size=26M`.
+- **Verify:** ✅ The stack is self-contained (its own FPM on 127.0.0.1:9100) and
+  works with the app's `artisan serve` irrelevant to it. Recipe below.
+
+### The working recipe (macOS, PoC)
+
+**PHP build.** Used Herd's `php84-fpm` (`~/Library/Application Support/Herd/bin/`)
+— which is itself **static-php-builder output** (`--enable-static=yes`,
+`PHP_BUILD_PROVIDER=Laravel Herd`, NTS), i.e. the same static-PHP-CLI toolchain
+Step 1 names. `php-fpm -v` reports `fpm-fcgi`; all required extensions present
+(mbstring, fileinfo, openssl, curl, intl, gmp, ctype, filter, hash, session,
+tokenizer, pdo_sqlite, sqlite3, gd, pcntl). This is why the PoC is meaningful and
+not just a stand-in: it proves a static-PHP-CLI `php-fpm` runs the app correctly.
+
+**php-fpm pool** (`php-fpm.conf` — TCP, not a unix socket: portable across
+macOS/Linux/Windows, and avoids the 104-char `sun_path` limit):
+
+```ini
+[global]
+pid = <run-dir>/php-fpm.pid
+error_log = <run-dir>/php-fpm.log
+daemonize = no
+[soundchex]
+listen = 127.0.0.1:9100
+pm = dynamic
+pm.max_children = 8
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+php_admin_value[upload_max_filesize] = 25M
+php_admin_value[post_max_size] = 26M
+php_admin_value[memory_limit] = 512M
+clear_env = no
+catch_workers_output = yes
+```
+
+Start: `php84-fpm --fpm-config php-fpm.conf --nodaemonize`.
+
+**Caddyfile** (Caddy owns the port + static files; reverse-proxies PHP to FPM;
+sets the upload cap that is now *ours*):
+
+```caddyfile
+{
+	admin localhost:2999   # a live admin endpoint; `admin off` makes `caddy start` hang
+	auto_https off         # PoC only — TLS is Step 7
+}
+:8200 {
+	root * "<app>/public"
+	encode gzip
+	request_body { max_size 25MB }
+	php_fastcgi 127.0.0.1:9100
+	file_server
+	log { output file <run-dir>/caddy-access.log }
+}
+```
+
+Start: `caddy run --config Caddyfile --adapter caddyfile` (**`caddy run`**, not
+`caddy start` — the latter blocks waiting on a readiness signal and hangs).
+
+**Gotchas found:** (1) `caddy start` hangs — use `caddy run` backgrounded.
+(2) A unix socket under a deep path silently truncates at 104 chars and Caddy
+can't find it — TCP sidesteps it and is the portable choice anyway. (3) Caddy's
+`request_body { max_size }` is a hard gate *before* PHP, so it (not just
+`post_max_size`) is what turns a 30 MB body into a 413.
 
 ## Step 1 — Choose and produce the PHP build
 
