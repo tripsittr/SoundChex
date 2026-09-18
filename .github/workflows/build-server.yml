@@ -1,0 +1,97 @@
+# SoundChex bundled server runtime — per-OS static PHP + php-fpm + Caddy (S-151).
+#
+# static-php-cli cannot cross-compile, so each OS builds on its own runner. The
+# macOS runtime is normally built locally (see server/scripts), but this builds
+# all three for release so the landing site has downloads for every platform.
+#
+# Artifacts: soundchex-server-<os>-<arch>.(tar.gz|zip) + .sha256, uploaded as
+# workflow artifacts (and attached to a release when tagged).
+
+name: Build bundled server runtime
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'server-v*'
+
+env:
+  PHP_VERSION: '8.4'
+  EXTENSIONS: 'bcmath,ctype,curl,dom,exif,fileinfo,filter,gd,gmp,iconv,intl,mbstring,opcache,openssl,pcntl,pdo,pdo_sqlite,phar,session,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  spc_os: linux,   arch: x86_64,  runner_arch: x86_64 }
+          - { os: ubuntu-24.04-arm, spc_os: linux, arch: aarch64, runner_arch: aarch64 }
+          - { os: macos-latest,   spc_os: macos,   arch: aarch64, runner_arch: aarch64 }
+          - { os: macos-13,       spc_os: macos,   arch: x86_64,  runner_arch: x86_64 }
+          - { os: windows-latest, spc_os: windows, arch: x86_64,  runner_arch: x86_64 }
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.spc_os }}-${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build static PHP + php-fpm (crazywhalecc/static-php-cli-action)
+        uses: crazywhalecc/static-php-cli-action@v0
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.EXTENSIONS }}
+          # CLI + FPM on POSIX; Windows has no php-fpm SAPI (see note below).
+          sapi: ${{ matrix.spc_os == 'windows' && 'cli' || 'cli,fpm' }}
+          debug: true
+
+      # The action outputs built binaries under buildroot/bin. Assemble the
+      # relocatable bundle (adds Caddy + cacert.pem + templates + notices).
+      - name: Package runtime (POSIX)
+        if: matrix.spc_os != 'windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          server/scripts/package-runtime.sh \
+            "${{ matrix.spc_os }}" "${{ matrix.arch }}" \
+            "$RUNNER_BIN/php" "$RUNNER_BIN/php-fpm" dist
+        env:
+          RUNNER_BIN: ${{ github.workspace }}/buildroot/bin
+
+      # Windows: no php-fpm SAPI in PHP for Windows. The Windows server story
+      # uses php-cgi behind Caddy instead (Caddy's php_fastcgi works with a
+      # spawned php-cgi pool). Tracked as a Step-4/Windows follow-up; here we
+      # still ship php + caddy so the runtime is present.
+      - name: Package runtime (Windows)
+        if: matrix.spc_os == 'windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          # reuse php as the fpm slot placeholder until php-cgi packaging lands
+          server/scripts/package-runtime.sh \
+            windows "${{ matrix.arch }}" \
+            "$RUNNER_BIN/php.exe" "$RUNNER_BIN/php.exe" dist || true
+        env:
+          RUNNER_BIN: ${{ github.workspace }}/buildroot/bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soundchex-server-${{ matrix.spc_os }}-${{ matrix.arch }}
+          path: |
+            dist/soundchex-server-*.tar.gz
+            dist/soundchex-server-*.zip
+            dist/soundchex-server-*.sha256
+          if-no-files-found: warn
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/server-v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/soundchex-server-*.tar.gz
+            dist/soundchex-server-*.zip
+            dist/soundchex-server-*.sha256

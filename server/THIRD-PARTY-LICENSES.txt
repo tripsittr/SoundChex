@@ -1,0 +1,46 @@
+SoundChex bundled server — third-party licenses
+===============================================
+
+SoundChex itself is licensed under the GNU Affero General Public License v3.0
+or later (see LICENSE). The bundled server runtime includes the following
+third-party components, each under its own license. AGPLv3 is compatible with
+all of them.
+
+-------------------------------------------------------------------------------
+PHP  (interpreter + php-fpm)
+    License: The PHP License, version 3.01
+    https://www.php.net/license/3_01.txt
+    Built statically via static-php-cli (github.com/crazywhalecc/static-php-cli).
+    Bundled static libraries linked into the PHP binaries and their licenses:
+      - OpenSSL            Apache License 2.0
+      - libcurl           curl license (MIT-like)
+      - ICU               Unicode License (ICU)
+      - SQLite            Public domain
+      - libzip            BSD-3-Clause
+      - libpng            PNG Reference Library License (libpng)
+      - libxml2           MIT
+      - GMP               LGPL-3.0-or-later / GPL-2.0-or-later (dual)
+      - libsodium         ISC
+      - zlib              zlib license
+      - libiconv          LGPL-2.1-or-later
+    Full library license texts ship under bin/ (spc license/ output) where
+    provided by the build.
+
+-------------------------------------------------------------------------------
+Caddy
+    License: Apache License 2.0
+    https://github.com/caddyserver/caddy/blob/master/LICENSE
+    Caddy bundles numerous Go modules, predominantly under MIT / BSD / Apache
+    2.0. The upstream release archive includes its own NOTICE; retain it.
+
+-------------------------------------------------------------------------------
+CA certificate bundle (cacert.pem)
+    Source: https://curl.se/docs/caextract.html
+    Mozilla's CA certificate store, distributed under MPL 2.0.
+
+-------------------------------------------------------------------------------
+NOTE ON FFMPEG (added in Step 8, not yet in this bundle)
+    When the full GPL FFmpeg build is bundled (S-151 Step 8), it is licensed
+    GPL-3.0 (with --enable-gpl, libx264, libmp3lame). GPL is compatible with
+    AGPLv3. Its notice and the notices of libx264 (GPL) and libmp3lame (LGPL)
+    will be added here at that time.
