@@ -1,0 +1,38 @@
+# SoundChex bundled server — Caddyfile (S-151).
+#
+# Caddy owns the port and serves public/ static files directly; everything else
+# is reverse-proxied to php-fpm. The upload cap is OURS here (25 MB), unlike the
+# 2 MB `artisan serve` default that broke playlist-cover uploads.
+#
+# Placeholders substituted by the supervisor / installer at launch:
+#   {$SOUNDCHEX_ROOT}    absolute path to the app's public/ directory
+#   {$SOUNDCHEX_FPM}     php-fpm address (default 127.0.0.1:9100)
+#   {$SOUNDCHEX_LISTEN}  the bind address (e.g. :8000, or :443 with TLS in Step 7)
+#   {$SOUNDCHEX_LOG}     access-log file path
+#
+# TLS is deliberately OFF here — Step 7 reconciles Caddy's TLS story (its local
+# CA vs the Tailscale cert vs a real domain). For now the supervisor terminates
+# plaintext and something in front (tailscale serve / SCNet) handles TLS.
+
+{
+	admin off
+	auto_https off
+}
+
+{$SOUNDCHEX_LISTEN} {
+	root * {$SOUNDCHEX_ROOT}
+	encode gzip
+
+	# The cap is ours now. Caddy rejects an over-cap body with 413 before PHP
+	# ever sees it (a hard gate — not just post_max_size).
+	request_body {
+		max_size 25MB
+	}
+
+	php_fastcgi {$SOUNDCHEX_FPM}
+	file_server
+
+	log {
+		output file {$SOUNDCHEX_LOG}
+	}
+}

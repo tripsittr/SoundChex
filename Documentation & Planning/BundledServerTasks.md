@@ -96,15 +96,77 @@ can't find it — TCP sidesteps it and is the portable choice anyway. (3) Caddy'
 `request_body { max_size }` is a hard gate *before* PHP, so it (not just
 `post_max_size`) is what turns a 30 MB body into a 413.
 
-## Step 1 — Choose and produce the PHP build
+## Step 1 — Choose and produce the PHP build — [~] macOS done; Linux/Windows in CI
 
-- [ ] Settle on a static-PHP source (e.g. static-php-cli) and produce a
-  relocatable PHP + php-fpm per platform with the required extension set
-  (mbstring, fileinfo, openssl, curl, intl, gmp, pcre, ctype, filter, hash,
-  session, tokenizer, pdo_sqlite, sqlite3, gd, pcntl) and `cacert.pem` beside
-  the binary.
+- [x] **macOS (arm64) built and verified** with static-php-cli 2.8.6, PHP 8.4.25.
+  Both `php` and `php-fpm` (fpm-fcgi SAPI) produced; all 27 extensions present;
+  opcache statically linked; `cacert.pem` placed beside the binary. Verified
+  against the real app: `artisan --version` boots Laravel 13.15.0,
+  `Schema::getColumnListing('users')` returns real columns (proves the sqlite
+  fix), HTTPS via curl returns 200, and the app runs end-to-end through
+  **Caddy → our php-fpm** (`/`→302, `/login`→200, `/app`→302 auth). Packaged as
+  `soundchex-server-macos-aarch64.tar.gz` (62 MB) via
+  `server/scripts/package-runtime.sh`.
+- [ ] **Linux (x86_64, aarch64) + Windows (x86_64):** static-php-cli cannot
+  cross-compile, so these build on their own runners via
+  `.github/workflows/build-server.yml` (crazywhalecc/static-php-cli-action).
 - **Verify:** `php -m` lists every required extension on each OS; the app's
   feature set works against it (tags read via getid3, HTTPS via curl, SQLite).
+  ✅ done for macOS.
+
+### Gotcha found: sqlite column metadata
+
+The default static-php-cli **prebuilt** sqlite library is compiled *without*
+`SQLITE_ENABLE_COLUMN_METADATA`, which spc's own sanity check rejects (and which
+Laravel schema introspection needs — `Schema::getColumnListing`,
+`sqlite3_column_table_name`). Fix: don't `download` sqlite with
+`--prefer-pre-built`; force it to build **from source**. Concretely, if the
+prebuilt lib was already fetched: delete `buildroot/lib/libsqlite3.*` +
+`buildroot/include/sqlite3*.h`, remove the `sqlite-<os>-<arch>--default`
+(prebuilt, `lock_as: 2`) entry from `downloads/.lock.json` leaving the `sqlite`
+(source, `lock_as: 1`) entry, `spc extract sqlite`, then `spc build … -r`. The
+CI action builds sqlite from source by default, so this only bites local builds
+that pass `--prefer-pre-built`.
+
+### The Windows php-fpm problem
+
+PHP ships **no php-fpm SAPI on Windows**. The Windows server story must use
+`php-cgi` behind Caddy's `php_fastcgi` (Caddy can spawn/manage a php-cgi pool)
+instead of php-fpm. Flagged in `build-server.yml`; the packaging + supervision
+for Windows (Step 4) has to account for this — it is not a drop-in of the POSIX
+layout.
+
+### The definitive extension set (audited 18 Sep 2026)
+
+The plan's original list was **incomplete** — audited against `composer.lock`
+(transitive `ext-*` requires), app code, and key package needs:
+
+- **`composer.lock` transitive requires:** ctype, dom, fileinfo, filter, hash,
+  iconv, intl, json, libxml, mbstring, openssl, pcre, phar, session, tokenizer,
+  xml, xmlreader, xmlwriter, zip. *(dom, iconv, json, libxml, phar, xml,
+  xmlreader, xmlwriter, zip were missing from the plan's list.)*
+- **App-required beyond that:** pdo_sqlite + sqlite3 (the DB), curl (HTTP client
+  / `NetworkAddresses` / `ArtistProfiles`), pcntl (Laravel's queue Worker calls
+  `pcntl_signal`/`pcntl_alarm` — required for a real queue worker), opcache
+  (perf), zlib (getid3, zip).
+- **getid3 (music tag reading) benefits from:** exif (embedded artwork), iconv,
+  mbstring, xml, zlib — so **add exif**.
+- **Keep from the plan, low-cost:** gd (getid3 image paths; no PHP image lib in
+  the lockfile, so not strictly required, but cheap and expected), gmp
+  (ramsey/uuid *suggests* it for perf — not required; include if free).
+
+**Final `--with-extensions` for static-php-cli (macOS/Linux/Windows):**
+
+```
+bcmath,ctype,curl,dom,exif,fileinfo,filter,gd,gmp,iconv,intl,mbstring,
+opcache,openssl,pcntl,pdo,pdo_sqlite,phar,session,sodium,sqlite3,tokenizer,
+xml,xmlreader,xmlwriter,zip,zlib
+```
+
+(pcre, hash, json, libxml, spl, standard are always-on core in static-php-cli;
+sodium/bcmath added for Laravel crypto/uuid completeness.) The `cacert.pem` must
+sit beside the built binary — `TransferReceiver.php:1275` locates it as
+`dirname(PHP_BINARY) . '/cacert.pem'`.
 
 ## Step 2 — Extension health check (app-side, ships independently)
 
