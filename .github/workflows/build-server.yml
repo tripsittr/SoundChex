@@ -109,6 +109,11 @@ jobs:
   build-windows:
     runs-on: windows-2022
     name: windows-x86_64
+    env:
+      # EXTENSIONS minus gmp (spc can't compile it on Windows yet) and pcntl
+      # (POSIX-only — process signals don't exist on Windows; the queue worker
+      # falls back accordingly).
+      WIN_EXTENSIONS: 'bcmath,ctype,curl,dom,exif,fileinfo,filter,gd,iconv,intl,mbstring,opcache,openssl,pdo,pdo_sqlite,phar,session,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib'
     defaults:
       run:
         shell: pwsh
@@ -130,11 +135,14 @@ jobs:
       - name: Doctor (installs php-sdk-binary-tools, strawberry-perl, nasm)
         run: .\spc.exe doctor --auto-fix --no-interaction
 
+      # gmp cannot be compiled on Windows by spc ("not supported to compile").
+      # It is optional for us (ramsey/uuid only *suggests* it for perf), so the
+      # Windows build drops it. Everything else in the set is Windows-buildable.
       - name: Download sources
-        run: .\spc.exe download --for-extensions="$env:EXTENSIONS" --with-php="$env:PHP_VERSION" --prefer-pre-built
+        run: .\spc.exe download --for-extensions="$env:WIN_EXTENSIONS" --with-php="$env:PHP_VERSION" --prefer-pre-built
 
       - name: Build PHP CLI
-        run: .\spc.exe build "$env:EXTENSIONS" --build-cli
+        run: .\spc.exe build "$env:WIN_EXTENSIONS" --build-cli
 
       - name: Package (php.exe + caddy, no fpm)
         shell: bash
