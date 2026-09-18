@@ -139,6 +139,12 @@ Tauri builds for the platform it runs on — a Mac produces the `.dmg`, not the
 covers what each target needs, and is honest about which have actually been
 built: macOS and iOS have, Windows, Linux and Android have not.
 
+The `.dmg` build scripts run under `CI=true` (baked into `tauri:build` and
+`build:server`). Without it, Tauri's `bundle_dmg.sh` runs AppleScript to style
+the Finder window and **hangs** whenever there is no interactive GUI session
+(S-74) — no error, just a stall and no `.dmg`. `CI=true` skips the styling and
+produces a plain but valid `.dmg`.
+
 Setting up on Windows has its own step-by-step, with the silent failures called
 out: **[docs/SettingUpOnWindows.md](docs/SettingUpOnWindows.md)**.
 

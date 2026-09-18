@@ -11,8 +11,8 @@
         "test:e2e": "bash tests/e2e/bootstrap.sh && playwright test",
         "tauri": "tauri",
         "tauri:dev": "tauri dev",
-        "tauri:build": "tauri build",
-        "build:server": "npm run build && tauri build --config src-tauri/tauri.server.conf.json",
+        "tauri:build": "CI=true tauri build",
+        "build:server": "npm run build && CI=true tauri build --config src-tauri/tauri.server.conf.json",
         "dev:server": "tauri dev --config src-tauri/tauri.server.conf.json"
     },
     "devDependencies": {
