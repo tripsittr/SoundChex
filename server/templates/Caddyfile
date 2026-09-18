@@ -33,7 +33,9 @@
 }
 
 {$SOUNDCHEX_LISTEN} {
-	root * {$SOUNDCHEX_ROOT}
+	# Quoted: an install path may contain spaces (e.g. "SoundChex App"), which
+	# Caddy would otherwise read as extra arguments.
+	root * "{$SOUNDCHEX_ROOT}"
 	encode gzip
 
 	# The cap is ours now. Caddy rejects an over-cap body with 413 before PHP
@@ -46,6 +48,6 @@
 	file_server
 
 	log {
-		output file {$SOUNDCHEX_LOG}
+		output file "{$SOUNDCHEX_LOG}"
 	}
 }
