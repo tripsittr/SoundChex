@@ -1,4 +1,47 @@
 <x-filament-panels::page>
+    {{-- PHP runtime health: a wrong build disables features silently, so name
+         what is missing here rather than let it fail deep in a job. --}}
+    <x-filament::section>
+        <x-slot name="heading">PHP runtime</x-slot>
+        <x-slot name="description">
+            The extensions SoundChex needs. A missing one breaks a feature with
+            no warning elsewhere &mdash; the bundled server runtime ships them all.
+        </x-slot>
+
+        @if ($runtimeHealthy)
+            <div class="flex items-center gap-2 text-sm">
+                <span class="inline-block h-2.5 w-2.5 rounded-full bg-success-500"></span>
+                <span class="text-gray-700 dark:text-gray-200">All required extensions present.</span>
+            </div>
+        @else
+            <div class="flex items-center gap-2 text-sm">
+                <span class="inline-block h-2.5 w-2.5 rounded-full bg-danger-500"></span>
+                <span class="font-medium text-danger-600 dark:text-danger-400">
+                    Missing required extensions &mdash; features will fail silently.
+                </span>
+            </div>
+            <ul class="mt-3 space-y-1 text-sm">
+                @foreach ($missingRequiredExtensions as $ext => $why)
+                    <li class="text-gray-700 dark:text-gray-200">
+                        <code class="text-danger-600 dark:text-danger-400">{{ $ext }}</code>
+                        <span class="text-gray-500 dark:text-gray-400">&mdash; {{ $why }}</span>
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+
+        @if (! empty($missingRecommendedExtensions))
+            <p class="mt-4 text-xs font-medium text-gray-500 dark:text-gray-400">Recommended (the app still runs without these):</p>
+            <ul class="mt-1 space-y-1 text-xs">
+                @foreach ($missingRecommendedExtensions as $ext => $why)
+                    <li class="text-gray-500 dark:text-gray-400">
+                        <code>{{ $ext }}</code> &mdash; {{ $why }}
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+    </x-filament::section>
+
     @if (! $supported)
         <x-filament::section>
             <x-slot name="heading">Not available on this platform</x-slot>

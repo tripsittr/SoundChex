@@ -8,20 +8,19 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done.
 
 ---
 
-## Step L — Apply the AGPLv3 licence (independent; can happen now)
+## Step L — Apply the AGPLv3 licence — [x] DONE
 
-The licence choice (AGPLv3, S-151) can land before any server work.
+Audited 18 Sep 2026 — complete across every repo.
 
-- [ ] Add `LICENSE` (the full AGPLv3 text) at the repo root.
-- [ ] Set the licence field where declared (`composer.json` `"license"`,
-  `package.json`, `src-tauri/Cargo.toml` / `tauri.conf.json`).
-- [ ] README: state AGPLv3 and the "app is AGPL, the network service is the paid
-  product" model, so contributors and forkers understand the terms up front.
-- [ ] Per-file AGPL headers where practical (or a NOTICE + a single header
-  policy), and a `THIRD-PARTY-LICENSES.txt` scaffold to fill as bundling lands.
-- **Verify:** `LICENSE` present and correct; licence metadata consistent across
-  the manifests; README states it. (Owner is separately obtaining formal/legal
-  confirmation.)
+- [x] `LICENSE` (full AGPLv3) present at the root of **all** repos: App, iOS,
+  Website, TV, Roku, Android.
+- [x] Licence field set: `composer.json`, `package.json`, `src-tauri/Cargo.toml`
+  all declare `AGPL-3.0-or-later`.
+- [x] README states AGPLv3 and the "app is AGPL, the network is the paid
+  product" model.
+- [x] Per-file SPDX headers: 225 files in the app repo, all 46 iOS Swift files.
+  The server bundle ships `server/THIRD-PARTY-LICENSES.txt` (where third-party
+  binaries actually live). (Owner separately obtaining formal/legal confirmation.)
 
 ## Step 0 — Prove the stack by hand (no product changes) — [x] DONE (18 Sep 2026)
 
