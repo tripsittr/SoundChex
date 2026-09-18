@@ -1,11 +1,12 @@
 # SoundChex bundled server runtime — per-OS static PHP + php-fpm + Caddy (S-151).
 #
-# static-php-cli cannot cross-compile, so each OS builds on its own runner. The
-# macOS runtime is normally built locally (see server/scripts), but this builds
-# all three for release so the landing site has downloads for every platform.
+# static-php-cli cannot cross-compile, so each OS builds on its own runner using
+# the official prebuilt `spc` binary (dl.static-php.dev) — the exact flow proven
+# locally: doctor -> download (sqlite from SOURCE, for column metadata) -> build
+# cli+fpm -> package (adds Caddy + cacert.pem + templates + notices).
 #
-# Artifacts: soundchex-server-<os>-<arch>.(tar.gz|zip) + .sha256, uploaded as
-# workflow artifacts (and attached to a release when tagged).
+# Artifacts: soundchex-server-<os>-<arch>.(tar.gz|zip) + .sha256, uploaded per
+# job (and attached to a release when tagged server-v*).
 
 name: Build bundled server runtime
 
@@ -25,53 +26,61 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,  spc_os: linux,   arch: x86_64,  runner_arch: x86_64 }
-          - { os: ubuntu-24.04-arm, spc_os: linux, arch: aarch64, runner_arch: aarch64 }
-          - { os: macos-latest,   spc_os: macos,   arch: aarch64, runner_arch: aarch64 }
-          - { os: macos-13,       spc_os: macos,   arch: x86_64,  runner_arch: x86_64 }
-          - { os: windows-latest, spc_os: windows, arch: x86_64,  runner_arch: x86_64 }
+          - { os: ubuntu-latest,    spc_os: linux,   arch: x86_64,  spc_bin: spc-linux-x86_64 }
+          - { os: ubuntu-24.04-arm, spc_os: linux,   arch: aarch64, spc_bin: spc-linux-aarch64 }
+          - { os: macos-latest,     spc_os: macos,   arch: aarch64, spc_bin: spc-macos-aarch64 }
+          - { os: macos-13,         spc_os: macos,   arch: x86_64,  spc_bin: spc-macos-x86_64 }
+          - { os: windows-latest,   spc_os: windows, arch: x86_64,  spc_bin: spc-windows-x64.exe }
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.spc_os }}-${{ matrix.arch }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build static PHP + php-fpm (crazywhalecc/static-php-cli-action)
-        uses: crazywhalecc/static-php-cli-action@v0
-        with:
-          php-version: ${{ env.PHP_VERSION }}
-          extensions: ${{ env.EXTENSIONS }}
-          # CLI + FPM on POSIX; Windows has no php-fpm SAPI (see note below).
-          sapi: ${{ matrix.spc_os == 'windows' && 'cli' || 'cli,fpm' }}
-          debug: true
+      - name: Fetch spc
+        run: |
+          curl -fsSL -o spc "https://dl.static-php.dev/static-php-cli/spc-bin/nightly/${{ matrix.spc_bin }}"
+          chmod +x spc || true
+          ./spc --version
 
-      # The action outputs built binaries under buildroot/bin. Assemble the
-      # relocatable bundle (adds Caddy + cacert.pem + templates + notices).
+      - name: Doctor (install build prerequisites)
+        run: ./spc doctor --auto-fix --no-interaction
+
+      # Build everything from source (no --prefer-pre-built). This is the point
+      # that matters for sqlite: the prebuilt sqlite lib lacks
+      # SQLITE_ENABLE_COLUMN_METADATA, which Laravel's schema introspection needs
+      # and spc's own sanity check rejects. Building from source sets it.
+      # Slower on CI, but correct and reproducible.
+      - name: Download sources
+        run: ./spc download --for-extensions="$EXTENSIONS" --with-php="$PHP_VERSION"
+
+      - name: Build PHP (cli + fpm on POSIX; cli only on Windows)
+        run: |
+          if [ "${{ matrix.spc_os }}" = "windows" ]; then
+            ./spc build "$EXTENSIONS" --build-cli
+          else
+            ./spc build "$EXTENSIONS" --build-cli --build-fpm
+          fi
+
       - name: Package runtime (POSIX)
         if: matrix.spc_os != 'windows'
-        shell: bash
         run: |
           mkdir -p dist
           server/scripts/package-runtime.sh \
             "${{ matrix.spc_os }}" "${{ matrix.arch }}" \
-            "$RUNNER_BIN/php" "$RUNNER_BIN/php-fpm" dist
-        env:
-          RUNNER_BIN: ${{ github.workspace }}/buildroot/bin
+            buildroot/bin/php buildroot/bin/php-fpm dist
 
-      # Windows: no php-fpm SAPI in PHP for Windows. The Windows server story
-      # uses php-cgi behind Caddy instead (Caddy's php_fastcgi works with a
-      # spawned php-cgi pool). Tracked as a Step-4/Windows follow-up; here we
-      # still ship php + caddy so the runtime is present.
+      # Windows: no php-fpm SAPI. Ship php.exe + caddy; php-cgi packaging + the
+      # Caddy php_fastcgi-to-php-cgi story is a Step-4 follow-up.
       - name: Package runtime (Windows)
         if: matrix.spc_os == 'windows'
-        shell: bash
         run: |
           mkdir -p dist
-          # reuse php as the fpm slot placeholder until php-cgi packaging lands
           server/scripts/package-runtime.sh \
             windows "${{ matrix.arch }}" \
-            "$RUNNER_BIN/php.exe" "$RUNNER_BIN/php.exe" dist || true
-        env:
-          RUNNER_BIN: ${{ github.workspace }}/buildroot/bin
+            buildroot/bin/php.exe buildroot/bin/php.exe dist || true
 
       - uses: actions/upload-artifact@v4
         with:
