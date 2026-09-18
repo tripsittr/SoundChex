@@ -43,7 +43,7 @@ class LibraryAdministrationAccessTest extends TestCase
     {
         $profile = Profile::create([
             'user_id' => $this->user->id,
-            'name' => 'P' . fake()->unique()->numberBetween(1, 99999),
+            'name' => 'P'.fake()->unique()->numberBetween(1, 99999),
         ]);
 
         foreach ($permissions as $name) {
@@ -103,7 +103,7 @@ class LibraryAdministrationAccessTest extends TestCase
     {
         $this->actingAsProfile($this->profileWith(Profile::LIBRARY_ADMINISTRATION));
 
-        $this->get('/admin/metadata-settings')->assertOk();
+        $this->get('/admin/library-settings')->assertOk();
         $this->get('/admin/music')->assertOk();
     }
 
@@ -120,7 +120,7 @@ class LibraryAdministrationAccessTest extends TestCase
     {
         $this->actingAsProfile($this->profileWith(Profile::SERVER_ADMINISTRATION));
 
-        $this->get('/admin/metadata-settings')->assertOk();
+        $this->get('/admin/library-settings')->assertOk();
         $this->get('/admin/services')->assertOk();
     }
 

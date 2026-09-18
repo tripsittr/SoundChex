@@ -8,11 +8,14 @@ namespace Tests\Feature;
 use App\Filament\Pages\Integrations;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\ArrServices;
 use App\Services\CurrentProfile;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
 use App\Services\SettingsService;
 use Filament\Facades\Filament;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -67,7 +70,7 @@ class IntegrationsPageTest extends TestCase
         // the expected answer and must not surface as a 500.
         $this->withKeys();
 
-        Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('refused'));
+        Http::fake(fn () => throw new ConnectionException('refused'));
 
         $this->asOwner()
             ->get(self::URL)
@@ -134,11 +137,15 @@ class IntegrationsPageTest extends TestCase
 
     public function test_metadata_providers_are_listed_but_not_editable_here(): void
     {
+        // The old standalone "Metadata Sources" page was folded into this one
+        // (S-72), where providers are grouped by media type ("Film & TV",
+        // "Music", …) rather than under a literal "Metadata" heading. Assert on
+        // a real provider and its group.
         $this->asOwner()
             ->get(self::URL)
             ->assertOk()
-            ->assertSee('Metadata')
-            ->assertSee('TMDB');
+            ->assertSee('TMDB')
+            ->assertSee('Film & TV');
     }
 
     public function test_a_connected_app_offers_a_working_way_to_open_it(): void
@@ -188,7 +195,7 @@ class IntegrationsPageTest extends TestCase
         // exactly what an unreachable app needs.
         $this->withKeys();
 
-        Http::fake(fn () => throw new \Illuminate\Http\Client\ConnectionException('refused'));
+        Http::fake(fn () => throw new ConnectionException('refused'));
 
         $this->asOwner();
 
@@ -222,7 +229,7 @@ class IntegrationsPageTest extends TestCase
             '*/health' => Http::response([]),
         ]);
 
-        $service = app(\App\Services\ArrServices::class);
+        $service = app(ArrServices::class);
         $service->forget();
         $service->all();
 
@@ -255,7 +262,7 @@ class IntegrationsPageTest extends TestCase
             ]),
         ]);
 
-        $status = app(\App\Services\ArrServices::class)->status('lidarr');
+        $status = app(ArrServices::class)->status('lidarr');
 
         $this->assertTrue($status['running']);
         $this->assertCount(2, $status['warnings']);
@@ -397,7 +404,7 @@ class IntegrationsPageTest extends TestCase
         // And stored encrypted, not in the clear.
         $this->assertNotSame(
             'a-real-key',
-            \Illuminate\Support\Facades\DB::table('settings')->where('key', 'tmdb_api_key')->value('value'),
+            DB::table('settings')->where('key', 'tmdb_api_key')->value('value'),
         );
     }
 
