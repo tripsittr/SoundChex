@@ -222,6 +222,18 @@
                         @endunless
                     </div>
 
+                    {{-- SoundChex is AGPLv3. §13 requires that anyone interacting
+                         with it over a network be offered its corresponding
+                         source; this is that offer, reachable from every page a
+                         network user sees. --}}
+                    <div class="border-t border-base-600 py-1">
+                        <a href="https://github.com/tripsittr/SoundChex" role="menuitem"
+                           target="_blank" rel="noopener"
+                           class="block px-3 py-2 text-xs text-ink-500 transition hover:bg-base-700 hover:text-ink-300">
+                            Open source (AGPLv3) &mdash; source code
+                        </a>
+                    </div>
+
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
                         <button type="submit" role="menuitem"

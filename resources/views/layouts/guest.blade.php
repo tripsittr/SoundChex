@@ -116,6 +116,15 @@
         </div>
 
         {{ $slot }}
+
+        {{-- AGPLv3 §13: the source offer must reach network users, including on
+             the pages they see before signing in. --}}
+        <p class="mt-8 text-center text-xs text-ink-500">
+            <a href="https://github.com/tripsittr/SoundChex" target="_blank" rel="noopener"
+               class="transition hover:text-ink-300">
+                SoundChex is open source (AGPLv3)
+            </a>
+        </p>
     </div>
 </div>
 
