@@ -26,5 +26,5 @@ remain, filled per deal.
 ## Still pending
 
 Counsel review + signature. The IP-indemnity and liability-cap choices in
-particular are flagged in `COMMERCIAL-LICENSE-FILL-GUIDE.md`'s questions-for-
-counsel list. Not legal advice; not binding until signed.
+particular warrant a lawyer's confirmation. Not legal advice; not binding until
+signed.
