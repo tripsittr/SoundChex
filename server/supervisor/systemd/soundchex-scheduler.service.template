@@ -1,0 +1,15 @@
+# SoundChex bundled server — scheduler (systemd, Linux). S-151 Step 4.
+[Unit]
+Description=SoundChex scheduler
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{RUNTIME_DIR}}/bin/php {{APP_DIR}}/artisan schedule:work
+WorkingDirectory={{APP_DIR}}
+Restart=always
+RestartSec=2
+{{USER_LINE}}
+
+[Install]
+WantedBy=multi-user.target

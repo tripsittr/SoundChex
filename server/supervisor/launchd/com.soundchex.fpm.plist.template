@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SoundChex bundled server — php-fpm (launchd, macOS). S-151 Step 4.
+  The application server Caddy reverse-proxies to. Bundled binary, relative
+  path, no Herd. Placeholders substituted at install time.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.soundchex.fpm</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{RUNTIME_DIR}}/bin/php-fpm</string>
+		<string>--fpm-config</string>
+		<string>{{CONFIG_DIR}}/php-fpm.conf</string>
+		<string>--nodaemonize</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>SOUNDCHEX_RUN</key>
+		<string>{{RUN_DIR}}</string>
+		<key>SOUNDCHEX_FPM</key>
+		<string>127.0.0.1:9100</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>{{LOG_DIR}}/php-fpm.log</string>
+	<key>StandardOutPath</key>
+	<string>{{LOG_DIR}}/php-fpm.log</string>
+	<key>WorkingDirectory</key>
+	<string>{{APP_DIR}}</string>
+</dict>
+</plist>

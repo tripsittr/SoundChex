@@ -1,0 +1,21 @@
+# SoundChex bundled server — php-fpm (systemd, Linux). S-151 Step 4.
+# Placeholders ({{...}}) substituted at install time. Install to
+# /etc/systemd/system/ (system) or ~/.config/systemd/user/ (user).
+[Unit]
+Description=SoundChex php-fpm (application server)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{RUNTIME_DIR}}/bin/php-fpm --fpm-config {{CONFIG_DIR}}/php-fpm.conf --nodaemonize
+WorkingDirectory={{APP_DIR}}
+Environment=SOUNDCHEX_RUN={{RUN_DIR}}
+Environment=SOUNDCHEX_FPM=127.0.0.1:9100
+Restart=always
+RestartSec=2
+# The bundled php-fpm pool runs its own workers as the configured user; this
+# unit's own user just needs to read the runtime and write the run/log dirs.
+{{USER_LINE}}
+
+[Install]
+WantedBy=multi-user.target
