@@ -37,7 +37,12 @@ mkdir -p "$STAGE/bin"
 EXE=""
 [ "$OS" = "windows" ] && EXE=".exe"
 cp "$PHP_BIN" "$STAGE/bin/php${EXE}"
-cp "$FPM_BIN" "$STAGE/bin/php-fpm${EXE}"
+# Windows has no php-fpm SAPI: the caller passes php.exe for both, so only ship
+# php-fpm when it is genuinely a distinct binary (POSIX). The HTTP-serving front
+# for Windows (FrankenPHP embed / a FastCGI shim) is resolved in Step 4.
+if [ "$PHP_BIN" != "$FPM_BIN" ]; then
+  cp "$FPM_BIN" "$STAGE/bin/php-fpm${EXE}"
+fi
 chmod +x "$STAGE/bin/php${EXE}" "$STAGE/bin/php-fpm${EXE}" 2>/dev/null || true
 
 # --- CA bundle beside php (load-bearing convention) -----------------------
