@@ -154,9 +154,14 @@
 
             <p id="download-status" class="download-status mt-3 hidden"></p>
 
+            {{-- Filter to just the tracks that are downloaded (S-116). --}}
+            <div class="mt-8 flex justify-end">
+                @include('media.partials.downloaded-toggle')
+            </div>
+
             {{-- data-reorderable turns on drag-to-reorder; the URL travels
                  with the list so the script needs no route helper. --}}
-            <ol class="mt-8 divide-y divide-base-700/60"
+            <ol class="mt-2 divide-y divide-base-700/60"
                 data-reorderable
                 data-reorder-url="{{ route('media.playlists.reorder', $playlist) }}">
                 @foreach ($tracks as $index => $track)
