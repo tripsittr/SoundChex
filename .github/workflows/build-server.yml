@@ -48,13 +48,31 @@ jobs:
       - name: Doctor (install build prerequisites)
         run: ./spc doctor --auto-fix --no-interaction
 
-      # Build everything from source (no --prefer-pre-built). This is the point
-      # that matters for sqlite: the prebuilt sqlite lib lacks
-      # SQLITE_ENABLE_COLUMN_METADATA, which Laravel's schema introspection needs
-      # and spc's own sanity check rejects. Building from source sets it.
-      # Slower on CI, but correct and reproducible.
-      - name: Download sources
-        run: ./spc download --for-extensions="$EXTENSIONS" --with-php="$PHP_VERSION"
+      # Prefer prebuilt libs for speed/reliability (matches the proven local
+      # flow), then force sqlite specifically to build from SOURCE: the prebuilt
+      # sqlite lib lacks SQLITE_ENABLE_COLUMN_METADATA, which Laravel's schema
+      # introspection needs and spc's sanity check rejects. We drop the prebuilt
+      # sqlite lock entry so spc uses the source tarball.
+      - name: Download sources (prebuilt libs)
+        run: ./spc download --for-extensions="$EXTENSIONS" --with-php="$PHP_VERSION" --prefer-pre-built
+
+      - name: Force sqlite from source (column metadata)
+        run: |
+          python3 - <<'PY'
+          import json, os, glob
+          lock = 'downloads/.lock.json'
+          d = json.load(open(lock))
+          # Drop any prebuilt sqlite entry (keys like sqlite-<os>-<arch>--default),
+          # keep the plain "sqlite" source entry.
+          for k in [k for k in d if k.startswith('sqlite-') and k != 'sqlite']:
+              d.pop(k, None)
+          json.dump(d, open(lock, 'w'), indent=2)
+          # Remove any prebuilt sqlite archive so extract uses the source tarball.
+          for f in glob.glob('downloads/sqlite-*-*.txz'):
+              os.remove(f)
+          print('sqlite pinned to source')
+          PY
+          ./spc extract sqlite
 
       - name: Build PHP (cli + fpm on POSIX; cli only on Windows)
         run: |
