@@ -319,10 +319,37 @@ Three TLS modes, and the bundled `Caddyfile` supports all three:
 - **Note:** ffmpeg adds ~120 MB to a bundle. Acceptable for a media server;
   `SKIP_FFMPEG=1` builds a lean runtime for hosts that already have ffmpeg.
 
-## Step 9 — Migration + cutover + docs
+## Step 9 — Migration + cutover + docs — [x] DONE (this machine cut over live)
 
-- [ ] On upgrade, remove the old Herd-pathed plists and install the new service
-  without leaving a second server on 8000. Rewrite README / BuildingOnEachPlatform
-  / SettingUpOnWindows to the "install the product, done" story.
-- **Verify:** an existing install upgrades with no orphaned `artisan serve`; a
-  fresh install needs nothing but the product.
+The build/dev machine (`el-laptop`) was **migrated off Herd to the bundled
+runtime**, live:
+
+- [x] Unloaded the old Herd `com.soundchex.serve` (`artisan serve` on :8000) and
+  installed the bundled **Caddy + php-fpm + queue + scheduler** via
+  `server/scripts/install-services.sh` — all four now run bundled binaries by
+  relative path from `src-tauri/runtime/`. No orphaned `artisan serve`; :8000 is
+  served only by bundled Caddy → php-fpm (9100). `/login` → 200.
+- [x] **DB untouched** (same `database/database.sqlite`, 27 MB; verified the
+  bundled php and Herd php read identical data — `users=2` both). A safety backup
+  was taken first, and the old plists archived, for rollback.
+- [x] **Self-healing confirmed live:** killing the bundled php-fpm had launchd
+  restart it (new pid), app still serving 200.
+- [x] **Fixed a stale APP_URL** (`macbookair…` — a renamed-away device) via
+  `server:detect-address`, then set it to the app's new Tailscale HTTPS front.
+- [x] **Remote access (Option 2):** the app got its own Tailscale front —
+  `tailscale serve --https 8443 http://127.0.0.1:8000` →
+  `https://el-laptop.tail7e590c.ts.net:8443` (tailnet-only, TLS). The **website**
+  stays on Funnel :443 → :8100 (public), which is the correct split: the app is
+  private to the tailnet, the marketing site is public.
+
+- **Gotcha found & fixed (live):** the bundled `Caddyfile` template's
+  `root * {$SOUNDCHEX_ROOT}` and log path were **unquoted**, so an install path
+  with spaces ("SoundChex App") broke Caddy's parser. Now quoted in the template
+  (fixes both the installer and the Rust supervisor, which share it).
+- **Still to confirm (needs a real device):** the `:8443` Tailscale HTTPS front
+  returns `000` to *local* curl — the known loopback-through-own-tailnet quirk
+  (see the Tailscale-Funnel memory: the phone reaches it when local curl can't).
+  Verify from a phone on the tailnet.
+- **Docs:** `RemoteAccess.md` carries the bundled-server + TLS note (Step 7);
+  README / BuildingOnEachPlatform rewrite to "install the product, done" is a
+  remaining doc task.
