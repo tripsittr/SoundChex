@@ -11,9 +11,10 @@
         "test:e2e": "bash tests/e2e/bootstrap.sh && playwright test",
         "tauri": "tauri",
         "tauri:dev": "tauri dev",
-        "tauri:build": "CI=true tauri build",
-        "build:server": "npm run build && CI=true tauri build --config src-tauri/tauri.server.conf.json",
-        "dev:server": "tauri dev --config src-tauri/tauri.server.conf.json"
+        "check:target": "node scripts/check-stale-target.mjs",
+        "tauri:build": "npm run check:target && CI=true tauri build",
+        "build:server": "npm run check:target && npm run build && CI=true tauri build --config src-tauri/tauri.server.conf.json",
+        "dev:server": "npm run check:target && tauri dev --config src-tauri/tauri.server.conf.json"
     },
     "devDependencies": {
         "@playwright/test": "^1.62.1",
