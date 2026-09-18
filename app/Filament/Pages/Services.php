@@ -7,6 +7,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Concerns\RestrictsToServerAdmins;
 use App\Services\HostServices;
+use App\Services\RuntimeHealth;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -29,7 +30,6 @@ use UnitEnum;
 class Services extends Page
 {
     use RestrictsToServerAdmins;
-
 
     protected string $view = 'filament.pages.services';
 
@@ -54,9 +54,32 @@ class Services extends Page
 
     public string $logContents = '';
 
+    /** Whether every required PHP extension is present on this runtime. */
+    public bool $runtimeHealthy = true;
+
+    /** @var array<string, string> required extensions that are missing */
+    public array $missingRequiredExtensions = [];
+
+    /** @var array<string, string> recommended extensions that are absent */
+    public array $missingRecommendedExtensions = [];
+
     public function mount(): void
     {
         $this->refreshServices();
+        $this->refreshRuntimeHealth();
+    }
+
+    /**
+     * Read the PHP runtime's extension health. A wrong build disables features
+     * silently, so surfacing what is missing here — beside the services — turns
+     * an invisible cause into a named one.
+     */
+    public function refreshRuntimeHealth(): void
+    {
+        $health = app(RuntimeHealth::class);
+        $this->runtimeHealthy = $health->isHealthy();
+        $this->missingRequiredExtensions = $health->missingRequired();
+        $this->missingRecommendedExtensions = $health->missingRecommended();
     }
 
     public function refreshServices(bool $quiet = true): void
@@ -182,7 +205,7 @@ class Services extends Page
                 ->requiresConfirmation()
                 ->modalDescription(
                     'Each service will start on its own from now on, including after a reboot. '
-                    . 'This is what stops the server dying quietly.',
+                    .'This is what stops the server dying quietly.',
                 )
                 ->action(function (): void {
                     foreach (array_keys(HostServices::SERVICES) as $key) {

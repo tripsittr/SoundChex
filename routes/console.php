@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
+use App\Models\DeviceReport;
+use App\Models\Notification;
+use App\Services\LibrarySettings;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -25,7 +28,7 @@ Artisan::command('inspire', function () {
 // one that actually runs. Guarded because this file is also loaded by
 // `package:discover` and `migrate` before the settings table exists.
 try {
-    $interval = app(App\Services\LibrarySettings::class)->scanIntervalMinutes();
+    $interval = app(LibrarySettings::class)->scanIntervalMinutes();
 } catch (Throwable) {
     $interval = max(1, (int) config('library.scan_interval_minutes', 5));
 }
@@ -58,7 +61,7 @@ Schedule::command('db:backup')
 | A device that has not opened in a month does not want a month of history, and
 | an unbounded table on a server that scans every few minutes grows forever.
 */
-Schedule::call(fn () => \App\Models\Notification::prune())
+Schedule::call(fn () => Notification::prune())
     ->daily()
     ->name('prune-notifications')
     ->withoutOverlapping();
@@ -99,11 +102,22 @@ Schedule::call(fn () => cache()->put('soundchex.scheduler.heartbeat', now()->tim
     ->name('scheduler-heartbeat');
 
 /*
+| A daily assertion that the PHP runtime still has every required extension. The
+| runtime does not change between deploys, so daily is plenty; the value is that
+| a swapped or mis-built PHP (a self-hoster's host upgrade, a bad bundle) shows
+| up in the log as a named missing extension rather than as a feature that
+| quietly stopped working. --quiet-ok keeps the healthy case silent.
+*/
+Schedule::command('server:check-extensions --quiet-ok')
+    ->daily()
+    ->withoutOverlapping();
+
+/*
 | Device reports are for diagnosing something happening now. A fortnight-old
 | report from a build that no longer exists is noise, and an unbounded table fed
 | by every device grows without limit.
 */
-Schedule::call(fn () => \App\Models\DeviceReport::prune())
+Schedule::call(fn () => DeviceReport::prune())
     ->daily()
     ->name('prune-device-reports')
     ->withoutOverlapping();
