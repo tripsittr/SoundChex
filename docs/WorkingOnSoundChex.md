@@ -280,3 +280,14 @@ the connect screen?" was right when the tests said otherwise.
 
 **Report failures plainly.** If a test is failing, say which and why, rather
 than reporting a pass count that excludes it.
+
+## Building
+
+**A stale cargo cache masquerades as a Tauri plugin error (S-127).** When the
+repo moves, `src-tauri/target` still holds the old absolute build path, and each
+target directory only breaks when it is next built — surfacing as
+`failed to read plugin permissions: … app_hide.toml: No such file`, which names
+a permissions file, not a stale cache. It is not a plugin problem. `npm run
+check:target` (wired into `tauri:build` / `build:server` / `dev:server`) catches
+this before the build and names the exact `rm -rf src-tauri/target/<target>` to
+run. If you ever see the `app_hide.toml` error directly, that is the fix.
