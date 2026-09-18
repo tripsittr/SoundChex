@@ -87,8 +87,9 @@ fi
 
 # --- archive --------------------------------------------------------------
 echo "==> archiving"
+ARCHIVE="${NAME}.tar.gz"; [ "$OS" = "windows" ] && ARCHIVE="${NAME}.zip"
 ( cd "$OUT_DIR" && \
-  if [ "$OS" = "windows" ]; then zip -qr "${NAME}.zip" "$NAME"; else tar -czf "${NAME}.tar.gz" "$NAME"; fi )
-( cd "$OUT_DIR" && shasum -a 256 "${NAME}."* > "${NAME}.sha256" 2>/dev/null || \
-  sha256sum "${NAME}."* > "${NAME}.sha256" )
-echo "==> done: ${OUT_DIR}/${NAME}.$([ "$OS" = windows ] && echo zip || echo tar.gz)"
+  if [ "$OS" = "windows" ]; then zip -qr "$ARCHIVE" "$NAME"; else tar -czf "$ARCHIVE" "$NAME"; fi )
+# Checksum the archive only (never the .sha256 itself).
+( cd "$OUT_DIR" && { shasum -a 256 "$ARCHIVE" 2>/dev/null || sha256sum "$ARCHIVE"; } > "${NAME}.sha256" )
+echo "==> done: ${OUT_DIR}/${ARCHIVE}"
