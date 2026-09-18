@@ -3,9 +3,14 @@
 > **DRAFT — NOT LEGAL ADVICE. PENDING LEGAL REVIEW.**
 >
 > This is a working template intended to be reviewed and finalized by a qualified
-> attorney before use. Bracketed items — `[LIKE THIS]` — are decisions for
-> Licensor and counsel. Nothing in this document is a binding offer; a commercial
-> license exists only once both parties sign a final, lawyer-reviewed version.
+> attorney before use. Licensor's **standard "house" terms are now filled in**
+> (non-exclusive, annual subscription, updates included, no support, as-is / no
+> IP indemnity, liability capped at 12 months' fees, Arizona governing law and
+> Maricopa County venue). The remaining bracketed items — `[LIKE THIS]` — are
+> **per-customer** deal terms (the buyer's details, effective date, product,
+> scope and fees) filled when a specific deal is signed. Nothing here is a
+> binding offer; a commercial license exists only once both parties sign a
+> final, lawyer-reviewed version.
 
 ---
 
@@ -15,7 +20,8 @@ This Commercial License Agreement (the **"Agreement"**) is entered into as of
 `[EFFECTIVE DATE]` (the **"Effective Date"**) by and between:
 
 - **Tripsittr LLC**, an Arizona limited liability company, with its principal
-  place of business in Phoenix, Arizona `[STREET ADDRESS]` (**"Licensor"**); and
+  place of business at 4315 E Dale Lane, Cave Creek, Arizona 85331
+  (**"Licensor"**); and
 
 - **`[LICENSEE LEGAL NAME]`**, a `[ENTITY TYPE]` organized under the laws of
   `[JURISDICTION]`, with its principal place of business at `[ADDRESS]`
@@ -65,9 +71,9 @@ documentation for the Software.
 ## 2. License Grant
 
 2.1 **Grant.** Subject to Licensee's compliance with this Agreement and payment
-of the Fees, Licensor grants Licensee a `[non-exclusive / exclusive]`,
-`[non-transferable]`, `[non-sublicensable / sublicensable to end users as set out
-in Exhibit A]`, worldwide license during the Term to:
+of the Fees, Licensor grants Licensee a non-exclusive, non-transferable,
+worldwide license — sublicensable only to end users of the Licensee Product as
+set out in Exhibit A — during the Term to:
 
    (a) use, reproduce, and modify the Licensed Version;
    (b) incorporate the Licensed Version (in source or object form) into the
@@ -111,24 +117,21 @@ Except as expressly permitted, Licensee shall not:
 4.1 **Delivery.** The Software is delivered by access to Licensor's repositories
 or as otherwise stated in **Exhibit A**. No physical delivery is required.
 
-4.2 **Updates.** `[Select one:]`
-   `[Updates released during the Term are included.]`
-   `[Updates are not included and require a separate maintenance plan.]`
+4.2 **Updates.** Updates released during the Term are included.
 
-4.3 **Support.** `[Select one:]`
-   `[No support is included; the Software is provided as-is.]`
-   `[Support is provided per the Support terms in Exhibit B.]`
+4.3 **Support.** No support is included; the Software is provided as-is. Licensor
+may offer support separately under a written support plan.
 
 ## 5. Fees and Payment
 
 5.1 **Fees.** Licensee shall pay Licensor the fees set out in **Exhibit A** (the
-**"Fees"**): `[e.g., a one-time fee of $[AMOUNT]; and/or an annual subscription
-of $[AMOUNT] per [unit]]`.
+**"Fees"**): an annual subscription fee of `$[AMOUNT] per [unit/period]`, as
+specified in Exhibit A.
 
-5.2 **Invoicing and payment.** Licensor will invoice Licensee `[on the Effective
-Date / annually in advance]`. Licensee shall pay within `[30]` days of the
-invoice date. Late amounts accrue interest at `[1.0%] per month` or the maximum
-permitted by law, whichever is less.
+5.2 **Invoicing and payment.** Licensor will invoice Licensee annually in
+advance. Licensee shall pay within thirty (30) days of the invoice date. Late
+amounts accrue interest at 1.0% per month or the maximum permitted by law,
+whichever is less.
 
 5.3 **Taxes.** Fees are exclusive of taxes. Licensee is responsible for all
 taxes except taxes on Licensor's net income.
@@ -137,22 +140,22 @@ taxes except taxes on Licensor's net income.
 
 ## 6. Term and Termination
 
-6.1 **Term.** This Agreement begins on the Effective Date and continues for
-`[the perpetual license to the Licensed Version / an initial term of [N] years,
-renewing for successive [1]-year terms unless either Party gives [60] days'
-written notice]` (the **"Term"**).
+6.1 **Term.** This Agreement begins on the Effective Date and continues for an
+initial term of one (1) year, renewing automatically for successive one (1)-year
+terms unless either Party gives sixty (60) days' written notice of non-renewal
+before the end of the then-current term (the **"Term"**). This is a subscription
+license; it lasts only while the Term is in effect and Fees are paid.
 
 6.2 **Termination for breach.** Either Party may terminate if the other Party
-materially breaches and fails to cure within `[30]` days of written notice. A
-failure to pay Fees is a material breach.
+materially breaches and fails to cure within thirty (30) days of written notice.
+A failure to pay Fees is a material breach.
 
-6.3 **Effect of termination.** On termination `[for a subscription license]`,
-the license in Section 2 ends and Licensee shall stop distributing new copies of
-the Licensee Product that incorporate the Software; **units already distributed
-to end users before termination may continue to be used** `[unless termination
-is for Licensee's material breach]`. For a **perpetual** license to a Licensed
-Version, the license to that version survives termination for convenience but not
-termination for uncured material breach.
+6.3 **Effect of termination.** On termination or non-renewal, the license in
+Section 2 ends and Licensee shall stop distributing new copies of the Licensee
+Product that incorporate the Software. Units already distributed to end users
+before termination may continue to be used, unless termination is for Licensee's
+uncured material breach, in which case Licensee shall cease all use and
+distribution.
 
 6.4 **Survival.** Sections 3, 7, 8, 10, 11, 12, 13 and 14 survive termination.
 
@@ -176,10 +179,11 @@ them without restriction or obligation.
 does **not** grant any rights in Third-Party Components beyond those in their
 respective licenses, and Licensor does not and cannot relicense them.
 
-8.2 A list of Third-Party Components and their licenses is available at
-`[link to the credits page / THIRD-PARTY-LICENSES]`. Licensee is responsible for
-complying with those licenses, all of which are permissive and compatible with
-this Agreement.
+8.2 A list of Third-Party Components and their licenses is maintained by Licensor
+(the SoundChex open-source credits page and the `LicenseAudit.md` in Licensor's
+repository) and will be provided or linked in Exhibit A. Licensee is responsible
+for complying with those licenses, all of which are permissive and compatible
+with this Agreement.
 
 ## 9. Trademarks
 
@@ -212,14 +216,11 @@ Agreement are Confidential Information of both Parties.
 11.1 **Mutual authority.** Each Party warrants it has the authority to enter into
 this Agreement.
 
-11.2 **Limited Licensor warranty.** `[Optional — choose one:]`
-   `[Licensor warrants that, for [90] days after the Effective Date, the Licensed
-   Version will materially conform to the Documentation; Licensee's exclusive
-   remedy for breach is that Licensor will use reasonable efforts to correct the
-   non-conformity or refund the Fees for the affected version.]`
-   `[No conformance warranty — see 11.3.]`
+11.2 **No conformance warranty.** Licensor makes no warranty that the Software
+will conform to any documentation or meet Licensee's requirements. The Software
+is provided as-is, subject to the disclaimer in Section 11.3.
 
-11.3 **DISCLAIMER.** EXCEPT AS EXPRESSLY STATED IN 11.1–11.2, THE SOFTWARE IS
+11.3 **DISCLAIMER.** EXCEPT AS EXPRESSLY STATED IN 11.1, THE SOFTWARE IS
 PROVIDED **"AS IS"** AND LICENSOR DISCLAIMS ALL OTHER WARRANTIES, EXPRESS OR
 IMPLIED, INCLUDING MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
 NON-INFRINGEMENT, AND ANY WARRANTY THAT THE SOFTWARE WILL BE UNINTERRUPTED OR
@@ -227,16 +228,12 @@ ERROR-FREE.
 
 ## 12. Indemnification
 
-12.1 **By Licensor (IP).** `[Optional — negotiate carefully:]` Licensor will
-defend Licensee against a third-party claim that the **unmodified** Licensed
-Version, as provided by Licensor, infringes that third party's `[copyright /
-U.S. patent]`, and pay resulting damages finally awarded, provided Licensee gives
-prompt notice, control of the defense, and reasonable cooperation. Licensor has
-no obligation for claims arising from (a) modifications not made by Licensor,
-(b) combination with non-Licensor materials, (c) Third-Party Components, or
-(d) use outside the license scope. `[If Licensor prefers no IP indemnity given
-the free AGPL option, replace this section with "Licensor provides no
-indemnification; the Software is provided as-is."]`
+12.1 **By Licensor.** Licensor provides no indemnification. The Software is the
+same code Licensor makes available to the public free of charge under the AGPL,
+and is provided as-is; Licensee is responsible for its own use of the Software,
+including any third-party claims arising from that use. *(The Parties may agree a
+limited, capped intellectual-property indemnity in a written amendment for a
+specific engagement.)*
 
 12.2 **By Licensee.** Licensee will defend and indemnify Licensor against claims
 arising from the Licensee Product (other than the unmodified Software) or
@@ -249,8 +246,8 @@ SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR LOST PROFITS, REVENUE, DATA,
 OR GOODWILL, EVEN IF ADVISED OF THE POSSIBILITY.
 
 13.2 **Cap.** EACH PARTY'S TOTAL LIABILITY UNDER THIS AGREEMENT WILL NOT EXCEED
-`[THE FEES PAID BY LICENSEE IN THE 12 MONTHS BEFORE THE CLAIM / THE TOTAL FEES
-PAID]`.
+THE FEES PAID BY LICENSEE UNDER THIS AGREEMENT IN THE TWELVE (12) MONTHS
+IMMEDIATELY PRECEDING THE EVENT GIVING RISE TO THE CLAIM.
 
 13.3 **Exceptions.** The exclusions and cap do not apply to `[Licensee's payment
 obligations, a Party's indemnification obligations, breach of confidentiality, or
@@ -261,8 +258,7 @@ Licensee's violation of the license scope]`, to the extent permitted by law.
 14.1 **Governing law; venue.** This Agreement is governed by the laws of the
 State of Arizona, excluding its conflict-of-laws rules. The Parties consent to
 the exclusive jurisdiction of the state and federal courts located in Maricopa
-County, Arizona (Phoenix). `[Optional: disputes will instead be resolved by
-binding arbitration under [AAA Commercial Rules] seated in Phoenix, Arizona.]`
+County, Arizona, and waive any objection to that venue.
 
 14.2 **Entire agreement.** This Agreement, including its Exhibits, is the entire
 agreement and supersedes all prior discussions. It may be amended only by a
@@ -304,21 +300,26 @@ Effective Date.
 
 ## Exhibit A — Order Details
 
-- **Licensed Version(s):** `[e.g., SoundChex v1.x; all versions during the Term]`
-- **Licensee Product:** `[description of the product/service]`
-- **Permitted use:** `[embed in proprietary product / operate as hosted service / redistribute]`
-- **Scope / metrics:** `[instances, seats, sites, revenue tier, or "unlimited"]`
-- **Exclusivity:** `[non-exclusive / exclusive for the field of [X]]`
-- **Sublicensing:** `[none / to end users of the Licensee Product only]`
-- **Term:** `[perpetual for the Licensed Version / [N]-year subscription]`
-- **Fees:** `[one-time $[AMOUNT] and/or $[AMOUNT] per [period/unit]]`
-- **Updates:** `[included / not included]`
+*Standard terms below reflect Licensor's default offering; the per-customer
+fields (product, scope, fees) are completed for each deal.*
 
-## Exhibit B — Support (optional)
+- **Licensed Version(s):** all versions of the Software released during the Term
+- **Licensee Product:** `[description of the buyer's product/service]`
+- **Permitted use:** `[embed in proprietary product / operate as a hosted service]`
+- **Scope / metrics:** `[instances / seats / sites / revenue tier / unlimited]`
+- **Exclusivity:** non-exclusive
+- **Sublicensing:** to end users of the Licensee Product only
+- **Term:** one (1)-year subscription, auto-renewing (per Section 6.1)
+- **Fees:** `$[AMOUNT]` per year `[per unit, if metered]`
+- **Updates:** included during the Term
+- **Third-Party Components list:** `[link — the SoundChex credits page]`
 
-- **Support level:** `[none / email, [N] business-day response / SLA]`
-- **Hours:** `[business hours, timezone]`
-- **Excluded:** `[custom development, third-party issues, modified builds]`
+## Exhibit B — Support
+
+- **Support level:** none (Software provided as-is; see Section 4.3)
+
+*If the Parties later agree paid support, it will be added here by amendment
+(level, hours/timezone, and exclusions).*
 
 ---
 
