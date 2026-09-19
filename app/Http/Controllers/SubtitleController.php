@@ -84,7 +84,7 @@ class SubtitleController extends Controller
         if (! $service->isConfigured()) {
             return response()->json([
                 'status' => 'unconfigured',
-                'message' => 'Add an OpenSubtitles API key under Settings → Metadata Sources to search online.',
+                'message' => 'Add an OpenSubtitles API key under Settings → Integrations to search online.',
             ], 422);
         }
 

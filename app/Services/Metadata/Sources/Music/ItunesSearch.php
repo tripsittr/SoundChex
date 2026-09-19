@@ -21,10 +21,12 @@ class ItunesSearch implements MetadataSource
     {
         return 'iTunes Search';
     }
+
     public function priority(): int
     {
         return 5;
     }
+
     public function requiredSettings(): array
     {
         return [];
@@ -45,18 +47,21 @@ class ItunesSearch implements MetadataSource
         }
 
         $response = Http::get('https://itunes.apple.com/search', [
-            'term'       => $query,
-            'media'      => 'music',
-            'entity'     => 'album',
-            'limit'      => 1,
-            'country'    => 'US',
+            'term' => $query,
+            'media' => 'music',
+            'entity' => 'album',
+            // Several candidates, not just the first: the top hit is often the
+            // wrong artist (a loose term match), so we pick the one whose artist
+            // actually matches rather than trusting position.
+            'limit' => 5,
+            'country' => 'US',
         ]);
 
         if (! $response->ok()) {
             return;
         }
 
-        $result = $response->json('results.0');
+        $result = $this->bestMatch($response->json('results', []), $meta?->artist);
 
         if (empty($result)) {
             return;
@@ -74,5 +79,56 @@ class ItunesSearch implements MetadataSource
                 ['source' => MediaTagSource::Api->value],
             );
         }
+    }
+
+    /**
+     * The first candidate whose artist matches the track's, or null.
+     *
+     * The old code took `results.0` unconditionally, so a loose term match
+     * returned the wrong album — and its art (a Stressed Out row wearing A Sky
+     * Full of Stars' cover). Requiring the artist to match stops that. When we
+     * do not know the track's own artist we cannot validate, so we decline
+     * rather than attach some arbitrary album's art.
+     *
+     * @param  array<int, array<string, mixed>>  $results
+     * @return array<string, mixed>|null
+     */
+    private function bestMatch(array $results, ?string $artist): ?array
+    {
+        if (empty($results)) {
+            return null;
+        }
+
+        // No known artist to check against — refuse rather than guess.
+        if (blank($artist)) {
+            return null;
+        }
+
+        $want = $this->normalise($artist);
+
+        foreach ($results as $result) {
+            $got = $this->normalise((string) ($result['artistName'] ?? ''));
+
+            // Exact after normalising, or one contains the other — "Weezer" vs
+            // "Weezer feat. …", "The Beatles" vs "Beatles".
+            if ($got !== '' && ($got === $want
+                || str_contains($got, $want)
+                || str_contains($want, $got))) {
+                return $result;
+            }
+        }
+
+        return null;
+    }
+
+    /** Lower-cased, trimmed, punctuation-light — for comparing artist names. */
+    private function normalise(string $value): string
+    {
+        $value = mb_strtolower(trim($value));
+
+        // Drop "the " prefix and non-alphanumerics so "The Beatles!" == "beatles".
+        $value = preg_replace('/^the\s+/', '', $value) ?? $value;
+
+        return preg_replace('/[^a-z0-9]+/', '', $value) ?? $value;
     }
 }
