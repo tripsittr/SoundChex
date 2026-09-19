@@ -22,15 +22,17 @@ class LibrarySettings
      * itself from, so adding a tunable here surfaces it in the UI.
      */
     private const KEYS = [
-        'library_detect_duplicates'   => 'library.detect_duplicates',
-        'library_duplicate_action'    => 'library.duplicate_action',
-        'library_hash_max_megabytes'  => 'library.hash_max_megabytes',
-        'library_auto_organize'       => 'library.auto_organize',
-        'library_scan_storage'        => 'library.scan_storage',
-        'library_scan_interval'       => 'library.scan_interval_minutes',
-        'library_settle_seconds'      => 'library.settle_seconds',
-        'ocr_language'                => 'ocr.language',
-        'ocr_on_demand'               => 'ocr.on_demand',
+        'library_detect_duplicates' => 'library.detect_duplicates',
+        'library_detect_content_duplicates' => 'library.detect_content_duplicates',
+        'library_duplicate_duration_tolerance' => 'library.duplicate_duration_tolerance',
+        'library_duplicate_action' => 'library.duplicate_action',
+        'library_hash_max_megabytes' => 'library.hash_max_megabytes',
+        'library_auto_organize' => 'library.auto_organize',
+        'library_scan_storage' => 'library.scan_storage',
+        'library_scan_interval' => 'library.scan_interval_minutes',
+        'library_settle_seconds' => 'library.settle_seconds',
+        'ocr_language' => 'ocr.language',
+        'ocr_on_demand' => 'ocr.on_demand',
     ];
 
     public function __construct(private SettingsService $settings) {}
@@ -38,6 +40,22 @@ class LibrarySettings
     public function detectDuplicates(): bool
     {
         return (bool) $this->value('library_detect_duplicates');
+    }
+
+    /**
+     * Also flag same-recording-different-file music (S-257). Independent of the
+     * byte-hash pass, but only meaningful when detection is on at all.
+     */
+    public function detectContentDuplicates(): bool
+    {
+        return $this->detectDuplicates()
+            && (bool) $this->value('library_detect_content_duplicates');
+    }
+
+    /** Seconds of length difference still counted as the same track (fuzzy). */
+    public function duplicateDurationToleranceMs(): int
+    {
+        return max(0, (int) $this->value('library_duplicate_duration_tolerance')) * 1000;
     }
 
     /** One of: review | auto | report. */
@@ -124,7 +142,7 @@ class LibrarySettings
     }
 
     /**
-     * @param array<string, mixed> $values
+     * @param  array<string, mixed>  $values
      */
     public function save(array $values): void
     {

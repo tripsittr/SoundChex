@@ -6,7 +6,6 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Concerns\RestrictsToAdmins;
-
 use App\Jobs\DetectDuplicatesJob;
 use App\Services\LibrarySettings;
 use App\Services\OcrService;
@@ -63,18 +62,33 @@ class LibrarySettingsPage extends Page
             ->statePath('data')
             ->components([
                 Section::make('Duplicate detection')
-                    ->description('Files are compared byte-for-byte. A remaster, a different bitrate, or a re-encode is a different file and is never treated as a duplicate.')
+                    ->description('Identical files are compared byte-for-byte. Music can also be matched as the same recording across different files — a different bitrate, format, or re-rip.')
                     ->schema([
                         Toggle::make('library_detect_duplicates')
                             ->label('Detect duplicates')
                             ->helperText('Hash each file as it is catalogued and flag identical copies.')
                             ->live(),
 
+                        Toggle::make('library_detect_content_duplicates')
+                            ->label('Also match the same recording in a different file (music)')
+                            ->helperText('Uses ISRC, MusicBrainz, or an audio fingerprint, and as a fallback the tags (artist, title, album) with a near-equal length. These are only ever flagged for review — never deleted automatically, since the files genuinely differ and only you should choose which to keep.')
+                            ->live()
+                            ->visible(fn (Get $get): bool => (bool) $get('library_detect_duplicates')),
+
+                        TextInput::make('library_duplicate_duration_tolerance')
+                            ->label('Length tolerance for tag matches')
+                            ->numeric()
+                            ->suffix('sec')
+                            ->minValue(0)
+                            ->helperText('How far two tracks’ lengths may differ and still count as the same recording when matched by tags. A couple of seconds absorbs encoder differences.')
+                            ->visible(fn (Get $get): bool => (bool) $get('library_detect_duplicates')
+                                && (bool) $get('library_detect_content_duplicates')),
+
                         Select::make('library_duplicate_action')
                             ->label('When a duplicate is found')
                             ->options([
                                 'review' => 'Flag it and wait for me to confirm',
-                                'auto'   => 'Delete the redundant copy automatically',
+                                'auto' => 'Delete the redundant copy automatically',
                                 'report' => 'Only record it — never delete anything',
                             ])
                             ->helperText('Deleting automatically is unattended: files are removed without anyone seeing them first. Only the redundant copy is touched, and only when the bytes still match.')

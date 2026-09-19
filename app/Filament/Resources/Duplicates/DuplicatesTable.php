@@ -11,6 +11,7 @@ use App\Services\DuplicateDetector;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
+use Filament\Forms\Components\Radio;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -45,6 +46,14 @@ class DuplicatesTable
 
                 TextColumn::make('type')
                     ->badge()
+                    ->toggleable(),
+
+                // Why the pair was flagged — an identical file, or the same
+                // recording in a different file (and how sure we are of that).
+                TextColumn::make('duplicate_match')
+                    ->label('Match')
+                    ->badge()
+                    ->placeholder('Identical file')
                     ->toggleable(),
 
                 // The important one: "same file" means there's nothing on disk
@@ -92,12 +101,13 @@ class DuplicatesTable
                     ->options([
                         'music' => 'Music',
                         'movie' => 'Movies',
-                        'show'  => 'TV',
-                        'book'  => 'Books',
+                        'show' => 'TV',
+                        'book' => 'Books',
                     ]),
             ])
             ->recordActions([
                 static::mergeAction(),
+                static::resolveContentAction(),
                 static::keepAction(),
             ])
             ->toolbarActions([
@@ -107,7 +117,7 @@ class DuplicatesTable
                 ]),
             ])
             ->emptyStateHeading('No duplicates found')
-            ->emptyStateDescription('Files are compared byte-for-byte as they are catalogued. Anything identical shows up here for review.');
+            ->emptyStateDescription('Files are checked as they are catalogued — byte-for-byte, and (for music) for the same recording in a different file. Anything matching shows up here for review.');
     }
 
     /**
@@ -119,7 +129,10 @@ class DuplicatesTable
             ->label('Merge')
             ->icon('heroicon-o-arrows-pointing-in')
             ->color('danger')
-            ->visible(fn (MediaItem $record): bool => $record->isPendingDuplicate())
+            // Byte-identical copies only. A content match's files differ, so it
+            // is resolved by choosing which to keep (resolveContentAction).
+            ->visible(fn (MediaItem $record): bool => $record->isPendingDuplicate()
+                && ! static::isContentMatch($record))
             // This deletes a file, so it never happens on a single click.
             ->requiresConfirmation()
             ->modalHeading('Merge this duplicate?')
@@ -140,6 +153,54 @@ class DuplicatesTable
                 Notification::make()
                     ->title('Nothing was deleted')
                     ->body('The files are no longer identical, or the original is missing. This entry has been un-flagged so you can look at it.')
+                    ->warning()
+                    ->send();
+            });
+    }
+
+    /**
+     * Resolve a content match (same recording, different file) by choosing which
+     * copy to keep. The other file is deleted — there is no byte re-compare,
+     * because the two files differ by definition; the user's choice is the gate.
+     */
+    private static function resolveContentAction(): Action
+    {
+        return Action::make('resolveContent')
+            ->label('Keep one')
+            ->icon('heroicon-o-scale')
+            ->color('danger')
+            ->visible(fn (MediaItem $record): bool => $record->isPendingDuplicate()
+                && static::isContentMatch($record))
+            ->schema([
+                Radio::make('keep')
+                    ->label('Which copy do you want to keep?')
+                    ->options(fn (MediaItem $record): array => [
+                        'original' => 'Keep: '.static::shortPath($record->duplicateOf).static::sizeSuffix($record->duplicateOf),
+                        'duplicate' => 'Keep: '.static::shortPath($record).static::sizeSuffix($record),
+                    ])
+                    ->default('original')
+                    ->required(),
+            ])
+            ->requiresConfirmation()
+            ->modalHeading('Keep one copy, delete the other')
+            ->modalDescription('These are the same recording in two different files. The copy you do not keep is deleted from disk. This cannot be undone.')
+            ->modalSubmitActionLabel('Delete the other copy')
+            ->action(function (MediaItem $record, array $data, DuplicateDetector $detector): void {
+                $keepDuplicate = ($data['keep'] ?? 'original') === 'duplicate';
+
+                if ($detector->resolveKeeping($record, keepDuplicate: $keepDuplicate)) {
+                    Notification::make()
+                        ->title('Resolved')
+                        ->body('Kept one copy and deleted the other.')
+                        ->success()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title('Nothing was deleted')
+                    ->body('The copy to keep is missing, so the other was left in place. This entry has been left for you to look at.')
                     ->warning()
                     ->send();
             });
@@ -171,24 +232,39 @@ class DuplicatesTable
             ->color('danger')
             ->requiresConfirmation()
             ->modalHeading('Merge the selected duplicates?')
-            ->modalDescription('Each pair is compared byte-for-byte before anything is deleted. Any pair that no longer matches is skipped.')
+            ->modalDescription('Only byte-identical copies are merged, each re-compared byte-for-byte first. Same-recording matches (different files) are skipped — resolve those one at a time with “Keep one”, since which copy to keep is your choice.')
             ->action(function (Collection $records, DuplicateDetector $detector): void {
                 $merged = 0;
                 $skipped = 0;
+                $content = 0;
 
                 foreach ($records as $record) {
                     if (! $record->isPendingDuplicate()) {
                         continue;
                     }
 
+                    // Content matches are never bulk-deleted — the keeper is a
+                    // per-pair choice made in the single-row action.
+                    if (static::isContentMatch($record)) {
+                        $content++;
+
+                        continue;
+                    }
+
                     $detector->merge($record) ? $merged++ : $skipped++;
                 }
 
+                $notes = [];
+                if ($skipped > 0) {
+                    $notes[] = $skipped.' skipped — contents differ or the original is missing.';
+                }
+                if ($content > 0) {
+                    $notes[] = $content.' same-recording match'.($content === 1 ? '' : 'es').' left for you to resolve with “Keep one”.';
+                }
+
                 Notification::make()
-                    ->title($merged . ' merged')
-                    ->body($skipped > 0
-                        ? $skipped . ' skipped — contents differ or the original is missing.'
-                        : null)
+                    ->title($merged.' merged')
+                    ->body($notes ? implode(' ', $notes) : null)
                     ->success()
                     ->send();
             })
@@ -230,6 +306,27 @@ class DuplicatesTable
             && $record->absoluteFilePath() === $original->absoluteFilePath();
     }
 
+    /**
+     * Whether this pair is a content match (same recording, different file)
+     * rather than a byte-identical copy. A null match is an old byte-only row.
+     */
+    private static function isContentMatch(MediaItem $record): bool
+    {
+        return $record->duplicate_match?->isContent() === true;
+    }
+
+    /** " · 4.2 MB" for a copy, when its file is on disk; empty otherwise. */
+    private static function sizeSuffix(?MediaItem $record): string
+    {
+        $path = $record?->absoluteFilePath();
+
+        if ($path === null || ! is_file($path)) {
+            return '';
+        }
+
+        return ' · '.number_format(filesize($path) / 1048576, 1).' MB';
+    }
+
     private static function reclaimable(MediaItem $record): string
     {
         if (static::isSharedFile($record)) {
@@ -242,7 +339,7 @@ class DuplicatesTable
             return '—';
         }
 
-        return number_format(filesize($path) / 1048576, 1) . ' MB';
+        return number_format(filesize($path) / 1048576, 1).' MB';
     }
 
     /** The last two path segments — enough to tell two files apart. */

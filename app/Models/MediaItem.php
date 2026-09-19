@@ -5,6 +5,7 @@
 
 namespace App\Models;
 
+use App\Enums\DuplicateMatch;
 use App\Enums\DuplicateStatus;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
@@ -52,6 +53,7 @@ class MediaItem extends Model
         'processing_status' => ProcessingStatus::class,
         'match_confidence' => MatchConfidence::class,
         'duplicate_status' => DuplicateStatus::class,
+        'duplicate_match' => DuplicateMatch::class,
         'duplicate_detected_at' => 'datetime',
         'owned' => 'boolean',
         'wishlist' => 'boolean',
