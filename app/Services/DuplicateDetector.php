@@ -91,7 +91,35 @@ class DuplicateDetector
     }
 
     /**
-     * Flags an item if an earlier one holds identical bytes.
+     * Clears pending flags that point at no original, so they stop clogging the
+     * review list and are judged afresh on the next pass.
+     *
+     * A pending row with a null `duplicate_of_id` is not a duplicate of anything
+     * — there is nothing to merge into and nothing to delete. Such rows can be
+     * left behind by an original being removed, or by an older flagging path;
+     * either way they are unresolvable in the review UI (merge finds no original
+     * and refuses, which reads as a confusing "original is missing" skip). This
+     * un-flags them, and `check()` will re-evaluate them like any other row.
+     *
+     * Resolved decisions (Kept / Merged) are never touched — those are the
+     * user's, and a Merged row deliberately has no original once collapsed.
+     *
+     * @return int How many rows were cleared.
+     */
+    public function clearOrphans(): int
+    {
+        return MediaItem::query()
+            ->where('duplicate_status', DuplicateStatus::Pending)
+            ->whereNull('duplicate_of_id')
+            ->update([
+                'duplicate_status' => null,
+                'duplicate_match' => null,
+            ]);
+    }
+
+    /**
+     * Flags an item if an earlier one holds identical bytes, or (for music) is
+     * the same recording in a different file.
      *
      * A filed copy is treated as the original, and the oldest row only when
      * none of them is filed. There *is* a better criterion than arrival order:

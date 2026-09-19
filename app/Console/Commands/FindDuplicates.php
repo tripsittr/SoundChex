@@ -35,6 +35,12 @@ class FindDuplicates extends Command
                 ->update(['content_hash' => null]);
         }
 
+        // Clear stale flags with no original — they can't be resolved and only
+        // clog the review list. They are re-judged below.
+        if ($cleared = $detector->clearOrphans()) {
+            $this->comment('Cleared '.$cleared.' stale '.str('flag')->plural($cleared).' with no original.');
+        }
+
         $items = MediaItem::query()
             ->whereNotNull('file_path')
             ->orderBy('id')

@@ -27,6 +27,10 @@ class DetectDuplicatesJob implements ShouldQueue
 
     public function handle(DuplicateDetector $detector): void
     {
+        // Drop any stale flags that point at no original, so they leave the
+        // review list and are judged afresh below rather than lingering.
+        $detector->clearOrphans();
+
         MediaItem::query()
             ->whereNotNull('file_path')
             // Rows the user already decided on are left alone; re-flagging a

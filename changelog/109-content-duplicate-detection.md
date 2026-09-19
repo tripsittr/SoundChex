@@ -56,6 +56,16 @@ byte-identical path and now refuses a content match rather than un-flagging it.
 - Content matching is **music-only**; movies, TV, and books are unchanged
   (byte-identical detection only).
 
+### Also: self-heal stale flags
+
+A pending duplicate whose `duplicate_of_id` is null — flagged as a duplicate of
+nothing — could never be resolved: Merge found no original and refused, which
+surfaced as a confusing “1 skipped — contents differ or the original is missing”
+on bulk-merge, and the row sat in the review list forever. Detection now clears
+these orphans at the start of each pass (`DuplicateDetector::clearOrphans()`,
+called by the job and the `library:duplicates` command) so they leave the list
+and are judged afresh. Resolved decisions (Kept / Merged) are never touched.
+
 ## Still wrong / next
 
 - AcoustID coverage in the dev library is 0 and ISRC/MusicBrainz are sparse, so
