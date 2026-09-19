@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Duplicates;
 
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
+use App\Services\Metadata\CoverArtFetcher;
 use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
@@ -125,6 +126,8 @@ class DuplicatesTable
                 BulkActionGroup::make([
                     static::mergeBulkAction(),
                     static::keepBulkAction(),
+                    static::coverVerifiedBulkAction(),
+                    static::refetchCoverBulkAction(),
                 ]),
             ])
             ->emptyStateHeading('No duplicates found')
@@ -386,6 +389,83 @@ class DuplicatesTable
 
                 Notification::make()
                     ->title('Keeping both copies')
+                    ->success()
+                    ->send();
+            })
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * Bulk: clear the cover-review flag on the selected rows.
+     *
+     * The cover-review queue is per-row and can be long; this clears whatever the
+     * user has eyeballed and judged fine in one action, rather than 200 clicks.
+     */
+    private static function coverVerifiedBulkAction(): BulkAction
+    {
+        return BulkAction::make('coverVerifiedSelected')
+            ->label('Covers are fine')
+            ->icon('heroicon-o-photo')
+            ->color('info')
+            ->action(function (Collection $records, DuplicateDetector $detector): void {
+                $cleared = 0;
+
+                foreach ($records as $record) {
+                    if ($record->needs_cover_review) {
+                        $detector->clearCoverReview($record);
+                        $cleared++;
+                    }
+                }
+
+                Notification::make()
+                    ->title($cleared.' cleared from cover review')
+                    ->success()
+                    ->send();
+            })
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * Bulk: refetch a verified album cover for the selected rows and clear the
+     * flag. Efficient — the fetcher looks each album up once and shares it.
+     */
+    private static function refetchCoverBulkAction(): BulkAction
+    {
+        return BulkAction::make('refetchCoverSelected')
+            ->label('Refetch correct cover')
+            ->icon('heroicon-o-arrow-down-tray')
+            ->color('warning')
+            ->requiresConfirmation()
+            ->modalHeading('Refetch covers for the selected tracks?')
+            ->modalDescription('Looks each album up online (verified by artist) and replaces the cover, then clears the review flag. Tracks with no confident match keep their current cover.')
+            ->action(function (Collection $records, CoverArtFetcher $fetcher, DuplicateDetector $detector): void {
+                $updated = 0;
+                $noMatch = 0;
+
+                foreach ($records as $record) {
+                    if (! $record->needs_cover_review) {
+                        continue;
+                    }
+
+                    $cover = $fetcher->fetchForAlbum(
+                        $record->musicMetadata?->artist,
+                        $record->musicMetadata?->album,
+                    );
+
+                    if ($cover !== null) {
+                        $record->forceFill(['cover_image_url' => $cover])->saveQuietly();
+                        $updated++;
+                    } else {
+                        $noMatch++;
+                    }
+
+                    // Either way the pair has been dealt with — leave the queue.
+                    $detector->clearCoverReview($record);
+                }
+
+                Notification::make()
+                    ->title($updated.' cover'.($updated === 1 ? '' : 's').' refetched')
+                    ->body($noMatch > 0 ? $noMatch.' had no confident match and kept their cover.' : null)
                     ->success()
                     ->send();
             })
