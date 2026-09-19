@@ -7,10 +7,11 @@ namespace App\Filament\Widgets;
 
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Filament\Pages\Dashboard;
 use App\Models\MediaItem;
-use Illuminate\Support\Facades\Cache;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Number;
 
 /**
@@ -19,7 +20,6 @@ use Illuminate\Support\Number;
  */
 class LibraryOverview extends StatsOverviewWidget
 {
-
     /**
      * Widgets are renderable independently of the page that hosts them, so
      * this repeats the dashboard's gate rather than relying on it. Without it
@@ -28,8 +28,9 @@ class LibraryOverview extends StatsOverviewWidget
      */
     public static function canView(): bool
     {
-        return \App\Filament\Pages\Dashboard::canAccess();
+        return Dashboard::canAccess();
     }
+
     protected static ?int $sort = -2;
 
     protected ?string $pollingInterval = null;
@@ -58,7 +59,7 @@ class LibraryOverview extends StatsOverviewWidget
                 ->color('primary'),
 
             Stat::make('Storage used', $this->formattedStorage())
-                ->description($this->filesOnDisk() . ' files on disk')
+                ->description($this->filesOnDisk().' files on disk')
                 ->descriptionIcon('heroicon-m-circle-stack')
                 ->color('gray'),
 
@@ -74,7 +75,7 @@ class LibraryOverview extends StatsOverviewWidget
     }
 
     /**
-     * @param array<string, int> $counts
+     * @param  array<string, int>  $counts
      */
     private function breakdown(array $counts): string
     {
@@ -83,7 +84,7 @@ class LibraryOverview extends StatsOverviewWidget
         }
 
         return collect(MediaItemType::cases())
-            ->map(fn (MediaItemType $type) => ($counts[$type->value] ?? 0) . ' ' . $type->label())
+            ->map(fn (MediaItemType $type) => ($counts[$type->value] ?? 0).' '.$type->label())
             ->filter(fn (string $part) => ! str_starts_with($part, '0 '))
             ->implode(' · ');
     }
@@ -122,11 +123,34 @@ class LibraryOverview extends StatsOverviewWidget
                 return ['bytes' => 0, 'files' => 0];
             }
 
+            // The stored sizes (S-119): an exact SUM, cheap. Items catalogued
+            // before the column existed have null and are sampled below, so the
+            // figure is exact once `library:backfill-sizes` has run and only
+            // approximate for the shrinking set that has not been read yet.
+            $storedBytes = (int) MediaItem::query()
+                ->whereNotNull('file_path')
+                ->whereNotNull('file_size')
+                ->sum('file_size');
+
+            $unsized = MediaItem::query()
+                ->whereNotNull('file_path')
+                ->whereNull('file_size')
+                ->count();
+
+            if ($unsized === 0) {
+                // Everything is stored — an exact total, no disk reads at all.
+                return ['bytes' => $storedBytes, 'files' => $files];
+            }
+
+            // Estimate only the still-unsized remainder, by sampling it and
+            // scaling to how many are unsized — the same sampling the whole
+            // library used to need, now bounded to what has not been backfilled.
             $seen = 0;
-            $bytes = 0;
+            $sampledBytes = 0;
 
             $sample = MediaItem::query()
                 ->whereNotNull('file_path')
+                ->whereNull('file_size')
                 ->inRandomOrder()
                 ->limit(200)
                 ->get(['id', 'file_path', 'converted_path']);
@@ -145,11 +169,13 @@ class LibraryOverview extends StatsOverviewWidget
                 }
 
                 $seen++;
-                $bytes += $size;
+                $sampledBytes += $size;
             }
 
+            $estimatedRemainder = $seen > 0 ? (int) round(($sampledBytes / $seen) * $unsized) : 0;
+
             return [
-                'bytes' => $seen > 0 ? (int) round(($bytes / $seen) * $files) : 0,
+                'bytes' => $storedBytes + $estimatedRemainder,
                 'files' => $files,
             ];
         });

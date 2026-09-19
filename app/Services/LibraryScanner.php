@@ -34,7 +34,7 @@ class LibraryScanner
     ) {}
 
     /**
-     * @param array<int, string>|null $folders  Defaults to the configured watch list.
+     * @param  array<int, string>|null  $folders  Defaults to the configured watch list.
      * @return array{imported: int, unsettled: int, duplicates: int, folders: int, titles: array<int, string>}
      */
     public function scan(?array $folders = null, bool $dryRun = false, bool $enrich = true): array
@@ -112,7 +112,7 @@ class LibraryScanner
                     $type = MediaItemType::Music;
                 }
 
-                $basename = $file->getBasename('.' . $file->getExtension());
+                $basename = $file->getBasename('.'.$file->getExtension());
 
                 // Extension cannot separate a film from an episode — both are
                 // .mkv — so the filename decides. A recognised SxxEyy makes
@@ -229,7 +229,7 @@ class LibraryScanner
      * notifications get turned off — so the count is the message, with a few
      * names for colour.
      *
-     * @param array{imported: int, duplicates: int, titles: array<int, string>} $result
+     * @param  array{imported: int, duplicates: int, titles: array<int, string>}  $result
      */
     private function announceScan(array $result): void
     {
@@ -305,7 +305,7 @@ class LibraryScanner
     }
 
     /**
-     * @param array<string, mixed> $attributes Seed values for the metadata row.
+     * @param  array<string, mixed>  $attributes  Seed values for the metadata row.
      */
     /**
      * Rebuilds catalogue rows for media that is already filed.
@@ -322,7 +322,7 @@ class LibraryScanner
      * recover in place rather than tipping everything into an unsorted folder
      * and letting the filer sort it out from tags.
      *
-     * @param array<int, string> $folders Absolute paths to walk.
+     * @param  array<int, string>  $folders  Absolute paths to walk.
      * @return array{recovered: int, skipped: int, titles: array<int, string>}
      */
     public function recover(array $folders, bool $dryRun = false, bool $enrich = false): array
@@ -372,7 +372,7 @@ class LibraryScanner
                     $type = MediaItemType::Music;
                 }
 
-                $basename = $file->getBasename('.' . $file->getExtension());
+                $basename = $file->getBasename('.'.$file->getExtension());
                 $parsed = $type === MediaItemType::Movie
                     ? $this->episodes->parse($basename)
                     : null;
@@ -446,13 +446,18 @@ class LibraryScanner
     private function catalog(string $path, string $title, MediaItemType $type, ?int $userId, array $attributes = []): MediaItem
     {
         $item = MediaItem::create([
-            'user_id'           => $userId,
-            'type'              => $type,
+            'user_id' => $userId,
+            'type' => $type,
             // Enrichment promotes the real title once the file is identified.
-            'title'             => $title,
-            'file_path'         => $path,
+            'title' => $title,
+            'file_path' => $path,
+            // Captured once, here (S-119), so library-size totals are a stored
+            // SUM rather than a per-item filesize() sample. The file was just
+            // scanned, so it is present; a false result leaves it null to be
+            // backfilled.
+            'file_size' => $this->sizeOf($path),
             'processing_status' => ProcessingStatus::Pending,
-            'owned'             => true,
+            'owned' => true,
         ]);
 
         // Sources write into this row rather than creating it, so it has to
@@ -460,6 +465,24 @@ class LibraryScanner
         $item->metadata()->create($attributes);
 
         return $item;
+    }
+
+    /**
+     * The size in bytes of a catalogued file, or null if it cannot be read.
+     *
+     * `$path` is what `catalog()` stored as `file_path`: absolute for a watched
+     * folder outside the app disk, relative for one inside it — the same shape
+     * `MediaItem::absoluteFilePath()` resolves.
+     */
+    private function sizeOf(string $path): ?int
+    {
+        $absolute = str_starts_with($path, DIRECTORY_SEPARATOR) || preg_match('/^[A-Za-z]:[\\\\\/]/', $path)
+            ? $path
+            : Storage::path($path);
+
+        $size = is_file($absolute) ? @filesize($absolute) : false;
+
+        return $size === false ? null : $size;
     }
 
     /**
@@ -556,16 +579,16 @@ class LibraryScanner
         // name. A four-digit year is included because it reliably terminates
         // the title, and it's put back below.
         $markers = '(?:19\d{2}|20\d{2}|480p|720p|1080p|1440p|2160p|4k|8k|'
-            . 'x264|x265|h ?264|h ?265|hevc|avc|xvid|divx|10bit|8bit|hdr\d*|dv|'
-            . 'bluray|blu ray|brrip|bdrip|webrip|web ?dl|hdtv|dvdrip|remux|cam|'
-            . 'aac\d*|ac3|dts(?:[ -]?hd)?|truehd|atmos|ddp?5|dd\+?|flac|mp3|'
-            . 'multi|dual|subbed|dubbed|repack|proper|extended|unrated|imax|'
-            . 'season|s\d{1,2}e\d{1,2}|complete)';
+            .'x264|x265|h ?264|h ?265|hevc|avc|xvid|divx|10bit|8bit|hdr\d*|dv|'
+            .'bluray|blu ray|brrip|bdrip|webrip|web ?dl|hdtv|dvdrip|remux|cam|'
+            .'aac\d*|ac3|dts(?:[ -]?hd)?|truehd|atmos|ddp?5|dd\+?|flac|mp3|'
+            .'multi|dual|subbed|dubbed|repack|proper|extended|unrated|imax|'
+            .'season|s\d{1,2}e\d{1,2}|complete)';
 
         // Capture a year if one appears, so it isn't lost with the rest.
         preg_match('/\b(19\d{2}|20\d{2})\b/', $title, $yearMatch);
 
-        $cleaned = preg_replace('/\s' . $markers . '\b.*$/i', '', $title) ?? $title;
+        $cleaned = preg_replace('/\s'.$markers.'\b.*$/i', '', $title) ?? $title;
 
         // A name that is entirely markers leaves nothing; keep the original
         // rather than returning an empty string.
@@ -580,7 +603,7 @@ class LibraryScanner
         // The year disambiguates remakes, so it's appended back when the title
         // didn't already end with it.
         if (isset($yearMatch[1]) && ! str_ends_with($cleaned, $yearMatch[1])) {
-            $cleaned .= ' ' . $yearMatch[1];
+            $cleaned .= ' '.$yearMatch[1];
         }
 
         return $cleaned !== '' ? $cleaned : $title;
@@ -627,7 +650,7 @@ class LibraryScanner
     }
 
     /**
-     * @param array<int, string>|null $folders
+     * @param  array<int, string>|null  $folders
      * @return array<int, string>
      */
     private function resolveFolders(?array $folders): array
@@ -649,7 +672,7 @@ class LibraryScanner
     }
 
     /**
-     * @param array<int, string> $paths
+     * @param  array<int, string>  $paths
      * @return array<int, string>
      */
     private function realPaths(array $paths): array
@@ -686,7 +709,7 @@ class LibraryScanner
     /**
      * Walks a folder and every subfolder for recognised media files.
      *
-     * @param array<int, string> $excluded Absolute paths not to descend into.
+     * @param  array<int, string>  $excluded  Absolute paths not to descend into.
      * @return iterable<SplFileInfo>
      */
     private function mediaFilesIn(string $folder, array $excluded): iterable
@@ -695,7 +718,7 @@ class LibraryScanner
             ->flatten()
             ->all();
 
-        $finder = (new Finder())
+        $finder = (new Finder)
             ->files()
             ->in($folder)
             ->followLinks()
@@ -706,7 +729,7 @@ class LibraryScanner
         // Skipping the sorted library matters most: walking it would re-import
         // the whole collection on every pass.
         foreach ($excluded as $path) {
-            if (str_starts_with($path, $folder . DIRECTORY_SEPARATOR) || $path === $folder) {
+            if (str_starts_with($path, $folder.DIRECTORY_SEPARATOR) || $path === $folder) {
                 $finder->notPath(
                     ltrim(substr($path, strlen($folder)), DIRECTORY_SEPARATOR),
                 );
@@ -723,7 +746,7 @@ class LibraryScanner
     private function expandPath(string $path): string
     {
         if (str_starts_with($path, '~/')) {
-            return rtrim((string) getenv('HOME'), '/') . substr($path, 1);
+            return rtrim((string) getenv('HOME'), '/').substr($path, 1);
         }
 
         return $path;
