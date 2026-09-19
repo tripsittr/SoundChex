@@ -147,8 +147,8 @@ return [
     'type_folders' => [
         'music' => 'Music',
         'movie' => 'Movies',
-        'show'  => 'TV',
-        'book'  => 'Books',
+        'show' => 'TV',
+        'book' => 'Books',
     ],
 
     /*
@@ -203,6 +203,27 @@ return [
     */
 
     'detect_duplicates' => (bool) env('LIBRARY_DETECT_DUPLICATES', true),
+
+    /*
+    | Also flag music that is the *same recording* in a different file — a
+    | different bitrate, format, or re-rip — which byte-hashing never catches.
+    | Matched by ISRC, MusicBrainz recording id, or AcoustID fingerprint, and as
+    | a fallback by close tags (artist + title + album) with a near-equal length.
+    |
+    | Content matches are only ever flagged for REVIEW — never auto-deleted, even
+    | when 'duplicate_action' is 'auto' — because the two files genuinely differ
+    | and only the user should choose which copy to keep.
+    */
+
+    'detect_content_duplicates' => (bool) env('LIBRARY_DETECT_CONTENT_DUPLICATES', true),
+
+    /*
+    | How close two tracks' lengths must be, in seconds, to count as a fuzzy
+    | (tag-based) match. Encoders and sources vary by a hair; a couple of seconds
+    | absorbs that without merging a radio edit with the album cut.
+    */
+
+    'duplicate_duration_tolerance' => (int) env('LIBRARY_DUPLICATE_DURATION_TOLERANCE', 2),
 
     /*
     | What to do when a byte-identical copy is found:

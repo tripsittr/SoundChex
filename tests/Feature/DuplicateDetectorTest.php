@@ -86,6 +86,34 @@ class DuplicateDetectorTest extends TestCase
         $this->assertSame(DuplicateStatus::Kept, $copy->fresh()->duplicate_status);
     }
 
+    public function test_it_clears_a_pending_flag_that_points_at_no_original(): void
+    {
+        // A pending row with a null original is not a duplicate of anything — it
+        // can't be merged and only clogs the review list, so it is un-flagged and
+        // judged afresh rather than left stuck (the "original is missing" skip).
+        $orphan = $this->row('Orphan', Storage::disk('local')->path('media/unsorted/x.mp3'));
+        $orphan->forceFill(['duplicate_status' => DuplicateStatus::Pending])->saveQuietly();
+
+        $this->assertSame(1, $this->detector->clearOrphans());
+        $this->assertNull($orphan->fresh()->duplicate_status);
+    }
+
+    public function test_clearing_orphans_leaves_real_pairs_and_decisions_alone(): void
+    {
+        $this->item('original.mp3', 'identical bytes');
+        $copy = $this->item('copy.mp3', 'identical bytes');
+        $this->detector->check($copy); // a real pending pair, with an original
+
+        $kept = $this->item('a.mp3', 'kept bytes');
+        $keptCopy = $this->item('b.mp3', 'kept bytes');
+        $this->detector->check($keptCopy);
+        $this->detector->keepBoth($keptCopy); // a resolved decision
+
+        $this->assertSame(0, $this->detector->clearOrphans());
+        $this->assertSame(DuplicateStatus::Pending, $copy->fresh()->duplicate_status);
+        $this->assertSame(DuplicateStatus::Kept, $keptCopy->fresh()->duplicate_status);
+    }
+
     /* -------------------------------------------------------- merging --- */
 
     public function test_merging_deletes_the_copy_and_keeps_the_original(): void
@@ -220,7 +248,7 @@ class DuplicateDetectorTest extends TestCase
      */
     private function item(string $filename, string $contents, MediaItemType $type = MediaItemType::Music): MediaItem
     {
-        $path = 'media/unsorted/' . $filename;
+        $path = 'media/unsorted/'.$filename;
         Storage::disk('local')->put($path, $contents);
 
         $item = $this->row(pathinfo($filename, PATHINFO_FILENAME), Storage::disk('local')->path($path), $type);
