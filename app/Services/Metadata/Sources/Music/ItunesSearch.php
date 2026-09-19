@@ -5,6 +5,7 @@
 
 namespace App\Services\Metadata\Sources\Music;
 
+use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\MediaTagSource;
 use App\Models\MediaItem;
@@ -78,6 +79,18 @@ class ItunesSearch implements MetadataSource
                 ['type' => 'genre', 'value' => $result['primaryGenreName']],
                 ['source' => MediaTagSource::Api->value],
             );
+        }
+
+        // iTunes matched the track by an (artist-validated) search, not an id, so
+        // it's a Fuzzy match — recorded only when nothing stronger has, so the
+        // library stops reading as entirely unmatched even where MusicBrainz
+        // found nothing. Never downgrades an Exact match.
+        if ($item->match_confidence !== MatchConfidence::Exact
+            && $item->match_confidence !== MatchConfidence::Fuzzy) {
+            $item->forceFill([
+                'match_confidence' => MatchConfidence::Fuzzy,
+                'matched_by' => $this->name(),
+            ])->saveQuietly();
         }
     }
 

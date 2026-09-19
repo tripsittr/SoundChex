@@ -5,13 +5,13 @@
 
 namespace App\Services\Metadata\Sources\Music;
 
+use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
 use App\Services\Metadata\Contracts\MetadataSource;
 use App\Services\SettingsService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Layer 2 — AcoustID audio fingerprinting.
@@ -28,8 +28,15 @@ class AcoustId implements MetadataSource
 {
     public function __construct(private SettingsService $settings) {}
 
-    public function name(): string { return 'AcoustID (fingerprint)'; }
-    public function priority(): int { return 2; }
+    public function name(): string
+    {
+        return 'AcoustID (fingerprint)';
+    }
+
+    public function priority(): int
+    {
+        return 2;
+    }
 
     public function requiredSettings(): array
     {
@@ -75,11 +82,11 @@ class AcoustId implements MetadataSource
             ->timeout(15)
             ->retry(2, 1000, throw: false)
             ->get('https://api.acoustid.org/v2/lookup', [
-                'client'      => $this->settings->get('acoustid_api_key'),
+                'client' => $this->settings->get('acoustid_api_key'),
                 'fingerprint' => $fingerprint['fingerprint'],
-                'duration'    => $fingerprint['duration'],
-                'meta'        => 'recordings+releasegroups',
-                'format'      => 'json',
+                'duration' => $fingerprint['duration'],
+                'meta' => 'recordings+releasegroups',
+                'format' => 'json',
             ]);
 
         if (! $response->successful() || $response->json('status') !== 'ok') {
@@ -93,6 +100,16 @@ class AcoustId implements MetadataSource
         }
 
         $this->writeIdentity($item, $best);
+
+        // An acoustic fingerprint identifies the actual recording, so this is an
+        // Exact match. Recorded here so the library reflects that the track was
+        // identified. Never downgrades an Exact match a prior source pinned.
+        if ($item->match_confidence !== MatchConfidence::Exact) {
+            $item->forceFill([
+                'match_confidence' => MatchConfidence::Exact,
+                'matched_by' => $this->name(),
+            ])->saveQuietly();
+        }
     }
 
     /**
@@ -116,7 +133,7 @@ class AcoustId implements MetadataSource
 
         return [
             'fingerprint' => $data['fingerprint'],
-            'duration'    => (int) round($data['duration']),
+            'duration' => (int) round($data['duration']),
         ];
     }
 
@@ -125,7 +142,7 @@ class AcoustId implements MetadataSource
      * ~0.5 is more likely a false positive than a match, and writing a wrong
      * MBID here would poison every downstream source.
      *
-     * @param array<int, array<string, mixed>> $results
+     * @param  array<int, array<string, mixed>>  $results
      * @return array<string, mixed>|null
      */
     private function bestResult(array $results): ?array
@@ -140,7 +157,7 @@ class AcoustId implements MetadataSource
      * Writes only the identifiers. Titles and albums are deliberately left to
      * MusicBrainz, which resolves them from the MBID with far better data.
      *
-     * @param array<string, mixed> $result
+     * @param  array<string, mixed>  $result
      */
     private function writeIdentity(MediaItem $item, array $result): void
     {
@@ -153,7 +170,7 @@ class AcoustId implements MetadataSource
         $recording = $result['recordings'][0] ?? [];
 
         $values = array_filter([
-            'acoustid'                 => $result['id'] ?? null,
+            'acoustid' => $result['id'] ?? null,
             'musicbrainz_recording_id' => $recording['id'] ?? null,
         ], fn ($v) => $v !== null && $v !== '');
 

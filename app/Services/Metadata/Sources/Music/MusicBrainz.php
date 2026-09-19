@@ -5,6 +5,7 @@
 
 namespace App\Services\Metadata\Sources\Music;
 
+use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\MediaTagSource;
 use App\Enums\ProcessingStatus;
@@ -28,9 +29,20 @@ class MusicBrainz implements MetadataSource
 {
     private const BASE = 'https://musicbrainz.org/ws/2';
 
-    public function name(): string { return 'MusicBrainz'; }
-    public function priority(): int { return 3; }
-    public function requiredSettings(): array { return []; } // no key needed
+    public function name(): string
+    {
+        return 'MusicBrainz';
+    }
+
+    public function priority(): int
+    {
+        return 3;
+    }
+
+    public function requiredSettings(): array
+    {
+        return [];
+    } // no key needed
 
     public function supports(MediaItem $item): bool
     {
@@ -48,6 +60,11 @@ class MusicBrainz implements MetadataSource
 
     public function enrich(MediaItem $item): void
     {
+        // How the recording was found, so the confidence reflects it: an id or
+        // ISRC is unambiguous (Exact); a text search is likely-right (Fuzzy).
+        $matchedByIdentifier = filled($item->musicMetadata?->musicbrainz_recording_id)
+            || filled($item->musicMetadata?->isrc);
+
         $recording = $this->resolveRecording($item);
 
         if (empty($recording)) {
@@ -57,7 +74,32 @@ class MusicBrainz implements MetadataSource
         $this->writeRecordingFields($item, $recording);
         $this->writeReleaseFields($item, $recording);
         $this->writeGenreTags($item, $recording);
+        $this->recordConfidence($item, $matchedByIdentifier);
+        // Review flagging stays: an uncertain match is still surfaced for the
+        // user even though it now carries a confidence.
         $this->flagIfUncertain($item, $recording);
+    }
+
+    /**
+     * Records that this source identified the track, so the library no longer
+     * reads the whole music catalogue as unmatched.
+     *
+     * Exact when reached by a MusicBrainz recording id or ISRC — those are
+     * unambiguous — otherwise Fuzzy, since a text search is likely right but not
+     * certain. Never downgrades a match an earlier source already pinned as
+     * Exact. This is orthogonal to flagIfUncertain(): a Fuzzy match can also be
+     * flagged for review.
+     */
+    private function recordConfidence(MediaItem $item, bool $matchedByIdentifier): void
+    {
+        if ($item->match_confidence === MatchConfidence::Exact) {
+            return;
+        }
+
+        $item->forceFill([
+            'match_confidence' => $matchedByIdentifier ? MatchConfidence::Exact : MatchConfidence::Fuzzy,
+            'matched_by' => $this->name(),
+        ])->saveQuietly();
     }
 
     /**
@@ -68,7 +110,7 @@ class MusicBrainz implements MetadataSource
      * entirely. Rather than silently present a compilation as fact, surface
      * it in the Needs Review tab so the user can correct it.
      *
-     * @param array<string, mixed> $recording
+     * @param  array<string, mixed>  $recording
      */
     private function flagIfUncertain(MediaItem $item, array $recording): void
     {
@@ -106,7 +148,7 @@ class MusicBrainz implements MetadataSource
         }
 
         if (filled($meta?->isrc)) {
-            $byIsrc = $this->searchRecordings('isrc:' . $meta->isrc);
+            $byIsrc = $this->searchRecordings('isrc:'.$meta->isrc);
 
             if (! empty($byIsrc)) {
                 return $byIsrc;
@@ -114,7 +156,7 @@ class MusicBrainz implements MetadataSource
         }
 
         if (filled($meta?->artist) && filled($item->title)) {
-            $title  = $this->escapeLucene($item->title);
+            $title = $this->escapeLucene($item->title);
             $artist = $this->escapeLucene($meta->artist);
 
             // Constrain to official studio albums server-side. Without this the
@@ -203,8 +245,8 @@ class MusicBrainz implements MetadataSource
      * and keeps whichever has the earliest original release date — the studio
      * original always predates the reissues and live versions derived from it.
      *
-     * @param array<int, array<string, mixed>> $candidates
-     * @param array<string, mixed> $alreadyFetched
+     * @param  array<int, array<string, mixed>>  $candidates
+     * @param  array<string, mixed>  $alreadyFetched
      * @return array<string, mixed>
      */
     private function bestOfFullLookups(array $candidates, array $alreadyFetched): array
@@ -242,7 +284,7 @@ class MusicBrainz implements MetadataSource
      * The earliest original release date across everything a recording appears
      * on. Reissues report their own date, so the release-group date is used.
      *
-     * @param array<string, mixed> $recording
+     * @param  array<string, mixed>  $recording
      */
     private function earliestReleaseDate(array $recording): string
     {
@@ -266,7 +308,7 @@ class MusicBrainz implements MetadataSource
      * What does discriminate reliably is `first-release-date`: the studio
      * original predates the live and compilation appearances derived from it.
      *
-     * @param array<int, array<string, mixed>> $recordings
+     * @param  array<int, array<string, mixed>>  $recordings
      * @return array<string, mixed>|null
      */
     private function preferredRecording(array $recordings): ?array
@@ -293,7 +335,7 @@ class MusicBrainz implements MetadataSource
      * ("1984-09-15: Sports Palace, Milan"), or carry a Live secondary type.
      * Both are strong signals this isn't the studio original.
      *
-     * @param array<string, mixed> $recording
+     * @param  array<string, mixed>  $recording
      */
     private function looksLikeLiveRecording(array $recording): bool
     {
@@ -322,7 +364,7 @@ class MusicBrainz implements MetadataSource
     }
 
     /**
-     * @param array<string, mixed> $recording
+     * @param  array<string, mixed>  $recording
      */
     private function hasOfficialRelease(array $recording): bool
     {
@@ -336,7 +378,7 @@ class MusicBrainz implements MetadataSource
     }
 
     /**
-     * @param array<string, mixed> $recording
+     * @param  array<string, mixed>  $recording
      */
     private function writeRecordingFields(MediaItem $item, array $recording): void
     {
@@ -348,9 +390,9 @@ class MusicBrainz implements MetadataSource
 
         $values = array_filter([
             'musicbrainz_recording_id' => $recording['id'] ?? null,
-            'isrc'                     => $recording['isrcs'][0] ?? null,
-            'duration_ms'              => $recording['length'] ?? null,
-            'artist'                   => $recording['artist-credit'][0]['name'] ?? null,
+            'isrc' => $recording['isrcs'][0] ?? null,
+            'duration_ms' => $recording['length'] ?? null,
+            'artist' => $recording['artist-credit'][0]['name'] ?? null,
         ], fn ($v) => $v !== null && $v !== '');
 
         $this->fillBlank($item, $values);
@@ -359,7 +401,7 @@ class MusicBrainz implements MetadataSource
     /**
      * The first release a recording appears on supplies album, year, and label.
      *
-     * @param array<string, mixed> $recording
+     * @param  array<string, mixed>  $recording
      */
     private function writeReleaseFields(MediaItem $item, array $recording): void
     {
@@ -374,10 +416,10 @@ class MusicBrainz implements MetadataSource
 
         $values = array_filter([
             'musicbrainz_release_id' => $release['id'] ?? null,
-            'album'                  => $release['title'] ?? null,
+            'album' => $release['title'] ?? null,
             // Original album date, not the date of whichever pressing matched.
-            'release_year'           => $this->extractYear($this->releaseDate($release)),
-            'label'                  => $this->lookupLabel($release['id'] ?? null),
+            'release_year' => $this->extractYear($this->releaseDate($release)),
+            'label' => $this->lookupLabel($release['id'] ?? null),
         ], fn ($v) => $v !== null && $v !== '');
 
         $this->fillBlank($item, $values);
@@ -389,7 +431,7 @@ class MusicBrainz implements MetadataSource
      * album, then fall back to the earliest release, so items land on the
      * canonical album rather than whichever release MusicBrainz returned first.
      *
-     * @param array<int, array<string, mixed>> $releases
+     * @param  array<int, array<string, mixed>>  $releases
      * @return array<string, mixed>|null
      */
     private function preferredRelease(array $releases, ?string $recordingDate = null): ?array
@@ -422,7 +464,7 @@ class MusicBrainz implements MetadataSource
     /**
      * Whether a release came out the same year the recording first appeared.
      *
-     * @param array<string, mixed> $release
+     * @param  array<string, mixed>  $release
      */
     private function matchesRecordingYear(array $release, ?string $recordingDate): bool
     {
@@ -430,7 +472,7 @@ class MusicBrainz implements MetadataSource
             return false;
         }
 
-        $releaseYear   = $this->extractYear($this->releaseDate($release));
+        $releaseYear = $this->extractYear($this->releaseDate($release));
         $recordingYear = $this->extractYear($recordingDate);
 
         return $releaseYear !== null && $releaseYear === $recordingYear;
@@ -459,7 +501,7 @@ class MusicBrainz implements MetadataSource
      * 1975 album reports 2001. The release-group's first-release-date is the
      * album's original date, which is what a catalog should show.
      *
-     * @param array<string, mixed> $release
+     * @param  array<string, mixed>  $release
      */
     private function releaseDate(array $release): string
     {
@@ -469,7 +511,7 @@ class MusicBrainz implements MetadataSource
     }
 
     /**
-     * @param array<string, mixed> $release
+     * @param  array<string, mixed>  $release
      */
     private function isStudioAlbum(array $release): bool
     {
@@ -486,7 +528,7 @@ class MusicBrainz implements MetadataSource
     }
 
     /**
-     * @param array<string, mixed> $recording
+     * @param  array<string, mixed>  $recording
      */
     private function writeGenreTags(MediaItem $item, array $recording): void
     {
@@ -511,8 +553,8 @@ class MusicBrainz implements MetadataSource
             }
 
             $item->tags()->create([
-                'type'   => 'genre',
-                'value'  => $canonical,
+                'type' => 'genre',
+                'value' => $canonical,
                 'source' => MediaTagSource::Api,
             ]);
         }
@@ -522,7 +564,7 @@ class MusicBrainz implements MetadataSource
      * Writes only fields that are still empty, so file tags and manual edits
      * (both of which run earlier) always win.
      *
-     * @param array<string, mixed> $values
+     * @param  array<string, mixed>  $values
      */
     private function fillBlank(MediaItem $item, array $values): void
     {
@@ -547,22 +589,22 @@ class MusicBrainz implements MetadataSource
     }
 
     /**
-     * @param array<string, mixed> $query
+     * @param  array<string, mixed>  $query
      */
     private function request(string $path, array $query): ?Response
     {
         $response = Http::withHeaders([
-                // MusicBrainz blocks clients without a descriptive User-Agent.
-                'User-Agent' => sprintf(
-                    '%s/1.0 (%s)',
-                    config('app.name', 'SoundChex'),
-                    config('app.url', 'https://github.com/tripsittr/SoundChex'),
-                ),
-            ])
+            // MusicBrainz blocks clients without a descriptive User-Agent.
+            'User-Agent' => sprintf(
+                '%s/1.0 (%s)',
+                config('app.name', 'SoundChex'),
+                config('app.url', 'https://github.com/tripsittr/SoundChex'),
+            ),
+        ])
             ->acceptJson()
             ->timeout(10)
             ->retry(2, 1000, throw: false)
-            ->get(self::BASE . $path, $query + ['fmt' => 'json']);
+            ->get(self::BASE.$path, $query + ['fmt' => 'json']);
 
         return $response->successful() ? $response : null;
     }
