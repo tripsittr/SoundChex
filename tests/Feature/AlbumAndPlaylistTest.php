@@ -13,6 +13,8 @@ use App\Models\User;
 use App\Services\AlbumBrowser;
 use App\Services\CurrentProfile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -110,6 +112,25 @@ class AlbumAndPlaylistTest extends TestCase
             ->assertOk()
             ->assertSee('One')
             ->assertSee('Two');
+    }
+
+    public function test_a_detail_page_shows_a_back_button(): void
+    {
+        // S-52: the Tauri window and the phone web-app have no browser chrome,
+        // so a drilled-into page must offer its own way out.
+        $this->track('One', 'Artist A', 'Album A', 1);
+
+        $this->get(route('media.album', ['artist' => 'Artist A', 'album' => 'Album A']))
+            ->assertOk()
+            ->assertSee('aria-label="Back"', false);
+    }
+
+    public function test_the_home_page_shows_no_back_button(): void
+    {
+        // Nothing above the top level to go back to.
+        $this->get(route('media.home'))
+            ->assertOk()
+            ->assertDontSee('aria-label="Back"', false);
     }
 
     public function test_an_album_that_does_not_exist_is_a_404(): void
@@ -286,17 +307,17 @@ class AlbumAndPlaylistTest extends TestCase
 
     public function test_update_stores_an_uploaded_cover(): void
     {
-        \Illuminate\Support\Facades\Storage::fake('public');
+        Storage::fake('public');
         $playlist = $this->playlist();
 
         $this->patch(route('media.playlists.update', $playlist), [
             'name' => $playlist->name,
-            'cover' => \Illuminate\Http\UploadedFile::fake()->image('cover.jpg', 500, 500),
+            'cover' => UploadedFile::fake()->image('cover.jpg', 500, 500),
         ])->assertRedirect();
 
         $path = $playlist->fresh()->artwork_path;
         $this->assertNotNull($path);
-        \Illuminate\Support\Facades\Storage::disk('public')->assertExists($path);
+        Storage::disk('public')->assertExists($path);
         $this->assertNotNull($playlist->fresh()->artworkUrl());
     }
 
@@ -474,7 +495,7 @@ class AlbumAndPlaylistTest extends TestCase
             'user_id' => $this->user->id,
             'type' => MediaItemType::Music,
             'title' => $title,
-            'file_path' => '/tmp/' . str($title)->slug() . '.mp3',
+            'file_path' => '/tmp/'.str($title)->slug().'.mp3',
             'owned' => true,
         ]);
 
