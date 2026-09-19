@@ -15,6 +15,7 @@ use App\Services\Metadata\CoverEmbedder;
 use App\Services\Metadata\MetadataPipeline;
 use App\Services\MetadataHistory;
 use App\Services\MusicCredits;
+use App\Services\TitleTidier;
 use App\Services\WatchProviders;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -178,36 +179,22 @@ class EnrichMediaItemJob implements ShouldQueue
         try {
             $item->refresh()->load('musicMetadata');
 
-            $artist = trim((string) $item->musicMetadata?->artist);
-            $title = trim((string) $item->title);
+            $stripped = app(TitleTidier::class)->strip((string) $item->title, [
+                $item->musicMetadata?->artist,
+                $item->musicMetadata?->primary_artist,
+            ]);
 
-            if ($artist === '' || $title === '') {
+            if ($stripped === null || $stripped === $item->title) {
                 return;
             }
 
-            foreach ([' - ', ' — ', ' – '] as $separator) {
-                $suffix = $separator.$artist;
+            Log::info('Trimmed an artist from a track title', [
+                'item' => $item->id,
+                'was' => $item->title,
+                'now' => $stripped,
+            ]);
 
-                if (! str_ends_with($title, $suffix)) {
-                    continue;
-                }
-
-                $stripped = trim(mb_substr($title, 0, -mb_strlen($suffix)));
-
-                if ($stripped === '' || $stripped === $title) {
-                    return;
-                }
-
-                Log::info('Trimmed an artist from a track title', [
-                    'item' => $item->id,
-                    'was' => $title,
-                    'now' => $stripped,
-                ]);
-
-                $item->forceFill(['title' => $stripped])->saveQuietly();
-
-                return;
-            }
+            $item->forceFill(['title' => $stripped])->saveQuietly();
         } catch (\Throwable $e) {
             // The metadata is already saved; a clumsy title is not worth
             // failing the run and re-fetching everything.
