@@ -514,6 +514,32 @@ class DuplicateDetector
             return 'skipped';
         }
 
+        // If one side's file is already gone — a copy deleted from disk in an
+        // earlier round, leaving an orphaned row — the choice is forced: keep the
+        // side that still exists. Quality is moot when a copy no longer exists,
+        // and without this the pair sticks forever ("a file was missing").
+        $dupExists = $this->fileExists($duplicate);
+        $origExists = $this->fileExists($original);
+
+        if ($dupExists && ! $origExists) {
+            // The flagged copy is the only real file left — keep it.
+            return $this->resolveKeeping($duplicate, keepDuplicate: true) ? 'resolved' : 'skipped';
+        }
+
+        if ($origExists && ! $dupExists) {
+            return $this->resolveKeeping($duplicate, keepDuplicate: false) ? 'resolved' : 'skipped';
+        }
+
+        if (! $dupExists && ! $origExists) {
+            // Neither file exists — there is nothing to merge. Clear the flag so
+            // it leaves the review list rather than failing forever.
+            $duplicate->forceFill([
+                'duplicate_status' => DuplicateStatus::Merged,
+            ])->saveQuietly();
+
+            return 'resolved';
+        }
+
         [$winner] = $this->decideKeeper($original, $duplicate, $breakTies);
 
         if ($winner === null) {
@@ -523,6 +549,14 @@ class DuplicateDetector
         $ok = $this->resolveKeeping($duplicate, keepDuplicate: $winner->is($duplicate));
 
         return $ok ? 'resolved' : 'skipped';
+    }
+
+    /** Whether a row's file is present on disk. */
+    private function fileExists(MediaItem $item): bool
+    {
+        $path = $item->absoluteFilePath();
+
+        return $path !== null && is_file($path);
     }
 
     /**

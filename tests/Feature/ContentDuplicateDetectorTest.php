@@ -219,6 +219,44 @@ class ContentDuplicateDetectorTest extends TestCase
         $this->assertFileExists($copyPath);
     }
 
+    public function test_resolve_best_keeps_the_surviving_copy_when_the_original_file_is_gone(): void
+    {
+        // A copy deleted from disk in an earlier round leaves an orphaned original
+        // row. The flagged copy is then the only real file — resolveKeepingBest
+        // must keep it, not skip forever with "a file was missing".
+        $original = $this->track('song.flac', 'flac bytes', ['isrc' => 'USRC17607839']);
+        $copy = $this->track('song.mp3', 'mp3 bytes', ['isrc' => 'USRC17607839']);
+        $copyPath = $copy->absoluteFilePath();
+
+        $this->detector->check($copy);
+
+        // The original's file was removed outside the app.
+        Storage::disk('local')->delete('media/unsorted/song.flac');
+
+        $flagged = MediaItem::whereNotNull('duplicate_of_id')->first();
+
+        $this->assertSame('resolved', $this->detector->resolveKeepingBest($flagged, breakTies: true));
+        $this->assertFileExists($copyPath); // the surviving copy is kept
+        $this->assertSame(DuplicateStatus::Merged, $flagged->fresh()->duplicate_status);
+    }
+
+    public function test_resolve_best_clears_the_flag_when_neither_file_exists(): void
+    {
+        $original = $this->track('song.flac', 'flac bytes', ['isrc' => 'USRC17607839']);
+        $copy = $this->track('song.mp3', 'mp3 bytes', ['isrc' => 'USRC17607839']);
+
+        $this->detector->check($copy);
+
+        Storage::disk('local')->delete('media/unsorted/song.flac');
+        Storage::disk('local')->delete('media/unsorted/song.mp3');
+
+        $flagged = MediaItem::whereNotNull('duplicate_of_id')->first();
+
+        // Nothing to merge, but it must leave the review list rather than fail.
+        $this->assertSame('resolved', $this->detector->resolveKeepingBest($flagged, breakTies: true));
+        $this->assertSame(DuplicateStatus::Merged, $flagged->fresh()->duplicate_status);
+    }
+
     /* ----------------------------------------------- keep the best --- */
 
     public function test_best_copy_prefers_the_higher_bitrate(): void
