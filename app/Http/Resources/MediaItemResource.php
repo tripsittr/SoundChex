@@ -56,6 +56,11 @@ class MediaItemResource extends JsonResource
         return match ($item->type->value) {
             'music' => array_filter([
                 'artist' => $item->musicMetadata?->artist,
+                // The headline artist, for grouping: a "Artist, Someone" track
+                // belongs under "Artist", not as its own artist. Falls back to
+                // the full credit when not derived. Clients group on this.
+                'primary_artist' => $item->musicMetadata?->primary_artist
+                    ?: $item->musicMetadata?->artist,
                 'album' => $item->musicMetadata?->album,
                 // Through the accessor: most tags in a real library carry a
                 // library-wide position rather than a track number, and

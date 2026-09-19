@@ -8,6 +8,7 @@ namespace App\Services\Metadata\Sources\Music;
 use App\Enums\MediaItemType;
 use App\Enums\MediaTagSource;
 use App\Models\MediaItem;
+use App\Services\ArtistCredits;
 use App\Services\Metadata\Contracts\MetadataSource;
 use getID3;
 use Illuminate\Support\Facades\Storage;
@@ -22,9 +23,20 @@ use Illuminate\Support\Str;
  */
 class FileTagger implements MetadataSource
 {
-    public function name(): string { return 'File Tags (getID3)'; }
-    public function priority(): int { return 1; }
-    public function requiredSettings(): array { return []; } // reads local files only
+    public function name(): string
+    {
+        return 'File Tags (getID3)';
+    }
+
+    public function priority(): int
+    {
+        return 1;
+    }
+
+    public function requiredSettings(): array
+    {
+        return [];
+    } // reads local files only
 
     public function supports(MediaItem $item): bool
     {
@@ -40,7 +52,7 @@ class FileTagger implements MetadataSource
             return;
         }
 
-        $info = (new getID3())->analyze($path);
+        $info = (new getID3)->analyze($path);
 
         $values = array_merge(
             $this->technicalFields($info),
@@ -67,14 +79,14 @@ class FileTagger implements MetadataSource
     private function technicalFields(array $info): array
     {
         return array_filter([
-            'format'      => $info['fileformat'] ?? null,
+            'format' => $info['fileformat'] ?? null,
             'duration_ms' => isset($info['playtime_seconds'])
                 ? (int) round($info['playtime_seconds'] * 1000)
                 : null,
             'sample_rate' => isset($info['audio']['sample_rate'])
                 ? (int) $info['audio']['sample_rate']
                 : null,
-            'bit_depth'   => isset($info['audio']['bits_per_sample'])
+            'bit_depth' => isset($info['audio']['bits_per_sample'])
                 ? (int) $info['audio']['bits_per_sample']
                 : null,
         ], fn ($v) => $v !== null);
@@ -93,25 +105,25 @@ class FileTagger implements MetadataSource
             ? trim((string) $tags[$key][0])
             : null;
 
-        $bpm  = $first('bpm');
+        $bpm = $first('bpm');
         $year = $first('year') ?? $first('date') ?? $first('creation_date');
 
         [$key, $scale] = $this->parseKeyTag($first('initial_key') ?? $first('key'));
 
         return array_filter([
-            'artist'       => $first('artist') ?? $first('album_artist'),
-            'album'        => $first('album'),
-            'title'        => $first('title'),
-            'label'        => $first('publisher') ?? $first('label'),
-            'isrc'         => $first('isrc'),
+            'artist' => $first('artist') ?? $first('album_artist'),
+            'album' => $first('album'),
+            'title' => $first('title'),
+            'label' => $first('publisher') ?? $first('label'),
+            'isrc' => $first('isrc'),
             'track_number' => $this->leadingInt($first('track_number') ?? $first('track')),
-            'disc_number'  => $this->leadingInt($first('part_of_a_set') ?? $first('discnumber')),
+            'disc_number' => $this->leadingInt($first('part_of_a_set') ?? $first('discnumber')),
             'release_year' => $this->extractYear($year),
-            'bpm'          => is_numeric($bpm) ? round((float) $bpm, 1) : null,
-            'key'          => $key,
-            'scale'        => $scale,
+            'bpm' => is_numeric($bpm) ? round((float) $bpm, 1) : null,
+            'key' => $key,
+            'scale' => $scale,
             'musicbrainz_recording_id' => $first('musicbrainz_recordingid'),
-            'musicbrainz_release_id'   => $first('musicbrainz_albumid'),
+            'musicbrainz_release_id' => $first('musicbrainz_albumid'),
         ], fn ($v) => $v !== null && $v !== '');
     }
 
@@ -164,14 +176,14 @@ class FileTagger implements MetadataSource
             $scaleRaw = isset($m['scale']) ? strtolower($m['scale']) : null;
 
             return array_filter([
-                'artist'       => isset($m['artist']) ? trim($m['artist']) : null,
-                'album'        => isset($m['album']) ? trim($m['album']) : null,
-                'title'        => isset($m['title']) ? trim($m['title']) : null,
+                'artist' => isset($m['artist']) ? trim($m['artist']) : null,
+                'album' => isset($m['album']) ? trim($m['album']) : null,
+                'title' => isset($m['title']) ? trim($m['title']) : null,
                 'track_number' => isset($m['track_number']) ? (int) $m['track_number'] : null,
                 'release_year' => isset($m['release_year']) ? (int) $m['release_year'] : null,
-                'bpm'          => isset($m['bpm']) ? (float) $m['bpm'] : null,
-                'key'          => isset($m['key']) ? strtoupper($m['key']) : null,
-                'scale'        => $scaleRaw ? ($scaleMap[$scaleRaw] ?? null) : null,
+                'bpm' => isset($m['bpm']) ? (float) $m['bpm'] : null,
+                'key' => isset($m['key']) ? strtoupper($m['key']) : null,
+                'scale' => $scaleRaw ? ($scaleMap[$scaleRaw] ?? null) : null,
             ], fn ($v) => $v !== null && $v !== '');
         }
 
@@ -183,7 +195,7 @@ class FileTagger implements MetadataSource
      * runs this source first, so an existing value means either a prior run or
      * a manual user edit — both of which outrank file tags.
      *
-     * @param array<string, mixed> $values
+     * @param  array<string, mixed>  $values
      */
     private function writeMetadata(MediaItem $item, array $values): void
     {
@@ -198,6 +210,14 @@ class FileTagger implements MetadataSource
             }
         }
 
+        // Derive the primary (headline) artist from the credit, so a track by
+        // "Artist, Someone" files under "Artist" rather than as its own artist.
+        // The credit tag itself is kept intact; this is a separate column used
+        // for grouping and browsing.
+        if (blank($meta->primary_artist) && filled($meta->artist)) {
+            $meta->primary_artist = app(ArtistCredits::class)->primary($meta->artist);
+        }
+
         $meta->media_item_id = $item->id;
         $meta->save();
 
@@ -208,7 +228,7 @@ class FileTagger implements MetadataSource
      * Uploads land with a placeholder title (the filename). Once tags give us a
      * real track title, promote it — but never overwrite a title the user typed.
      *
-     * @param array<string, mixed> $values
+     * @param  array<string, mixed>  $values
      */
     private function writeTitle(MediaItem $item, array $values): void
     {
@@ -270,7 +290,7 @@ class FileTagger implements MetadataSource
 
         foreach ($candidates as $candidate) {
             foreach ([' - ', ' — ', ' – ', '_-_'] as $separator) {
-                if ($candidate === $tagTitle . $separator . $artist) {
+                if ($candidate === $tagTitle.$separator.$artist) {
                     return true;
                 }
             }
@@ -301,8 +321,8 @@ class FileTagger implements MetadataSource
      * public disk matters: covers are referenced by URL from the browser,
      * unlike audio, which is proxied through an authenticated route.
      *
-     * @param array<string, mixed> $values Fields resolved from tags this run,
-     *        since the metadata row may not be written yet.
+     * @param  array<string, mixed>  $values  Fields resolved from tags this run,
+     *                                        since the metadata row may not be written yet.
      */
     private function writeCoverArt(MediaItem $item, array $info, array $values = []): void
     {
@@ -317,21 +337,21 @@ class FileTagger implements MetadataSource
         }
 
         $extension = match ($picture['image_mime'] ?? '') {
-            'image/png'  => 'png',
+            'image/png' => 'png',
             'image/webp' => 'webp',
-            default      => 'jpg',
+            default => 'jpg',
         };
 
         $artist = $values['artist'] ?? $item->musicMetadata?->artist;
-        $album  = $values['album'] ?? $item->musicMetadata?->album;
-        $song   = $values['title'] ?? $item->title;
+        $album = $values['album'] ?? $item->musicMetadata?->album;
+        $song = $values['title'] ?? $item->title;
 
         $path = implode('/', [
             'artwork',
             $this->pathSegment($artist, 'Unknown Artist'),
             $this->pathSegment($album, 'Unknown Album'),
             // Id suffix keeps two identically-named tracks from colliding.
-            $this->pathSegment($song, 'Untitled') . '-' . $item->id . '.' . $extension,
+            $this->pathSegment($song, 'Untitled').'-'.$item->id.'.'.$extension,
         ]);
 
         Storage::disk('public')->put($path, $picture['data']);
@@ -375,8 +395,8 @@ class FileTagger implements MetadataSource
         }
 
         $item->tags()->create([
-            'type'   => $type,
-            'value'  => $value,
+            'type' => $type,
+            'value' => $value,
             'source' => MediaTagSource::File,
         ]);
     }
