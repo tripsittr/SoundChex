@@ -7,12 +7,14 @@ namespace App\Http\Controllers;
 
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
-use App\Services\MediaBrowser;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
+use App\Models\MediaPlay;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
+use App\Services\MediaBrowser;
 use App\Services\SearchService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -58,9 +60,9 @@ class MediaCenterController extends Controller
 
         if ($continueWatching->isNotEmpty()) {
             $rows[] = [
-                'key'        => 'continue-watching',
-                'title'      => 'Continue Watching',
-                'items'      => $continueWatching,
+                'key' => 'continue-watching',
+                'title' => 'Continue Watching',
+                'items' => $continueWatching,
                 'viewAllUrl' => route('media.browse', MediaItemType::Movie->value),
             ];
         }
@@ -71,9 +73,9 @@ class MediaCenterController extends Controller
 
         if ($watchlist?->isNotEmpty()) {
             $rows[] = [
-                'key'        => 'watchlist',
-                'title'      => 'My List',
-                'items'      => $watchlist,
+                'key' => 'watchlist',
+                'title' => 'My List',
+                'items' => $watchlist,
                 'viewAllUrl' => null,
             ];
         }
@@ -82,9 +84,9 @@ class MediaCenterController extends Controller
 
         if ($continueReading->isNotEmpty()) {
             $rows[] = [
-                'key'        => 'continue-reading',
-                'title'      => 'Continue Reading',
-                'items'      => $continueReading,
+                'key' => 'continue-reading',
+                'title' => 'Continue Reading',
+                'items' => $continueReading,
                 'viewAllUrl' => route('media.browse', MediaItemType::Book->value),
             ];
         }
@@ -102,17 +104,17 @@ class MediaCenterController extends Controller
             $hero ??= $this->browser->hero($type);
 
             $rows[] = [
-                'key'        => $type->value,
-                'title'      => str($type->label())->plural()->toString(),
-                'items'      => $items,
+                'key' => $type->value,
+                'title' => str($type->label())->plural()->toString(),
+                'items' => $items,
                 'viewAllUrl' => route('media.browse', $type->value),
             ];
         }
 
         return view('media.home', [
             'counts' => $this->browser->counts(),
-            'hero'   => $hero,
-            'rows'   => $rows,
+            'hero' => $hero,
+            'rows' => $rows,
         ]);
     }
 
@@ -130,7 +132,7 @@ class MediaCenterController extends Controller
         $section = $request->query('section');
         $types = match ($section) {
             'movie' => [MediaItemType::Movie],
-            'show'  => [MediaItemType::Show],
+            'show' => [MediaItemType::Show],
             default => $video,
         };
 
@@ -138,18 +140,18 @@ class MediaCenterController extends Controller
         $isFiltered = collect($filters)->filter()->isNotEmpty();
 
         return view('media.watch-index', [
-            'counts'     => $this->browser->counts(),
-            'section'    => in_array($section, ['movie', 'show'], true) ? $section : 'all',
-            'types'      => $types,
+            'counts' => $this->browser->counts(),
+            'section' => in_array($section, ['movie', 'show'], true) ? $section : 'all',
+            'types' => $types,
             // Services span both types regardless of the active sub-nav, so
             // switching sections doesn't make the row jump around.
-            'services'   => $this->browser->servicesFor($video),
-            'continue'   => $isFiltered ? collect() : $this->browser->continueWatching(),
-            'hero'       => $isFiltered ? null : $this->browser->hero($types),
-            'rows'       => $isFiltered ? [] : $this->browser->rowsForType($types),
-            'items'      => $this->browser->grid($types, $filters),
-            'genres'     => $this->browser->genresFor($types),
-            'filters'    => $filters,
+            'services' => $this->browser->servicesFor($video),
+            'continue' => $isFiltered ? collect() : $this->browser->continueWatching(),
+            'hero' => $isFiltered ? null : $this->browser->hero($types),
+            'rows' => $isFiltered ? [] : $this->browser->rowsForType($types),
+            'items' => $this->browser->grid($types, $filters),
+            'genres' => $this->browser->genresFor($types),
+            'filters' => $filters,
             'isFiltered' => $isFiltered,
         ]);
     }
@@ -166,8 +168,8 @@ class MediaCenterController extends Controller
         $isFiltered = collect($filters)->filter()->isNotEmpty();
 
         return view('media.browse', [
-            'counts'     => $this->browser->counts(),
-            'type'       => $mediaType,
+            'counts' => $this->browser->counts(),
+            'type' => $mediaType,
             // Rails are a discovery aid; once the user filters, they want the
             // grid to be the answer, so the rails step out of the way.
             //
@@ -175,13 +177,13 @@ class MediaCenterController extends Controller
             // film library works — a music library opens on what you were
             // listening to and what is new, and a full-screen image of a
             // single track pushes all of that below the fold.
-            'hero'       => $isFiltered || $mediaType === MediaItemType::Music
+            'hero' => $isFiltered || $mediaType === MediaItemType::Music
                 ? null
                 : $this->browser->hero($mediaType),
-            'rows'       => $isFiltered ? [] : $this->browser->rowsForType($mediaType),
-            'items'      => $this->browser->grid($mediaType, $filters),
-            'genres'     => $this->browser->genresFor($mediaType),
-            'filters'    => $filters,
+            'rows' => $isFiltered ? [] : $this->browser->rowsForType($mediaType),
+            'items' => $this->browser->grid($mediaType, $filters),
+            'genres' => $this->browser->genresFor($mediaType),
+            'filters' => $filters,
             'isFiltered' => $isFiltered,
         ]);
     }
@@ -200,8 +202,8 @@ class MediaCenterController extends Controller
         ]);
 
         return view('media.show', [
-            'counts'  => $this->browser->counts(),
-            'item'    => $item,
+            'counts' => $this->browser->counts(),
+            'item' => $item,
             'related' => $this->relatedTo($item),
         ]);
     }
@@ -291,7 +293,7 @@ class MediaCenterController extends Controller
         // updated_at with "now", which makes every queued write look stale
         // against a row this request just made.
         $recordedAt = isset($data['recorded_at'])
-            ? \Illuminate\Support\Carbon::parse($data['recorded_at'])
+            ? Carbon::parse($data['recorded_at'])
             : now();
 
         if ($play !== null && $play->updated_at !== null && $recordedAt->lt($play->updated_at)) {
@@ -360,9 +362,9 @@ class MediaCenterController extends Controller
         // Replaced rather than accumulated: a browser that syncs on every
         // launch would otherwise leave a token per visit, and a list of
         // hundreds is impossible to audit or revoke meaningfully.
-        $user->tokens()->where('name', 'device:' . $profile->id)->delete();
+        $user->tokens()->where('name', 'device:'.$profile->id)->delete();
 
-        $token = $user->createToken('device:' . $profile->id, ['profile:' . $profile->id]);
+        $token = $user->createToken('device:'.$profile->id, ['profile:'.$profile->id]);
 
         return response()->json([
             'token' => $token->plainTextToken,
@@ -433,7 +435,20 @@ class MediaCenterController extends Controller
         $item->plays()->create([
             'user_id' => $userId,
             'profile_id' => $profileId,
+            'source' => $this->playSource(),
         ]);
+    }
+
+    /**
+     * Where this play was started from (S-120), from the request's `from`
+     * param, validated against the known set so a stray value records null
+     * rather than polluting the column.
+     */
+    private function playSource(): ?string
+    {
+        $from = request()->query('from');
+
+        return is_string($from) && in_array($from, MediaPlay::SOURCES, true) ? $from : null;
     }
 
     /**

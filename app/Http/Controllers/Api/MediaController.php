@@ -8,6 +8,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\MediaItemResource;
 use App\Models\MediaItem;
+use App\Models\MediaPlay;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
 use App\Services\LyricsService;
@@ -221,9 +222,13 @@ class MediaController extends Controller
             return;
         }
 
+        $from = request()->query('from');
+        $source = is_string($from) && in_array($from, MediaPlay::SOURCES, true) ? $from : null;
+
         $item->plays()->create([
             'user_id' => $userId,
             'profile_id' => $profileId,
+            'source' => $source,
         ]);
     }
 }

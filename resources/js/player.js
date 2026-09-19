@@ -18,6 +18,49 @@ import { log, logFailure } from './log.js';
 const PREFS_KEY = 'soundchex.player.prefs';
 
 /**
+ * Where a play was started from, inferred from the current page path (S-120).
+ * Maps to the server's known set (MediaPlay::SOURCES); an unrecognised page maps
+ * to null so nothing wrong is recorded.
+ *
+ * @returns {string|null}
+ */
+function currentSource() {
+    const path = window.location?.pathname ?? '';
+
+    if (/^\/app\/album(\/|$|\?)/.test(path)) return 'album';
+    if (/^\/app\/artist(\/|$|\?)/.test(path)) return 'artist';
+    if (/^\/app\/playlist/.test(path)) return 'playlist';
+    if (/^\/app\/search/.test(path)) return 'search';
+    if (/^\/app\/item\//.test(path)) return 'show';
+    if (/^\/app\/(music|movies|shows|books|browse)/.test(path)) return 'browse';
+    if (path === '/app' || path === '/app/') return 'home';
+
+    return null;
+}
+
+/**
+ * Append `?from=<source>` to a stream URL when the page maps to a known source.
+ *
+ * @param {string} src
+ * @returns {string}
+ */
+function withSource(src) {
+    const source = currentSource();
+
+    if (!source || typeof src !== 'string') return src;
+
+    try {
+        const url = new URL(src, window.location.origin);
+        url.searchParams.set('from', source);
+
+        return url.pathname + url.search + url.hash;
+    } catch {
+        // A relative or odd src — fall back to a simple append.
+        return src + (src.includes('?') ? '&' : '?') + 'from=' + source;
+    }
+}
+
+/**
  * Where the queue and position live between page loads.
  *
  * sessionStorage rather than local: this is "what I am listening to right now",
@@ -208,7 +251,10 @@ export default class MediaPlayer {
             this.localSourceUrl = localUrl;
             this.el.src = localUrl;
         } else {
-            this.el.src = item.src;
+            // Tell the server where this play was started from (S-120), taken
+            // from the page the player is on. A local (downloaded) play does not
+            // hit the stream endpoint, so it records no source, which is correct.
+            this.el.src = withSource(item.src);
         }
 
         if (item.resumeAt && item.resumeAt > 5) {

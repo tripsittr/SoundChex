@@ -10,9 +10,21 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MediaPlay extends Model
 {
+    /**
+     * The surfaces a play can be started from (S-120). The client sends one of
+     * these; anything else is recorded as null rather than trusted, so the
+     * column stays a small, known set that statistics can group on.
+     *
+     * @var list<string>
+     */
+    public const SOURCES = [
+        'album', 'artist', 'playlist', 'search', 'home', 'browse', 'show', 'queue',
+    ];
+
     protected $fillable = [
         'media_item_id',
         'user_id',
+        'source',
         // Missing here for a while, and silently dropped on every create as a
         // result: the column stayed null, so the "reuse this session's row"
         // lookup — which filters on profile_id — never matched and each
