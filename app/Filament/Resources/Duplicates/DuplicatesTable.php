@@ -5,7 +5,6 @@
 
 namespace App\Filament\Resources\Duplicates;
 
-use App\Enums\DuplicateStatus;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
 use Filament\Actions\Action;
@@ -34,11 +33,15 @@ class DuplicatesTable
             ->defaultSort('duplicate_detected_at', 'desc')
             ->columns([
                 // The kept copy's cover — the thing being verified in the cover
-                // tab. Small, and hidden by default outside that context.
+                // tab. Resolve through coverUrl() (the stored value is a path on
+                // the public disk with spaces in it, not a ready URL), or a raw
+                // ImageColumn renders many of them blank.
                 ImageColumn::make('cover_image_url')
                     ->label('Cover')
                     ->square()
-                    ->size(44)
+                    ->size(56)
+                    ->getStateUsing(fn (MediaItem $record): ?string => $record->coverUrl())
+                    ->defaultImageUrl('https://placehold.co/56x56/1f2937/6b7280?text=%3F')
                     ->toggleable(),
 
                 TextColumn::make('title')
@@ -98,14 +101,12 @@ class DuplicatesTable
                     ->fontFamily('mono')
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            // Status is chosen by the tabs above the table (Needs review / Merged
+            // / Verify cover art / …). A status *filter* here as well stacked with
+            // the tab — the Merged tab plus a filter still defaulting to Pending
+            // resolved to "merged AND pending", i.e. nothing, so the tab read 0.
+            // Type is the only filter that belongs here.
             ->filters([
-                SelectFilter::make('duplicate_status')
-                    ->label('Status')
-                    ->options(collect(DuplicateStatus::cases())
-                        ->mapWithKeys(fn (DuplicateStatus $case) => [$case->value => $case->getLabel()])
-                        ->all())
-                    ->default(DuplicateStatus::Pending->value),
-
                 SelectFilter::make('type')
                     ->options([
                         'music' => 'Music',
