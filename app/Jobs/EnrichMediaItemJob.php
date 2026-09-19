@@ -5,13 +5,15 @@
 
 namespace App\Jobs;
 
+use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
 use App\Models\MetadataVersion;
 use App\Services\LibraryOrganizer;
-use App\Services\MetadataHistory;
+use App\Services\Metadata\CoverEmbedder;
 use App\Services\Metadata\MetadataPipeline;
+use App\Services\MetadataHistory;
 use App\Services\MusicCredits;
 use App\Services\WatchProviders;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -23,6 +25,7 @@ class EnrichMediaItemJob implements ShouldQueue
     use Queueable;
 
     public int $tries = 3;
+
     public int $backoff = 60;
 
     public function __construct(public readonly int $mediaItemId) {}
@@ -58,6 +61,7 @@ class EnrichMediaItemJob implements ShouldQueue
 
             $this->writeCredits($item);
             $this->tidyTitle($item);
+            $this->embedCover($item);
             $this->refreshAvailability($item);
             $this->fileIntoLibrary($item, $organizer);
         } catch (\Throwable $e) {
@@ -182,7 +186,7 @@ class EnrichMediaItemJob implements ShouldQueue
             }
 
             foreach ([' - ', ' — ', ' – '] as $separator) {
-                $suffix = $separator . $artist;
+                $suffix = $separator.$artist;
 
                 if (! str_ends_with($title, $suffix)) {
                     continue;
@@ -207,6 +211,34 @@ class EnrichMediaItemJob implements ShouldQueue
         } catch (\Throwable $e) {
             // The metadata is already saved; a clumsy title is not worth
             // failing the run and re-fetching everything.
+            report($e);
+        }
+    }
+
+    /**
+     * Bakes the resolved cover into the audio file (S-274).
+     *
+     * Only for a track we are confident about — a Fuzzy/None match may still
+     * carry the wrong cover, and we do not want to write that into the file.
+     * Music only, and non-fatal: the metadata is already saved, and a file we
+     * can't rewrite (permissions, a read-only drive, no ffmpeg) is no reason to
+     * fail the run. The embedder itself writes atomically and never touches the
+     * original on failure.
+     */
+    private function embedCover(MediaItem $item): void
+    {
+        if ($item->type !== MediaItemType::Music
+            || $item->match_confidence !== MatchConfidence::Exact) {
+            return;
+        }
+
+        try {
+            $embedder = app(CoverEmbedder::class);
+
+            if ($embedder->isAvailable()) {
+                $embedder->embed($item->refresh());
+            }
+        } catch (\Throwable $e) {
             report($e);
         }
     }

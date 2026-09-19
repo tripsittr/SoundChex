@@ -8,6 +8,7 @@ namespace App\Console\Commands;
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
 use App\Services\Metadata\CoverArtFetcher;
+use App\Services\Metadata\CoverEmbedder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -48,11 +49,12 @@ class RefreshArtwork extends Command
     protected $signature = 'artwork:refresh
         {--scope=likely-wrong : all | missing | likely-wrong}
         {--sample=0 : Only this many albums, for a trial run (0 = all)}
+        {--embed : Also bake the new cover into each audio file (ffmpeg)}
         {--force : Actually fetch and replace (otherwise a dry run)}';
 
     protected $description = 'Fetch verified album covers online and replace mismatched music artwork';
 
-    public function handle(CoverArtFetcher $fetcher): int
+    public function handle(CoverArtFetcher $fetcher, CoverEmbedder $embedder): int
     {
         $scope = $this->option('scope');
 
@@ -91,10 +93,18 @@ class RefreshArtwork extends Command
             return self::SUCCESS;
         }
 
+        $embed = (bool) $this->option('embed');
+
+        if ($embed && ! $embedder->isAvailable()) {
+            $this->warn('ffmpeg is not available — covers will be updated but not baked into the files.');
+            $embed = false;
+        }
+
         $bar = $this->output->createProgressBar($albumCount);
         $updated = 0;
         $noMatch = 0;
         $filesDeleted = 0;
+        $embedded = 0;
 
         foreach ($albums as $tracks) {
             $first = $tracks->first();
@@ -111,6 +121,10 @@ class RefreshArtwork extends Command
                 $filesDeleted += $this->deleteOldCover($track);
                 $track->forceFill(['cover_image_url' => $cover])->saveQuietly();
                 $updated++;
+
+                if ($embed && $embedder->embed($track->fresh())) {
+                    $embedded++;
+                }
             }
 
             $bar->advance();
@@ -122,6 +136,10 @@ class RefreshArtwork extends Command
         $this->info("{$fetcher->lookupCount()} albums looked up.");
         $this->info("Updated {$updated} track".($updated === 1 ? '' : 's')
             .", deleted {$filesDeleted} old cover file".($filesDeleted === 1 ? '' : 's').'.');
+
+        if ($embed) {
+            $this->info("Baked the cover into {$embedded} audio file".($embedded === 1 ? '' : 's').'.');
+        }
 
         if ($noMatch > 0) {
             $this->comment("{$noMatch} track".($noMatch === 1 ? '' : 's')
