@@ -165,4 +165,15 @@ class ProfileSettingsTest extends TestCase
         $this->assertTrue($profile->fresh()->preference('autoplay_next'));
         $this->assertFalse($other->fresh()->preference('autoplay_next'));
     }
+    public function test_the_appearance_panel_is_present(): void
+    {
+        // S-157: the per-device theme customizer renders on the settings page.
+        $this->actingProfile();
+
+        $this->get(route('media.settings'))
+            ->assertOk()
+            ->assertSee('Appearance')
+            ->assertSee('data-theme-panel', false)
+            ->assertSee('data-theme-accent', false);
+    }
 }

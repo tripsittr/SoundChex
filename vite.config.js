@@ -10,6 +10,7 @@ export default defineConfig({
                 'resources/css/filament/admin/theme.css',
                 'resources/css/media-center.css',
                 'resources/js/app.js',
+                'resources/js/theme.js',
                 'resources/js/media-center.js',
                 'resources/js/downloads-page.js',
                 'resources/js/reader.js',
