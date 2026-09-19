@@ -80,22 +80,62 @@
          navigation and re-bound to the same player. --}}
     <x-media.now-playing />
 
-    <footer class="border-t border-base-600/60 px-4 py-8 text-sm text-ink-500 sm:px-8">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div class="flex items-center gap-3">
-                <img src="{{ Vite::asset('resources/images/logo-light-on-dark.png') }}"
-                     alt=""
-                     class="h-5 w-auto opacity-50">
-                <span>Self-hosted media library</span>
+    {{-- Transparency footer. SoundChex is AGPLv3 and stores none of the user's
+         media off their own machine; this footer says so plainly and links every
+         piece of that — the source, the licence, and the policies — so the whole
+         project is reachable from inside the app, not only from a website the
+         self-hoster may never have seen. The website is not on a stable public
+         domain yet (W-11), so legal links fall back to the public repo. --}}
+    @php
+        $repo = config('app.links.repository');
+        $site = config('app.links.website');
+        // Legal pages live on the marketing site; without one, point at the repo.
+        $legal = fn (string $slug) => $site ? rtrim($site, '/')."/legal/{$slug}" : $repo;
+        $docs = fn (string $slug) => $site ? rtrim($site, '/')."/docs/{$slug}" : $repo;
+    @endphp
+    <footer class="border-t border-base-600/60 px-4 py-10 text-sm text-ink-500 sm:px-8">
+        <div class="mx-auto max-w-5xl space-y-6">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div class="flex items-start gap-3">
+                    <img src="{{ Vite::asset('resources/images/logo-light-on-dark.png') }}"
+                         alt=""
+                         class="mt-0.5 h-5 w-auto opacity-50">
+                    <div class="max-w-md">
+                        <p class="text-ink-300">Self-hosted media library</p>
+                        <p class="mt-1 text-xs leading-relaxed text-ink-500">
+                            Your music, films, TV and books, on a server you run. SoundChex is free
+                            and open source, and stores none of your media anywhere but your own
+                            machine &mdash; it neither acquires your files nor helps you to.
+                        </p>
+                    </div>
+                </div>
+                @unless (app(\App\Services\CurrentProfile::class)->isKids())
+                    <a href="{{ url('/admin') }}" class="shrink-0 transition hover:text-ink-100">
+                        Library management &rarr;
+                    </a>
+                @endunless
             </div>
-            {{-- Hidden on a kids profile, matching the account menu. The
-                 panel enforces its own permissions; this just keeps a child
-                 from wandering into it. --}}
-            @unless (app(\App\Services\CurrentProfile::class)->isKids())
-                <a href="{{ url('/admin') }}" class="transition hover:text-ink-100">
-                    Library management →
-                </a>
-            @endunless
+
+            <nav class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs" aria-label="Project information">
+                <a href="{{ $repo }}" target="_blank" rel="noopener" class="transition hover:text-ink-100">Source (AGPLv3)</a>
+                <span class="text-base-600" aria-hidden="true">&middot;</span>
+                <a href="{{ $repo }}/blob/main/LICENSE" target="_blank" rel="noopener" class="transition hover:text-ink-100">Licence</a>
+                <span class="text-base-600" aria-hidden="true">&middot;</span>
+                <a href="{{ $legal('server-privacy') }}" target="_blank" rel="noopener" class="transition hover:text-ink-100">Privacy</a>
+                <span class="text-base-600" aria-hidden="true">&middot;</span>
+                <a href="{{ $legal('server-terms') }}" target="_blank" rel="noopener" class="transition hover:text-ink-100">Terms</a>
+                <span class="text-base-600" aria-hidden="true">&middot;</span>
+                <a href="{{ $docs('credits') }}" target="_blank" rel="noopener" class="transition hover:text-ink-100">Open-source credits</a>
+                @if ($site)
+                    <span class="text-base-600" aria-hidden="true">&middot;</span>
+                    <a href="{{ $site }}" target="_blank" rel="noopener" class="transition hover:text-ink-100">Website</a>
+                @endif
+            </nav>
+
+            <p class="text-xs text-ink-600">
+                &copy; {{ date('Y') }} Tripsittr LLC. SoundChex&trade; is a trademark of Tripsittr LLC.
+                A commercial licence is available &mdash; see the licence link above.
+            </p>
         </div>
     </footer>
 
