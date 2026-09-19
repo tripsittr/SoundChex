@@ -278,6 +278,9 @@ class DuplicatesTable
             ->label('Merge selected')
             ->icon('heroicon-o-arrows-pointing-in')
             ->color('danger')
+            // Merging acts on pending pairs — hidden on the cover tab, where the
+            // rows are already merged and only the cover needs a look.
+            ->visible(fn ($livewire): bool => static::tabHasPending($livewire))
             ->requiresConfirmation()
             ->modalHeading('Merge the selected duplicates?')
             ->modalDescription(fn (Collection $records): string => static::mergePreview($records))
@@ -380,6 +383,7 @@ class DuplicatesTable
             ->label('Keep both')
             ->icon('heroicon-o-check')
             ->color('gray')
+            ->visible(fn ($livewire): bool => static::tabHasPending($livewire))
             ->action(function (Collection $records, DuplicateDetector $detector): void {
                 foreach ($records as $record) {
                     if ($record->isPendingDuplicate()) {
@@ -407,6 +411,8 @@ class DuplicatesTable
             ->label('Covers are fine')
             ->icon('heroicon-o-photo')
             ->color('info')
+            // Only meaningful on the cover-review tab.
+            ->visible(fn ($livewire): bool => static::isCoverTab($livewire))
             ->action(function (Collection $records, DuplicateDetector $detector): void {
                 $cleared = 0;
 
@@ -435,6 +441,7 @@ class DuplicatesTable
             ->label('Refetch correct cover')
             ->icon('heroicon-o-arrow-down-tray')
             ->color('warning')
+            ->visible(fn ($livewire): bool => static::isCoverTab($livewire))
             ->requiresConfirmation()
             ->modalHeading('Refetch covers for the selected tracks?')
             ->modalDescription('Looks each album up online (verified by artist) and replaces the cover, then clears the review flag. Tracks with no confident match keep their current cover.')
@@ -470,6 +477,24 @@ class DuplicatesTable
                     ->send();
             })
             ->deselectRecordsAfterCompletion();
+    }
+
+    /** The list page's currently-selected tab key ('pending', 'cover', …). */
+    private static function activeTab($livewire): ?string
+    {
+        return $livewire->activeTab ?? null;
+    }
+
+    /** The cover-review tab, where rows are already merged and only art is checked. */
+    private static function isCoverTab($livewire): bool
+    {
+        return static::activeTab($livewire) === 'cover';
+    }
+
+    /** A tab that can contain pending pairs to merge (not the cover-only tab). */
+    private static function tabHasPending($livewire): bool
+    {
+        return static::activeTab($livewire) !== 'cover';
     }
 
     /**
