@@ -30,35 +30,54 @@ class DuplicatesTable
 {
     public static function configure(Table $table): Table
     {
+        // On the cover-review tab, lay the rows out as a grid of large cover
+        // cards to approve or refetch — far easier than scanning a table of
+        // 44px thumbnails. Other tabs keep the table.
+        $onCoverTab = static::isCoverTab($table->getLivewire());
+
         return $table
             ->defaultSort('duplicate_detected_at', 'desc')
+            ->when($onCoverTab, fn (Table $t) => $t->contentGrid([
+                'md' => 2,
+                'xl' => 3,
+                '2xl' => 4,
+            ]))
             ->columns([
-                // The kept copy's cover — the thing being verified in the cover
-                // tab. Resolve through coverUrl() (the stored value is a path on
-                // the public disk with spaces in it, not a ready URL), or a raw
-                // ImageColumn renders many of them blank.
+                // The kept copy's cover. On the cover grid it is the big card
+                // image; in the table it is a small thumbnail. Resolved through
+                // coverUrl() (the stored value is a public-disk path with spaces,
+                // not a ready URL), or a raw ImageColumn renders many blank.
                 ImageColumn::make('cover_image_url')
                     ->label('Cover')
                     ->square()
-                    ->size(56)
+                    ->size($onCoverTab ? 220 : 56)
                     ->getStateUsing(fn (MediaItem $record): ?string => $record->coverUrl())
-                    ->defaultImageUrl('https://placehold.co/56x56/1f2937/6b7280?text=%3F')
-                    ->toggleable(),
+                    ->defaultImageUrl('https://placehold.co/220x220/1f2937/6b7280?text=%3F')
+                    ->extraImageAttributes($onCoverTab ? ['class' => 'w-full rounded-lg'] : [])
+                    ->toggleable(! $onCoverTab),
 
                 TextColumn::make('title')
-                    ->label('Duplicate')
+                    ->label($onCoverTab ? 'Track' : 'Duplicate')
                     ->searchable()
-                    ->description(fn (MediaItem $record): string => static::shortPath($record)),
+                    ->weight($onCoverTab ? 'medium' : null)
+                    // On the cover grid, show artist · album under the title so
+                    // the reviewer can judge whether the cover matches. In the
+                    // table, the file path is more useful.
+                    ->description(fn (MediaItem $record): string => $onCoverTab
+                        ? static::trackLine($record)
+                        : static::shortPath($record)),
 
                 TextColumn::make('duplicateOf.title')
                     ->label('Original')
                     ->placeholder('—')
+                    ->visible(! $onCoverTab)
                     ->description(fn (MediaItem $record): string => $record->duplicateOf
                         ? static::shortPath($record->duplicateOf)
                         : '—'),
 
                 TextColumn::make('type')
                     ->badge()
+                    ->visible(! $onCoverTab)
                     ->toggleable(),
 
                 // Why the pair was flagged — an identical file, or the same
@@ -67,6 +86,7 @@ class DuplicatesTable
                     ->label('Match')
                     ->badge()
                     ->placeholder('Identical file')
+                    ->visible(! $onCoverTab)
                     ->toggleable(),
 
                 // The important one: "same file" means there's nothing on disk
@@ -74,6 +94,7 @@ class DuplicatesTable
                 TextColumn::make('duplicate_kind')
                     ->label('Kind')
                     ->badge()
+                    ->visible(! $onCoverTab)
                     ->state(fn (MediaItem $record): string => static::isSharedFile($record)
                         ? 'Same file, two entries'
                         : 'Two copies on disk')
@@ -84,22 +105,26 @@ class DuplicatesTable
                 TextColumn::make('file_size')
                     ->label('Reclaims')
                     ->state(fn (MediaItem $record): string => static::reclaimable($record))
+                    ->visible(! $onCoverTab)
                     ->toggleable(),
 
                 TextColumn::make('duplicate_status')
                     ->label('Status')
-                    ->badge(),
+                    ->badge()
+                    ->visible(! $onCoverTab),
 
                 TextColumn::make('duplicate_detected_at')
                     ->label('Found')
                     ->since()
                     ->sortable()
+                    ->visible(! $onCoverTab)
                     ->toggleable(),
 
                 TextColumn::make('content_hash')
                     ->label('Hash')
                     ->limit(12)
                     ->fontFamily('mono')
+                    ->visible(! $onCoverTab)
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             // Status is chosen by the tabs above the table (Needs review / Merged
@@ -121,6 +146,7 @@ class DuplicatesTable
                 static::resolveContentAction(),
                 static::keepAction(),
                 static::coverVerifiedAction(),
+                static::refetchCoverAction(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -255,6 +281,33 @@ class DuplicatesTable
                 Notification::make()
                     ->title('Cover verified')
                     ->body('Cleared from the cover-review list.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /** Per-row: refetch a verified cover for this track and clear the flag. */
+    private static function refetchCoverAction(): Action
+    {
+        return Action::make('refetchCover')
+            ->label('Refetch')
+            ->icon('heroicon-o-arrow-down-tray')
+            ->color('warning')
+            ->visible(fn (MediaItem $record): bool => (bool) $record->needs_cover_review)
+            ->action(function (MediaItem $record, CoverArtFetcher $fetcher, DuplicateDetector $detector): void {
+                $cover = $fetcher->fetchForAlbum($record->musicMetadata?->artist, $record->musicMetadata?->album);
+
+                if ($cover !== null) {
+                    $record->forceFill(['cover_image_url' => $cover])->saveQuietly();
+                }
+
+                $detector->clearCoverReview($record);
+
+                Notification::make()
+                    ->title($cover !== null ? 'Cover refetched' : 'No confident match')
+                    ->body($cover !== null
+                        ? 'Replaced with a verified album cover.'
+                        : 'Kept the current cover; cleared from review.')
                     ->success()
                     ->send();
             });
@@ -482,7 +535,11 @@ class DuplicatesTable
     /** The list page's currently-selected tab key ('pending', 'cover', …). */
     private static function activeTab($livewire): ?string
     {
-        return $livewire->activeTab ?? null;
+        // $livewire is the ListRecords page (which has $activeTab) in normal use,
+        // but be defensive: it can be null or another component in some contexts.
+        return is_object($livewire) && property_exists($livewire, 'activeTab')
+            ? $livewire->activeTab
+            : null;
     }
 
     /** The cover-review tab, where rows are already merged and only art is checked. */
@@ -559,5 +616,15 @@ class DuplicatesTable
         $parts = explode('/', str_replace('\\', '/', $path));
 
         return implode('/', array_slice($parts, -2));
+    }
+
+    /** "Artist · Album" for the cover grid, skipping missing parts. */
+    private static function trackLine(MediaItem $record): string
+    {
+        $meta = $record->musicMetadata;
+
+        $parts = array_filter([$meta?->artist, $meta?->album]);
+
+        return $parts === [] ? '—' : implode(' · ', $parts);
     }
 }
