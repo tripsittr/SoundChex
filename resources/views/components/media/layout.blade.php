@@ -25,8 +25,28 @@
     <link rel="preconnect" href="https://fonts.bunny.net">
     <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700,800&display=swap" rel="stylesheet">
 
+    {{-- Apply the user's saved theme (S-157) BEFORE the stylesheet loads, so a
+         customised accent/background paints from the first frame with no flash
+         of the defaults. The full logic (presets, live updates) is in theme.js;
+         this is a minimal early pass reading the same localStorage key. --}}
+    <script>
+        (function () {
+            try {
+                var t = JSON.parse(localStorage.getItem('soundchex.theme') || '{}');
+                var r = document.documentElement.style;
+                var light = t.appearance === 'light' || (t.appearance === 'system' &&
+                    window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+                if (t.accent) r.setProperty('--sc-accent', t.accent);
+                var bg = light ? (t.backgroundLight || '#f7f7f8') : (t.backgroundDark || null);
+                if (bg) r.setProperty('--sc-base-900', bg);
+                if (light) document.documentElement.classList.add('scheme-light');
+            } catch (e) {}
+        })();
+    </script>
+
     @vite([
         'resources/css/media-center.css',
+        'resources/js/theme.js',
         'resources/js/media-center.js',
         'resources/js/now-playing.js',
         'resources/js/now-playing-sheet.js',

@@ -157,6 +157,55 @@
                 <button type="submit" class="settings-save">Update PIN</button>
             </form>
         </section>
+        {{-- Appearance (S-157). Per-device, stored in localStorage and applied
+             live by theme.js — not part of the profile form, since a theme is a
+             property of this client, not of the account. --}}
+        <section class="settings-group mt-10" data-theme-panel>
+            <h2 class="settings-group__title">Appearance</h2>
+            <p class="settings-note">Make this client yours. Saved on this device.</p>
+
+            <div class="mt-4 space-y-6">
+                <div>
+                    <p class="mb-2 text-sm font-medium text-ink-300">Mode</p>
+                    <div class="flex gap-2" role="group" aria-label="Appearance mode">
+                        @foreach (['system' => 'System', 'light' => 'Light', 'dark' => 'Dark'] as $value => $label)
+                            <button type="button" data-theme-appearance="{{ $value }}"
+                                    class="theme-chip">{{ $label }}</button>
+                        @endforeach
+                    </div>
+                </div>
+
+                <div>
+                    <p class="mb-2 text-sm font-medium text-ink-300">Accent</p>
+                    <div class="flex flex-wrap gap-3" data-theme-accents>
+                        @foreach (['#e11d3a','#ff6b35','#f5a623','#84cc16','#10b981','#14b8a6','#38bdf8','#6366f1','#8b5cf6','#ec4899'] as $preset)
+                            <button type="button" data-theme-accent="{{ $preset }}"
+                                    class="theme-swatch" style="--swatch: {{ $preset }}"
+                                    aria-label="Accent {{ $preset }}"></button>
+                        @endforeach
+                        <label class="theme-swatch theme-swatch--custom" aria-label="Custom accent">
+                            <input type="color" data-theme-accent-custom class="sr-only">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-6">
+                    <label class="text-sm text-ink-300">
+                        Dark background
+                        <input type="color" data-theme-bg-dark class="theme-color-input">
+                    </label>
+                    <label class="text-sm text-ink-300">
+                        Light background
+                        <input type="color" data-theme-bg-light class="theme-color-input">
+                    </label>
+                </div>
+
+                <button type="button" data-theme-reset class="settings-save settings-save--ghost">
+                    Reset to SoundChex defaults
+                </button>
+            </div>
+        </section>
+
         {{-- Last, and deliberately plain: this is for the moment something has
              gone wrong on a device with no console to open. --}}
         <section class="settings-group mt-10">
