@@ -20,6 +20,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Project links (transparency footer)
+    |--------------------------------------------------------------------------
+    |
+    | Where the served app's footer points for the project's public
+    | information — source, licence and policies. The website is not on a
+    | stable public domain yet (W-11), so these default to the public GitHub
+    | repo, which is durable; set SOUNDCHEX_WEBSITE_URL to a real domain to
+    | point the legal links there instead.
+    |
+    */
+
+    'links' => [
+        'website' => env('SOUNDCHEX_WEBSITE_URL'),
+        'repository' => env('SOUNDCHEX_REPO_URL', 'https://github.com/tripsittr/SoundChex'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |
