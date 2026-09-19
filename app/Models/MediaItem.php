@@ -55,6 +55,7 @@ class MediaItem extends Model
         'duplicate_status' => DuplicateStatus::class,
         'duplicate_match' => DuplicateMatch::class,
         'duplicate_detected_at' => 'datetime',
+        'needs_cover_review' => 'boolean',
         'owned' => 'boolean',
         'wishlist' => 'boolean',
         'file_size' => 'integer',

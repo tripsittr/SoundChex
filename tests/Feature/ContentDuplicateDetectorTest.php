@@ -337,7 +337,73 @@ class ContentDuplicateDetectorTest extends TestCase
         $this->assertSame('newer', $reason);
     }
 
+    /* ----------------------------------------------- verify cover art --- */
+
+    public function test_merge_flags_cover_review_when_the_covers_differ(): void
+    {
+        $keeper = $this->track('keeper.mp3', 'aaa', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $keeper->forceFill(['file_size' => 6_000_000, 'cover_image_url' => $this->cover('keeper.jpg', 'real album art')])->saveQuietly();
+        $loser = $this->track('loser.mp3', 'bbb', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $loser->forceFill(['file_size' => 3_000_000, 'cover_image_url' => $this->cover('loser.jpg', 'a compilation cover')])->saveQuietly();
+
+        // keeper is higher bitrate, so it wins; its cover differs from the loser's.
+        $this->detector->check($keeper->fresh());
+        $flagged = MediaItem::whereNotNull('duplicate_of_id')->first();
+
+        $this->assertSame('resolved', $this->detector->resolveKeepingBest($flagged, breakTies: true));
+        $this->assertTrue((bool) $flagged->fresh()->needs_cover_review);
+    }
+
+    public function test_merge_does_not_flag_when_the_covers_match(): void
+    {
+        $art = 'identical album art';
+        $keeper = $this->track('keeper.mp3', 'aaa', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $keeper->forceFill(['file_size' => 6_000_000, 'cover_image_url' => $this->cover('k.jpg', $art)])->saveQuietly();
+        $loser = $this->track('loser.mp3', 'bbb', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $loser->forceFill(['file_size' => 3_000_000, 'cover_image_url' => $this->cover('l.jpg', $art)])->saveQuietly();
+
+        $this->detector->check($keeper->fresh());
+        $flagged = MediaItem::whereNotNull('duplicate_of_id')->first();
+
+        $this->detector->resolveKeepingBest($flagged, breakTies: true);
+        $this->assertFalse((bool) $flagged->fresh()->needs_cover_review);
+    }
+
+    public function test_no_cover_flag_when_one_copy_has_no_art(): void
+    {
+        // Can't compare a difference we can't see — a missing cover never raises
+        // the flag (only a visible difference does).
+        $keeper = $this->track('keeper.mp3', 'aaa', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $keeper->forceFill(['file_size' => 6_000_000, 'cover_image_url' => $this->cover('k.jpg', 'art')])->saveQuietly();
+        $loser = $this->track('loser.mp3', 'bbb', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $loser->forceFill(['file_size' => 3_000_000])->saveQuietly(); // no cover
+
+        $this->detector->check($keeper->fresh());
+        $flagged = MediaItem::whereNotNull('duplicate_of_id')->first();
+
+        $this->detector->resolveKeepingBest($flagged, breakTies: true);
+        $this->assertFalse((bool) $flagged->fresh()->needs_cover_review);
+    }
+
+    public function test_clearing_cover_review_unsets_the_flag(): void
+    {
+        $item = $this->track('x.mp3', 'aaa', ['isrc' => 'X']);
+        $item->forceFill(['needs_cover_review' => true])->saveQuietly();
+
+        $this->detector->clearCoverReview($item);
+        $this->assertFalse((bool) $item->fresh()->needs_cover_review);
+    }
+
     /* -------------------------------------------------------- helpers --- */
+
+    /** Writes a cover file to the public disk and returns its stored path. */
+    private function cover(string $name, string $bytes): string
+    {
+        $path = 'artwork/'.$name;
+        Storage::disk('public')->put($path, $bytes);
+
+        return $path;
+    }
 
     /**
      * A catalogued, hashed music track with the given metadata.

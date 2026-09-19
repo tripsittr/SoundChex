@@ -5,7 +5,6 @@
 
 namespace App\Filament\Resources\Duplicates;
 
-use App\Enums\DuplicateStatus;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
 use Filament\Actions\Action;
@@ -13,6 +12,7 @@ use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Forms\Components\Radio;
 use Filament\Notifications\Notification;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -32,6 +32,18 @@ class DuplicatesTable
         return $table
             ->defaultSort('duplicate_detected_at', 'desc')
             ->columns([
+                // The kept copy's cover — the thing being verified in the cover
+                // tab. Resolve through coverUrl() (the stored value is a path on
+                // the public disk with spaces in it, not a ready URL), or a raw
+                // ImageColumn renders many of them blank.
+                ImageColumn::make('cover_image_url')
+                    ->label('Cover')
+                    ->square()
+                    ->size(56)
+                    ->getStateUsing(fn (MediaItem $record): ?string => $record->coverUrl())
+                    ->defaultImageUrl('https://placehold.co/56x56/1f2937/6b7280?text=%3F')
+                    ->toggleable(),
+
                 TextColumn::make('title')
                     ->label('Duplicate')
                     ->searchable()
@@ -89,14 +101,12 @@ class DuplicatesTable
                     ->fontFamily('mono')
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            // Status is chosen by the tabs above the table (Needs review / Merged
+            // / Verify cover art / …). A status *filter* here as well stacked with
+            // the tab — the Merged tab plus a filter still defaulting to Pending
+            // resolved to "merged AND pending", i.e. nothing, so the tab read 0.
+            // Type is the only filter that belongs here.
             ->filters([
-                SelectFilter::make('duplicate_status')
-                    ->label('Status')
-                    ->options(collect(DuplicateStatus::cases())
-                        ->mapWithKeys(fn (DuplicateStatus $case) => [$case->value => $case->getLabel()])
-                        ->all())
-                    ->default(DuplicateStatus::Pending->value),
-
                 SelectFilter::make('type')
                     ->options([
                         'music' => 'Music',
@@ -109,6 +119,7 @@ class DuplicatesTable
                 static::mergeAction(),
                 static::resolveContentAction(),
                 static::keepAction(),
+                static::coverVerifiedAction(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -219,6 +230,28 @@ class DuplicatesTable
                 Notification::make()
                     ->title('Keeping both copies')
                     ->body('This pair will not be flagged again.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Marks the kept cover as verified, clearing it from the cover-review tab.
+     * Shown only on a row that is actually flagged for cover review (S-265).
+     */
+    private static function coverVerifiedAction(): Action
+    {
+        return Action::make('coverVerified')
+            ->label('Cover is fine')
+            ->icon('heroicon-o-photo')
+            ->color('info')
+            ->visible(fn (MediaItem $record): bool => (bool) $record->needs_cover_review)
+            ->action(function (MediaItem $record, DuplicateDetector $detector): void {
+                $detector->clearCoverReview($record);
+
+                Notification::make()
+                    ->title('Cover verified')
+                    ->body('Cleared from the cover-review list.')
                     ->success()
                     ->send();
             });
