@@ -11,6 +11,7 @@ use App\Enums\MediaItemType;
 use App\Models\MediaItem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Finds and resolves duplicate copies of catalogued files.
@@ -435,12 +436,61 @@ class DuplicateDetector
         // The flagged row survives (history/ratings) and points at the keeper.
         // When the original was the loser, the flagged copy *is* the keeper, so
         // it keeps its own path; only its status changes.
+        //
+        // If the two copies had *different* cover art, the audio merge is sound
+        // but the kept cover is uncertain — flag it for a human to verify rather
+        // than silently keep whichever copy won on audio quality.
         $duplicate->forceFill([
             'file_path' => $keeper->file_path,
             'duplicate_status' => DuplicateStatus::Merged,
+            'needs_cover_review' => $this->coversDiffer($keeper, $loser),
         ])->saveQuietly();
 
         return true;
+    }
+
+    /**
+     * Whether two copies carry different cover art.
+     *
+     * Compares the extracted cover files by content hash. Two copies with the
+     * same cover (or both with none) are no cause for review; a genuine
+     * difference — one carrying a compilation's art, say — means the kept cover
+     * may be the wrong one and a person should look. A remote-URL cover or a
+     * missing file is treated as "can't compare", which does not raise the flag:
+     * we only flag a difference we can actually see, never a maybe.
+     */
+    private function coversDiffer(MediaItem $a, MediaItem $b): bool
+    {
+        $ha = $this->coverHash($a);
+        $hb = $this->coverHash($b);
+
+        // Both must be locally hashable for a difference to be meaningful.
+        if ($ha === null || $hb === null) {
+            return false;
+        }
+
+        return $ha !== $hb;
+    }
+
+    /** Content hash of a copy's extracted cover file, or null when unavailable. */
+    private function coverHash(MediaItem $item): ?string
+    {
+        $cover = $item->cover_image_url;
+
+        // No cover, or a remote URL (not a file we can read here).
+        if (blank($cover) || str_starts_with($cover, 'http')) {
+            return null;
+        }
+
+        $path = Storage::disk('public')->path(ltrim($cover, '/'));
+
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $hash = @hash_file('xxh128', $path);
+
+        return $hash === false ? null : $hash;
     }
 
     /**
@@ -502,8 +552,8 @@ class DuplicateDetector
      * copy the user meant to keep — and the reason is 'newer'. Without it, the
      * result is [null, 'tie'] so the caller can leave it for a person.
      *
-     * @return array{0: MediaItem|null, 1: string}  [winner, reason]. Reason is
-     *         one of bitrate | sample_rate | tags | newer | tie.
+     * @return array{0: MediaItem|null, 1: string} [winner, reason]. Reason is
+     *                                             one of bitrate | sample_rate | tags | newer | tie.
      */
     public function decideKeeper(MediaItem $a, MediaItem $b, bool $breakTies = false): array
     {
@@ -586,6 +636,14 @@ class DuplicateDetector
         $duplicate->forceFill([
             'duplicate_status' => DuplicateStatus::Kept,
         ])->saveQuietly();
+    }
+
+    /**
+     * Clears the cover-review flag once a person has checked the artwork (S-265).
+     */
+    public function clearCoverReview(MediaItem $item): void
+    {
+        $item->forceFill(['needs_cover_review' => false])->saveQuietly();
     }
 
     /**

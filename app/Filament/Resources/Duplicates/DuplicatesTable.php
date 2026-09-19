@@ -13,6 +13,7 @@ use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Forms\Components\Radio;
 use Filament\Notifications\Notification;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -32,6 +33,14 @@ class DuplicatesTable
         return $table
             ->defaultSort('duplicate_detected_at', 'desc')
             ->columns([
+                // The kept copy's cover — the thing being verified in the cover
+                // tab. Small, and hidden by default outside that context.
+                ImageColumn::make('cover_image_url')
+                    ->label('Cover')
+                    ->square()
+                    ->size(44)
+                    ->toggleable(),
+
                 TextColumn::make('title')
                     ->label('Duplicate')
                     ->searchable()
@@ -109,6 +118,7 @@ class DuplicatesTable
                 static::mergeAction(),
                 static::resolveContentAction(),
                 static::keepAction(),
+                static::coverVerifiedAction(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -219,6 +229,28 @@ class DuplicatesTable
                 Notification::make()
                     ->title('Keeping both copies')
                     ->body('This pair will not be flagged again.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Marks the kept cover as verified, clearing it from the cover-review tab.
+     * Shown only on a row that is actually flagged for cover review (S-265).
+     */
+    private static function coverVerifiedAction(): Action
+    {
+        return Action::make('coverVerified')
+            ->label('Cover is fine')
+            ->icon('heroicon-o-photo')
+            ->color('info')
+            ->visible(fn (MediaItem $record): bool => (bool) $record->needs_cover_review)
+            ->action(function (MediaItem $record, DuplicateDetector $detector): void {
+                $detector->clearCoverReview($record);
+
+                Notification::make()
+                    ->title('Cover verified')
+                    ->body('Cleared from the cover-review list.')
                     ->success()
                     ->send();
             });

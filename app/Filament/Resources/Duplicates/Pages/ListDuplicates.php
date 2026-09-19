@@ -56,6 +56,14 @@ class ListDuplicates extends ListRecords
                 ->modifyQueryUsing(fn (Builder $query) => $query
                     ->where('duplicate_status', DuplicateStatus::Merged)),
 
+            // Merged rows whose two copies had different cover art. The audio is
+            // resolved; the kept cover just needs a human's eye (S-265).
+            'cover' => Tab::make('Verify cover art')
+                ->badge(fn (): int => static::countCoverReview())
+                ->badgeColor('info')
+                ->modifyQueryUsing(fn (Builder $query) => $query
+                    ->where('needs_cover_review', true)),
+
             'all' => Tab::make('All'),
         ];
     }
@@ -64,6 +72,13 @@ class ListDuplicates extends ListRecords
     {
         return DuplicateResource::getEloquentQuery()
             ->where('duplicate_status', $status)
+            ->count();
+    }
+
+    private static function countCoverReview(): int
+    {
+        return DuplicateResource::getEloquentQuery()
+            ->where('needs_cover_review', true)
             ->count();
     }
 }
