@@ -113,7 +113,6 @@ class DuplicatesTable
             ->toolbarActions([
                 BulkActionGroup::make([
                     static::mergeBulkAction(),
-                    static::resolveBestBulkAction(),
                     static::keepBulkAction(),
                 ]),
             ])
@@ -225,6 +224,18 @@ class DuplicatesTable
             });
     }
 
+    /**
+     * The one smart bulk action: resolve every selected pair by deleting the copy
+     * that should go, and keeping the one that should stay.
+     *
+     *  - Byte-identical → delete the redundant copy (byte-re-compared first).
+     *  - Same recording, different file → keep the higher-quality copy (higher
+     *    bitrate, then sample rate, then more complete tags); on a genuine tie,
+     *    keep the newer copy — a re-download is usually the one meant.
+     *
+     * The confirmation modal previews exactly what will happen and why. Nothing
+     * is deleted until confirmed.
+     */
     private static function mergeBulkAction(): BulkAction
     {
         return BulkAction::make('mergeSelected')
@@ -233,39 +244,32 @@ class DuplicatesTable
             ->color('danger')
             ->requiresConfirmation()
             ->modalHeading('Merge the selected duplicates?')
-            ->modalDescription('Only byte-identical copies are merged, each re-compared byte-for-byte first. Same-recording matches (different files) are skipped — resolve those one at a time with “Keep one”, since which copy to keep is your choice.')
+            ->modalDescription(fn (Collection $records): string => static::mergePreview($records))
+            ->modalSubmitActionLabel('Merge and delete the extra copies')
             ->action(function (Collection $records, DuplicateDetector $detector): void {
                 $merged = 0;
                 $skipped = 0;
-                $content = 0;
 
                 foreach ($records as $record) {
                     if (! $record->isPendingDuplicate()) {
                         continue;
                     }
 
-                    // Content matches are never bulk-deleted — the keeper is a
-                    // per-pair choice made in the single-row action.
                     if (static::isContentMatch($record)) {
-                        $content++;
-
-                        continue;
+                        // Keep the better copy; break a true tie toward the newer.
+                        $detector->resolveKeepingBest($record, breakTies: true) === 'resolved'
+                            ? $merged++
+                            : $skipped++;
+                    } else {
+                        $detector->merge($record) ? $merged++ : $skipped++;
                     }
-
-                    $detector->merge($record) ? $merged++ : $skipped++;
-                }
-
-                $notes = [];
-                if ($skipped > 0) {
-                    $notes[] = $skipped.' skipped — contents differ or the original is missing.';
-                }
-                if ($content > 0) {
-                    $notes[] = $content.' same-recording match'.($content === 1 ? '' : 'es').' left for you to resolve with “Keep one”.';
                 }
 
                 Notification::make()
                     ->title($merged.' merged')
-                    ->body($notes ? implode(' ', $notes) : null)
+                    ->body($skipped > 0
+                        ? $skipped.' skipped — a file was missing or the contents no longer match.'
+                        : null)
                     ->success()
                     ->send();
             })
@@ -273,86 +277,41 @@ class DuplicatesTable
     }
 
     /**
-     * Bulk: for each selected content pair, keep the higher-quality copy (higher
-     * bitrate, then sample rate, then tag completeness) and delete the other.
-     * Pairs where neither copy is clearly better are left for review, and the
-     * confirmation modal previews exactly how many will be resolved, skipped as a
-     * tie, and how much space is reclaimed — nothing is deleted until confirmed.
+     * Preview of what "Merge selected" will do: how many byte-identical copies
+     * are removed, how many content pairs keep the better (or newer) copy, and
+     * roughly how much space is reclaimed.
      */
-    private static function resolveBestBulkAction(): BulkAction
-    {
-        return BulkAction::make('resolveBestSelected')
-            ->label('Keep the best copy')
-            ->icon('heroicon-o-sparkles')
-            ->color('danger')
-            ->requiresConfirmation()
-            ->modalHeading('Keep the best copy of each?')
-            ->modalDescription(fn (Collection $records): string => static::bestPreview($records))
-            ->modalSubmitActionLabel('Delete the lesser copies')
-            ->action(function (Collection $records, DuplicateDetector $detector): void {
-                $resolved = 0;
-                $ties = 0;
-                $skipped = 0;
-
-                foreach ($records as $record) {
-                    if (! $record->isPendingDuplicate() || ! static::isContentMatch($record)) {
-                        $skipped++;
-
-                        continue;
-                    }
-
-                    match ($detector->resolveKeepingBest($record)) {
-                        'resolved' => $resolved++,
-                        'tie' => $ties++,
-                        default => $skipped++,
-                    };
-                }
-
-                $notes = [];
-                if ($ties > 0) {
-                    $notes[] = $ties.' left for review — the two copies are too close to call.';
-                }
-                if ($skipped > 0) {
-                    $notes[] = $skipped.' skipped (not a same-recording match, or a file was missing).';
-                }
-
-                Notification::make()
-                    ->title($resolved.' resolved — best copy kept')
-                    ->body($notes ? implode(' ', $notes) : null)
-                    ->success()
-                    ->send();
-            })
-            ->deselectRecordsAfterCompletion();
-    }
-
-    /**
-     * A one-line preview of what "Keep the best copy" would do to the selection.
-     */
-    private static function bestPreview(Collection $records): string
+    private static function mergePreview(Collection $records): string
     {
         $detector = app(DuplicateDetector::class);
-        $resolve = 0;
-        $ties = 0;
-        $other = 0;
+        $identical = 0;
+        $quality = 0;
+        $newer = 0;
         $reclaim = 0;
 
         foreach ($records as $record) {
-            if (! $record->isPendingDuplicate() || ! static::isContentMatch($record)) {
-                $other++;
+            if (! $record->isPendingDuplicate()) {
+                continue;
+            }
+
+            if (! static::isContentMatch($record)) {
+                $identical++;
+                $path = $record->absoluteFilePath();
+                if ($path !== null && is_file($path)) {
+                    $reclaim += filesize($path);
+                }
 
                 continue;
             }
 
-            $winner = $detector->bestCopy($record->duplicateOf, $record);
+            [$winner, $reason] = $detector->decideKeeper($record->duplicateOf, $record, breakTies: true);
 
             if ($winner === null) {
-                $ties++;
-
                 continue;
             }
 
-            $resolve++;
-            // The copy being deleted is the one that is not the winner.
+            $reason === 'newer' ? $newer++ : $quality++;
+
             $loser = $winner->is($record) ? $record->duplicateOf : $record;
             $path = $loser?->absoluteFilePath();
             if ($path !== null && is_file($path)) {
@@ -360,18 +319,23 @@ class DuplicatesTable
             }
         }
 
-        $parts = [$resolve.' of '.$records->count().' will keep the higher-quality copy and delete the other'];
-        if ($reclaim > 0) {
-            $parts[0] .= ' (~'.number_format($reclaim / 1048576, 0).' MB reclaimed)';
+        $parts = [];
+        if ($identical > 0) {
+            $parts[] = $identical.' identical '.str('copy')->plural($identical).' removed';
         }
-        if ($ties > 0) {
-            $parts[] = $ties.' too close to call will be left for review';
+        if ($quality > 0) {
+            $parts[] = $quality.' will keep the higher-quality copy';
         }
-        if ($other > 0) {
-            $parts[] = $other.' are not same-recording matches and will be skipped';
+        if ($newer > 0) {
+            $parts[] = $newer.' are an even match — the newer copy is kept';
         }
 
-        return implode('. ', $parts).'. This deletes files and cannot be undone.';
+        $summary = $parts ? implode('; ', $parts) : 'Nothing to merge in the selection';
+        if ($reclaim > 0) {
+            $summary .= '. ~'.number_format($reclaim / 1048576, 0).' MB reclaimed';
+        }
+
+        return $summary.'. This deletes files and cannot be undone.';
     }
 
     private static function keepBulkAction(): BulkAction

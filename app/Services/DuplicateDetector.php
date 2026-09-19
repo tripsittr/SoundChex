@@ -456,7 +456,7 @@ class DuplicateDetector
      *                                    left for review because neither is clearly better; skipped = not an
      *                                    eligible content pair, or a file was missing.
      */
-    public function resolveKeepingBest(MediaItem $duplicate): string
+    public function resolveKeepingBest(MediaItem $duplicate, bool $breakTies = false): string
     {
         $original = $duplicate->duplicateOf;
 
@@ -464,7 +464,7 @@ class DuplicateDetector
             return 'skipped';
         }
 
-        $winner = $this->bestCopy($original, $duplicate);
+        [$winner] = $this->decideKeeper($original, $duplicate, $breakTies);
 
         if ($winner === null) {
             return 'tie';
@@ -479,16 +479,33 @@ class DuplicateDetector
      * Which of two copies to keep on quality, or null when neither is clearly
      * better (a tie the caller should leave for a human).
      *
+     * A thin wrapper over decideKeeper() that discards the reason and never
+     * breaks ties — kept for callers that only want the quality verdict.
+     */
+    public function bestCopy(MediaItem $a, MediaItem $b): ?MediaItem
+    {
+        return $this->decideKeeper($a, $b, breakTies: false)[0];
+    }
+
+    /**
+     * Decide which copy to keep, and say why.
+     *
      * Compared in order, first difference wins:
      *   1. bitrate  — file size ÷ duration; the copies are the same recording so
      *                 near-equal length makes this a fair proxy. A margin avoids
      *                 treating a rounding-level difference as a winner.
      *   2. sample rate
      *   3. tag completeness — album, track number, release year, artist present
-     * A file whose size or duration is unknown can't be bitrate-ranked, so it
-     * falls through to the later signals.
+     *
+     * When all three tie, the copies are indistinguishable on quality. With
+     * `$breakTies` the newer row (higher id) wins — a re-download is usually the
+     * copy the user meant to keep — and the reason is 'newer'. Without it, the
+     * result is [null, 'tie'] so the caller can leave it for a person.
+     *
+     * @return array{0: MediaItem|null, 1: string}  [winner, reason]. Reason is
+     *         one of bitrate | sample_rate | tags | newer | tie.
      */
-    public function bestCopy(MediaItem $a, MediaItem $b): ?MediaItem
+    public function decideKeeper(MediaItem $a, MediaItem $b, bool $breakTies = false): array
     {
         // 1. Bitrate (bits per second), when both are measurable.
         $ra = $this->bitrate($a);
@@ -500,7 +517,7 @@ class DuplicateDetector
             $margin = max(16000, (int) ($this->maxValue($ra, $rb) * 0.05));
 
             if (abs($ra - $rb) >= $margin) {
-                return $ra > $rb ? $a : $b;
+                return [$ra > $rb ? $a : $b, 'bitrate'];
             }
         }
 
@@ -509,7 +526,7 @@ class DuplicateDetector
         $sb = (int) ($b->musicMetadata?->sample_rate ?? 0);
 
         if ($sa !== $sb) {
-            return $sa > $sb ? $a : $b;
+            return [$sa > $sb ? $a : $b, 'sample_rate'];
         }
 
         // 3. Tag completeness.
@@ -517,11 +534,16 @@ class DuplicateDetector
         $cb = $this->tagCompleteness($b);
 
         if ($ca !== $cb) {
-            return $ca > $cb ? $a : $b;
+            return [$ca > $cb ? $a : $b, 'tags'];
         }
 
-        // Genuinely equal — leave it for a person.
-        return null;
+        // Genuinely equal on quality.
+        if (! $breakTies) {
+            return [null, 'tie'];
+        }
+
+        // Keep the newer row (higher id) — a re-download is usually the one meant.
+        return [$a->id >= $b->id ? $a : $b, 'newer'];
     }
 
     /**

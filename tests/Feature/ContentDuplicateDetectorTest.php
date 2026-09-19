@@ -314,6 +314,29 @@ class ContentDuplicateDetectorTest extends TestCase
         $this->assertSame(DuplicateStatus::Pending, $flagged->fresh()->duplicate_status);
     }
 
+    public function test_break_ties_keeps_the_newer_copy(): void
+    {
+        // Identical quality; with breakTies the newer row (higher id) is kept.
+        $meta = ['isrc' => 'X', 'duration_ms' => 200000, 'sample_rate' => 44100, 'artist' => 'A', 'album' => 'Album'];
+        $older = $this->track('older.mp3', 'aaa', $meta);
+        $older->forceFill(['file_size' => 5_000_000])->saveQuietly();
+        $newer = $this->track('newer.mp3', 'bbb', $meta);
+        $newer->forceFill(['file_size' => 5_050_000])->saveQuietly();
+        $olderPath = $older->absoluteFilePath();
+        $newerPath = $newer->absoluteFilePath();
+
+        $this->detector->check($newer->fresh());
+        $flagged = MediaItem::whereNotNull('duplicate_of_id')->first();
+
+        $this->assertSame('resolved', $this->detector->resolveKeepingBest($flagged, breakTies: true));
+        $this->assertFileExists($newerPath);      // newer survives
+        $this->assertFileDoesNotExist($olderPath); // older deleted
+
+        [$winner, $reason] = $this->detector->decideKeeper($older->fresh(), $newer->fresh(), breakTies: true);
+        $this->assertTrue($winner?->is($newer));
+        $this->assertSame('newer', $reason);
+    }
+
     /* -------------------------------------------------------- helpers --- */
 
     /**
