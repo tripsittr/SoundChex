@@ -444,6 +444,119 @@ class DuplicateDetector
     }
 
     /**
+     * Resolves a content pair automatically by keeping the higher-quality copy,
+     * *only* when one is clearly better — otherwise the pair is left for review.
+     *
+     * "Clearly better" means a meaningfully higher bitrate, or (bitrate tied) a
+     * higher sample rate, or (both tied) more complete tags. A pair where the two
+     * copies are effectively equal on all of those is a genuine coin-flip, so it
+     * is skipped rather than guessed at — this deletes real files.
+     *
+     * @return 'resolved'|'tie'|'skipped' resolved = a copy was deleted; tie =
+     *                                    left for review because neither is clearly better; skipped = not an
+     *                                    eligible content pair, or a file was missing.
+     */
+    public function resolveKeepingBest(MediaItem $duplicate): string
+    {
+        $original = $duplicate->duplicateOf;
+
+        if ($original === null || ! $duplicate->duplicate_match?->isContent()) {
+            return 'skipped';
+        }
+
+        $winner = $this->bestCopy($original, $duplicate);
+
+        if ($winner === null) {
+            return 'tie';
+        }
+
+        $ok = $this->resolveKeeping($duplicate, keepDuplicate: $winner->is($duplicate));
+
+        return $ok ? 'resolved' : 'skipped';
+    }
+
+    /**
+     * Which of two copies to keep on quality, or null when neither is clearly
+     * better (a tie the caller should leave for a human).
+     *
+     * Compared in order, first difference wins:
+     *   1. bitrate  — file size ÷ duration; the copies are the same recording so
+     *                 near-equal length makes this a fair proxy. A margin avoids
+     *                 treating a rounding-level difference as a winner.
+     *   2. sample rate
+     *   3. tag completeness — album, track number, release year, artist present
+     * A file whose size or duration is unknown can't be bitrate-ranked, so it
+     * falls through to the later signals.
+     */
+    public function bestCopy(MediaItem $a, MediaItem $b): ?MediaItem
+    {
+        // 1. Bitrate (bits per second), when both are measurable.
+        $ra = $this->bitrate($a);
+        $rb = $this->bitrate($b);
+
+        if ($ra !== null && $rb !== null) {
+            // 5% (or ~16 kbps) apart to count as a real difference, not encoder
+            // noise between two rips of the same track.
+            $margin = max(16000, (int) ($this->maxValue($ra, $rb) * 0.05));
+
+            if (abs($ra - $rb) >= $margin) {
+                return $ra > $rb ? $a : $b;
+            }
+        }
+
+        // 2. Sample rate.
+        $sa = (int) ($a->musicMetadata?->sample_rate ?? 0);
+        $sb = (int) ($b->musicMetadata?->sample_rate ?? 0);
+
+        if ($sa !== $sb) {
+            return $sa > $sb ? $a : $b;
+        }
+
+        // 3. Tag completeness.
+        $ca = $this->tagCompleteness($a);
+        $cb = $this->tagCompleteness($b);
+
+        if ($ca !== $cb) {
+            return $ca > $cb ? $a : $b;
+        }
+
+        // Genuinely equal — leave it for a person.
+        return null;
+    }
+
+    /**
+     * A copy's bitrate in bits per second, from its file size and duration, or
+     * null when either is unknown.
+     */
+    private function bitrate(MediaItem $item): ?int
+    {
+        $bytes = $item->file_size;
+        $ms = $item->musicMetadata?->duration_ms;
+
+        if ($bytes === null || $bytes <= 0 || $ms === null || $ms <= 0) {
+            return null;
+        }
+
+        return (int) ($bytes * 8 / ($ms / 1000));
+    }
+
+    /** How many of the meaningful tags a copy has filled in (0–4). */
+    private function tagCompleteness(MediaItem $item): int
+    {
+        $meta = $item->musicMetadata;
+
+        return (int) filled($meta?->album)
+            + (int) ($meta?->trackNumber() !== null)
+            + (int) filled($meta?->release_year)
+            + (int) filled($meta?->artist);
+    }
+
+    private function maxValue(int $a, int $b): int
+    {
+        return $a > $b ? $a : $b;
+    }
+
+    /**
      * Marks a pair as deliberately kept, so it stops being offered for review.
      */
     public function keepBoth(MediaItem $duplicate): void

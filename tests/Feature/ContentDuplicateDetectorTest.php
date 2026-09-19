@@ -219,6 +219,101 @@ class ContentDuplicateDetectorTest extends TestCase
         $this->assertFileExists($copyPath);
     }
 
+    /* ----------------------------------------------- keep the best --- */
+
+    public function test_best_copy_prefers_the_higher_bitrate(): void
+    {
+        // Same duration, one file twice the size — clearly higher bitrate.
+        $low = $this->track('low.mp3', 'aaa', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $low->forceFill(['file_size' => 3_000_000])->saveQuietly();
+        $high = $this->track('high.mp3', 'bbb', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $high->forceFill(['file_size' => 6_000_000])->saveQuietly();
+
+        $best = $this->detector->bestCopy($low->fresh(), $high->fresh());
+
+        $this->assertTrue($best?->is($high));
+    }
+
+    public function test_best_copy_breaks_a_bitrate_tie_on_sample_rate(): void
+    {
+        $a = $this->track('a.mp3', 'aaa', ['isrc' => 'X', 'duration_ms' => 200000, 'sample_rate' => 44100]);
+        $a->forceFill(['file_size' => 5_000_000])->saveQuietly();
+        $b = $this->track('b.mp3', 'bbb', ['isrc' => 'X', 'duration_ms' => 200000, 'sample_rate' => 48000]);
+        $b->forceFill(['file_size' => 5_000_000])->saveQuietly();
+
+        $best = $this->detector->bestCopy($a->fresh(), $b->fresh());
+
+        $this->assertTrue($best?->is($b));
+    }
+
+    public function test_best_copy_breaks_a_remaining_tie_on_tag_completeness(): void
+    {
+        $sparse = $this->track('sparse.mp3', 'aaa', [
+            'isrc' => 'X', 'duration_ms' => 200000, 'sample_rate' => 44100, 'artist' => 'A',
+        ]);
+        $sparse->forceFill(['file_size' => 5_000_000])->saveQuietly();
+        $full = $this->track('full.mp3', 'bbb', [
+            'isrc' => 'X', 'duration_ms' => 200000, 'sample_rate' => 44100,
+            'artist' => 'A', 'album' => 'Album', 'track_number' => 3, 'release_year' => 2001,
+        ]);
+        $full->forceFill(['file_size' => 5_000_000])->saveQuietly();
+
+        $best = $this->detector->bestCopy($sparse->fresh(), $full->fresh());
+
+        $this->assertTrue($best?->is($full));
+    }
+
+    public function test_best_copy_returns_null_for_a_genuine_tie(): void
+    {
+        // Same bitrate, sample rate, and tags — nothing to choose between them.
+        $meta = ['isrc' => 'X', 'duration_ms' => 200000, 'sample_rate' => 44100, 'artist' => 'A', 'album' => 'Album'];
+        $a = $this->track('a.mp3', 'aaa', $meta);
+        $a->forceFill(['file_size' => 5_000_000])->saveQuietly();
+        $b = $this->track('b.mp3', 'bbb', $meta);
+        $b->forceFill(['file_size' => 5_050_000])->saveQuietly(); // within the 5% margin
+
+        $this->assertNull($this->detector->bestCopy($a->fresh(), $b->fresh()));
+    }
+
+    public function test_resolve_keeping_best_deletes_the_lesser_copy(): void
+    {
+        $low = $this->track('low.mp3', 'aaa', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $low->forceFill(['file_size' => 3_000_000])->saveQuietly();
+        $high = $this->track('high.mp3', 'bbb', ['isrc' => 'X', 'duration_ms' => 200000]);
+        $high->forceFill(['file_size' => 6_000_000])->saveQuietly();
+        $lowPath = $low->absoluteFilePath();
+        $highPath = $high->absoluteFilePath();
+
+        // 'high' is flagged as a duplicate of 'low' (arrival order), but 'high'
+        // is the better copy — so 'low' must be the one deleted.
+        $this->detector->check($high->fresh());
+        $flagged = MediaItem::whereNotNull('duplicate_of_id')->first();
+
+        $this->assertSame('resolved', $this->detector->resolveKeepingBest($flagged));
+        $this->assertFileExists($highPath);
+        $this->assertFileDoesNotExist($lowPath);
+    }
+
+    public function test_resolve_keeping_best_leaves_a_tie_for_review(): void
+    {
+        $meta = ['isrc' => 'X', 'duration_ms' => 200000, 'sample_rate' => 44100, 'artist' => 'A', 'album' => 'Album'];
+        $a = $this->track('a.mp3', 'aaa', $meta);
+        $a->forceFill(['file_size' => 5_000_000])->saveQuietly();
+        $b = $this->track('b.mp3', 'bbb', $meta);
+        $b->forceFill(['file_size' => 5_050_000])->saveQuietly();
+        $aPath = $a->absoluteFilePath();
+        $bPath = $b->absoluteFilePath();
+
+        $this->detector->check($b->fresh());
+        $flagged = MediaItem::whereNotNull('duplicate_of_id')->first();
+
+        $this->assertSame('tie', $this->detector->resolveKeepingBest($flagged));
+        // Both survive, and it stays pending for a human.
+        $this->assertFileExists($aPath);
+        $this->assertFileExists($bPath);
+        $this->assertSame(DuplicateStatus::Pending, $flagged->fresh()->duplicate_status);
+    }
+
     /* -------------------------------------------------------- helpers --- */
 
     /**

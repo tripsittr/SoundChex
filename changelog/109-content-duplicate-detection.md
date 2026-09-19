@@ -56,6 +56,20 @@ byte-identical path and now refuses a content match rather than un-flagging it.
 - Content matching is **music-only**; movies, TV, and books are unchanged
   (byte-identical detection only).
 
+### Bulk: keep the best copy
+
+Resolving 1,000+ pairs one at a time is impractical, so the review screen gains a
+**"Keep the best copy"** bulk action. For each selected content pair it keeps the
+higher-quality copy and deletes the other, deciding in order: **higher bitrate**
+(file size ÷ duration, a fair proxy since the copies are the same recording),
+then **higher sample rate**, then **more complete tags** (album / track number /
+release year / artist). A pair where neither copy is clearly better (within a 5%
+bitrate margin and equal on the rest) is a genuine coin-flip and is **left for
+review** rather than guessed at. The confirmation modal **previews** exactly how
+many will be resolved, how many are too close to call, and how much space is
+reclaimed — nothing is deleted until confirmed. On the dev library's 1,444
+pending pairs this auto-resolves ~975 (~5 GB) and leaves ~469 ties for review.
+
 ### Also: self-heal stale flags
 
 A pending duplicate whose `duplicate_of_id` is null — flagged as a duplicate of
