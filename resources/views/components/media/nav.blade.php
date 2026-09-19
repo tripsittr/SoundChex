@@ -61,6 +61,23 @@
          which is what makes the inset look deliberate instead of like a gap. --}}
     <nav class="media-header-nav flex items-center gap-3 px-4 py-3 sm:gap-6 sm:px-8" aria-label="Primary">
 
+        {{-- Back (S-52). The Tauri window and the phone web-app have no browser
+             chrome, so without this the only way out of a detail page is to
+             navigate all the way round. Hidden on the top-level pages (home and
+             the main tabs), where there is nothing above to go back to; shown on
+             the pages you drill into — an album, an artist, a playlist, an item.
+             `history.back()` uses the SPA history Livewire maintains. --}}
+        @unless ($isHome || request()->routeIs('media.watch.index', 'media.browse', 'media.search'))
+            <button type="button"
+                    @click="window.history.back()"
+                    class="shrink-0 rounded-full p-1.5 text-ink-200 transition hover:bg-base-700/60 hover:text-ink-100"
+                    aria-label="Back">
+                <svg class="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+            </button>
+        @endunless
+
         <a href="{{ route('media.home') }}" class="shrink-0">
             {{-- The light-on-dark variant: its waveform is white, which is
                  invisible on the light logo used in the admin panel. --}}
