@@ -247,6 +247,15 @@ return [
     'hash_max_megabytes' => (int) env('LIBRARY_HASH_MAX_MB', 8192),
 
     /*
+    | Milliseconds to pause between outbound calls when fetching cover art
+    | (artwork:refresh, S-258). A courtesy to the public API's rate limits — the
+    | fetch is already per-album rather than per-track, but a large library is
+    | still thousands of calls. Zero disables the pause (use only for tests).
+    */
+
+    'cover_fetch_throttle_ms' => (int) env('LIBRARY_COVER_FETCH_THROTTLE_MS', 200),
+
+    /*
     |--------------------------------------------------------------------------
     | Audio Extensions
     |--------------------------------------------------------------------------
