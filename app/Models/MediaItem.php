@@ -9,12 +9,12 @@ use App\Enums\DuplicateStatus;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Services\CurrentProfile;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use App\Services\CurrentProfile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
@@ -29,6 +29,7 @@ class MediaItem extends Model
         'external_source',
         'cover_image_url',
         'file_path',
+        'file_size',
         'converted_path',
         'archived_path',
         'transcode_status',
@@ -54,6 +55,7 @@ class MediaItem extends Model
         'duplicate_detected_at' => 'datetime',
         'owned' => 'boolean',
         'wishlist' => 'boolean',
+        'file_size' => 'integer',
     ];
 
     /**
@@ -295,11 +297,11 @@ class MediaItem extends Model
     /** Convenience accessor to get the correct type-specific metadata. */
     public function metadata(): HasOne
     {
-        return match($this->type) {
+        return match ($this->type) {
             MediaItemType::Music => $this->musicMetadata(),
             MediaItemType::Movie => $this->movieMetadata(),
-            MediaItemType::Show  => $this->showMetadata(),
-            MediaItemType::Book  => $this->bookMetadata(),
+            MediaItemType::Show => $this->showMetadata(),
+            MediaItemType::Book => $this->bookMetadata(),
         };
     }
 
@@ -313,8 +315,8 @@ class MediaItem extends Model
         return match ($this->type) {
             MediaItemType::Music => $this->musicMetadata?->artist,
             MediaItemType::Movie => $this->movieMetadata?->director,
-            MediaItemType::Show  => $this->showMetadata?->creator ?? $this->showMetadata?->network,
-            MediaItemType::Book  => $this->bookMetadata?->author,
+            MediaItemType::Show => $this->showMetadata?->creator ?? $this->showMetadata?->network,
+            MediaItemType::Book => $this->bookMetadata?->author,
         };
     }
 
@@ -324,8 +326,8 @@ class MediaItem extends Model
         return match ($this->type) {
             MediaItemType::Music => $this->musicMetadata?->release_year,
             MediaItemType::Movie => $this->movieMetadata?->release_year,
-            MediaItemType::Show  => $this->showMetadata?->first_air_year,
-            MediaItemType::Book  => $this->bookMetadata?->publish_year,
+            MediaItemType::Show => $this->showMetadata?->first_air_year,
+            MediaItemType::Book => $this->bookMetadata?->publish_year,
         };
     }
 
@@ -366,7 +368,7 @@ class MediaItem extends Model
         // Path segments may contain spaces and commas from artist/album names.
         $encoded = implode('/', array_map('rawurlencode', explode('/', ltrim($value, '/'))));
 
-        return url('storage/' . $encoded);
+        return url('storage/'.$encoded);
     }
 
     /**
@@ -645,8 +647,8 @@ class MediaItem extends Model
         return match ($this->type) {
             MediaItemType::Music => '♪',
             MediaItemType::Movie => '▶',
-            MediaItemType::Show  => '📺',
-            MediaItemType::Book  => '📖',
+            MediaItemType::Show => '📺',
+            MediaItemType::Book => '📖',
         };
     }
 }
