@@ -53,7 +53,7 @@ class DuplicatesTable
                     ->size($onCoverTab ? 220 : 56)
                     ->getStateUsing(fn (MediaItem $record): ?string => $record->coverUrl())
                     ->defaultImageUrl('https://placehold.co/220x220/1f2937/6b7280?text=%3F')
-                    ->extraImageAttributes($onCoverTab ? ['class' => 'w-full rounded-lg'] : [])
+                    ->extraImgAttributes($onCoverTab ? ['class' => 'w-full rounded-lg'] : [])
                     ->toggleable(! $onCoverTab),
 
                 TextColumn::make('title')
