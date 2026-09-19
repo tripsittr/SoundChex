@@ -5,6 +5,7 @@
 
 namespace App\Filament\Resources\Duplicates;
 
+use App\Jobs\RefetchCoversJob;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
 use App\Services\Metadata\CoverArtFetcher;
@@ -497,35 +498,28 @@ class DuplicatesTable
             ->visible(fn ($livewire): bool => static::isCoverTab($livewire))
             ->requiresConfirmation()
             ->modalHeading('Refetch covers for the selected tracks?')
-            ->modalDescription('Looks each album up online (verified by artist) and replaces the cover, then clears the review flag. Tracks with no confident match keep their current cover.')
-            ->action(function (Collection $records, CoverArtFetcher $fetcher, DuplicateDetector $detector): void {
-                $updated = 0;
-                $noMatch = 0;
+            ->modalDescription('Looks each album up online (verified by artist) and replaces the cover in the background, then clears the review flag. Tracks with no confident match keep their current cover.')
+            ->action(function (Collection $records): void {
+                // Fetching is network-bound (one call per album, throttled), so a
+                // bulk refetch cannot run in the web request without timing out —
+                // it goes to the queue. The rows leave the review list as the job
+                // clears each flag.
+                $ids = $records
+                    ->filter(fn (MediaItem $r): bool => (bool) $r->needs_cover_review)
+                    ->pluck('id')
+                    ->all();
 
-                foreach ($records as $record) {
-                    if (! $record->needs_cover_review) {
-                        continue;
-                    }
+                if ($ids === []) {
+                    Notification::make()->title('Nothing to refetch')->warning()->send();
 
-                    $cover = $fetcher->fetchForAlbum(
-                        $record->musicMetadata?->artist,
-                        $record->musicMetadata?->album,
-                    );
-
-                    if ($cover !== null) {
-                        $record->forceFill(['cover_image_url' => $cover])->saveQuietly();
-                        $updated++;
-                    } else {
-                        $noMatch++;
-                    }
-
-                    // Either way the pair has been dealt with — leave the queue.
-                    $detector->clearCoverReview($record);
+                    return;
                 }
 
+                RefetchCoversJob::dispatch($ids);
+
                 Notification::make()
-                    ->title($updated.' cover'.($updated === 1 ? '' : 's').' refetched')
-                    ->body($noMatch > 0 ? $noMatch.' had no confident match and kept their cover.' : null)
+                    ->title('Refetching '.count($ids).' cover'.(count($ids) === 1 ? '' : 's'))
+                    ->body('Running in the background. Refresh in a moment to see them update.')
                     ->success()
                     ->send();
             })
