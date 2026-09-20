@@ -8,6 +8,7 @@ namespace App\Filament\Pages;
 use App\Filament\Concerns\RestrictsToServerAdmins;
 use App\Services\ArrServices;
 use App\Services\SettingsService;
+use App\Services\WebhookNotifier;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
@@ -108,11 +109,16 @@ class Integrations extends Page
         $this->editing = $key;
         $this->editingKey = '';
 
-        // Only acquisition apps have an address. A metadata provider is a
-        // public API at a fixed URL we ship.
-        $this->editingUrl = array_key_exists($key, config('arr.apps', []))
-            ? app(ArrServices::class)->url($key)
-            : '';
+        // Acquisition apps carry an address; a webhook is *only* an address (the
+        // URL the events POST to). A metadata provider is a fixed public API, so
+        // has neither.
+        if ($this->isWebhook($key)) {
+            $this->editingUrl = (string) app(SettingsService::class)->get($key);
+        } else {
+            $this->editingUrl = array_key_exists($key, config('arr.apps', []))
+                ? app(ArrServices::class)->url($key)
+                : '';
+        }
 
         // Filament's modal is opened by a browser event, not by a property.
         // Binding `:visible` to state looks like it should work and does
@@ -148,6 +154,27 @@ class Integrations extends Page
     public function saveModal(): void
     {
         if ($this->editing === null) {
+            return;
+        }
+
+        // A webhook is a URL and nothing else: save it and we're done.
+        if ($this->isWebhook($this->editing)) {
+            $url = trim($this->editingUrl);
+
+            if ($url === '' || ! filter_var($url, FILTER_VALIDATE_URL)) {
+                Notification::make()->title('Enter a valid webhook URL.')->warning()->send();
+
+                return;
+            }
+
+            $label = $this->editingRow()['label'] ?? 'Webhook';
+            app(SettingsService::class)->set($this->editing, $url);
+
+            $this->closeModal();
+            $this->load();
+
+            Notification::make()->title($label.' webhook saved.')->success()->send();
+
             return;
         }
 
@@ -251,7 +278,7 @@ class Integrations extends Page
      */
     public function rows(): array
     {
-        return [...$this->acquisitionRows(), ...$this->metadataRows(), ...$this->toggleRows()];
+        return [...$this->acquisitionRows(), ...$this->metadataRows(), ...$this->toggleRows(), ...$this->webhookRows()];
     }
 
     /**
@@ -292,6 +319,44 @@ class Integrations extends Page
     }
 
     /**
+     * Webhook notification destinations — Discord, Slack, and a generic hook for
+     * ntfy / Apprise / Gotify (S-262, S-263). Each is a URL the admin pastes; a
+     * saved URL means events are delivered there. In the Communication group, a
+     * new integration type.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function webhookRows(): array
+    {
+        $settings = app(SettingsService::class);
+
+        $hooks = [
+            'webhook_discord_url' => ['Discord', 'Post events to a Discord channel'],
+            'webhook_slack_url' => ['Slack', 'Post events to a Slack channel'],
+            'webhook_generic_url' => ['Webhook', 'Any endpoint — ntfy, Apprise, Gotify, your own'],
+        ];
+
+        $rows = [];
+
+        foreach ($hooks as $key => [$label, $detail]) {
+            $connected = filled($settings->get($key));
+
+            $rows[] = [
+                'key' => $key,
+                'group' => 'Communication',
+                'label' => $label,
+                'detail' => $detail,
+                'connected' => $connected,
+                'warnings' => [],
+                'connected_url' => null,
+                'unlinkable' => $connected,
+                'webhook' => true,
+            ];
+        }
+
+        return $rows;
+    }
+    /**
      * The groups, in the order they should be read.
      *
      * Fixed rather than derived from the rows: `groupBy()` returns them in
@@ -309,6 +374,7 @@ class Integrations extends Page
         'Lyrics',
         'Books',
         'Artwork',
+        'Communication',
     ];
 
     /**
@@ -530,6 +596,39 @@ class Integrations extends Page
     private function toggleLabel(string $key): string
     {
         return collect($this->toggleRows())->firstWhere('key', $key)['label'] ?? 'Integration';
+    }
+
+    /** Whether a key is a webhook destination (a URL, not a credential). */
+    public function isWebhook(string $key): bool
+    {
+        return array_key_exists($key, WebhookNotifier::DESTINATIONS);
+    }
+
+    /**
+     * Sends a test message to a webhook the admin is setting up, so they can
+     * confirm the URL before relying on it. Uses the value currently in the
+     * modal field, not the saved one, so an unsaved URL can be tested first.
+     */
+    public function testWebhook(): void
+    {
+        if ($this->editing === null || ! $this->isWebhook($this->editing)) {
+            return;
+        }
+
+        $url = trim($this->editingUrl);
+
+        if ($url === '' || ! filter_var($url, FILTER_VALIDATE_URL)) {
+            Notification::make()->title('Enter a valid webhook URL first.')->warning()->send();
+
+            return;
+        }
+
+        $kind = WebhookNotifier::DESTINATIONS[$this->editing];
+        $ok = app(WebhookNotifier::class)->test($kind, $url);
+
+        $ok
+            ? Notification::make()->title('Test sent — check the channel.')->success()->send()
+            : Notification::make()->title('The endpoint did not accept the test.')->danger()->send();
     }
 
     /** The command that starts the stack, shown when nothing is running. */
