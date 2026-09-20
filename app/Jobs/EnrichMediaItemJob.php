@@ -8,8 +8,10 @@ namespace App\Jobs;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Events\MediaItemEnriched;
 use App\Models\MediaItem;
 use App\Models\MetadataVersion;
+use App\Plugins\Registry;
 use App\Services\LibraryOrganizer;
 use App\Services\Metadata\CoverEmbedder;
 use App\Services\Metadata\MetadataPipeline;
@@ -65,6 +67,11 @@ class EnrichMediaItemJob implements ShouldQueue
             $this->embedCover($item);
             $this->refreshAvailability($item);
             $this->fileIntoLibrary($item, $organizer);
+
+            // Enrichment is done. Plugins subscribed to this react to a freshly
+            // enriched item — the point a scrobbler or a derived-data plugin
+            // hooks (S-264 Phase 3).
+            MediaItemEnriched::dispatch($item);
         } catch (\Throwable $e) {
             $item->update(['processing_status' => ProcessingStatus::Failed]);
             throw $e;
@@ -200,22 +207,29 @@ class EnrichMediaItemJob implements ShouldQueue
         try {
             $item->refresh()->load('musicMetadata');
 
-            $stripped = app(TitleTidier::class)->strip((string) $item->title, [
+            $original = (string) $item->title;
+
+            $title = app(TitleTidier::class)->strip($original, [
                 $item->musicMetadata?->artist,
                 $item->musicMetadata?->primary_artist,
-            ]);
+            ]) ?? $original;
 
-            if ($stripped === null || $stripped === $item->title) {
+            // Let a plugin have the last word on the final title (S-264 Phase 3).
+            // The filter receives the title and the item, and returns the title
+            // to keep — a no-op when no plugin registered one.
+            $title = (string) app(Registry::class)->apply('metadata.title', $title, $item);
+
+            if ($title === '' || $title === $original) {
                 return;
             }
 
-            Log::info('Trimmed an artist from a track title', [
+            Log::info('Adjusted a track title', [
                 'item' => $item->id,
-                'was' => $item->title,
-                'now' => $stripped,
+                'was' => $original,
+                'now' => $title,
             ]);
 
-            $item->forceFill(['title' => $stripped])->saveQuietly();
+            $item->forceFill(['title' => $title])->saveQuietly();
         } catch (\Throwable $e) {
             // The metadata is already saved; a clumsy title is not worth
             // failing the run and re-fetching everything.
