@@ -96,6 +96,16 @@ class Integrations extends Page
      */
     public function edit(string $key): void
     {
+        // A keyless toggle has nothing to type — "Set up" just turns it on.
+        if ($this->isToggle($key)) {
+            app(SettingsService::class)->set($key, true);
+            $this->load();
+
+            Notification::make()->title($this->toggleLabel($key).' enabled.')->success()->send();
+
+            return;
+        }
+
         $this->editing = $key;
         $this->editingKey = '';
 
@@ -268,7 +278,44 @@ class Integrations extends Page
      */
     public function rows(): array
     {
-        return [...$this->acquisitionRows(), ...$this->metadataRows(), ...$this->webhookRows()];
+        return [...$this->acquisitionRows(), ...$this->metadataRows(), ...$this->toggleRows(), ...$this->webhookRows()];
+    }
+
+    /**
+     * Keyless integrations — a plain on/off toggle rather than an API key or an
+     * address. Deezer is the first (S-259): a free public API, so "connecting" it
+     * is just enabling it. `unlinkable` reuses the card's Unlink control to turn
+     * it back off.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function toggleRows(): array
+    {
+        $settings = app(SettingsService::class);
+
+        $toggles = [
+            'deezer_enabled' => ['Deezer', 'A second cover-art source, no key needed', 'Artwork'],
+        ];
+
+        $rows = [];
+
+        foreach ($toggles as $key => [$label, $detail, $group]) {
+            $on = (bool) $settings->get($key);
+
+            $rows[] = [
+                'key' => $key,
+                'group' => $group,
+                'label' => $label,
+                'detail' => $detail,
+                'connected' => $on,
+                'warnings' => [],
+                'connected_url' => null,
+                'unlinkable' => $on,
+                'toggle' => true,
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -309,7 +356,6 @@ class Integrations extends Page
 
         return $rows;
     }
-
     /**
      * The groups, in the order they should be read.
      *
@@ -513,6 +559,16 @@ class Integrations extends Page
     {
         $settings = app(SettingsService::class);
 
+        // A keyless toggle turns off rather than forgetting a key.
+        if ($this->isToggle($key)) {
+            $settings->set($key, false);
+            $this->load();
+
+            Notification::make()->title($this->toggleLabel($key).' disabled.')->success()->send();
+
+            return;
+        }
+
         // Acquisition keys are namespaced; metadata keys are not. Told apart
         // by whether the key names a configured app rather than by guessing
         // at the string, so a metadata provider called "radarr" could not
@@ -528,6 +584,18 @@ class Integrations extends Page
         $this->load();
 
         Notification::make()->title('Unlinked.')->success()->send();
+    }
+
+    /** Whether a key is a keyless on/off integration rather than a credential. */
+    private function isToggle(string $key): bool
+    {
+        return collect($this->toggleRows())->contains('key', $key);
+    }
+
+    /** The display label for a toggle key. */
+    private function toggleLabel(string $key): string
+    {
+        return collect($this->toggleRows())->firstWhere('key', $key)['label'] ?? 'Integration';
     }
 
     /** Whether a key is a webhook destination (a URL, not a credential). */

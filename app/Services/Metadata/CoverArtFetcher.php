@@ -5,6 +5,7 @@
 
 namespace App\Services\Metadata;
 
+use App\Services\SettingsService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
@@ -62,7 +63,10 @@ class CoverArtFetcher
             return $this->albumCache[$key];
         }
 
-        $url = $this->lookupCoverUrl($artist, $album);
+        // iTunes first; Deezer as an opt-in fallback for albums it misses.
+        $url = $this->itunesCoverUrl($artist, $album)
+            ?? $this->deezerCoverUrl($artist, $album);
+
         $path = $url === null ? null : $this->store($url);
 
         return $this->albumCache[$key] = $path;
@@ -82,7 +86,7 @@ class CoverArtFetcher
      * Asks for a few candidates and takes the first whose artist matches — the
      * top hit is often a loose term match for a different artist.
      */
-    private function lookupCoverUrl(string $artist, ?string $album): ?string
+    private function itunesCoverUrl(string $artist, ?string $album): ?string
     {
         $this->throttle();
 
@@ -114,6 +118,51 @@ class CoverArtFetcher
             if (filled($art)) {
                 // 100x100 thumbnail → 600x600 by URL convention.
                 return str_replace('100x100', '600x600', $art);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * A verified Deezer album-cover URL, or null. Only when the Deezer
+     * integration is enabled (S-259); it is a fallback for albums iTunes misses,
+     * matched track-level so a compilation-tagged album still finds the real one.
+     */
+    private function deezerCoverUrl(string $artist, ?string $album): ?string
+    {
+        if (! app(SettingsService::class)->get('deezer_enabled')) {
+            return null;
+        }
+
+        $this->throttle();
+
+        $query = $album !== null && $album !== ''
+            ? sprintf('artist:"%s" album:"%s"', $artist, $album)
+            : sprintf('artist:"%s"', $artist);
+
+        $response = Http::get('https://api.deezer.com/search/album', [
+            'q' => $query,
+            'limit' => 5,
+        ]);
+
+        if (! $response->ok()) {
+            return null;
+        }
+
+        $want = $this->normalise($artist);
+
+        foreach ($response->json('data', []) as $result) {
+            $got = $this->normalise((string) ($result['artist']['name'] ?? ''));
+
+            if ($got === '' || ! $this->artistMatches($got, $want)) {
+                continue;
+            }
+
+            $cover = $result['cover_xl'] ?? $result['cover_big'] ?? $result['cover_medium'] ?? null;
+
+            if (filled($cover)) {
+                return $cover;
             }
         }
 

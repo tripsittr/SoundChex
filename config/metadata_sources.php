@@ -34,12 +34,12 @@ return [
         'App\Services\Metadata\Sources\Music\MusicBrainz',     // 3 — canonical IDs, releases, labels, ISRC (no key)
         'App\Services\Metadata\Sources\Music\ItunesSearch',    // 5 — artwork, genre, track preview (no key)
         'App\Services\Metadata\Sources\Music\Spotify',         // 6 — audio features: energy, danceability, valence
+        'App\Services\Metadata\Sources\Music\Deezer',          // 10 — track-level cover fallback (no key, opt-in)
 
         // 'App\Services\Metadata\Sources\Music\Discogs',      // 4 — pressing details, catalog number
         // 'App\Services\Metadata\Sources\Music\Lastfm',       // 7 — community tags, similar artists, biography
         // 'App\Services\Metadata\Sources\Music\FanartTv',     // 8 — HD artist/album artwork
         // 'App\Services\Metadata\Sources\Music\Genius',       // 9 — lyrics, annotations
-        // 'App\Services\Metadata\Sources\Music\Deezer',       // 10 — alternate catalog ID, BPM, contributors
     ],
 
     'movie' => [
