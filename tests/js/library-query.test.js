@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+    albumTracks,
     albums,
+    artistAlbums,
     artists,
     byType,
     episodesOf,
@@ -231,5 +233,60 @@ describe('playableOffline', () => {
     it('matches ids whether they are strings or numbers', () => {
         // IndexedDB keys come back as numbers; a data attribute is a string.
         expect(playableOffline([{ id: 7, playable: true }], ['7'])).toHaveLength(1);
+    });
+});
+
+describe('albumTracks', () => {
+    it('returns one album\'s tracks in disc/track order', () => {
+        const items = [
+            track(1, 'Third', 'Garbage', 'Version 2.0', { track_number: 3 }),
+            track(2, 'First', 'Garbage', 'Version 2.0', { track_number: 1 }),
+            track(3, 'Second', 'Garbage', 'Version 2.0', { track_number: 2 }),
+            track(4, 'Elsewhere', 'Garbage', 'Bleed Like Me', { track_number: 1 }),
+        ];
+
+        expect(albumTracks(items, 'Garbage', 'Version 2.0').map((t) => t.title))
+            .toEqual(['First', 'Second', 'Third']);
+    });
+
+    it('matches the artist and album case- and accent-insensitively', () => {
+        // The link may carry a different case than the tag; both must resolve.
+        const items = [track(1, 'Song', 'Nilüfer Yanya', 'Painless', { track_number: 1 })];
+
+        expect(albumTracks(items, 'nilufer yanya', 'PAINLESS')).toHaveLength(1);
+    });
+
+    it('does not mix two albums that share a title under different artists', () => {
+        const items = [
+            track(1, 'A', 'Artist One', 'Greatest Hits', { track_number: 1 }),
+            track(2, 'B', 'Artist Two', 'Greatest Hits', { track_number: 1 }),
+        ];
+
+        expect(albumTracks(items, 'Artist One', 'Greatest Hits')).toHaveLength(1);
+    });
+});
+
+describe('artistAlbums', () => {
+    it('groups an artist\'s albums and separates loose singles', () => {
+        const items = [
+            track(1, 'A1', 'Bush', 'Sixteen Stone', { track_number: 1 }),
+            track(2, 'A2', 'Bush', 'Sixteen Stone', { track_number: 2 }),
+            track(3, 'Comedown', 'Bush', null, { track_number: null }),
+            track(4, 'Other', 'Someone Else', 'Their Album'),
+        ];
+
+        const result = artistAlbums(items, 'Bush');
+
+        expect(result.albums).toHaveLength(1);
+        expect(result.albums[0].album).toBe('Sixteen Stone');
+        expect(result.singles.map((s) => s.title)).toEqual(['Comedown']);
+        expect(result.track_count).toBe(3);
+    });
+
+    it('returns nothing for an artist not in the library', () => {
+        const result = artistAlbums([track(1, 'X', 'Real', 'Album')], 'Nobody');
+
+        expect(result.albums).toHaveLength(0);
+        expect(result.singles).toHaveLength(0);
     });
 });

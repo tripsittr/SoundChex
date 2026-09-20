@@ -102,6 +102,33 @@ const SCREENS = [
             return renderDetail(root, item);
         },
     },
+    {
+        // One album's tracks. The album and artist come from the query string,
+        // the same link the offline album list builds (S-27).
+        match: (path) => path === '/app/album',
+        render: async (root) => {
+            const params = new URLSearchParams(window.location.search);
+            const artist = params.get('artist') ?? '';
+            const album = params.get('album') ?? '';
+            const tracks = query.albumTracks(await mirror.all(), artist, album);
+
+            if (tracks.length === 0) return 0;
+
+            return renderSongs(root, tracks, album || 'Album', tracks.length);
+        },
+    },
+    {
+        // One artist: their albums, then any loose singles.
+        match: (path) => path === '/app/artist',
+        render: async (root) => {
+            const name = new URLSearchParams(window.location.search).get('name') ?? '';
+            const { albums: groups, singles } = query.artistAlbums(await mirror.all(), name);
+
+            if (groups.length === 0 && singles.length === 0) return 0;
+
+            return renderArtistDetail(root, name, groups, singles);
+        },
+    },
 ];
 
 /* --------------------------------------------------------------- chrome --- */
@@ -333,6 +360,51 @@ function renderSongs(root, items, title, total = null) {
     return items.length;
 }
 
+/**
+ * One artist offline: their albums as a grid, then any singles as a track list.
+ *
+ * Reuses the album grid and the song list rather than a third layout, so the
+ * artist page looks like the rest of the offline shell and the album links go to
+ * the offline album route added alongside this.
+ */
+function renderArtistDetail(root, name, groups, singles) {
+    const wrap = container();
+
+    if (!hasChrome()) wrap.append(banner(groups.length + singles.length));
+
+    wrap.append(heading(name || 'Artist', groups.length));
+
+    if (groups.length > 0) {
+        const grid = document.createElement('div');
+
+        grid.className = 'grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6';
+        fill(grid, groups.map(albumCard));
+        wrap.append(grid);
+    }
+
+    if (singles.length > 0) {
+        const list = document.createElement('ol');
+
+        list.className = 'mt-8 divide-y divide-base-700/40';
+
+        const songs = songList(singles);
+
+        list.dataset.playQueue = JSON.stringify(songs.queue);
+        fill(list, songs.rows);
+        wrap.append(
+            Object.assign(document.createElement('h2'), {
+                className: 'mt-8 mb-3 text-lg font-semibold text-ink-200',
+                textContent: 'Singles',
+            }),
+            list,
+        );
+    }
+
+    fill(root, [wrap]);
+
+    return groups.length + singles.length;
+}
+
 function renderGrid(root, items, label) {
     const wrap = container();
     const grid = document.createElement('div');
@@ -347,51 +419,55 @@ function renderGrid(root, items, label) {
     return items.length;
 }
 
+/** One album tile, linking to its offline detail page. Shared so the album list
+ *  and the artist page draw the same card. */
+function albumCard(group) {
+    const link = document.createElement('a');
+
+    link.className = 'group block';
+    link.href = `/app/album?artist=${encodeURIComponent(group.artist)}&album=${encodeURIComponent(group.album)}`;
+
+    const frame = document.createElement('div');
+
+    frame.className = 'aspect-square overflow-hidden rounded-lg bg-base-700 shadow-lg shadow-black/30';
+
+    if (group.artwork) {
+        const image = document.createElement('img');
+
+        image.src = group.artwork;
+        image.alt = '';
+        image.loading = 'lazy';
+        image.className = 'size-full object-cover';
+        frame.append(image);
+    } else {
+        frame.append(Object.assign(document.createElement('div'), {
+            className: 'flex size-full items-center justify-center text-3xl text-ink-600',
+            textContent: '♪',
+        }));
+    }
+
+    link.append(
+        frame,
+        Object.assign(document.createElement('p'), {
+            className: 'mt-2 truncate text-sm font-medium text-ink-100',
+            textContent: group.album,
+        }),
+        Object.assign(document.createElement('p'), {
+            className: 'truncate text-xs text-ink-500',
+            textContent: `${group.artist} · ${group.track_count}`,
+        }),
+    );
+
+    return link;
+}
+
 function renderAlbums(root, groups) {
     const wrap = container();
     const grid = document.createElement('div');
 
     grid.className = 'grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6';
 
-    fill(grid, groups.map((group) => {
-        const link = document.createElement('a');
-
-        link.className = 'group block';
-        link.href = `/app/album?artist=${encodeURIComponent(group.artist)}&album=${encodeURIComponent(group.album)}`;
-
-        const frame = document.createElement('div');
-
-        frame.className = 'aspect-square overflow-hidden rounded-lg bg-base-700 shadow-lg shadow-black/30';
-
-        if (group.artwork) {
-            const image = document.createElement('img');
-
-            image.src = group.artwork;
-            image.alt = '';
-            image.loading = 'lazy';
-            image.className = 'size-full object-cover';
-            frame.append(image);
-        } else {
-            frame.append(Object.assign(document.createElement('div'), {
-                className: 'flex size-full items-center justify-center text-3xl text-ink-600',
-                textContent: '♪',
-            }));
-        }
-
-        link.append(
-            frame,
-            Object.assign(document.createElement('p'), {
-                className: 'mt-2 truncate text-sm font-medium text-ink-100',
-                textContent: group.album,
-            }),
-            Object.assign(document.createElement('p'), {
-                className: 'truncate text-xs text-ink-500',
-                textContent: `${group.artist} · ${group.track_count}`,
-            }),
-        );
-
-        return link;
-    }));
+    fill(grid, groups.map(albumCard));
 
     if (!hasChrome()) wrap.append(banner(groups.length));
     wrap.append(heading('Albums', groups.length), grid);

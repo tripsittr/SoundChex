@@ -27,6 +27,13 @@ test.describe('offline browsing', () => {
         });
     });
 
+    // setOffline persists on the context and the single-worker run reuses it: a
+    // test that fails between going offline and coming back would strand the flag
+    // and hang every later spec's beforeEach (S-28). Reset unconditionally.
+    test.afterEach(async ({ context }) => {
+        await context.setOffline(false);
+    });
+
     test('the songs list rebuilds from the device', async ({ page, context }) => {
         await context.setOffline(true);
         await page.goto('/app/music').catch(() => {});
@@ -66,6 +73,29 @@ test.describe('offline browsing', () => {
     test('albums are derived on the device', async ({ page, context }) => {
         await context.setOffline(true);
         await page.goto('/app/albums').catch(() => {});
+        await page.waitForTimeout(2500);
+
+        await expect(page.locator('body')).toContainText('Heavy Colors');
+
+        await context.setOffline(false);
+    });
+
+    test('a single album page rebuilds from the device (S-27)', async ({ page, context }) => {
+        await context.setOffline(true);
+        await page.goto('/app/album?artist=flipturn&album=Heavy+Colors').catch(() => {});
+        await page.waitForTimeout(2500);
+
+        // Both of the album's tracks, on their own detail page — not a server
+        // round-trip that would fail offline.
+        await expect(page.locator('body')).toContainText('Offline Song A');
+        await expect(page.locator('body')).toContainText('Offline Song B');
+
+        await context.setOffline(false);
+    });
+
+    test('a single artist page rebuilds from the device (S-27)', async ({ page, context }) => {
+        await context.setOffline(true);
+        await page.goto('/app/artist?name=flipturn').catch(() => {});
         await page.waitForTimeout(2500);
 
         await expect(page.locator('body')).toContainText('Heavy Colors');
