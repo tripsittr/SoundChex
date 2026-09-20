@@ -7,6 +7,7 @@ namespace App\Services\Metadata;
 
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
+use App\Plugins\Registry;
 use App\Services\Metadata\Contracts\MetadataSource;
 use App\Services\SettingsService;
 use Illuminate\Support\Facades\App;
@@ -14,7 +15,10 @@ use Illuminate\Support\Facades\Log;
 
 class MetadataPipeline
 {
-    public function __construct(private SettingsService $settings) {}
+    public function __construct(
+        private SettingsService $settings,
+        private Registry $plugins,
+    ) {}
 
     /**
      * Run all registered, supported sources against the item in priority order.
@@ -106,7 +110,7 @@ class MetadataPipeline
      */
     private function skippedFor(MediaItem $item, array $ran): array
     {
-        $registered = config('metadata_sources.'.$item->type->value, []);
+        $registered = $this->registeredClasses($item);
         $ranClasses = array_map(fn (MetadataSource $s) => $s::class, $ran);
 
         $lines = [];
@@ -158,14 +162,32 @@ class MetadataPipeline
         return null;
     }
 
+    /**
+     * Every source class registered for an item's type — the built-ins from
+     * config plus any a plugin has contributed (S-264 Phase 2).
+     *
+     * A plugin source is an ordinary MetadataSource: it joins the same list and
+     * is ordered by its own priority() alongside the built-ins, so nothing
+     * downstream can tell a plugin source from a core one. One place builds the
+     * list so `sourcesFor()` and the skip report can never disagree about what
+     * was registered.
+     *
+     * @return array<int, string>
+     */
+    private function registeredClasses(MediaItem $item): array
+    {
+        return array_merge(
+            config('metadata_sources.'.$item->type->value, []),
+            array_column($this->plugins->metadataSourcesFor($item->type->value), 'class'),
+        );
+    }
+
     /** @return MetadataSource[] */
     public function sourcesFor(MediaItem $item): array
     {
-        $registered = config('metadata_sources.'.$item->type->value, []);
-
         // Sources are registered ahead of being written. Skip any that don't
         // exist yet rather than failing the whole run.
-        $existing = array_filter($registered, fn (string $class) => class_exists($class));
+        $existing = array_filter($this->registeredClasses($item), fn (string $class) => class_exists($class));
 
         $sources = array_map(fn (string $class) => App::make($class), $existing);
 
