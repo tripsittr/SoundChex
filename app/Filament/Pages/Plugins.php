@@ -7,6 +7,11 @@ namespace App\Filament\Pages;
 
 use App\Filament\Concerns\RestrictsToServerAdmins;
 use App\Models\InstalledPlugin;
+use App\Models\PluginRepository;
+use App\Plugins\Catalog\CatalogEntry;
+use App\Plugins\Catalog\PluginCatalog;
+use App\Plugins\Catalog\PluginInstaller;
+use App\Plugins\Exceptions\PluginInstallException;
 use App\Plugins\PluginLoader;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -42,6 +47,15 @@ class Plugins extends Page
 
     /** @var array<int, array<string, mixed>> */
     public array $plugins = [];
+
+    /** The catalog entries fetched from the configured repositories. */
+    public array $catalog = [];
+
+    /** A repository URL being added. */
+    public string $newRepositoryUrl = '';
+
+    /** Whether the catalog has been fetched this visit (it costs a network call). */
+    public bool $catalogLoaded = false;
 
     public function mount(): void
     {
@@ -97,6 +111,118 @@ class Plugins extends Page
             ->body('Takes effect on the next page load.')
             ->success()
             ->send();
+    }
+
+    /* -------------------------------------------------------- catalog --- */
+
+    /** The configured repositories, for the browse UI. */
+    public function repositories(): array
+    {
+        return PluginRepository::query()
+            ->orderByDesc('official')
+            ->orderBy('name')
+            ->get(['id', 'name', 'url', 'official'])
+            ->all();
+    }
+
+    /**
+     * Fetches every repository's catalog and lists what can be installed, minus
+     * anything already installed. A network call, so it runs on demand rather
+     * than on every page load.
+     */
+    public function browse(): void
+    {
+        $catalog = app(PluginCatalog::class);
+        $installed = InstalledPlugin::query()->pluck('plugin_id')->all();
+
+        $entries = [];
+
+        foreach (PluginRepository::query()->get() as $repository) {
+            foreach ($catalog->fetch($repository->url) as $entry) {
+                if (in_array($entry->id, $installed, true)) {
+                    continue;
+                }
+
+                // Plain data only — a Livewire property cannot hold the entry
+                // object. The entry is re-fetched from its repository at install.
+                $entries[$entry->id] = [
+                    'id' => $entry->id,
+                    'name' => $entry->name,
+                    'description' => $entry->description,
+                    'author' => $entry->author,
+                    'version' => $entry->version(),
+                    'installable' => $entry->isInstallable(),
+                    'repository' => $repository->name,
+                    'repositoryUrl' => $repository->url,
+                ];
+            }
+        }
+
+        $this->catalog = array_values($entries);
+        $this->catalogLoaded = true;
+    }
+
+    /** Installs a catalog entry by id — re-fetched fresh from its repository. */
+    public function install(string $pluginId): void
+    {
+        $listed = collect($this->catalog)->firstWhere('id', $pluginId);
+
+        // Re-fetch from the repository rather than trusting stale page state, so
+        // the download URL and checksum are the repository's current ones.
+        $entry = $listed
+            ? collect(app(PluginCatalog::class)->fetch($listed['repositoryUrl']))->firstWhere('id', $pluginId)
+            : null;
+
+        if (! $entry instanceof CatalogEntry) {
+            Notification::make()->title('Refresh the catalogue and try again.')->warning()->send();
+
+            return;
+        }
+
+        try {
+            app(PluginInstaller::class)->install($entry);
+
+            Notification::make()
+                ->title($entry->name.' installed')
+                ->body('It is disabled — enable it below once you have reviewed it.')
+                ->success()
+                ->send();
+        } catch (PluginInstallException $e) {
+            Notification::make()->title('Install failed')->body($e->getMessage())->danger()->send();
+
+            return;
+        }
+
+        $this->rescan();
+        $this->browse();
+    }
+
+    /** Adds a repository URL to browse from. */
+    public function addRepository(): void
+    {
+        $url = trim($this->newRepositoryUrl);
+
+        if ($url === '' || ! filter_var($url, FILTER_VALIDATE_URL)) {
+            Notification::make()->title('Enter a valid repository URL.')->warning()->send();
+
+            return;
+        }
+
+        PluginRepository::query()->firstOrCreate(['url' => $url], [
+            'name' => parse_url($url, PHP_URL_HOST) ?: $url,
+            'official' => false,
+        ]);
+
+        $this->newRepositoryUrl = '';
+        $this->browse();
+
+        Notification::make()->title('Repository added')->success()->send();
+    }
+
+    public function removeRepository(int $id): void
+    {
+        PluginRepository::query()->whereKey($id)->where('official', false)->delete();
+        $this->browse();
     }
 
     /** @return array<int, Action> */
