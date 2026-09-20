@@ -209,6 +209,49 @@ class IntegrationsPageTest extends TestCase
         );
     }
 
+    /* ---------------------------------------------------------- filter ---- */
+
+    public function test_filter_chips_list_the_groups(): void
+    {
+        $this->withKeys();
+        Http::fake(fn () => throw new ConnectionException('refused'));
+
+        $this->asOwner()
+            ->get(self::URL)
+            ->assertOk()
+            // The All chip and at least the metadata groups are offered.
+            ->assertSee('All')
+            ->assertSee('Film & TV')
+            ->assertSee('Music');
+    }
+
+    public function test_filtering_to_a_group_hides_the_others(): void
+    {
+        $this->withKeys();
+        Http::fake(fn () => throw new ConnectionException('refused'));
+        $this->asOwner();
+
+        $html = Livewire::test(Integrations::class)
+            ->set('filter', 'Music')
+            ->html();
+
+        // A Music provider shows; a Film & TV provider does not.
+        $this->assertStringContainsString('Spotify', $html);
+        $this->assertStringNotContainsString('TMDB', $html);
+    }
+
+    public function test_the_default_filter_shows_every_group(): void
+    {
+        $this->withKeys();
+        Http::fake(fn () => throw new ConnectionException('refused'));
+        $this->asOwner();
+
+        $html = Livewire::test(Integrations::class)->html();
+
+        $this->assertStringContainsString('TMDB', $html);
+        $this->assertStringContainsString('Spotify', $html);
+    }
+
     /* ----------------------------------------------------- api versions -- */
 
     public function test_each_app_is_asked_on_the_api_version_it_actually_speaks(): void
