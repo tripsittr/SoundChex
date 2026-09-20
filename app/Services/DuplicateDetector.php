@@ -245,10 +245,16 @@ class DuplicateDetector
             }
         }
 
-        // Fuzzy fallback: same normalised artist + title (+ album when both have
-        // one) and a near-equal length. Title is on the item; artist/album on the
-        // metadata row.
-        if (blank($item->title) || blank($meta->artist)) {
+        // Fuzzy fallback: same normalised *primary* artist + title (+ album when
+        // both have one) and a near-equal length. Title is on the item;
+        // artist/album on the metadata row.
+        //
+        // Matching on the primary artist rather than the full credit is what lets
+        // a track by "Artist" and one by "Artist, Someone" — the same song, one
+        // tagged with a feature — pair up. The raw credit would keep them apart.
+        $matchArtist = $this->normalise($meta->primary_artist ?: (string) $meta->artist);
+
+        if (blank($item->title) || $matchArtist === '') {
             return null;
         }
 
@@ -256,8 +262,10 @@ class DuplicateDetector
 
         $candidates = $this->musicCandidates($item)
             ->whereRaw('LOWER(TRIM(title)) = ?', [$this->normalise($item->title)])
-            ->whereHas('musicMetadata', function ($q) use ($meta, $tolerance) {
-                $q->whereRaw('LOWER(TRIM(artist)) = ?', [$this->normalise($meta->artist)]);
+            ->whereHas('musicMetadata', function ($q) use ($meta, $tolerance, $matchArtist) {
+                // Compare on the primary artist, falling back to the raw credit
+                // for rows that have no primary set yet.
+                $q->whereRaw('LOWER(TRIM(COALESCE(NULLIF(primary_artist, ""), artist))) = ?', [$matchArtist]);
 
                 // Album must match when this track has one — a single and the
                 // album cut of the same song are legitimately separate files.
