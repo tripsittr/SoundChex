@@ -41,12 +41,23 @@ class ListDuplicates extends ListRecords
 
     public function getTabs(): array
     {
+        // The tabs are the review *types*: Duplicates and Cover art (each with a
+        // count of what is waiting), then the two resolved states and All. The
+        // page as a whole is "Needs Review"; a tab picks what kind.
         return [
-            'pending' => Tab::make('Needs review')
+            'pending' => Tab::make('Duplicates')
                 ->badge(fn (): int => static::countByStatus(DuplicateStatus::Pending))
                 ->badgeColor('warning')
                 ->modifyQueryUsing(fn (Builder $query) => $query
                     ->where('duplicate_status', DuplicateStatus::Pending)),
+
+            // Merged rows whose two copies had different cover art. The audio is
+            // resolved; the kept cover just needs a human's eye (S-265).
+            'cover' => Tab::make('Cover art')
+                ->badge(fn (): int => static::countCoverReview())
+                ->badgeColor('info')
+                ->modifyQueryUsing(fn (Builder $query) => $query
+                    ->where('needs_cover_review', true)),
 
             'kept' => Tab::make('Keeping both')
                 ->modifyQueryUsing(fn (Builder $query) => $query
@@ -55,14 +66,6 @@ class ListDuplicates extends ListRecords
             'merged' => Tab::make('Merged')
                 ->modifyQueryUsing(fn (Builder $query) => $query
                     ->where('duplicate_status', DuplicateStatus::Merged)),
-
-            // Merged rows whose two copies had different cover art. The audio is
-            // resolved; the kept cover just needs a human's eye (S-265).
-            'cover' => Tab::make('Verify cover art')
-                ->badge(fn (): int => static::countCoverReview())
-                ->badgeColor('info')
-                ->modifyQueryUsing(fn (Builder $query) => $query
-                    ->where('needs_cover_review', true)),
 
             'all' => Tab::make('All'),
         ];
