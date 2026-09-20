@@ -252,6 +252,58 @@ class IntegrationsPageTest extends TestCase
         $this->assertStringContainsString('Spotify', $html);
     }
 
+    /* -------------------------------------------------------- webhooks --- */
+
+    public function test_the_communication_webhooks_are_listed(): void
+    {
+        $this->withKeys();
+        Http::fake(fn () => throw new ConnectionException('refused'));
+
+        $this->asOwner()
+            ->get(self::URL)
+            ->assertOk()
+            ->assertSee('Discord')
+            ->assertSee('Slack')
+            ->assertSee('Communication');
+    }
+
+    public function test_saving_a_webhook_stores_its_url(): void
+    {
+        $this->asOwner();
+
+        Livewire::test(Integrations::class)
+            ->call('edit', 'webhook_discord_url')
+            ->set('editingUrl', 'https://discord.test/hook')
+            ->call('saveModal');
+
+        $this->assertSame('https://discord.test/hook', app(SettingsService::class)->get('webhook_discord_url'));
+    }
+
+    public function test_a_webhook_url_must_be_valid(): void
+    {
+        $this->asOwner();
+
+        Livewire::test(Integrations::class)
+            ->call('edit', 'webhook_slack_url')
+            ->set('editingUrl', 'not-a-url')
+            ->call('saveModal');
+
+        $this->assertNull(app(SettingsService::class)->get('webhook_slack_url'));
+    }
+
+    public function test_the_test_button_pings_the_endpoint(): void
+    {
+        Http::fake();
+        $this->asOwner();
+
+        Livewire::test(Integrations::class)
+            ->call('edit', 'webhook_generic_url')
+            ->set('editingUrl', 'https://ntfy.test/soundchex')
+            ->call('testWebhook');
+
+        Http::assertSent(fn ($r) => $r->url() === 'https://ntfy.test/soundchex');
+    }
+
     /* ----------------------------------------------------- api versions -- */
 
     public function test_each_app_is_asked_on_the_api_version_it_actually_speaks(): void

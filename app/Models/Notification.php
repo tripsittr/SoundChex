@@ -5,6 +5,8 @@
 
 namespace App\Models;
 
+use App\Jobs\SendWebhookNotificationJob;
+use App\Services\WebhookNotifier;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -60,12 +62,21 @@ class Notification extends Model
             return null;
         }
 
-        return static::create([
+        $notification = static::create([
             'type' => $type,
             'title' => $title,
             'body' => $body,
             'media_item_id' => $item?->id,
         ]);
+
+        // Fan the same event out to any configured webhook (Discord, Slack, a
+        // generic hook) on the queue, so a slow or dead endpoint never holds up
+        // the scan or download that recorded this. No-op when none are set up.
+        if (app(WebhookNotifier::class)->hasDestinations()) {
+            SendWebhookNotificationJob::dispatch($notification->id);
+        }
+
+        return $notification;
     }
 
     /**
