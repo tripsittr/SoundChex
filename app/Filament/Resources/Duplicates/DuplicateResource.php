@@ -5,9 +5,8 @@
 
 namespace App\Filament\Resources\Duplicates;
 
-use App\Filament\Concerns\RestrictsToAdmins;
-
 use App\Enums\DuplicateStatus;
+use App\Filament\Concerns\RestrictsToAdmins;
 use App\Filament\Resources\Duplicates\Pages\ListDuplicates;
 use App\Models\MediaItem;
 use BackedEnum;
@@ -30,15 +29,18 @@ class DuplicateResource extends Resource
 
     protected static ?string $model = MediaItem::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedDocumentDuplicate;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
 
     protected static string|UnitEnum|null $navigationGroup = 'Media Library';
 
-    protected static ?string $navigationLabel = 'Duplicates';
+    // "Needs Review" rather than "Duplicates": the screen already reviews more
+    // than duplicates (cover art), and is where future review types land too.
+    // The tabs pick the review type; this is the queue as a whole.
+    protected static ?string $navigationLabel = 'Needs Review';
 
-    protected static ?string $modelLabel = 'duplicate';
+    protected static ?string $modelLabel = 'item to review';
 
-    protected static ?string $pluralModelLabel = 'duplicates';
+    protected static ?string $pluralModelLabel = 'items to review';
 
     protected static ?int $navigationSort = 5;
 
@@ -63,15 +65,22 @@ class DuplicateResource extends Resource
     }
 
     /**
-     * Badge count draws attention to work waiting, so pending-only.
+     * The badge is the total review work across every type — pending duplicates
+     * plus covers awaiting a look — so the sidebar shows everything waiting, not
+     * just one tab's share.
      */
     public static function getNavigationBadge(): ?string
     {
-        $pending = static::getModel()::query()
-            ->where('duplicate_status', DuplicateStatus::Pending)
-            ->count();
+        $model = static::getModel();
 
-        return $pending > 0 ? (string) $pending : null;
+        $waiting = $model::query()
+            ->where('duplicate_status', DuplicateStatus::Pending)
+            ->count()
+            + $model::query()
+                ->where('needs_cover_review', true)
+                ->count();
+
+        return $waiting > 0 ? (string) $waiting : null;
     }
 
     public static function getNavigationBadgeColor(): ?string
