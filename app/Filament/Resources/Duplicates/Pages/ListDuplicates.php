@@ -6,6 +6,7 @@
 namespace App\Filament\Resources\Duplicates\Pages;
 
 use App\Enums\DuplicateStatus;
+use App\Enums\ProcessingStatus;
 use App\Filament\Resources\Duplicates\DuplicateResource;
 use App\Jobs\DetectDuplicatesJob;
 use Filament\Actions\Action;
@@ -41,10 +42,23 @@ class ListDuplicates extends ListRecords
 
     public function getTabs(): array
     {
-        // The tabs are the review *types*: Duplicates and Cover art (each with a
-        // count of what is waiting), then the two resolved states and All. The
-        // page as a whole is "Needs Review"; a tab picks what kind.
+        // The tabs are the review *types*: Metadata, Duplicates and Cover art
+        // (each with a count of what is waiting), then the two resolved states
+        // and All. The page as a whole is "Needs Review"; a tab picks what kind.
         return [
+            // Items the metadata pipeline could not identify confidently, or that
+            // it flagged as an ambiguous match. This is where the "Needs Review"
+            // status shown in the music list finally has a home — the two used to
+            // be different systems sharing a name (S-277).
+            'metadata' => Tab::make('Metadata')
+                ->badge(fn (): int => static::countMetadataReview())
+                ->badgeColor('warning')
+                ->modifyQueryUsing(fn (Builder $query) => $query
+                    ->whereIn('processing_status', [
+                        ProcessingStatus::NeedsReview->value,
+                        ProcessingStatus::Failed->value,
+                    ])),
+
             'pending' => Tab::make('Duplicates')
                 ->badge(fn (): int => static::countByStatus(DuplicateStatus::Pending))
                 ->badgeColor('warning')
@@ -82,6 +96,16 @@ class ListDuplicates extends ListRecords
     {
         return DuplicateResource::getEloquentQuery()
             ->where('needs_cover_review', true)
+            ->count();
+    }
+
+    private static function countMetadataReview(): int
+    {
+        return DuplicateResource::getEloquentQuery()
+            ->whereIn('processing_status', [
+                ProcessingStatus::NeedsReview->value,
+                ProcessingStatus::Failed->value,
+            ])
             ->count();
     }
 }

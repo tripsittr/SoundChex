@@ -5,6 +5,8 @@
 
 namespace App\Filament\Resources\Duplicates;
 
+use App\Enums\ProcessingStatus;
+use App\Jobs\EnrichMediaItemJob;
 use App\Jobs\RefetchCoversJob;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
@@ -13,6 +15,7 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Forms\Components\Radio;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -35,6 +38,15 @@ class DuplicatesTable
         // cards to approve or refetch — far easier than scanning a table of
         // 44px thumbnails. Other tabs keep the table.
         $onCoverTab = static::isCoverTab($table->getLivewire());
+
+        // The metadata tab reviews single items the pipeline was unsure about,
+        // not duplicate pairs — different columns (the "why", the confidence),
+        // different actions (re-enrich, edit), and a different default sort.
+        $onMetadataTab = static::isMetadataTab($table->getLivewire());
+
+        if ($onMetadataTab) {
+            return static::configureMetadata($table);
+        }
 
         return $table
             ->defaultSort('duplicate_detected_at', 'desc')
@@ -159,6 +171,241 @@ class DuplicatesTable
             ])
             ->emptyStateHeading('No duplicates found')
             ->emptyStateDescription('Files are checked as they are catalogued — byte-for-byte, and (for music) for the same recording in a different file. Anything matching shows up here for review.');
+    }
+
+    /**
+     * The metadata-review table: single items the pipeline could not identify
+     * confidently, each with a plain reason why and the source-by-source account
+     * of the run (S-277). The actions are to re-run enrichment or to open the
+     * item and correct it by hand — never merge/keep, which are for pairs.
+     */
+    private static function configureMetadata(Table $table): Table
+    {
+        return $table
+            ->defaultSort('updated_at', 'desc')
+            ->columns([
+                ImageColumn::make('cover_image_url')
+                    ->label('Cover')
+                    ->square()
+                    ->size(56)
+                    ->getStateUsing(fn (MediaItem $record): ?string => $record->coverUrl())
+                    ->defaultImageUrl('https://placehold.co/220x220/1f2937/6b7280?text=%3F')
+                    ->toggleable(),
+
+                TextColumn::make('title')
+                    ->label('Item')
+                    ->searchable()
+                    ->description(fn (MediaItem $record): string => static::metaSubtitle($record)),
+
+                TextColumn::make('type')
+                    ->badge()
+                    ->toggleable(),
+
+                // The "why": a one-line reason drawn from the last enrichment run,
+                // so a reviewer can triage without opening each item.
+                TextColumn::make('review_reason')
+                    ->label('Why')
+                    ->state(fn (MediaItem $record): string => static::reviewReason($record))
+                    ->wrap(),
+
+                TextColumn::make('match_confidence')
+                    ->label('Confidence')
+                    ->badge()
+                    ->placeholder('—')
+                    ->color(fn ($state): string => match ($state?->value) {
+                        'exact' => 'success',
+                        'fuzzy' => 'warning',
+                        default => 'gray',
+                    })
+                    ->toggleable(),
+
+                TextColumn::make('processing_status')
+                    ->label('Status')
+                    ->badge()
+                    ->toggleable(),
+
+                TextColumn::make('updated_at')
+                    ->label('Enriched')
+                    ->since()
+                    ->sortable()
+                    ->toggleable(),
+            ])
+            ->filters([
+                SelectFilter::make('type')
+                    ->options([
+                        'music' => 'Music',
+                        'movie' => 'Movies',
+                        'show' => 'TV',
+                        'book' => 'Books',
+                    ]),
+            ])
+            ->recordActions([
+                static::reenrichAction(),
+                static::whyAction(),
+                static::markReviewedAction(),
+            ])
+            ->toolbarActions([
+                BulkActionGroup::make([
+                    static::reenrichBulkAction(),
+                    static::markReviewedBulkAction(),
+                ]),
+            ])
+            ->emptyStateHeading('Nothing needs a metadata look')
+            ->emptyStateDescription('Items the pipeline could not identify confidently — untagged files, ambiguous matches — show up here with the reason why.');
+    }
+
+    /** Re-run the metadata pipeline for one item, on the queue. */
+    private static function reenrichAction(): Action
+    {
+        return Action::make('reenrich')
+            ->label('Re-enrich')
+            ->icon('heroicon-o-arrow-path')
+            ->color('warning')
+            ->action(function (MediaItem $record): void {
+                EnrichMediaItemJob::dispatch($record->id);
+
+                Notification::make()
+                    ->title('Re-enriching')
+                    ->body('Running the metadata pipeline again in the background.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Show the source-by-source account of the last run in a modal — the
+     * provenance the Review hub exists to surface.
+     */
+    private static function whyAction(): Action
+    {
+        return Action::make('why')
+            ->label('Why?')
+            ->icon('heroicon-o-information-circle')
+            ->color('gray')
+            ->modalHeading('What the pipeline found')
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Close')
+            ->infolist(fn (MediaItem $record): array => static::provenanceEntries($record));
+    }
+
+    /**
+     * Clear the review flag on an item the human has looked at and judged fine
+     * as-is — moves it to Complete without changing its metadata.
+     */
+    private static function markReviewedAction(): Action
+    {
+        return Action::make('markReviewed')
+            ->label('Looks fine')
+            ->icon('heroicon-o-check')
+            ->color('gray')
+            ->visible(fn (MediaItem $record): bool => $record->processing_status === ProcessingStatus::NeedsReview)
+            ->action(function (MediaItem $record): void {
+                $record->forceFill(['processing_status' => ProcessingStatus::Complete])->saveQuietly();
+
+                Notification::make()
+                    ->title('Marked reviewed')
+                    ->body('Cleared from the metadata review list.')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    private static function reenrichBulkAction(): BulkAction
+    {
+        return BulkAction::make('reenrichSelected')
+            ->label('Re-enrich selected')
+            ->icon('heroicon-o-arrow-path')
+            ->color('warning')
+            ->action(function (Collection $records): void {
+                foreach ($records as $record) {
+                    EnrichMediaItemJob::dispatch($record->id);
+                }
+
+                Notification::make()
+                    ->title('Re-enriching '.$records->count().' '.str('item')->plural($records->count()))
+                    ->body('Running in the background.')
+                    ->success()
+                    ->send();
+            })
+            ->deselectRecordsAfterCompletion();
+    }
+
+    private static function markReviewedBulkAction(): BulkAction
+    {
+        return BulkAction::make('markReviewedSelected')
+            ->label('Mark reviewed')
+            ->icon('heroicon-o-check')
+            ->color('gray')
+            ->action(function (Collection $records): void {
+                $cleared = 0;
+
+                foreach ($records as $record) {
+                    if ($record->processing_status === ProcessingStatus::NeedsReview) {
+                        $record->forceFill(['processing_status' => ProcessingStatus::Complete])->saveQuietly();
+                        $cleared++;
+                    }
+                }
+
+                Notification::make()
+                    ->title($cleared.' marked reviewed')
+                    ->success()
+                    ->send();
+            })
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /** The stored one-line reason, or a sensible fallback from the confidence. */
+    private static function reviewReason(MediaItem $record): string
+    {
+        $report = $record->enrichment_report;
+
+        if (is_array($report) && filled($report['review_reason'] ?? null)) {
+            return $report['review_reason'];
+        }
+
+        return match ($record->match_confidence?->value) {
+            'fuzzy' => 'Matched by similarity, not an exact identifier.',
+            'exact' => 'Flagged for review despite an exact match.',
+            default => 'Nothing matched — the file may be untagged or obscure.',
+        };
+    }
+
+    /**
+     * The source-by-source account for the "Why?" modal.
+     *
+     * @return array<int, TextEntry>
+     */
+    private static function provenanceEntries(MediaItem $record): array
+    {
+        $report = $record->enrichment_report;
+        $sources = is_array($report) ? ($report['sources'] ?? []) : [];
+
+        if ($sources === []) {
+            return [
+                TextEntry::make('none')
+                    ->hiddenLabel()
+                    ->state('No enrichment run has been recorded for this item yet. Re-enrich it to capture one.'),
+            ];
+        }
+
+        $lines = collect($sources)->map(function (array $s): string {
+            $outcome = match ($s['outcome'] ?? '') {
+                'matched' => '✓ matched'.(isset($s['confidence']) ? ' ('.$s['confidence'].')' : ''),
+                'no_match' => '· found nothing',
+                'error' => '✗ errored'.(isset($s['note']) ? ' — '.$s['note'] : ''),
+                'skipped_no_key' => '– skipped (no key)',
+                'skipped' => '– skipped',
+                default => $s['outcome'] ?? '?',
+            };
+
+            return ($s['name'] ?? 'Source').' — '.$outcome;
+        })->implode("\n");
+
+        return [
+            TextEntry::make('chain')
+                ->label('Sources, in order')
+                ->state($lines),
+        ];
     }
 
     /**
@@ -542,6 +789,12 @@ class DuplicatesTable
         return static::activeTab($livewire) === 'cover';
     }
 
+    /** The metadata-review tab: single unsure items, not duplicate pairs. */
+    private static function isMetadataTab($livewire): bool
+    {
+        return static::activeTab($livewire) === 'metadata';
+    }
+
     /** A tab that can contain pending pairs to merge (not the cover-only tab). */
     private static function tabHasPending($livewire): bool
     {
@@ -610,6 +863,14 @@ class DuplicatesTable
         $parts = explode('/', str_replace('\\', '/', $path));
 
         return implode('/', array_slice($parts, -2));
+    }
+
+    /** Artist · album under a metadata row, or the file path when there is none. */
+    private static function metaSubtitle(MediaItem $record): string
+    {
+        $line = static::trackLine($record);
+
+        return $line === '—' ? static::shortPath($record) : $line;
     }
 
     /** "Artist · Album" for the cover grid, skipping missing parts. */

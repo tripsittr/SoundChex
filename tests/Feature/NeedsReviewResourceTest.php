@@ -7,6 +7,7 @@ namespace Tests\Feature;
 
 use App\Enums\DuplicateStatus;
 use App\Enums\MediaItemType;
+use App\Enums\ProcessingStatus;
 use App\Filament\Resources\Duplicates\DuplicateResource;
 use App\Models\MediaItem;
 use App\Models\User;
@@ -65,5 +66,29 @@ class NeedsReviewResourceTest extends TestCase
         $this->item([]);
 
         $this->assertNull(DuplicateResource::getNavigationBadge());
+    }
+
+    public function test_the_badge_counts_metadata_review_items_too(): void
+    {
+        // A metadata-flagged item is review work even with no duplicate state —
+        // this is the case that used to be invisible on the review page (S-277).
+        $this->item(['processing_status' => ProcessingStatus::NeedsReview]);
+        $this->item(['processing_status' => ProcessingStatus::Failed]);
+        $this->item(['duplicate_status' => DuplicateStatus::Pending]);
+
+        $this->assertSame('3', DuplicateResource::getNavigationBadge());
+    }
+
+    public function test_metadata_flagged_items_are_in_the_review_queue(): void
+    {
+        // Previously excluded by whereNotNull('duplicate_status'); the hub query
+        // now includes them so the Metadata tab has rows.
+        $flagged = $this->item(['processing_status' => ProcessingStatus::NeedsReview]);
+        $this->item([]); // a plain, complete item must stay out
+
+        $ids = DuplicateResource::getEloquentQuery()->pluck('id')->all();
+
+        $this->assertContains($flagged->id, $ids);
+        $this->assertCount(1, $ids);
     }
 }

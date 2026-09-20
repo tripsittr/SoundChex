@@ -59,6 +59,9 @@ class MediaItem extends Model
         'owned' => 'boolean',
         'wishlist' => 'boolean',
         'file_size' => 'integer',
+        // Written by the pipeline, not a form — like duplicate state, it is kept
+        // out of $fillable and set with forceFill/saveQuietly.
+        'enrichment_report' => 'array',
     ];
 
     /**
