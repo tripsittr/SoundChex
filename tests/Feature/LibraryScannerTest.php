@@ -8,10 +8,12 @@ namespace Tests\Feature;
 use App\Enums\MediaItemType;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
+use App\Models\MetadataVersion;
 use App\Models\User;
 use App\Services\LibraryScanner;
 use App\Services\SettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -59,6 +61,46 @@ class LibraryScannerTest extends TestCase
 
     /* ------------------------------------------------------ cataloguing -- */
 
+    public function test_it_records_an_intake_snapshot_of_the_arrival_state(): void
+    {
+        // The name the file arrived under, before the organiser renames it or
+        // enrichment rewrites the title (S-21).
+        file_put_contents($this->watched.'/1041. You are in Love with a Psycho - Kasabian.mp3', 'x');
+
+        $this->scanner->scan();
+
+        $item = MediaItem::firstOrFail();
+
+        $intake = MetadataVersion::where('media_item_id', $item->id)
+            ->where('reason', MetadataVersion::REASON_IMPORT)
+            ->firstOrFail();
+
+        $this->assertSame(
+            '1041. You are in Love with a Psycho - Kasabian.mp3',
+            $intake->snapshot['intake']['file_name'],
+            'The intake snapshot must keep the original filename.',
+        );
+        $this->assertArrayHasKey('file_path', $intake->snapshot['intake']);
+        $this->assertArrayHasKey('file_size', $intake->snapshot['intake']);
+    }
+
+    public function test_a_re_scan_does_not_add_a_second_intake_snapshot(): void
+    {
+        file_put_contents($this->watched.'/Backrooms.mkv', 'x');
+
+        $this->scanner->scan();
+        $this->scanner->scan();
+
+        $item = MediaItem::firstOrFail();
+
+        $this->assertSame(
+            1,
+            MetadataVersion::where('media_item_id', $item->id)
+                ->where('reason', MetadataVersion::REASON_IMPORT)
+                ->count(),
+        );
+    }
+
     public function test_scanning_twice_does_not_catalogue_the_same_file_twice(): void
     {
         // On Windows it did, every single time. The known list is keyed on
@@ -66,7 +108,7 @@ class LibraryScannerTest extends TestCase
         // and looked up with getRealPath()'s `…\media\…`. The two never matched
         // as strings, so every scan catalogued the whole library again. One
         // film in the real catalogue had nine rows, one per scan.
-        file_put_contents($this->watched . '/Jackass Number Two.avi', 'x');
+        file_put_contents($this->watched.'/Jackass Number Two.avi', 'x');
 
         $this->scanner->scan();
         $this->scanner->scan();
@@ -83,7 +125,7 @@ class LibraryScannerTest extends TestCase
     {
         // What the organiser leaves behind on Windows — S-86. A row stored
         // that way must still be recognised, or rescanning duplicates it.
-        file_put_contents($this->watched . '/Backrooms.mkv', 'x');
+        file_put_contents($this->watched.'/Backrooms.mkv', 'x');
 
         $this->scanner->scan();
 
@@ -103,10 +145,10 @@ class LibraryScannerTest extends TestCase
         // Three Spotify exports were catalogued as films because they had been
         // written to .mp4, which is configured as a film extension. The
         // extension is a guess about the container; the streams are the answer.
-        file_put_contents($this->watched . '/1044. Lights Out - Royal Blood.mp4', 'x');
+        file_put_contents($this->watched.'/1044. Lights Out - Royal Blood.mp4', 'x');
 
-        \Illuminate\Support\Facades\Process::fake([
-            '*' => \Illuminate\Support\Facades\Process::result(
+        Process::fake([
+            '*' => Process::result(
                 output: json_encode(['streams' => [['codec_type' => 'audio', 'codec_name' => 'aac']]]),
             ),
         ]);
@@ -123,10 +165,10 @@ class LibraryScannerTest extends TestCase
     {
         // The other direction, and the one that would quietly empty the film
         // list if this were got wrong.
-        file_put_contents($this->watched . '/Backrooms 2026.mp4', 'x');
+        file_put_contents($this->watched.'/Backrooms 2026.mp4', 'x');
 
-        \Illuminate\Support\Facades\Process::fake([
-            '*' => \Illuminate\Support\Facades\Process::result(
+        Process::fake([
+            '*' => Process::result(
                 output: json_encode(['streams' => [
                     ['codec_type' => 'video', 'codec_name' => 'h264'],
                     ['codec_type' => 'audio', 'codec_name' => 'aac'],
@@ -147,10 +189,10 @@ class LibraryScannerTest extends TestCase
         // ffprobe is optional in this project. A probe that failed and was read
         // as "no video" would retype every film in the library the first time
         // it went missing.
-        file_put_contents($this->watched . '/Elf 2003.mp4', 'x');
+        file_put_contents($this->watched.'/Elf 2003.mp4', 'x');
 
-        \Illuminate\Support\Facades\Process::fake([
-            '*' => \Illuminate\Support\Facades\Process::result(output: '', errorOutput: 'not found', exitCode: 1),
+        Process::fake([
+            '*' => Process::result(output: '', errorOutput: 'not found', exitCode: 1),
         ]);
 
         $this->scanner->scan();
@@ -367,7 +409,7 @@ class LibraryScannerTest extends TestCase
     /** Writes a real file into the watched folder and returns its path. */
     private function file(string $name, string $contents = 'media bytes'): string
     {
-        $path = $this->watched . '/' . $name;
+        $path = $this->watched.'/'.$name;
 
         file_put_contents($path, $contents);
 
