@@ -1,0 +1,12 @@
+{
+  "id": "soundchex.example",
+  "name": "Example Plugin",
+  "version": "1.0.0",
+  "author": "SoundChex",
+  "description": "A minimal plugin used by the loader tests.",
+  "minSoundChexVersion": "0.1.0",
+  "requiresPhp": "8.2",
+  "provides": ["metadata-source"],
+  "entrypoint": "SoundChex\\Example\\Plugin",
+  "license": "AGPL-3.0-or-later"
+}
