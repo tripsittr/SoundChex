@@ -252,6 +252,38 @@ class IntegrationsPageTest extends TestCase
         $this->assertStringContainsString('Spotify', $html);
     }
 
+    /* ------------------------------------------------- keyless toggle ---- */
+
+    public function test_a_keyless_integration_is_listed_as_a_toggle(): void
+    {
+        $this->withKeys();
+        Http::fake(fn () => throw new ConnectionException('refused'));
+
+        $this->asOwner()
+            ->get(self::URL)
+            ->assertOk()
+            ->assertSee('Deezer');
+    }
+
+    public function test_setting_up_a_toggle_enables_it_without_a_key(): void
+    {
+        $this->asOwner();
+
+        Livewire::test(Integrations::class)->call('edit', 'deezer_enabled');
+
+        $this->assertTrue((bool) app(SettingsService::class)->get('deezer_enabled'));
+    }
+
+    public function test_unlinking_a_toggle_disables_it(): void
+    {
+        app(SettingsService::class)->set('deezer_enabled', true);
+        $this->asOwner();
+
+        Livewire::test(Integrations::class)->call('unlink', 'deezer_enabled');
+
+        $this->assertFalse((bool) app(SettingsService::class)->get('deezer_enabled'));
+    }
+
     /* ----------------------------------------------------- api versions -- */
 
     public function test_each_app_is_asked_on_the_api_version_it_actually_speaks(): void
