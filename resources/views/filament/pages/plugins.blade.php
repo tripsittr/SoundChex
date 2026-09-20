@@ -18,6 +18,81 @@
         </p>
     </x-filament::section>
 
+    {{-- Browse & install from repositories — the Emby-style catalog. --}}
+    <x-filament::section>
+        <x-slot name="heading">Browse plugins</x-slot>
+        <x-slot name="description">
+            Install from a repository — a catalogue of plugins at a URL. The official one is
+            trusted; anything you add is at your own risk, and every install is checked for
+            integrity and compatibility before it lands.
+        </x-slot>
+
+        <div class="space-y-4">
+            {{-- Repositories --}}
+            <div class="flex flex-wrap items-center gap-2">
+                @foreach ($this->repositories() as $repo)
+                    <span @class([
+                        'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs',
+                        'bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300' => $repo->official,
+                        'bg-gray-100 text-gray-700 dark:bg-white/5 dark:text-gray-300' => ! $repo->official,
+                    ])>
+                        {{ $repo->name }}
+                        @if ($repo->official)
+                            <span class="opacity-60">official</span>
+                        @else
+                            <button type="button" wire:click="removeRepository({{ $repo->id }})" class="opacity-50 hover:opacity-100">&times;</button>
+                        @endif
+                    </span>
+                @endforeach
+            </div>
+
+            <div class="flex flex-wrap items-end gap-2">
+                <div class="min-w-0 flex-1">
+                    <x-filament::input.wrapper>
+                        <x-filament::input type="url" wire:model="newRepositoryUrl" placeholder="https://…/manifest.json" />
+                    </x-filament::input.wrapper>
+                </div>
+                <x-filament::button color="gray" wire:click="addRepository">Add repository</x-filament::button>
+                <x-filament::button wire:click="browse">Refresh catalogue</x-filament::button>
+            </div>
+
+            @if ($catalogLoaded)
+                @if ($catalog === [])
+                    <p class="text-sm opacity-60">Nothing new to install from the configured repositories.</p>
+                @else
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        @foreach ($catalog as $entry)
+                            <div class="flex items-start justify-between gap-3 rounded-lg border border-gray-200 p-4 dark:border-white/10">
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium">{{ $entry['name'] }}</span>
+                                        @if ($entry['version'])
+                                            <span class="font-mono text-xs opacity-60">{{ $entry['version'] }}</span>
+                                        @endif
+                                    </div>
+                                    @if ($entry['description'])
+                                        <p class="mt-0.5 truncate text-xs opacity-70">{{ $entry['description'] }}</p>
+                                    @endif
+                                    <p class="mt-0.5 text-xs opacity-50">{{ $entry['repository'] }}</p>
+                                </div>
+                                @if ($entry['installable'])
+                                    <x-filament::button
+                                        size="sm"
+                                        wire:click="install('{{ $entry['id'] }}')"
+                                        wire:confirm="Install {{ $entry['name'] }}? It downloads and installs the plugin, disabled. You enable it after reviewing it.">
+                                        Install
+                                    </x-filament::button>
+                                @else
+                                    <x-filament::badge color="gray" size="sm">Needs newer server</x-filament::badge>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            @endif
+        </div>
+    </x-filament::section>
+
     @if ($plugins === [])
         <x-filament::section>
             <x-slot name="heading">No plugins installed</x-slot>
