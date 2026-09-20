@@ -57,4 +57,10 @@ class MediaPlay extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    /** The profile that was watching — position and history belong to it. */
+    public function profile(): BelongsTo
+    {
+        return $this->belongsTo(Profile::class);
+    }
 }
