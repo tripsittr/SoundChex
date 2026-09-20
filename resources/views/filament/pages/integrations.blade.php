@@ -147,15 +147,13 @@
                     </div>
                 @endif
 
-                @if ($editing['group'] === 'Acquisition')
-                    {{-- The address, because loopback is only right for our own
-                         compose stack. These apps are also installed natively,
-                         on a Synology or unRAID box, inside someone else's
-                         Docker stack, or on a different machine entirely — none
-                         of which answer on 127.0.0.1 from here. --}}
+                @if (! empty($editing['webhook']))
+                    {{-- A webhook is only a URL — the endpoint events POST to.
+                         Discord/Slack give you one under channel settings; a
+                         generic hook is whatever ntfy/Apprise/your own accepts. --}}
                     <div>
                         <label class="mb-1 block text-sm font-medium" for="integration-url">
-                            Address
+                            Webhook URL
                         </label>
 
                         <x-filament::input.wrapper>
@@ -164,41 +162,74 @@
                                 type="url"
                                 wire:model="editingUrl"
                                 autocomplete="off"
-                                placeholder="http://127.0.0.1:8686" />
+                                placeholder="https://…" />
                         </x-filament::input.wrapper>
 
                         <p class="mt-2 text-xs opacity-60">
-                            Where {{ $editing['label'] }} is reachable from this
-                            server. Another machine on the network works — use
-                            its address rather than localhost.
+                            @if ($editing['key'] === 'webhook_discord_url')
+                                Discord: Channel &rarr; Edit &rarr; Integrations &rarr; Webhooks &rarr; New Webhook &rarr; Copy URL.
+                            @elseif ($editing['key'] === 'webhook_slack_url')
+                                Slack: an Incoming Webhook URL from your workspace's app settings.
+                            @else
+                                Any endpoint that accepts a JSON POST — ntfy, Apprise, Gotify, or your own.
+                            @endif
+                            Events post here as they happen.
+                        </p>
+                    </div>
+                @else
+                    @if ($editing['group'] === 'Acquisition')
+                        {{-- The address, because loopback is only right for our own
+                             compose stack. These apps are also installed natively,
+                             on a Synology or unRAID box, inside someone else's
+                             Docker stack, or on a different machine entirely — none
+                             of which answer on 127.0.0.1 from here. --}}
+                        <div>
+                            <label class="mb-1 block text-sm font-medium" for="integration-url">
+                                Address
+                            </label>
+
+                            <x-filament::input.wrapper>
+                                <x-filament::input
+                                    id="integration-url"
+                                    type="url"
+                                    wire:model="editingUrl"
+                                    autocomplete="off"
+                                    placeholder="http://127.0.0.1:8686" />
+                            </x-filament::input.wrapper>
+
+                            <p class="mt-2 text-xs opacity-60">
+                                Where {{ $editing['label'] }} is reachable from this
+                                server. Another machine on the network works — use
+                                its address rather than localhost.
+                            </p>
+                        </div>
+                    @endif
+
+                    <div>
+                        <label class="mb-1 block text-sm font-medium" for="integration-key">
+                            API key
+                        </label>
+
+                        <x-filament::input.wrapper>
+                            <x-filament::input
+                                id="integration-key"
+                                type="password"
+                                wire:model="editingKey"
+                                wire:keydown.enter="saveModal"
+                                autocomplete="off"
+                                :placeholder="$editing['connected'] ? 'Enter a new key to replace the stored one' : 'Paste the key'" />
+                        </x-filament::input.wrapper>
+
+                        <p class="mt-2 text-xs opacity-60">
+                            @if ($editing['group'] === 'Acquisition')
+                                Found in {{ $editing['label'] }}'s own Settings &rarr; General.
+                            @else
+                                Issued by {{ $editing['label'] }}. Used only to enrich the catalogue.
+                            @endif
+                            Stored encrypted, and never shown again — replace it rather than edit it.
                         </p>
                     </div>
                 @endif
-
-                <div>
-                    <label class="mb-1 block text-sm font-medium" for="integration-key">
-                        API key
-                    </label>
-
-                    <x-filament::input.wrapper>
-                        <x-filament::input
-                            id="integration-key"
-                            type="password"
-                            wire:model="editingKey"
-                            wire:keydown.enter="saveModal"
-                            autocomplete="off"
-                            :placeholder="$editing['connected'] ? 'Enter a new key to replace the stored one' : 'Paste the key'" />
-                    </x-filament::input.wrapper>
-
-                    <p class="mt-2 text-xs opacity-60">
-                        @if ($editing['group'] === 'Acquisition')
-                            Found in {{ $editing['label'] }}'s own Settings &rarr; General.
-                        @else
-                            Issued by {{ $editing['label'] }}. Used only to enrich the catalogue.
-                        @endif
-                        Stored encrypted, and never shown again — replace it rather than edit it.
-                    </p>
-                </div>
 
                 @if ($editing['connected_url'])
                     {{-- No inline handler. Livewire morphs this modal's DOM
@@ -219,9 +250,19 @@
             </div>
 
             <x-slot name="footerActions">
-                <x-filament::button wire:click="saveModal">
-                    {{ $editing['connected'] ? 'Replace key' : 'Connect' }}
-                </x-filament::button>
+                @if (! empty($editing['webhook']))
+                    <x-filament::button wire:click="saveModal">
+                        Save
+                    </x-filament::button>
+
+                    <x-filament::button color="gray" wire:click="testWebhook">
+                        Send test
+                    </x-filament::button>
+                @else
+                    <x-filament::button wire:click="saveModal">
+                        {{ $editing['connected'] ? 'Replace key' : 'Connect' }}
+                    </x-filament::button>
+                @endif
 
                 <x-filament::button color="gray" wire:click="closeModal">
                     Cancel
