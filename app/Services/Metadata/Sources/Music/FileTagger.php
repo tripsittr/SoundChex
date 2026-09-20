@@ -111,7 +111,7 @@ class FileTagger implements MetadataSource
         [$key, $scale] = $this->parseKeyTag($first('initial_key') ?? $first('key'));
 
         return array_filter([
-            'artist' => $first('artist') ?? $first('album_artist'),
+            'artist' => static::stripIndexPrefix($first('artist') ?? $first('album_artist')),
             'album' => $first('album'),
             'title' => $first('title'),
             'label' => $first('publisher') ?? $first('label'),
@@ -152,6 +152,33 @@ class FileTagger implements MetadataSource
         }
 
         return $merged;
+    }
+
+    /**
+     * Strips a playlist-index prefix that a bad exporter jammed into the artist
+     * tag — "7373. Queer" for a track whose artist is really Garbage. The number
+     * is a position in someone's export, not part of a name.
+     *
+     * Guarded to `\d{2,}\.` — a multi-digit run followed by a dot — so it never
+     * touches a legitimate number-band. Those read "38 Special", "21 Savage",
+     * "3 Doors Down": a number then a *space*, never a dot. Requiring the dot,
+     * and leaving anything that isn't left with a real name, keeps them safe.
+     *
+     * Static and public so the backfill command cleans existing rows with the
+     * exact same rule rather than a second copy that could drift.
+     */
+    public static function stripIndexPrefix(?string $artist): ?string
+    {
+        if ($artist === null) {
+            return null;
+        }
+
+        $cleaned = preg_replace('/^\d{2,}\.\s+/', '', trim($artist));
+
+        // Only accept the strip if something real is left; a value that was
+        // *only* an index ("7373.") is not a name and is better left for a
+        // metadata source to replace than blanked here.
+        return ($cleaned !== null && $cleaned !== '') ? $cleaned : $artist;
     }
 
     /**
