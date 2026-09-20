@@ -117,6 +117,43 @@ class ContentDuplicateDetectorTest extends TestCase
         $this->assertNull($this->detector->check($albumCut));
     }
 
+    public function test_a_featured_variant_matches_the_lead_artist_on_the_primary(): void
+    {
+        // Same song, one tagged with a feature. Matching on primary_artist lets
+        // "$uicideboy$" and "$uicideboy$, Pouya" pair up where the raw credit
+        // would have kept them apart (S-271).
+        $lead = $this->track('song.flac', 'aaa', [
+            'artist' => '$uicideboy$', 'primary_artist' => '$uicideboy$',
+            'album' => 'Album', 'duration_ms' => 200000,
+        ], title: 'Same Song');
+        $feat = $this->track('song.mp3', 'bbb', [
+            'artist' => '$uicideboy$, Pouya', 'primary_artist' => '$uicideboy$',
+            'album' => 'Album', 'duration_ms' => 200500,
+        ], title: 'Same Song');
+
+        $found = $this->detector->check($feat);
+
+        $this->assertSame($lead->id, $found?->id);
+        $this->assertSame(DuplicateMatch::Fuzzy, $feat->fresh()->duplicate_match);
+    }
+
+    public function test_it_falls_back_to_the_credit_when_no_primary_is_set(): void
+    {
+        // Rows without a primary_artist still match on the raw credit.
+        $a = $this->track('a.flac', 'aaa', ['artist' => 'Solo Act', 'album' => 'Album', 'duration_ms' => 200000], title: 'Track');
+        $b = $this->track('b.mp3', 'bbb', ['artist' => 'Solo Act', 'album' => 'Album', 'duration_ms' => 200000], title: 'Track');
+
+        $this->assertSame($a->id, $this->detector->check($b)?->id);
+    }
+
+    public function test_a_different_primary_artist_is_not_a_match(): void
+    {
+        $this->track('a.flac', 'aaa', ['artist' => 'Band A', 'primary_artist' => 'Band A', 'duration_ms' => 200000], title: 'Track');
+        $other = $this->track('b.mp3', 'bbb', ['artist' => 'Band B', 'primary_artist' => 'Band B', 'duration_ms' => 200000], title: 'Track');
+
+        $this->assertNull($this->detector->check($other));
+    }
+
     public function test_content_matching_can_be_switched_off_independently(): void
     {
         app(SettingsService::class)->set('library_detect_content_duplicates', false);
