@@ -12,8 +12,41 @@ export const ACCOUNT = {
  * The household shares one login, so signing in is only half of it — the
  * profile is what carries permissions and the rating cap.
  */
+/**
+ * Wipes the origin's client-side state — IndexedDB and Web Storage.
+ *
+ * The e2e suite runs single-worker against one seeded database and one browser
+ * origin, so a test that leaves a download in IndexedDB or a flag in
+ * localStorage was bleeding into whatever ran next — the cause of several specs
+ * that passed alone and failed in a full run (S-28). Clearing here, at sign-in,
+ * gives every test a clean client slate without a shared beforeEach in each file.
+ */
+export async function resetClientStorage(page) {
+    await page.evaluate(async () => {
+        try {
+            localStorage.clear();
+            sessionStorage.clear();
+        } catch { /* storage may be unavailable in some contexts */ }
+
+        if (window.indexedDB?.databases) {
+            const dbs = await indexedDB.databases();
+            await Promise.all(
+                dbs.map((db) => db.name
+                    ? new Promise((resolve) => {
+                        const req = indexedDB.deleteDatabase(db.name);
+                        req.onsuccess = req.onerror = req.onblocked = () => resolve();
+                    })
+                    : Promise.resolve()),
+            );
+        }
+    });
+}
+
 export async function signIn(page, profile = 'Owner') {
     await page.goto('/login');
+
+    // A clean client slate, so no test inherits another's downloads/flags.
+    await resetClientStorage(page);
 
     await page.fill('input[name="email"]', ACCOUNT.email);
     await page.fill('input[name="password"]', ACCOUNT.password);
