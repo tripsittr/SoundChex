@@ -139,7 +139,15 @@ class EnrichMediaItemJob implements ShouldQueue
             }
 
             $credits = app(MusicCredits::class);
-            $credits->fromCreditString($item, $artist);
+
+            // MusicBrainz writes credits itself when it matches a recording,
+            // with each artist's stable MBID (S-38). Those are the better record,
+            // so only parse the joined artist string when it did not — otherwise
+            // this would detach the id-carrying people and re-attach the same
+            // names with no ids.
+            if (! $this->hasIdentifiedCredits($item)) {
+                $credits->fromCreditString($item, $artist);
+            }
 
             // The column browsing groups on. Kept in step here rather than by
             // a separate pass, so a track uploaded today is grouped correctly
@@ -152,6 +160,19 @@ class EnrichMediaItemJob implements ShouldQueue
         } catch (\Throwable $e) {
             report($e);
         }
+    }
+
+    /**
+     * Whether the item already carries credits with a MusicBrainz id — i.e.
+     * MusicBrainz matched and wrote them. That is the record not to overwrite by
+     * re-parsing the joined artist string.
+     */
+    private function hasIdentifiedCredits(MediaItem $item): bool
+    {
+        return $item->people()
+            ->wherePivotIn('role', [MusicCredits::PRIMARY, MusicCredits::FEATURED])
+            ->whereNotNull('musicbrainz_artist_id')
+            ->exists();
     }
 
     /**
