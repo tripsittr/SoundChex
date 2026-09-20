@@ -11,6 +11,7 @@ use App\Enums\MediaTagSource;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
 use App\Services\Metadata\Contracts\MetadataSource;
+use App\Services\MusicCredits;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
@@ -73,6 +74,7 @@ class MusicBrainz implements MetadataSource
 
         $this->writeRecordingFields($item, $recording);
         $this->writeReleaseFields($item, $recording);
+        $this->writeCredits($item, $recording);
         $this->writeGenreTags($item, $recording);
         $this->recordConfidence($item, $matchedByIdentifier);
         // Review flagging stays: an uncertain match is still surfaced for the
@@ -396,6 +398,26 @@ class MusicBrainz implements MetadataSource
         ], fn ($v) => $v !== null && $v !== '');
 
         $this->fillBlank($item, $values);
+    }
+
+    /**
+     * Writes the artist credits from MusicBrainz's structured `artist-credit`,
+     * which carries each artist's own name *and* stable MBID — the better source
+     * the enrichment used to parse back out of a joined string (S-38). When this
+     * runs, the credits carry ids; the string-parsing fallback in the enrich job
+     * then leaves them alone rather than re-attaching the same names without ids.
+     *
+     * @param  array<string, mixed>  $recording
+     */
+    private function writeCredits(MediaItem $item, array $recording): void
+    {
+        $artistCredit = $recording['artist-credit'] ?? [];
+
+        if (! is_array($artistCredit) || $artistCredit === []) {
+            return;
+        }
+
+        app(MusicCredits::class)->fromMusicBrainz($item, $artistCredit);
     }
 
     /**
