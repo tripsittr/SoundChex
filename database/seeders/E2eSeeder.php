@@ -127,8 +127,27 @@ class E2eSeeder extends Seeder
     {
         $relative = 'media/library/Music/' . $artist . '/' . ($album ?? 'Singles') . '/' . $title . '.mp3';
 
+        // A short (non-silent) tone so a decoder has real samples to advance
+        // through. `sine` rather than `anullsrc`: a stalled element and a silent
+        // one look identical to the playback assertions, and a stalled one that
+        // still reports a moving clock is exactly the failure they exist to catch.
         $this->generate($relative, [
-            '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono', '-t', '30', '-q:a', '9',
+            '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=30',
+            '-ac', '1', '-q:a', '9',
+        ]);
+
+        // A WAV/PCM converted copy alongside the MP3. Streaming prefers the
+        // converted copy (see MediaItem::playbackPath()), and this is the real
+        // reason that path exists: Playwright's open-source WebKit — the engine
+        // the `mobile` project runs — has no MP3 decoder, so a track served as
+        // MP3 never leaves readyState 0 there and every playback spec on WebKit
+        // stalls. PCM is decodable on every engine, so serving the converted
+        // copy both fixes those specs and exercises the converted-copy path
+        // itself. Real iOS Safari decodes MP3 fine; this is a harness codec gap.
+        $converted = 'media/converted/' . $title . '.wav';
+        $this->generate($converted, [
+            '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=44100:duration=30',
+            '-ac', '1', '-c:a', 'pcm_s16le',
         ]);
 
         $item = MediaItem::create([
@@ -136,6 +155,7 @@ class E2eSeeder extends Seeder
             'type' => MediaItemType::Music,
             'title' => $title,
             'file_path' => $relative,
+            'converted_path' => $converted,
             'match_confidence' => MatchConfidence::Exact,
             'owned' => true,
         ]);

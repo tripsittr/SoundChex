@@ -17,6 +17,16 @@ test.describe('connection toasts', () => {
         await page.locator('#soundchex-toast, main').first().waitFor({ timeout: 15000 });
     });
 
+    // setOffline persists on the browser context, and a single-worker run reuses
+    // it: a test that goes offline and does not come back leaves every later
+    // spec's `goto` hanging in its own beforeEach — the cause of the cascade
+    // where a whole project failed only in a full run (S-28). Reset
+    // unconditionally, so no test has to remember and a mid-test failure can't
+    // strand the flag either.
+    test.afterEach(async ({ page }) => {
+        await page.context().setOffline(false);
+    });
+
     test('going offline says so', async ({ page }) => {
         await page.context().setOffline(true);
         await page.evaluate(() => window.dispatchEvent(new Event('offline')));

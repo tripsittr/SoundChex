@@ -265,6 +265,14 @@ test.describe('pausing and resuming downloads', () => {
         await page.evaluate(() => window.soundchexDownloadQueue.clear());
     });
 
+    // These tests go offline mid-way. setOffline persists on the context and the
+    // single-worker run reuses it, so a test that fails between going offline and
+    // coming back would strand the flag and hang every later spec's beforeEach
+    // (S-28). Reset unconditionally rather than trust each test to.
+    test.afterEach(async ({ context }) => {
+        await context.setOffline(false);
+    });
+
     test('the queue is written down as it goes', async ({ page }) => {
         await page.evaluate(() => {
             const queue = window.soundchexDownloadQueue;
