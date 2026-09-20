@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\MediaItemType;
+use App\Events\PlaybackRecorded;
 use App\Models\MediaItem;
 use App\Models\MediaPlay;
 use App\Services\ContentGate;
@@ -437,6 +438,10 @@ class MediaCenterController extends Controller
             'profile_id' => $profileId,
             'source' => $this->playSource(),
         ]);
+
+        // A play was recorded. A scrobbler plugin (Last.fm, Trakt) subscribes to
+        // this to report the listen (S-264 Phase 3).
+        PlaybackRecorded::dispatch($item, $profileId);
     }
 
     /**

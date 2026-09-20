@@ -5,6 +5,9 @@
 
 namespace App\Plugins;
 
+use App\Events\MediaItemCatalogued;
+use App\Events\MediaItemEnriched;
+use App\Events\PlaybackRecorded;
 use Illuminate\Support\Facades\Event;
 
 /**
@@ -17,10 +20,9 @@ use Illuminate\Support\Facades\Event;
  * contribution is attributed to a plugin id and can be dropped when that plugin
  * is disabled.
  *
- * Phase 1 ships the two seams the platform can honour today: metadata sources
- * (the existing pipeline reads this in Phase 2) and named events. The later
- * seams — routes, cover/subtitle sources, admin pages — land as methods here in
- * Phase 3, so a plugin's `register()` never has to learn a new object.
+ * The seams grow here, never on a new object, so a plugin's `register()` learns
+ * one surface: metadata sources (Phase 2), named events and value filters
+ * (Phase 3), and the routes, cover/subtitle sources and admin pages that follow.
  */
 class Registry
 {
@@ -86,17 +88,98 @@ class Registry
     }
 
     /**
-     * Subscribe to a named app event.
+     * The named events a plugin may subscribe to, mapped to their event classes.
      *
-     * A thin pass-through to Laravel's event bus, offered here so a plugin has
-     * one object for every kind of contribution rather than reaching for the
-     * `Event` facade itself. The events a plugin can usefully listen to arrive
-     * in Phase 3; the mechanism is here now.
+     * A plugin subscribes with the stable friendly name ("media.enriched") and
+     * never has to know the class, so a class can be renamed without breaking a
+     * plugin. A name not in this list is passed through as-is, so an author can
+     * still listen to any Laravel event by its class if they want to.
+     *
+     * @var array<string, class-string>
+     */
+    private const EVENTS = [
+        MediaItemCatalogued::NAME => MediaItemCatalogued::class,
+        MediaItemEnriched::NAME => MediaItemEnriched::class,
+        PlaybackRecorded::NAME => PlaybackRecorded::class,
+    ];
+
+    /**
+     * Subscribe to one of the app's named events (S-264 Phase 3).
+     *
+     * The listener receives the event object — e.g. a `MediaItemEnriched`
+     * carrying the item. Offered on the registry so a plugin has one object for
+     * every kind of contribution rather than reaching for the `Event` facade.
      */
     public function on(string $event, callable $listener): static
     {
-        Event::listen($event, $listener);
+        Event::listen(self::EVENTS[$event] ?? $event, $listener);
 
         return $this;
+    }
+
+    /**
+     * The events a plugin may subscribe to, for docs and the admin UI.
+     *
+     * @return array<int, string>
+     */
+    public static function availableEvents(): array
+    {
+        return array_keys(self::EVENTS);
+    }
+
+    /**
+     * Filter callbacks by named hook, in registration order.
+     *
+     * @var array<string, array<int, callable>>
+     */
+    private array $filters = [];
+
+    /**
+     * Register a filter — a callback that receives a value and returns a
+     * (possibly changed) one (S-264 Phase 3).
+     *
+     * The WordPress-filter idea: the app calls `apply()` at a named point with a
+     * value, and each registered filter gets to transform it in turn. Unlike an
+     * event (which reacts), a filter *changes* the thing passing through — a
+     * plugin can rewrite a title, add a genre, veto a value. The callback's
+     * return replaces the value for the next filter and, finally, the caller.
+     */
+    public function filter(string $hook, callable $callback): static
+    {
+        $this->filters[$hook][] = $callback;
+
+        return $this;
+    }
+
+    /**
+     * Runs a value through every filter registered for a hook, in order, and
+     * returns the result. With no filters the value is returned untouched, so a
+     * caller can always apply a hook without checking whether anything listens.
+     *
+     * A filter that throws is logged and skipped — one plugin's bad filter must
+     * not break the value for everyone downstream.
+     *
+     * @template T
+     *
+     * @param  T  $value
+     * @return T
+     */
+    public function apply(string $hook, mixed $value, mixed ...$context): mixed
+    {
+        foreach ($this->filters[$hook] ?? [] as $callback) {
+            try {
+                $value = $callback($value, ...$context);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return $value;
+    }
+
+    /** Whether any filter is registered for a hook — lets a caller skip the work. */
+    public function hasFilters(string $hook): bool
+    {
+        return ! empty($this->filters[$hook]);
     }
 }

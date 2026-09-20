@@ -7,6 +7,7 @@ namespace App\Services;
 
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Events\MediaItemCatalogued;
 use App\Jobs\EnrichMediaItemJob;
 use App\Jobs\ExtractBookAssetsJob;
 use App\Jobs\ImportSubtitlesJob;
@@ -470,6 +471,10 @@ class LibraryScanner
         // enrichment rewrites the title (S-21). Nothing else keeps it, and its
         // absence is what forced S-44 to guess an original filename from a title.
         $this->history->recordIntake($item->fresh(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata']));
+
+        // A new item has entered the library. Plugins subscribed to this react
+        // to something arriving, before enrichment runs (S-264 Phase 3).
+        MediaItemCatalogued::dispatch($item);
 
         return $item;
     }
