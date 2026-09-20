@@ -31,6 +31,7 @@ class LibraryScanner
         private LibrarySettings $settings,
         private EpisodeParser $episodes,
         private ContainerProbe $containers,
+        private MetadataHistory $history,
     ) {}
 
     /**
@@ -463,6 +464,12 @@ class LibraryScanner
         // Sources write into this row rather than creating it, so it has to
         // exist before enrichment runs.
         $item->metadata()->create($attributes);
+
+        // The state the file arrived in — its original name, path, size, and the
+        // tags it carried — captured now, before the organiser renames it and
+        // enrichment rewrites the title (S-21). Nothing else keeps it, and its
+        // absence is what forced S-44 to guess an original filename from a title.
+        $this->history->recordIntake($item->fresh(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata']));
 
         return $item;
     }

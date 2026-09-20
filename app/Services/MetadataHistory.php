@@ -44,6 +44,54 @@ class MetadataHistory
     ];
 
     /**
+     * Records the state a file arrived in, before anything renames or enriches
+     * it (S-21).
+     *
+     * The regular snapshot deliberately omits the file path — restoring an old
+     * one would point the row at a moved file. But the *arrival* path and name
+     * are exactly what is otherwise lost the moment the organiser files the
+     * track and enrichment rewrites the title: S-44 had to guess an original
+     * filename from the shape of a title because the real one was gone. This
+     * keeps it, under an `intake` section alongside the normal snapshot, as the
+     * one `import` version that is never a diff — it is the baseline.
+     *
+     * Idempotent: a file re-catalogued (a re-scan of the same path) does not get
+     * a second intake row.
+     */
+    public function recordIntake(MediaItem $item, ?string $contentHash = null): ?MetadataVersion
+    {
+        $alreadyRecorded = MetadataVersion::where('media_item_id', $item->id)
+            ->where('reason', MetadataVersion::REASON_IMPORT)
+            ->exists();
+
+        if ($alreadyRecorded) {
+            return null;
+        }
+
+        $snapshot = $this->snapshot($item);
+
+        // The file's own arrival facts — the part the normal snapshot omits on
+        // purpose, and the part that has nowhere else to live once the file is
+        // renamed and re-tagged.
+        $snapshot['intake'] = [
+            'file_path' => $item->file_path,
+            'file_name' => basename((string) $item->file_path),
+            'file_size' => $item->file_size,
+            'content_hash' => $contentHash ?? $item->content_hash,
+            'arrived_at' => now()->toIso8601String(),
+        ];
+
+        return MetadataVersion::create([
+            'media_item_id' => $item->id,
+            'snapshot' => $snapshot,
+            'reason' => MetadataVersion::REASON_IMPORT,
+            'source' => null,
+            'user_id' => Auth::id(),
+            'changed_fields' => array_keys($this->flatten($snapshot)),
+        ]);
+    }
+
+    /**
      * Captures the item's current state.
      *
      * Returns null when nothing has changed since the last version — a
@@ -236,7 +284,7 @@ class MetadataHistory
             }
         }
 
-        $this->capture($item, MetadataVersion::REASON_RESTORE, 'version #' . $version->id);
+        $this->capture($item, MetadataVersion::REASON_RESTORE, 'version #'.$version->id);
     }
 
     /**
@@ -249,7 +297,7 @@ class MetadataHistory
         $flat = [];
 
         foreach ($data as $key => $value) {
-            $path = $prefix === '' ? (string) $key : $prefix . '.' . $key;
+            $path = $prefix === '' ? (string) $key : $prefix.'.'.$key;
 
             // Tags and people are compared as a whole rather than per index:
             // adding one at the front would otherwise report every following
