@@ -58,8 +58,12 @@ test.describe('music on a phone', () => {
         await page.goto('/app/music');
         await page.waitForTimeout(1200);
 
+        // The library list specifically — `ol` alone also matches the
+        // now-playing sheet's hidden queue (`#np-sheet-queue`), which sits at
+        // the top of the DOM at top:0 and made this compare the subnav against
+        // an invisible overlay rather than the list on screen.
         const chips = await page.locator('.music-subnav').first().evaluate((el) => el.getBoundingClientRect().top);
-        const list = await page.locator('ol').first().evaluate((el) => el.getBoundingClientRect().top);
+        const list = await page.locator('ol[data-play-queue]').first().evaluate((el) => el.getBoundingClientRect().top);
 
         expect(chips).toBeLessThan(list);
     });
