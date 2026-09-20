@@ -54,6 +54,12 @@ class Integrations extends Page
     /** @var array<string, array<string, mixed>> */
     public array $apps = [];
 
+    /**
+     * The active group filter: '' for all, or a group name. A Livewire property
+     * so the chosen filter survives a re-render (editing a key, unlinking).
+     */
+    public string $filter = '';
+
     /** Which integration's modal is open, or null. */
     public ?string $editing = null;
 
@@ -167,7 +173,7 @@ class Integrations extends Page
                 $this->closeModal();
                 $this->load();
 
-                Notification::make()->title($label . ' address saved.')->success()->send();
+                Notification::make()->title($label.' address saved.')->success()->send();
 
                 return;
             }
@@ -194,7 +200,7 @@ class Integrations extends Page
         $this->closeModal();
         $this->load();
 
-        Notification::make()->title($label . ' connected.')->success()->send();
+        Notification::make()->title($label.' connected.')->success()->send();
     }
 
     /**
@@ -289,6 +295,58 @@ class Integrations extends Page
         return $out;
     }
 
+    /**
+     * Groups to show, honouring the active filter.
+     *
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    public function visibleGroups(): array
+    {
+        $grouped = $this->groupedRows();
+
+        if ($this->filter === '' || ! isset($grouped[$this->filter])) {
+            return $grouped;
+        }
+
+        return [$this->filter => $grouped[$this->filter]];
+    }
+
+    /**
+     * The filter chips: "All" plus each group, each with its connected/total
+     * count so the page reads at a glance which categories are set up.
+     *
+     * @return array<int, array{value: string, label: string, connected: int, total: int}>
+     */
+    public function filterOptions(): array
+    {
+        $grouped = $this->groupedRows();
+        $rows = collect($grouped)->flatten(1);
+
+        $options = [[
+            'value' => '',
+            'label' => 'All',
+            'connected' => $rows->where('connected', true)->count(),
+            'total' => $rows->count(),
+        ]];
+
+        foreach ($grouped as $group => $groupRows) {
+            $options[] = [
+                'value' => $group,
+                'label' => $group,
+                'connected' => collect($groupRows)->where('connected', true)->count(),
+                'total' => count($groupRows),
+            ];
+        }
+
+        return $options;
+    }
+
+    /** Sets the active group filter (from a chip click). */
+    public function setFilter(string $group): void
+    {
+        $this->filter = $group;
+    }
+
     /** @return array<int, array<string, mixed>> */
     private function acquisitionRows(): array
     {
@@ -302,7 +360,7 @@ class Integrations extends Page
                 'detail' => $app['running']
                     // What it is doing, not merely that it is up — a queue
                     // depth is the number someone actually came here for.
-                    ? trim(($app['version'] ?? '') . ' · ' . number_format($app['queued']) . ' queued', ' ·')
+                    ? trim(($app['version'] ?? '').' · '.number_format($app['queued']).' queued', ' ·')
                     : ($app['error'] ?? $app['kind']),
                 'connected' => $app['running'],
                 'warnings' => $app['warnings'],

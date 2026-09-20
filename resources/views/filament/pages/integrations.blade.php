@@ -1,9 +1,10 @@
 <x-filament-panels::page>
 
     @php
-        /** Grouped and ordered on the page object, so the order is a decision
-            rather than whatever `groupBy()` happened to return. */
-        $groups = $this->groupedRows();
+        /** Filtered + grouped on the page object, so ordering and the active
+            filter are decisions rather than whatever `groupBy()` returned. */
+        $groups = $this->visibleGroups();
+        $filters = $this->filterOptions();
     @endphp
 
     @if (! $this->anyRunning())
@@ -32,6 +33,29 @@
         </x-filament::section>
     @endif
 
+    {{-- Filter by kind. Chips rather than a select: a handful of categories,
+         each worth showing with its connected/total count so the page says at a
+         glance what is set up. --}}
+    <div class="flex flex-wrap gap-2">
+        @foreach ($filters as $option)
+            @php $active = $this->filter === $option['value']; @endphp
+            <button
+                type="button"
+                wire:click="setFilter('{{ $option['value'] }}')"
+                @class([
+                    'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition',
+                    'bg-primary-600 text-white shadow' => $active,
+                    'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10' => ! $active,
+                ])
+            >
+                {{ $option['label'] }}
+                <span @class(['text-xs', 'text-white/70' => $active, 'opacity-60' => ! $active])>
+                    {{ $option['connected'] }}/{{ $option['total'] }}
+                </span>
+            </button>
+        @endforeach
+    </div>
+
     @foreach ($groups as $group => $rows)
         <x-filament::section>
             <x-slot name="heading">{{ $group }}</x-slot>
@@ -39,13 +63,19 @@
                 {{ collect($rows)->where('connected', true)->count() }} of {{ count($rows) }} connected
             </x-slot>
 
-            <ul role="list" class="divide-y divide-gray-100 dark:divide-white/10">
+            {{-- Cards, not a list: each integration is its own tile so the page
+                 feels less cramped and a connected one reads as a distinct
+                 object rather than a row in a wall of text. --}}
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 @foreach ($rows as $row)
-                    <li class="flex items-center justify-between gap-4 py-3">
-
-                        <div class="min-w-0">
+                    <div @class([
+                        'flex flex-col justify-between gap-3 rounded-xl border p-4 transition',
+                        'border-primary-500/40 bg-primary-50/40 dark:bg-primary-500/5' => $row['connected'],
+                        'border-gray-200 dark:border-white/10' => ! $row['connected'],
+                    ])>
+                        <div class="min-w-0 space-y-1">
                             <div class="flex items-center gap-2">
-                                <span class="truncate font-medium">{{ $row['label'] }}</span>
+                                <span class="truncate font-semibold">{{ $row['label'] }}</span>
 
                                 @if ($row['connected'])
                                     <x-filament::badge color="success" size="sm">Connected</x-filament::badge>
@@ -61,10 +91,10 @@
                                 @endif
                             </div>
 
-                            <p class="mt-0.5 truncate text-sm opacity-60">{{ $row['detail'] }}</p>
+                            <p class="truncate text-sm opacity-60">{{ $row['detail'] }}</p>
                         </div>
 
-                        <div class="flex shrink-0 items-center gap-2">
+                        <div class="flex items-center gap-2">
                             @if ($row['connected'] || $row['unlinkable'])
                                 <x-filament::button
                                     size="sm"
@@ -89,10 +119,9 @@
                                 </x-filament::button>
                             @endif
                         </div>
-
-                    </li>
+                    </div>
                 @endforeach
-            </ul>
+            </div>
         </x-filament::section>
     @endforeach
 
