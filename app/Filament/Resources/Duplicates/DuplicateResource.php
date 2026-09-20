@@ -6,6 +6,7 @@
 namespace App\Filament\Resources\Duplicates;
 
 use App\Enums\DuplicateStatus;
+use App\Enums\ProcessingStatus;
 use App\Filament\Concerns\RestrictsToAdmins;
 use App\Filament\Resources\Duplicates\Pages\ListDuplicates;
 use App\Models\MediaItem;
@@ -47,15 +48,22 @@ class DuplicateResource extends Resource
     protected static ?string $recordTitleAttribute = 'title';
 
     /**
-     * Only flagged rows, newest first.
-     *
-     * Resolved rows stay visible so a merge can be seen after the fact, but
-     * anything never flagged is not a duplicate and doesn't belong here.
+     * Everything with a review of any kind waiting on it: a duplicate decision,
+     * a cover to check, or a metadata match that came back unsure. The tabs
+     * narrow to one kind; this is the queue as a whole, so a tab's own filter
+     * has rows to find. Anything never flagged for anything is not review work
+     * and stays out.
      */
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
-            ->whereNotNull('duplicate_status')
+            ->where(fn (Builder $q) => $q
+                ->whereNotNull('duplicate_status')
+                ->orWhere('needs_cover_review', true)
+                ->orWhereIn('processing_status', [
+                    ProcessingStatus::NeedsReview->value,
+                    ProcessingStatus::Failed->value,
+                ]))
             ->with('duplicateOf');
     }
 
@@ -78,6 +86,12 @@ class DuplicateResource extends Resource
             ->count()
             + $model::query()
                 ->where('needs_cover_review', true)
+                ->count()
+            + $model::query()
+                ->whereIn('processing_status', [
+                    ProcessingStatus::NeedsReview->value,
+                    ProcessingStatus::Failed->value,
+                ])
                 ->count();
 
         return $waiting > 0 ? (string) $waiting : null;

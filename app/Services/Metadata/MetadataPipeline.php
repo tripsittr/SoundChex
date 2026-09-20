@@ -5,6 +5,7 @@
 
 namespace App\Services\Metadata;
 
+use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
 use App\Services\Metadata\Contracts\MetadataSource;
 use App\Services\SettingsService;
@@ -17,24 +18,150 @@ class MetadataPipeline
 
     /**
      * Run all registered, supported sources against the item in priority order.
+     *
+     * As it goes it records what each source did — ran and matched, ran and
+     * found nothing, or errored — plus the ones that skipped themselves and why.
+     * That record is written to the item as `enrichment_report`, so the Review
+     * hub can explain why an item needs a look rather than only that it does.
+     * The sources themselves are untouched: the outcome is inferred from the
+     * item's confidence before and after each call, which every source already
+     * sets, rather than a new return value each would have to opt into.
      */
     public function run(MediaItem $item): void
     {
+        $report = $this->collectRun($item);
+
+        // Set by the pipeline, not a form. Quietly, so a report write cannot
+        // itself dirty `updated_at` or trip model events mid-enrichment.
+        $item->forceFill(['enrichment_report' => $report])->saveQuietly();
+    }
+
+    /**
+     * Runs each supported source and returns the structured account of the run.
+     *
+     * @return array{ran_at: string, review_reason: string|null, sources: array<int, array<string, mixed>>}
+     */
+    private function collectRun(MediaItem $item): array
+    {
         $sources = $this->sourcesFor($item);
+        $lines = [];
 
         foreach ($sources as $source) {
+            $before = $item->match_confidence?->value;
+
             try {
                 $source->enrich($item);
+                $lines[] = $this->describeRun($source, $item, $before);
             } catch (\Throwable $e) {
                 report($e);
+                $lines[] = [
+                    'name' => $source->name(),
+                    'outcome' => 'error',
+                    'note' => class_basename($e).': '.$e->getMessage(),
+                ];
             }
         }
+
+        foreach ($this->skippedFor($item, $sources) as $line) {
+            $lines[] = $line;
+        }
+
+        return [
+            'ran_at' => now()->toIso8601String(),
+            'review_reason' => $this->reviewReason($item, $lines),
+            'sources' => $lines,
+        ];
+    }
+
+    /**
+     * What one source did, judged by the item's match confidence before and
+     * after it ran.
+     *
+     * @return array<string, mixed>
+     */
+    private function describeRun(MetadataSource $source, MediaItem $item, ?string $before): array
+    {
+        // The in-memory item: sources mutate it directly, and a source's write is
+        // the thing being measured, so a reload here would miss changes not yet
+        // persisted and cost a query per source besides.
+        $after = $item->match_confidence?->value;
+
+        // A source that raised confidence (none → fuzzy/exact, or fuzzy → exact)
+        // contributed a match; one that left it where it was found nothing to add.
+        $improved = $after !== $before && $after !== null && $after !== 'none';
+
+        return [
+            'name' => $source->name(),
+            'outcome' => $improved ? 'matched' : 'no_match',
+            'confidence' => $after,
+        ];
+    }
+
+    /**
+     * The sources that could have run but declined, tagged with the likely
+     * reason — a missing key vs. simply nothing to say about this item.
+     *
+     * @param  MetadataSource[]  $ran  the supported sources that were run
+     * @return array<int, array<string, mixed>>
+     */
+    private function skippedFor(MediaItem $item, array $ran): array
+    {
+        $registered = config('metadata_sources.'.$item->type->value, []);
+        $ranClasses = array_map(fn (MetadataSource $s) => $s::class, $ran);
+
+        $lines = [];
+
+        foreach ($registered as $class) {
+            if (! class_exists($class) || in_array($class, $ranClasses, true)) {
+                continue;
+            }
+
+            $source = App::make($class);
+            $missingKey = $source->requiredSettings() !== [] && ! $source->supports($item);
+
+            $lines[] = [
+                'name' => $source->name(),
+                'outcome' => $missingKey ? 'skipped_no_key' : 'skipped',
+                'note' => $missingKey
+                    ? 'Needs a key that is not configured.'
+                    : 'Nothing to add for this item.',
+            ];
+        }
+
+        return $lines;
+    }
+
+    /**
+     * A one-line human reason this item is worth reviewing, or null when the run
+     * left nothing to look at.
+     *
+     * @param  array<int, array<string, mixed>>  $lines
+     */
+    private function reviewReason(MediaItem $item, array $lines): ?string
+    {
+        if ($item->processing_status === ProcessingStatus::NeedsReview) {
+            $matched = array_filter($lines, fn (array $l) => ($l['outcome'] ?? null) === 'matched');
+
+            return $matched === []
+                ? 'No source could identify this confidently.'
+                : 'A source found more than one likely match and left it for a human.';
+        }
+
+        if (($item->match_confidence?->value ?? 'none') === 'none') {
+            return 'Enriched, but nothing matched — the file may be untagged or obscure.';
+        }
+
+        if ($item->match_confidence?->value === 'fuzzy') {
+            return 'Matched by similarity, not an exact identifier — worth a glance.';
+        }
+
+        return null;
     }
 
     /** @return MetadataSource[] */
     public function sourcesFor(MediaItem $item): array
     {
-        $registered = config('metadata_sources.' . $item->type->value, []);
+        $registered = config('metadata_sources.'.$item->type->value, []);
 
         // Sources are registered ahead of being written. Skip any that don't
         // exist yet rather than failing the whole run.
