@@ -134,6 +134,13 @@ class MusicBrainz implements MetadataSource
             return;
         }
 
+        // Name the real cause so the review reason is specific rather than a
+        // generic "ambiguous match" — the recording matched, it's the release
+        // that is in doubt.
+        $item->reviewReasonHint = $notStudio
+            ? 'Recording matched, but the chosen album looks like a compilation — confirm the release.'
+            : 'Recording matched, but the chosen album has no release date — confirm the release.';
+
         $item->processing_status = ProcessingStatus::NeedsReview;
         $item->saveQuietly();
     }

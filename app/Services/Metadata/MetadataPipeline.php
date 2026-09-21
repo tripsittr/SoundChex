@@ -144,6 +144,13 @@ class MetadataPipeline
     private function reviewReason(MediaItem $item, array $lines): ?string
     {
         if ($item->processing_status === ProcessingStatus::NeedsReview) {
+            // A source that flagged the item for a specific reason (a matched
+            // recording on a doubtful release) names it; prefer that over the
+            // generic guesses below.
+            if (filled($item->reviewReasonHint)) {
+                return $item->reviewReasonHint;
+            }
+
             $matched = array_filter($lines, fn (array $l) => ($l['outcome'] ?? null) === 'matched');
 
             return $matched === []
