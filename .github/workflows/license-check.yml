@@ -1,0 +1,65 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 SoundChex
+#
+# The dependency-licence gate (S-5). SoundChex is distributed under the AGPL, so
+# every dependency must offer an AGPL-compatible licence. The audit confirmed the
+# tree is clean; this workflow keeps it clean — a PR that pulls in an
+# incompatible dependency (SSPL, BUSL, GPL-2.0-only with no permissive option,
+# proprietary, unlicensed) fails here rather than shipping.
+#
+# Three ecosystems, three checks:
+#   - Composer → `php artisan licenses:check` (per-package: passes if any offered
+#     licence is compatible; the app's own gate, also runnable locally).
+#   - Cargo    → `cargo deny check licenses` against src-tauri/deny.toml.
+#   - npm      → license-checker against an allow-list.
+
+name: Licence check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  composer:
+    name: Composer licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Check licences
+        run: php artisan licenses:check
+
+  cargo:
+    name: Cargo licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Check licences
+        working-directory: src-tauri
+        run: cargo deny check licenses
+
+  npm:
+    name: npm licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Check licences
+        # Fail on any licence not in the AGPL-compatible allow-list. The audit
+        # accepted these families; a new dependency outside them stops the build.
+        run: |
+          npx --yes license-checker@25 --production \
+            --onlyAllow "MIT;MIT*;ISC;0BSD;BSD-2-Clause;BSD-3-Clause;Apache-2.0;Apache*;Unlicense;CC0-1.0;CC-BY-4.0;WTFPL;Zlib;MPL-2.0;LGPL-3.0-or-later;LGPL-3.0-only;GPL-3.0-or-later;AGPL-3.0-or-later;BlueOak-1.0.0;Python-2.0"
