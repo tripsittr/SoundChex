@@ -58,9 +58,42 @@ class PluginLoader
             return;
         }
 
-        foreach ($this->discover() as $directory => $manifest) {
-            $this->load($directory, $manifest);
+        // First-party bundled plugins: always on, no install-table gate. These
+        // are the app's own behaviours written as plugins, and load even before
+        // the install table exists (a fresh migrate, or an un-migrated test).
+        foreach ($this->bundled() as $directory => $manifest) {
+            $this->load($directory, $manifest, bundled: true);
         }
+
+        // Installed plugins are gated on the install table; skip them until it
+        // exists rather than fail the whole boot.
+        if ($this->installTableReady()) {
+            foreach ($this->discover() as $directory => $manifest) {
+                $this->load($directory, $manifest);
+            }
+        }
+    }
+
+    /** Whether the installed_plugins table is present for installed-plugin discovery. */
+    private function installTableReady(): bool
+    {
+        try {
+            return $this->app['db']->getSchemaBuilder()->hasTable('installed_plugins');
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * The first-party bundled plugins, read from the repo's bundled path. Unlike
+     * installed plugins they are not reconciled into the install table — they are
+     * part of the app, loaded whenever the platform is on.
+     *
+     * @return array<string, PluginManifest>
+     */
+    public function bundled(): array
+    {
+        return $this->manifestsIn(config('soundchex.plugins.bundled_path'));
     }
 
     /**
@@ -86,8 +119,24 @@ class PluginLoader
      */
     public function discover(): array
     {
-        $path = config('soundchex.plugins.path');
+        $found = $this->manifestsIn(config('soundchex.plugins.path'));
 
+        foreach ($found as $directory => $manifest) {
+            $this->reconcile($manifest, basename($directory));
+        }
+
+        return $found;
+    }
+
+    /**
+     * Reads the manifest of every plugin directory under a path, skipping any
+     * that is unreadable. Shared by installed discovery and bundled loading, so
+     * both find plugins the same way.
+     *
+     * @return array<string, PluginManifest> directory path => manifest
+     */
+    private function manifestsIn(mixed $path): array
+    {
         if (! is_string($path) || ! is_dir($path)) {
             return [];
         }
@@ -102,18 +151,13 @@ class PluginLoader
             }
 
             try {
-                $manifest = PluginManifest::fromFile($manifestPath);
+                $found[$directory] = PluginManifest::fromFile($manifestPath);
             } catch (InvalidManifestException $e) {
                 Log::warning('Skipping a plugin with an unreadable manifest', [
                     'directory' => $directory,
                     'error' => $e->getMessage(),
                 ]);
-
-                continue;
             }
-
-            $this->reconcile($manifest, basename($directory));
-            $found[$directory] = $manifest;
         }
 
         return $found;
@@ -151,14 +195,19 @@ class PluginLoader
      * Loads one plugin: gate on enabled + compatibility, register autoloading,
      * instantiate the entry class, and collect its registrations. Any failure is
      * logged and swallowed so one bad plugin cannot break the boot.
+     *
+     * A bundled plugin skips the install-table gate — it is first-party and
+     * always on — but is still compatibility-checked and still fails safe.
      */
-    private function load(string $directory, PluginManifest $manifest): void
+    private function load(string $directory, PluginManifest $manifest, bool $bundled = false): void
     {
         try {
-            $record = InstalledPlugin::query()->where('plugin_id', $manifest->id)->first();
+            if (! $bundled) {
+                $record = InstalledPlugin::query()->where('plugin_id', $manifest->id)->first();
 
-            if ($record === null || ! $record->enabled) {
-                return;
+                if ($record === null || ! $record->enabled) {
+                    return;
+                }
             }
 
             if (! $manifest->isCompatibleWith(config('soundchex.version', '0.0.0'), PHP_VERSION)) {

@@ -34,6 +34,14 @@ return [
         // deploy — the Emby-style install the platform is built around.
         'path' => storage_path('app/plugins'),
 
+        // First-party plugins that ship with the app and are always on. These
+        // are the platform dogfooding itself: behaviours that could be core but
+        // are written as plugins (the title tidier, cover sources, notification
+        // targets). They live in the repo, load enabled, and never appear in the
+        // install/enable flow — disabling one is `SOUNDCHEX_PLUGINS_ENABLED` or
+        // editing the app, not a toggle, because they are the app.
+        'bundled_path' => base_path('plugins/bundled'),
+
         // A master switch. Off, the loader does nothing and no third-party code
         // runs — the kill switch that makes "disable everything" a config flip.
         'enabled' => env('SOUNDCHEX_PLUGINS_ENABLED', true),

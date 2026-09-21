@@ -32,13 +32,9 @@ class PluginServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // The install table has to exist before discovery reads it. During the
-        // very first migration (or in a bare test that has not migrated) it may
-        // not — so guard, rather than fail the whole boot on a missing table.
-        if (! $this->installTableReady()) {
-            return;
-        }
-
+        // The loader handles a missing install table itself (bundled plugins load
+        // regardless; installed ones wait for the table), so it is always safe
+        // to boot it here.
         $loader = $this->app->make(PluginLoader::class);
         $loader->boot();
 
@@ -51,19 +47,5 @@ class PluginServiceProvider extends ServiceProvider
 
             $loader->bootLoaded();
         });
-    }
-
-    /**
-     * Whether the installed_plugins table is present. Discovery reads it, so a
-     * boot before the table exists (first migrate, or an un-migrated test) must
-     * skip the loader rather than throw.
-     */
-    private function installTableReady(): bool
-    {
-        try {
-            return $this->app['db']->getSchemaBuilder()->hasTable('installed_plugins');
-        } catch (\Throwable) {
-            return false;
-        }
     }
 }
