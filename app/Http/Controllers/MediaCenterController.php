@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\MediaItemType;
 use App\Events\PlaybackCompleted;
+use App\Events\PlaybackProgress;
 use App\Events\PlaybackRecorded;
 use App\Events\UserSearched;
 use App\Models\MediaItem;
@@ -341,6 +342,10 @@ class MediaCenterController extends Controller
             'listened_seconds' => ($play->listened_seconds ?? 0) + $listened,
             'completed' => $completed,
         ])->save();
+
+        // A resume point was saved — fires on every progress write, distinct
+        // from the once-only completion crossing below (S-285).
+        PlaybackProgress::dispatch($item, app(CurrentProfile::class)->id(), $data['position']);
 
         // The "watched to the end" signal, fired once at the crossing (S-276).
         if ($completed && ! $wasCompleted) {

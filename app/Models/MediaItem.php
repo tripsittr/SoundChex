@@ -10,7 +10,9 @@ use App\Enums\DuplicateStatus;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Observers\MediaItemObserver;
 use App\Services\CurrentProfile;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -19,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
+#[ObservedBy(MediaItemObserver::class)]
 class MediaItem extends Model
 {
     protected $fillable = [

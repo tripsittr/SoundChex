@@ -9,6 +9,7 @@ use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Events\CoverEmbedded;
+use App\Events\MediaItemAdded;
 use App\Events\MediaItemEnriched;
 use App\Events\MediaItemReviewFlagged;
 use App\Events\MetadataTitleTidied;
@@ -78,6 +79,11 @@ class EnrichMediaItemJob implements ShouldQueue
             // enriched item — the point a scrobbler or a derived-data plugin
             // hooks (S-264 Phase 3).
             MediaItemEnriched::dispatch($item);
+
+            // The item has now settled into the library as a real, kept item —
+            // distinct from `media.catalogued`, which fires the moment the file
+            // is first seen, before enrichment could reject or reshape it (S-285).
+            MediaItemAdded::dispatch($item);
         } catch (\Throwable $e) {
             $item->update(['processing_status' => ProcessingStatus::Failed]);
             throw $e;
