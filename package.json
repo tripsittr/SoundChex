@@ -12,8 +12,8 @@
         "tauri": "tauri",
         "tauri:dev": "tauri dev",
         "check:target": "node scripts/check-stale-target.mjs",
-        "tauri:build": "npm run check:target && CI=true tauri build",
-        "build:server": "npm run check:target && npm run build && CI=true tauri build --config src-tauri/tauri.server.conf.json",
+        "tauri:build": "npm run check:target && cross-env CI=true tauri build",
+        "build:server": "npm run check:target && npm run build && cross-env CI=true tauri build --config src-tauri/tauri.server.conf.json",
         "dev:server": "npm run check:target && tauri dev --config src-tauri/tauri.server.conf.json"
     },
     "devDependencies": {
@@ -23,6 +23,7 @@
         "@tailwindcss/vite": "^4.3.3",
         "@tauri-apps/cli": "^2.11.4",
         "alpinejs": "^3.15.12",
+        "cross-env": "^10.1.0",
         "epubjs": "^0.3.93",
         "jsdom": "^30.0.1",
         "jszip": "^3.10.1",
