@@ -5,6 +5,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\PlaybackCompleted;
+use App\Events\PlaybackRecorded;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\MediaItemResource;
 use App\Models\MediaItem;
@@ -126,11 +128,20 @@ class MediaController extends Controller
         $advanced = $data['position'] - (int) ($play->position_seconds ?? 0);
         $listened = ($advanced > 0 && $advanced <= self::LISTENED_MAX_STEP) ? $advanced : 0;
 
+        $wasCompleted = (bool) $play->completed;
+
         $play->forceFill([
             'position_seconds' => $data['position'],
             'listened_seconds' => ($play->listened_seconds ?? 0) + $listened,
             'completed' => $completed,
         ])->save();
+
+        // Fire once, when it crosses into complete — the "watched"/"scrobble"
+        // signal a tracker plugin reports at the end, distinct from the play
+        // start (S-276).
+        if ($completed && ! $wasCompleted) {
+            PlaybackCompleted::dispatch($item, app(CurrentProfile::class)->id());
+        }
 
         return response()->json(['completed' => $completed]);
     }
@@ -230,5 +241,10 @@ class MediaController extends Controller
             'profile_id' => $profileId,
             'source' => $source,
         ]);
+
+        // The native app's plays fired no event, while the web player's did — a
+        // scrobbler plugin saw web listens and not app ones. Dispatch here too
+        // (S-276).
+        PlaybackRecorded::dispatch($item, $profileId);
     }
 }

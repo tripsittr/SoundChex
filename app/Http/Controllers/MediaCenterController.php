@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\MediaItemType;
+use App\Events\PlaybackCompleted;
 use App\Events\PlaybackRecorded;
 use App\Models\MediaItem;
 use App\Models\MediaPlay;
@@ -329,6 +330,8 @@ class MediaCenterController extends Controller
             ? $advanced
             : 0;
 
+        $wasCompleted = (bool) $play->completed;
+
         $play->forceFill([
             'position_seconds' => $data['position'],
             // Null until something is actually listened, so a row that only
@@ -337,6 +340,11 @@ class MediaCenterController extends Controller
             'listened_seconds' => ($play->listened_seconds ?? 0) + $listened,
             'completed' => $completed,
         ])->save();
+
+        // The "watched to the end" signal, fired once at the crossing (S-276).
+        if ($completed && ! $wasCompleted) {
+            PlaybackCompleted::dispatch($item, app(CurrentProfile::class)->id());
+        }
 
         return response()->json(['completed' => $completed]);
     }

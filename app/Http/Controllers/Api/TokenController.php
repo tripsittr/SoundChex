@@ -8,6 +8,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\CurrentProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -84,7 +85,7 @@ class TokenController extends Controller
 
         $token = $user->createToken(
             $data['device_name'],
-            ['profile:' . $profile->id],
+            ['profile:'.$profile->id],
         );
 
         return response()->json([
@@ -113,7 +114,7 @@ class TokenController extends Controller
      */
     public function show(Request $request): JsonResponse
     {
-        $profile = app(\App\Services\CurrentProfile::class)->get();
+        $profile = app(CurrentProfile::class)->get();
 
         return response()->json([
             'user' => [
@@ -148,6 +149,6 @@ class TokenController extends Controller
 
     private function throttleKey(Request $request, string $email): string
     {
-        return 'api-token:' . mb_strtolower($email) . '|' . $request->ip();
+        return 'api-token:'.mb_strtolower($email).'|'.$request->ip();
     }
 }

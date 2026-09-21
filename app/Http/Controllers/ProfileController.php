@@ -74,7 +74,7 @@ class ProfileController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:40'],
-            'color' => ['nullable', 'string', 'in:' . implode(',', Profile::COLORS)],
+            'color' => ['nullable', 'string', 'in:'.implode(',', Profile::COLORS)],
             'is_kids' => ['nullable', 'boolean'],
         ]);
 

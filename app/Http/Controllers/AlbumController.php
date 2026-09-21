@@ -10,6 +10,7 @@ use App\Models\MediaItem;
 use App\Models\Person;
 use App\Services\AlbumBrowser;
 use App\Services\ContentGate;
+use App\Services\MediaBrowser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -118,7 +119,7 @@ class AlbumController extends Controller
      * They used to sit above the songs list, where a dozen carousels pushed
      * the list itself off the screen.
      */
-    public function genres(\App\Services\MediaBrowser $browser): View
+    public function genres(MediaBrowser $browser): View
     {
         $rows = collect($browser->rowsForType(MediaItemType::Music))
             ->filter(fn (array $row): bool => str_starts_with($row['key'] ?? '', 'genre-'))

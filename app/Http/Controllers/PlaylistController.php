@@ -12,6 +12,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 /**
@@ -58,7 +60,7 @@ class PlaylistController extends Controller
             return [];
         }
 
-        $rows = \Illuminate\Support\Facades\DB::table('collection_media_item')
+        $rows = DB::table('collection_media_item')
             ->whereIn('collection_id', $ids)
             ->orderBy('sort_order')
             ->get(['collection_id', 'media_item_id']);
@@ -140,7 +142,7 @@ class PlaylistController extends Controller
             $old = $collection->artwork_path;
             $collection->artwork_path = $request->file('cover')->store('playlist-covers', 'public');
             if ($old && $old !== $collection->artwork_path) {
-                \Illuminate\Support\Facades\Storage::disk('public')->delete($old);
+                Storage::disk('public')->delete($old);
             }
         }
 

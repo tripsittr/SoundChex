@@ -13,6 +13,7 @@ use App\Services\ContentGate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Playlists for the native app.
@@ -160,7 +161,7 @@ class PlaylistController extends Controller
         $collection->update(['artwork_path' => $path]);
 
         if ($old && $old !== $path) {
-            \Illuminate\Support\Facades\Storage::disk('public')->delete($old);
+            Storage::disk('public')->delete($old);
         }
 
         return response()->json([

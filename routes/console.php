@@ -101,6 +101,12 @@ Schedule::call(fn () => cache()->put('soundchex.scheduler.heartbeat', now()->tim
     ->everyMinute()
     ->name('scheduler-heartbeat');
 
+// A periodic health check that emits the server.health event and records a
+// notification when something is wrong (S-276). Quiet when healthy.
+Schedule::command('server:health --quiet-ok')
+    ->hourly()
+    ->withoutOverlapping();
+
 /*
 | A daily assertion that the PHP runtime still has every required extension. The
 | runtime does not change between deploys, so daily is plenty; the value is that

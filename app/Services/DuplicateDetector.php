@@ -8,6 +8,7 @@ namespace App\Services;
 use App\Enums\DuplicateMatch;
 use App\Enums\DuplicateStatus;
 use App\Enums\MediaItemType;
+use App\Events\DuplicateDetected;
 use App\Models\MediaItem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -172,6 +173,9 @@ class DuplicateDetector
             'duplicate_match' => $reason,
             'duplicate_detected_at' => now(),
         ])->saveQuietly();
+
+        // Every detection funnels through here, byte and content alike (S-276).
+        DuplicateDetected::dispatch($item, $original);
 
         if ($autoDeletable && $this->settings->deletesDuplicatesAutomatically()) {
             $this->merge($item);

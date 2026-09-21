@@ -52,7 +52,7 @@ class AnnotationController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
             'excerpt' => ['nullable', 'string', 'max:2000'],
             'note' => ['nullable', 'string', 'max:10000'],
-            'color' => ['nullable', 'string', 'in:' . implode(',', Annotation::COLORS)],
+            'color' => ['nullable', 'string', 'in:'.implode(',', Annotation::COLORS)],
         ]);
 
         $annotation = new Annotation([
@@ -82,7 +82,7 @@ class AnnotationController extends Controller
 
         $data = $request->validate([
             'note' => ['nullable', 'string', 'max:10000'],
-            'color' => ['nullable', 'string', 'in:' . implode(',', Annotation::COLORS)],
+            'color' => ['nullable', 'string', 'in:'.implode(',', Annotation::COLORS)],
         ]);
 
         if (array_key_exists('note', $data)) {

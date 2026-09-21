@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\DeviceReported;
 use App\Http\Controllers\Controller;
 use App\Models\DeviceReport;
 use Illuminate\Http\JsonResponse;
@@ -44,7 +45,7 @@ class DeviceReportController extends Controller
             'events.*.detail' => ['nullable', 'array'],
         ]);
 
-        DeviceReport::create([
+        $report = DeviceReport::create([
             ...$data,
             // Never taken from the request body. A device reporting its own
             // address would be reporting whatever it felt like, and the point
@@ -54,6 +55,10 @@ class DeviceReportController extends Controller
             // reliable about.
             'kind' => $this->kindOf($data['platform'] ?? ''),
         ]);
+
+        // A monitoring plugin subscribes to this to surface device crashes and
+        // failures as they arrive (S-276).
+        DeviceReported::dispatch($report);
 
         return response()->json(['stored' => true], 201);
     }
