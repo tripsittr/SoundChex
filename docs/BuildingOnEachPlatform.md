@@ -20,8 +20,8 @@ They are tracked separately below because they are at different stages.
 | --- | --- | --- |
 | **macOS** | yes, repeatedly | `.dmg` and `.app`, both the client and the server app |
 | **iOS** | yes, on device | Needs a paid Apple account for a year-long profile |
-| **Windows** | **no** | Toolchain documented below, never run |
-| **Linux** | **no** | Same |
+| **Windows** | in CI (S-33) | Built by `.github/workflows/build-client.yml` on every push to `main` — a break surfaces there. The binary itself has not been run on a Windows machine yet. |
+| **Linux** | in CI (S-33) | Same workflow, on `ubuntu-latest` with the WebKitGTK deps. Compiled, not yet run on a Linux machine. |
 | **Android** | **no** | No Tauri project generated yet |
 
 **Bundled server runtime** (S-151 — `.github/workflows/build-server.yml`):
@@ -33,10 +33,13 @@ They are tracked separately below because they are at different stages.
 | **Windows** (x86_64) | yes (CLI) | `php.exe` builds; no php-fpm SAPI on Windows, so the HTTP front needs php-cgi (a follow-up) |
 | **Android** | n/a | The server does not run on Android |
 
-So the *server runtime* now builds for every desktop OS in CI. The
-client/desktop *app* below is still only built on macOS and iOS. Anything marked
-"no" there is a set of instructions, not a promise — written from Tauri's
-requirements rather than from a build anyone has watched succeed here.
+So the *server runtime* builds for every desktop OS in CI, and now so does the
+*client app* — macOS, Windows and Linux compile on every push to `main`
+(`build-client.yml`), so a change that breaks one is caught in CI rather than on
+a user's machine. The remaining gap is that no one has *run* the Windows or Linux
+binary on real hardware yet; the CI build proves it compiles and bundles, not
+that it launches. Android has no Tauri project at all — those instructions are
+still written from requirements, not a build anyone has watched succeed.
 
 ---
 
