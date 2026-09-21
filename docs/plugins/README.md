@@ -148,6 +148,21 @@ $registry->on('media.enriched', function ($event) {
 | `media.enriched` | the pipeline has finished an item | `item` |
 | `playback.recorded` | a play is recorded | `item`, `profileId` |
 
+### A cover source
+
+Contribute a fallback album-cover provider, tried after the built-in
+iTunes/Deezer lookups:
+
+```php
+$registry->coverSource(CoverArtArchiveSource::class, priority: 50);
+```
+
+Implement `App\Plugins\Contracts\CoverSource` — `name()`, `priority()`, and
+`coverUrlFor(string $artist, ?string $album): ?string` returning a verified cover
+URL or null. Validate the result against the artist; a wrong cover is worse than
+none. The worked example under `plugins/examples/coverart-archive` reaches the
+Cover Art Archive via MusicBrainz, keyless, in ~40 lines.
+
 ### Filters
 
 Transform a value passing through the app — the callback receives a value and

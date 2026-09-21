@@ -1,0 +1,12 @@
+{
+  "id": "soundchex.coverart-archive",
+  "name": "Cover Art Archive",
+  "version": "1.0.0",
+  "author": "SoundChex",
+  "description": "A fallback album-cover source using the Cover Art Archive (MusicBrainz's cover service). Keyless. A worked example of a plugin cover source.",
+  "minSoundChexVersion": "0.1.0",
+  "requiresPhp": "8.2",
+  "provides": ["cover-source"],
+  "entrypoint": "SoundChex\\CoverArtArchive\\Plugin",
+  "license": "AGPL-3.0-or-later"
+}
