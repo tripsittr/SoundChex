@@ -44,10 +44,42 @@ class BookTextExtractor
     }
 
     /**
+     * Whether a book can be extracted without OCR — a text PDF or an EPUB, which
+     * take a fraction of a second and can run in the request. A scanned PDF
+     * cannot: it needs OCR, which is slow and belongs on the queue.
+     */
+    public function isFast(MediaItem $item): bool
+    {
+        $path = $item->absoluteFilePath();
+
+        if ($path === null) {
+            return false;
+        }
+
+        $format = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        if ($format === 'epub') {
+            return true;
+        }
+
+        if ($format !== 'pdf') {
+            return false;
+        }
+
+        // A PDF is fast when its first page already has embedded text — i.e. it
+        // is not a scan needing OCR.
+        return $this->ocr->embeddedTextLength($path, 1) >= self::EMBEDDED_TEXT_THRESHOLD;
+    }
+
+    /**
      * Extracts a book into ordered BookContent rows, replacing any it already
      * has. Returns the number of units written, or 0 when nothing could be read.
+     *
+     * `allowOcr` false skips the OCR fallback for scanned pages, so a text book
+     * can be extracted quickly in a request; the scanned pages come back empty
+     * and a later full run (on the queue) fills them.
      */
-    public function extract(MediaItem $item): int
+    public function extract(MediaItem $item, bool $allowOcr = true): int
     {
         $path = $item->absoluteFilePath();
 
@@ -56,7 +88,7 @@ class BookTextExtractor
         }
 
         $units = match (strtolower(pathinfo($path, PATHINFO_EXTENSION))) {
-            'pdf' => $this->fromPdf($item, $path),
+            'pdf' => $this->fromPdf($item, $path, $allowOcr),
             'epub' => $this->fromEpub($path),
             default => [],
         };
@@ -88,7 +120,7 @@ class BookTextExtractor
      *
      * @return array<int, array{title: ?string, text: string}>
      */
-    private function fromPdf(MediaItem $item, string $path): array
+    private function fromPdf(MediaItem $item, string $path, bool $allowOcr = true): array
     {
         $pages = $this->pdfPages($path);
 
@@ -102,8 +134,10 @@ class BookTextExtractor
             $text = trim($text);
 
             // A scan: no usable embedded text. Fall back to OCR, which the reader
-            // already uses for these on the web.
-            if (mb_strlen(preg_replace('/\s+/', '', $text) ?? '') < self::EMBEDDED_TEXT_THRESHOLD) {
+            // already uses for these on the web — unless this is the fast,
+            // in-request pass, which leaves the scanned pages for the queue.
+            if ($allowOcr
+                && mb_strlen(preg_replace('/\s+/', '', $text) ?? '') < self::EMBEDDED_TEXT_THRESHOLD) {
                 $ocr = $this->ocr->isAvailable()
                     ? $this->ocr->recognizePage($item, $number)?->text
                     : null;

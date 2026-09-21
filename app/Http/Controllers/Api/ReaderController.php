@@ -73,9 +73,17 @@ class ReaderController extends Controller
         $extractor = app(BookTextExtractor::class);
 
         if (! $extractor->hasContent($item)) {
-            ExtractBookContentJob::dispatch($item->id);
+            // A text PDF or an EPUB extracts in a fraction of a second, so do it
+            // now rather than making the reader wait on a queue that may be busy.
+            // A scanned PDF needs OCR — slow — so that goes to the queue, and the
+            // reader polls (the job is unique, so repeated polls don't pile up).
+            if ($extractor->isFast($item)) {
+                $extractor->extract($item);
+            } else {
+                ExtractBookContentJob::dispatch($item->id);
 
-            return response()->json(['status' => 'processing']);
+                return response()->json(['status' => 'processing']);
+            }
         }
 
         $units = $item->bookContents()

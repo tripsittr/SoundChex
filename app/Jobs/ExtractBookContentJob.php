@@ -7,27 +7,42 @@ namespace App\Jobs;
 
 use App\Models\MediaItem;
 use App\Services\Books\BookTextExtractor;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Extracts a book to reflowable text in the background (S-295).
+ * Extracts a scanned book to reflowable text in the background (S-295).
  *
- * Queued rather than run in the request: a scanned book means OCR-ing every page,
- * which is minutes of work. The reader asks for the content, this runs, and the
- * reader picks it up on its next poll. `ShouldBeUnique` would be ideal but the
- * base queue may be sync in some installs; the extractor is idempotent, so a
- * double-run only redoes the work, it does not duplicate rows.
+ * Only for books that need OCR — text PDFs and EPUBs are extracted in the request
+ * itself. OCR-ing every page of a scan is minutes of work, so it is queued and
+ * the reader polls for the result.
+ *
+ * Unique per book: the reader polls while it waits, and without this each poll
+ * would queue another copy (which is exactly what piled up 33 duplicate jobs the
+ * first time). On its own `reader` queue so a book is not stuck behind a long
+ * enrichment backlog on the default queue.
  */
-class ExtractBookContentJob implements ShouldQueue
+class ExtractBookContentJob implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
     /** OCR of a long scanned book is slow; give it room. */
     public int $timeout = 1800;
 
-    public function __construct(public readonly int $mediaItemId) {}
+    /** Drop a stale unique lock after this, so a failed run can be retried. */
+    public int $uniqueFor = 3600;
+
+    public function __construct(public readonly int $mediaItemId)
+    {
+        $this->onQueue('reader');
+    }
+
+    public function uniqueId(): string
+    {
+        return (string) $this->mediaItemId;
+    }
 
     public function handle(BookTextExtractor $extractor): void
     {
