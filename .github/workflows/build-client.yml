@@ -56,6 +56,10 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
+          # The extensions Filament and the league packages require. On Windows
+          # they are not enabled by default, so composer install refuses the
+          # locked set without them — the break the Windows build surfaced.
+          extensions: intl, fileinfo, mbstring, dom, curl, zip, gd
 
       - name: Install Composer dependencies
         run: composer install --no-interaction --no-progress --prefer-dist --no-dev
