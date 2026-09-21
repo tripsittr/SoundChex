@@ -221,4 +221,38 @@ class Registry
 
         return array_column($sorted, 'class');
     }
+
+    /**
+     * Notification-target classes contributed by plugins.
+     *
+     * @var array<int, array{plugin: string, class: string}>
+     */
+    private array $notificationTargets = [];
+
+    /**
+     * Contribute a notification target (S-264, #281).
+     *
+     * The class must implement `NotificationTarget`. Every recorded notification
+     * is offered to it alongside the built-in webhook destinations, so a plugin
+     * can deliver to somewhere the core does not — Telegram, ntfy, Pushover.
+     */
+    public function notificationTarget(string $targetClass): static
+    {
+        $this->notificationTargets[] = [
+            'plugin' => $this->currentPlugin ?? 'unknown',
+            'class' => $targetClass,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * The plugin notification-target classes.
+     *
+     * @return array<int, string>
+     */
+    public function notificationTargetClasses(): array
+    {
+        return array_column($this->notificationTargets, 'class');
+    }
 }
