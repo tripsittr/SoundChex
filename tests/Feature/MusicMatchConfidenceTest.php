@@ -7,6 +7,7 @@ namespace Tests\Feature;
 
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
+use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
 use App\Models\User;
 use App\Services\Metadata\Sources\Music\ItunesSearch;
@@ -108,5 +109,43 @@ class MusicMatchConfidenceTest extends TestCase
 
         $this->assertSame(MatchConfidence::Fuzzy, $none->fresh()->match_confidence);
         $this->assertSame('iTunes Search', $none->fresh()->matched_by);
+    }
+
+    public function test_an_exact_match_on_a_compilation_is_flagged_with_a_specific_reason(): void
+    {
+        // The recording is matched exactly by id, but the only release is a
+        // compilation — so MusicBrainz flags it for review and names the reason
+        // (rather than leaving a generic "ambiguous match").
+        // The by-id lookup returns the recording resource at the top level (not
+        // nested under `recordings`), with its releases inline.
+        Http::fake([
+            'musicbrainz.org/*' => Http::response([
+                'id' => 'badf0c46-e52b-4534-b59b-0aea31d32d61',
+                'title' => 'Stressed Out',
+                'first-release-date' => '2015-04-28',
+                'releases' => [[
+                    'title' => 'Now That’s What I Call Music',
+                    'date' => '2016-01-01',
+                    'release-group' => [
+                        'primary-type' => 'Album',
+                        'secondary-types' => ['Compilation'],
+                    ],
+                ]],
+            ]),
+        ]);
+
+        $item = $this->track([
+            'artist' => 'Twenty One Pilots',
+            'musicbrainz_recording_id' => 'badf0c46-e52b-4534-b59b-0aea31d32d61',
+        ]);
+
+        app(MusicBrainz::class)->enrich($item);
+
+        // Exact recording match…
+        $this->assertSame(MatchConfidence::Exact, $item->match_confidence);
+        // …but flagged for review, with a reason that names the compilation.
+        $this->assertSame(ProcessingStatus::NeedsReview, $item->processing_status);
+        $this->assertNotNull($item->reviewReasonHint);
+        $this->assertStringContainsString('compilation', $item->reviewReasonHint);
     }
 }

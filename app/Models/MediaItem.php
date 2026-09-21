@@ -24,6 +24,18 @@ use Illuminate\Support\Facades\Storage;
 #[ObservedBy(MediaItemObserver::class)]
 class MediaItem extends Model
 {
+    /**
+     * A specific reason a source flagged this item for review, carried from the
+     * source to the pipeline's report within one enrichment run.
+     *
+     * Transient — not a column. A source (MusicBrainz's compilation/undated
+     * check) sets it when it flags the item, and MetadataPipeline reads it when
+     * assembling the run's `review_reason`, so the recorded reason names the real
+     * cause instead of a generic "ambiguous match" guess. Null when no source set
+     * one.
+     */
+    public ?string $reviewReasonHint = null;
+
     protected $fillable = [
         'user_id',
         'parent_id',

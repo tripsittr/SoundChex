@@ -365,7 +365,11 @@ class DuplicatesTable
 
         return match ($record->match_confidence?->value) {
             'fuzzy' => 'Matched by similarity, not an exact identifier.',
-            'exact' => 'Flagged for review despite an exact match.',
+            // An exact match here means the recording was identified confidently;
+            // it is in review because the album it was placed on looks like a
+            // compilation or is undated, not the studio original. (Items flagged
+            // before reasons were recorded have no stored reason, hence this.)
+            'exact' => 'Recording matched, but the album may be a compilation — confirm the release.',
             default => 'Nothing matched — the file may be untagged or obscure.',
         };
     }
