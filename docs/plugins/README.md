@@ -79,6 +79,7 @@ service (it is resolved through the container), but the registry only exists fro
 | `version` | yes | SemVer — `1.2.0`. |
 | `entrypoint` | yes | The fully-qualified entry class — `Acme\Hello\Plugin`. Its namespace maps to your `src/`. |
 | `minSoundChexVersion` | no | The oldest server this build runs on. An older server refuses to load it (like Jellyfin's `targetAbi`). |
+| `targetApi` | no | The plugin-API version you built against — `1.0.0`. This, not the app version, is what decides survival across releases: see [Surviving server versions](#surviving-server-versions). Scaffolded for you by `plugin:make`. |
 | `requiresPhp` | no | The minimum PHP version. |
 | `provides` | no | The seams you use — `["metadata-source", "notification"]`. Drives the catalogue and admin UI; not an enforced boundary. |
 | `author` | no | Shown in the admin. |
@@ -294,6 +295,40 @@ Two ways a user installs it:
 The install verifies the checksum, re-checks compatibility, and extracts safely
 (an archive that tries to write outside its folder is refused). The plugin lands
 **disabled**; the user reviews and enables it.
+
+---
+
+## Surviving server versions
+
+A plugin you install should keep working when the app updates. It does — and the
+rule for when it *stops* is deliberately narrow.
+
+Compatibility is decided by the **plugin API version**, not the app version. The
+app has its own SemVer (`0.2.0`, `0.3.0`, …); the plugin surface — the events,
+the seams, the `Registry` — has a separate version, `plugin_api_version`, that
+only moves when that surface changes. Your manifest records which one you built
+against in `targetApi`.
+
+The contract, in one line: **a plugin survives every server release that shares
+its plugin-API major version.** So a plugin built against `1.x` keeps loading
+across `1.0`, `1.4`, `1.9` — new events and seams are added under MINOR bumps,
+which never break you. It is refused only when:
+
+- **the app has moved to a new plugin-API major** (e.g. `2.0.0`) — a deliberate
+  breaking overhaul of the plugin surface. This is the "unless a major overhaul"
+  case, and the only one. You publish a new build targeting `2.x`.
+- **the plugin targets a newer API than the server has** — you built against
+  `1.4` and the user is still on a server that ships `1.1`. They update the
+  server (or you lower `targetApi`).
+
+A manifest with no `targetApi` is treated as compatible and still loads — the
+field is how you opt into the guarantee and signal what you tested against, not
+a gate that locks older plugins out. When a plugin *is* refused, the loader logs
+why (major overhaul vs. server-too-old), so the reason is never a mystery.
+
+Practically: set `targetApi` to whatever `plugin_api_version` was when you built
+(`plugin:make` fills in the current one), and you inherit the full major line for
+free. You only ever revisit it when the app announces a plugin-API major bump.
 
 ---
 

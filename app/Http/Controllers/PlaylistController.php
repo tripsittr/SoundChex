@@ -5,9 +5,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\PlaylistCreated;
+use App\Events\PlaylistDeleted;
 use App\Models\Collection;
 use App\Models\MediaItem;
 use App\Services\ContentGate;
+use App\Services\CurrentProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -121,6 +124,8 @@ class PlaylistController extends Controller
             'description' => $data['description'] ?? null,
         ]);
 
+        PlaylistCreated::dispatch($playlist, app(CurrentProfile::class)->id());
+
         return redirect()
             ->route('media.playlist', $playlist)
             ->with('status', 'Playlist created.');
@@ -159,6 +164,7 @@ class PlaylistController extends Controller
         // Only the playlist goes. Detaching leaves every track exactly where
         // it was — deleting a playlist must never delete music.
         $collection->mediaItems()->detach();
+        PlaylistDeleted::dispatch($collection, app(CurrentProfile::class)->id());
         $collection->delete();
 
         return redirect()

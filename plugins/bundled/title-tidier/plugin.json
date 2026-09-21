@@ -3,10 +3,13 @@
   "name": "Title Tidier",
   "version": "1.0.0",
   "author": "SoundChex",
-  "description": "Strips a track's own artist out of its title — \"Artist - Song\" becomes \"Song\". A first-party bundled plugin: the app's own default title cleanup, written as a plugin.",
+  "description": "Strips a track's own artist out of its title \u2014 \"Artist - Song\" becomes \"Song\". A first-party bundled plugin: the app's own default title cleanup, written as a plugin.",
   "minSoundChexVersion": "0.1.0",
+  "targetApi": "1.0.0",
   "requiresPhp": "8.2",
-  "provides": ["title-filter"],
+  "provides": [
+    "title-filter"
+  ],
   "entrypoint": "SoundChex\\TitleTidier\\Plugin",
   "license": "AGPL-3.0-or-later"
 }

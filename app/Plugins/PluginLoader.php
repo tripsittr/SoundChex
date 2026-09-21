@@ -210,11 +210,16 @@ class PluginLoader
                 }
             }
 
-            if (! $manifest->isCompatibleWith(config('soundchex.version', '0.0.0'), PHP_VERSION)) {
+            $reason = $manifest->incompatibilityReason(
+                config('soundchex.version', '0.0.0'),
+                config('soundchex.plugin_api_version', '1.0.0'),
+                PHP_VERSION,
+            );
+
+            if ($reason !== null) {
                 Log::warning('Skipping an incompatible plugin', [
                     'plugin' => $manifest->id,
-                    'needs_server' => $manifest->minSoundChexVersion,
-                    'needs_php' => $manifest->requiresPhp,
+                    'reason' => $reason,
                 ]);
 
                 return;

@@ -5,6 +5,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\DeviceSignedIn;
+use App\Events\DeviceSignedOut;
 use App\Http\Controllers\Controller;
 use App\Models\Profile;
 use App\Models\User;
@@ -88,6 +90,8 @@ class TokenController extends Controller
             ['profile:'.$profile->id],
         );
 
+        DeviceSignedIn::dispatch($data['device_name'], $profile->id);
+
         return response()->json([
             'token' => $token->plainTextToken,
             'profile' => [
@@ -104,7 +108,11 @@ class TokenController extends Controller
      */
     public function destroy(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
+        $token = $request->user()->currentAccessToken();
+        $name = $token->name ?? null;
+        $token->delete();
+
+        DeviceSignedOut::dispatch($name);
 
         return response()->json(['revoked' => true]);
     }

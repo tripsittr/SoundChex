@@ -3,10 +3,13 @@
   "name": "Title Case",
   "version": "1.0.0",
   "author": "SoundChex",
-  "description": "Rewrites item titles to a case style you choose — Title Case, Sentence case, UPPERCASE, lowercase, or Start Case. A worked example of a configurable metadata.title filter.",
+  "description": "Rewrites item titles to a case style you choose \u2014 Title Case, Sentence case, UPPERCASE, lowercase, or Start Case. A worked example of a configurable metadata.title filter.",
   "minSoundChexVersion": "0.1.0",
+  "targetApi": "1.0.0",
   "requiresPhp": "8.2",
-  "provides": ["title-filter"],
+  "provides": [
+    "title-filter"
+  ],
   "entrypoint": "SoundChex\\TitleCase\\Plugin",
   "license": "AGPL-3.0-or-later"
 }
