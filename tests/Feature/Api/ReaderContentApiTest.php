@@ -7,6 +7,7 @@ namespace Tests\Feature\Api;
 
 use App\Enums\MediaItemType;
 use App\Jobs\ExtractBookContentJob;
+use App\Models\BookAsset;
 use App\Models\BookContent;
 use App\Models\MediaItem;
 use App\Models\Profile;
@@ -81,6 +82,30 @@ class ReaderContentApiTest extends TestCase
             ->assertJsonPath('chapters.0.title', 'One')
             ->assertJsonPath('chapters.0.text', 'First.')
             ->assertJsonPath('chapters.1.position', 2);
+    }
+
+    public function test_content_carries_a_books_images_keyed_by_page(): void
+    {
+        $book = $this->book();
+        BookContent::create(['media_item_id' => $book->id, 'position' => 1, 'title' => 'Page 1', 'text' => 'Scan.']);
+
+        $assetPath = 'book-assets/'.$book->id.'/img-001.png';
+        Storage::disk('local')->put($assetPath, 'PNGDATA');
+        $asset = BookAsset::create([
+            'media_item_id' => $book->id, 'page' => 1, 'path' => $assetPath,
+            'width' => 800, 'height' => 1200, 'format' => 'png', 'is_significant' => true,
+        ]);
+
+        $this->getJson(route('api.items.reader.content', $book))
+            ->assertOk()
+            ->assertJsonPath('status', 'ready')
+            ->assertJsonPath('images.0.page', 1)
+            ->assertJsonPath('images.0.url', route('api.items.reader.asset', ['item' => $book, 'asset' => $asset]));
+
+        // And the image itself is served, token-authed.
+        $this->get(route('api.items.reader.asset', ['item' => $book, 'asset' => $asset]))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/png');
     }
 
     public function test_a_non_book_has_no_content_endpoint(): void
