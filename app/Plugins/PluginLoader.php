@@ -119,7 +119,20 @@ class PluginLoader
      */
     public function discover(): array
     {
-        $found = $this->manifestsIn(config('soundchex.plugins.path'));
+        $path = config('soundchex.plugins.path');
+
+        // A fresh install has no plugins directory yet. Create it so an operator
+        // has somewhere to drop a plugin and the admin's "Open Plugins Folder"
+        // opens something real. Best-effort: a read-only or unresolvable path
+        // simply yields no plugins rather than failing the request.
+        $this->ensurePluginsDirectory($path);
+
+        // Installs from before plugins moved out of the app kept them under
+        // storage/app/plugins. Carry those across once, so an upgrade does not
+        // silently orphan an operator's installed plugins.
+        $this->migrateLegacyPlugins($path);
+
+        $found = $this->manifestsIn($path);
 
         foreach ($found as $directory => $manifest) {
             $this->reconcile($manifest, basename($directory));
@@ -135,6 +148,72 @@ class PluginLoader
      *
      * @return array<string, PluginManifest> directory path => manifest
      */
+    /**
+     * Creates the plugins directory if it does not exist, quietly. Never throws:
+     * a path that cannot be created (permissions, an unwritable data dir) leaves
+     * discovery to find nothing, which is the correct degraded behaviour.
+     */
+    private function ensurePluginsDirectory(mixed $path): void
+    {
+        if (! is_string($path) || $path === '' || is_dir($path)) {
+            return;
+        }
+
+        try {
+            @mkdir($path, 0755, true);
+        } catch (\Throwable $e) {
+            Log::warning('Could not create the plugins directory', [
+                'path' => $path,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Moves plugins left in the old storage/app/plugins location into the
+     * resolved plugins directory, once.
+     *
+     * Only runs when the new location is the not the old one, the old one holds
+     * plugin folders, and moving would not overwrite anything. A plugin already
+     * present at the destination is left where it is rather than clobbered — the
+     * operator's current install wins. Best-effort and quiet: a move that fails
+     * leaves the source in place for a later pass.
+     */
+    private function migrateLegacyPlugins(mixed $path): void
+    {
+        if (! is_string($path) || $path === '') {
+            return;
+        }
+
+        $legacy = storage_path('app/plugins');
+
+        if ($legacy === $path || ! is_dir($legacy) || ! is_dir($path)) {
+            return;
+        }
+
+        foreach (glob($legacy.'/*', GLOB_ONLYDIR) ?: [] as $source) {
+            if (! is_file($source.'/plugin.json')) {
+                continue;
+            }
+
+            $destination = $path.'/'.basename($source);
+
+            if (file_exists($destination)) {
+                continue;
+            }
+
+            try {
+                @rename($source, $destination);
+            } catch (\Throwable $e) {
+                Log::warning('Could not migrate a plugin to the new plugins directory', [
+                    'from' => $source,
+                    'to' => $destination,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
     private function manifestsIn(mixed $path): array
     {
         if (! is_string($path) || ! is_dir($path)) {

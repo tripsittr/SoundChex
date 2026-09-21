@@ -11,11 +11,23 @@
             your decision.
         </x-slot>
 
-        <p class="text-sm opacity-70">
-            Installed plugins live in
-            <code class="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-white/10">{{ config('soundchex.plugins.path') }}</code>.
-            Add a plugin folder there and press <strong>Re-scan</strong>.
-        </p>
+        @php($pluginsPath = $this->pluginsPathForDisplay())
+
+        @if ($pluginsPath !== null)
+            <p class="text-sm opacity-70">
+                Installed plugins live in the plugins folder on this server:
+                <code class="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-white/10">{{ $pluginsPath }}</code>.
+                Use <strong>Open Plugins Folder</strong> above to reveal it, add a plugin
+                folder, then press <strong>Re-scan</strong>.
+            </p>
+        @else
+            <p class="text-sm opacity-70">
+                Installed plugins live in a folder on the server itself. Adding one by
+                hand, or opening that folder, is done from the machine running SoundChex —
+                not from here. From this remote session you can still browse, install and
+                enable plugins below.
+            </p>
+        @endif
     </x-filament::section>
 
     {{-- Browse & install from repositories — the Emby-style catalog. --}}

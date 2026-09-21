@@ -36,6 +36,32 @@ the changes take effect on the next request.
 
 ---
 
+## Where plugins live
+
+Plugins are files on the server's own disk, kept in a per-install data directory
+**outside the application** so a server update never disturbs them:
+
+| Platform | Default location |
+|---|---|
+| Linux / BSD | `$XDG_DATA_HOME/soundchex/plugins`, else `~/.local/share/soundchex/plugins` |
+| macOS | `~/Library/Application Support/SoundChex/plugins` |
+| Windows | `%LOCALAPPDATA%\SoundChex\plugins` |
+
+Set `SOUNDCHEX_PLUGINS_PATH` to put the plugins directory somewhere specific (a
+mounted volume, a NAS share), or `SOUNDCHEX_DATA_DIR` to move the whole data root.
+The directory is created for you on first run; `plugin:make` and a catalogue
+install both write into it.
+
+Because plugins are the server's own files, **the folder is managed from the
+machine running SoundChex, not from a remote browser.** When the Plugins page is
+open *on the server itself*, it shows the folder's path and an **Open Plugins
+Folder** button that reveals it in the host's file manager; opened from another
+device, those controls are withheld and you install and enable plugins from the
+catalogue instead. (Behind a loopback reverse proxy every request looks local —
+set `SOUNDCHEX_PLUGINS_LOCAL_MANAGEMENT=false` to keep those controls hidden.)
+
+---
+
 ## The entry class
 
 Every plugin has one class implementing `App\Plugins\Contracts\SoundChexPlugin`:

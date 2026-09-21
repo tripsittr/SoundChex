@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
+use App\Support\DataPaths;
+
 return [
 
     /*
@@ -52,10 +54,12 @@ return [
     */
     'plugins' => [
 
-        // The directory scanned for installed plugins. Outside the app's own
-        // source tree so a plugin is data on disk, added and removed without a
-        // deploy — the Emby-style install the platform is built around.
-        'path' => storage_path('app/plugins'),
+        // The directory scanned for installed plugins. Resolved to an
+        // OS-conventional per-user data directory *outside the install* (see
+        // App\Support\DataPaths) so a downloaded server release keeps an
+        // operator's plugins across upgrades and never shows a build machine's
+        // path. `SOUNDCHEX_PLUGINS_PATH` (or `SOUNDCHEX_DATA_DIR`) overrides it.
+        'path' => DataPaths::plugins(),
 
         // First-party plugins that ship with the app and are always on. These
         // are the platform dogfooding itself: behaviours that could be core but
@@ -68,6 +72,14 @@ return [
         // A master switch. Off, the loader does nothing and no third-party code
         // runs — the kill switch that makes "disable everything" a config flip.
         'enabled' => env('SOUNDCHEX_PLUGINS_ENABLED', true),
+
+        // Whether the local-only plugin-folder controls (the path and the
+        // "Open Plugins Folder" button) are offered. Null — the default — lets
+        // the request's own address decide (loopback = the home server). Set it
+        // explicitly (SOUNDCHEX_PLUGINS_LOCAL_MANAGEMENT=false) when the server
+        // sits behind a loopback reverse proxy, so every request looks local and
+        // the address test would wrongly show those controls to remote admins.
+        'local_management' => env('SOUNDCHEX_PLUGINS_LOCAL_MANAGEMENT'),
 
     ],
 
