@@ -5,6 +5,7 @@
 
 namespace App\Jobs;
 
+use App\Events\CoverFetched;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
 use App\Services\Metadata\CoverArtFetcher;
@@ -53,6 +54,11 @@ class RefetchCoversJob implements ShouldQueue
 
                     if ($cover !== null) {
                         $item->forceFill(['cover_image_url' => $cover])->saveQuietly();
+
+                        // A verified cover was found and stored for this item —
+                        // the hook a plugin that mirrors artwork elsewhere wants
+                        // (S-285).
+                        CoverFetched::dispatch($item, $cover);
                     }
 
                     // Cleared whether or not a cover was found — the row has been

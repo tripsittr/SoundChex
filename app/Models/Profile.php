@@ -5,6 +5,8 @@
 
 namespace App\Models;
 
+use App\Observers\ProfileObserver;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -21,6 +23,7 @@ use Spatie\Permission\Models\Permission;
  * not a security boundary, exactly as every streaming service treats it.
  * Anything that must be enforced lives on the User.
  */
+#[ObservedBy(ProfileObserver::class)]
 class Profile extends Model
 {
     /**

@@ -6,6 +6,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Events\PlaybackCompleted;
+use App\Events\PlaybackProgress;
 use App\Events\PlaybackRecorded;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\MediaItemResource;
@@ -135,6 +136,10 @@ class MediaController extends Controller
             'listened_seconds' => ($play->listened_seconds ?? 0) + $listened,
             'completed' => $completed,
         ])->save();
+
+        // A resume point was saved — fires on every progress write, matching
+        // the web endpoint so both front ends emit the same signal (S-285).
+        PlaybackProgress::dispatch($item, app(CurrentProfile::class)->id(), $data['position']);
 
         // Fire once, when it crosses into complete — the "watched"/"scrobble"
         // signal a tracker plugin reports at the end, distinct from the play

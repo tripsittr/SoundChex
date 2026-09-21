@@ -5,11 +5,13 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\UserRated;
 use App\Http\Controllers\Controller;
 use App\Models\MediaItem;
 use App\Models\MediaPlay;
 use App\Models\Profile;
 use App\Models\User;
+use App\Services\CurrentProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -95,8 +97,20 @@ class AdminController extends Controller
             'meta' => ['sometimes', 'array'],
         ]);
 
+        $ratingChanged = array_key_exists('user_rating', $data);
+
         $item->fill(array_intersect_key($data, array_flip(['title', 'user_rating', 'notes'])));
         $item->save();
+
+        // Only when a rating was actually part of this edit — a title-only save
+        // is not a rating event (S-285).
+        if ($ratingChanged) {
+            UserRated::dispatch(
+                $item,
+                $data['user_rating'] === null ? null : (int) $data['user_rating'],
+                app(CurrentProfile::class)->id(),
+            );
+        }
 
         if (isset($data['meta'])) {
             $this->updateMeta($item, $data['meta']);

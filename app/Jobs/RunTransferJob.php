@@ -7,6 +7,7 @@ namespace App\Jobs;
 
 use App\Events\TransferCompleted;
 use App\Events\TransferFailed;
+use App\Events\TransferStarted;
 use App\Models\Transfer;
 use App\Services\TransferReceiver;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -71,10 +72,18 @@ class RunTransferJob implements ShouldQueue
             ]);
         }
 
+        // First transition into running — a resumed transfer already has a
+        // start time, so this fires once, at the real beginning (S-285).
+        $isFirstStart = $transfer->started_at === null;
+
         $transfer->forceFill([
             'state' => Transfer::RUNNING,
             'started_at' => $transfer->started_at ?? now(),
         ])->save();
+
+        if ($isFirstStart) {
+            TransferStarted::dispatch($transfer);
+        }
 
         // The catalogue first, and only once. It replaces this machine's
         // database wholesale, so doing it after the files would overwrite the
