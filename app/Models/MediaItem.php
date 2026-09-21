@@ -105,6 +105,12 @@ class MediaItem extends Model
         return $this->hasMany(PageText::class);
     }
 
+    /** Reflowable text units for the reader (S-295). */
+    public function bookContents(): HasMany
+    {
+        return $this->hasMany(BookContent::class);
+    }
+
     /**
      * Size in bytes of the file that would actually be played or read.
      *

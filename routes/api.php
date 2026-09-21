@@ -175,6 +175,9 @@ Route::prefix('v1')->group(function (): void {
             ->name('api.items.book');
         Route::get('/items/{item}/reader', [ReaderController::class, 'show'])
             ->name('api.items.reader');
+        // The reflowable text of a book, for the Kindle-style reader (S-295).
+        Route::get('/items/{item}/reader/content', [ReaderController::class, 'content'])
+            ->name('api.items.reader.content');
         Route::post('/items/{item}/reader/progress', [ReaderController::class, 'saveProgress'])
             ->name('api.items.reader.progress');
 

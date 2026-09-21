@@ -7,8 +7,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\MediaItemType;
 use App\Http\Controllers\Controller;
+use App\Jobs\ExtractBookContentJob;
 use App\Models\MediaItem;
 use App\Models\ReadingProgress;
+use App\Services\Books\BookTextExtractor;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
 use Carbon\Carbon;
@@ -24,12 +26,9 @@ use Symfony\Component\HttpFoundation\ResponseHeaderBag;
  * The web reader is served through session-authed routes the app cannot reach;
  * this is the token-authed equivalent. It gives the app what a reader needs to
  * open a book and resume it: the book's format and resume point, the file bytes
- * to render, and a place to save progress. Every access passes the same
- * ContentGate the rest of the library uses.
- *
- * Text-per-page and annotations (the web reader's extras) are deliberately not
- * here yet — the app renders EPUB/PDF from the file directly; those can follow
- * once the native reader needs them.
+ * to render, a place to save progress, and — for the reflowable Kindle-style
+ * reader (S-295) — the book as ordered text the device renders itself. Every
+ * access passes the same ContentGate the rest of the library uses.
  */
 class ReaderController extends Controller
 {
@@ -55,6 +54,46 @@ class ReaderController extends Controller
                 'percent' => $progress->percent,
                 'finished' => (bool) $progress->finished,
             ],
+        ]);
+    }
+
+    /**
+     * A book as reflowable text — ordered chapters/pages the reader renders as a
+     * continuous, resizable book (S-295), the same on every platform.
+     *
+     * If the book has not been extracted yet, this kicks off extraction in the
+     * background and answers `processing`; the reader polls until it is `ready`.
+     * A book with no extractable text (an image-only PDF with OCR unavailable)
+     * settles as `empty` so the reader stops asking.
+     */
+    public function content(MediaItem $item): JsonResponse
+    {
+        $this->assertReadable($item);
+
+        $extractor = app(BookTextExtractor::class);
+
+        if (! $extractor->hasContent($item)) {
+            ExtractBookContentJob::dispatch($item->id);
+
+            return response()->json(['status' => 'processing']);
+        }
+
+        $units = $item->bookContents()
+            ->orderBy('position')
+            ->get(['position', 'title', 'text']);
+
+        if ($units->isEmpty()) {
+            return response()->json(['status' => 'empty']);
+        }
+
+        return response()->json([
+            'status' => 'ready',
+            'format' => $this->format($item),
+            'chapters' => $units->map(fn ($u): array => [
+                'position' => $u->position,
+                'title' => $u->title,
+                'text' => $u->text,
+            ])->values(),
         ]);
     }
 
