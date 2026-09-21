@@ -40,17 +40,32 @@ class ReaderContentApiTest extends TestCase
         Sanctum::actingAs($this->user, ['profile:'.$this->owner->id]);
     }
 
-    public function test_it_kicks_off_extraction_and_reports_processing_when_not_ready(): void
+    public function test_a_fast_book_extracts_in_the_request_and_returns_its_text(): void
     {
+        // A real EPUB (fast — no OCR) is extracted synchronously and comes back
+        // ready in one call, no queue, no polling — the fix for the reader that
+        // hung on "preparing this book".
         Queue::fake();
-        $book = $this->book();
+        $book = $this->book(name: 'book.epub');
+        Storage::disk('local')->put($book->file_path, $this->minimalEpub());
 
         $this->getJson(route('api.items.reader.content', $book))
             ->assertOk()
-            ->assertJsonPath('status', 'processing');
+            ->assertJsonPath('status', 'ready')
+            ->assertJsonPath('chapters.0.text', fn ($t): bool => str_contains((string) $t, 'Ishmael'));
 
-        Queue::assertPushed(ExtractBookContentJob::class,
-            fn (ExtractBookContentJob $job): bool => $job->mediaItemId === $book->id);
+        Queue::assertNotPushed(ExtractBookContentJob::class);
+    }
+
+    public function test_a_fast_book_with_no_text_settles_as_empty(): void
+    {
+        // A "fast" book whose bytes aren't a real EPUB extracts to nothing and is
+        // reported empty rather than looping — the reader stops asking.
+        $book = $this->book(name: 'book.epub'); // placeholder bytes, not a real epub
+
+        $this->getJson(route('api.items.reader.content', $book))
+            ->assertOk()
+            ->assertJsonPath('status', 'empty');
     }
 
     public function test_it_returns_the_ordered_chapters_once_extracted(): void
