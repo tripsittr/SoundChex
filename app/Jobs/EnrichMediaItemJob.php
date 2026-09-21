@@ -17,7 +17,6 @@ use App\Services\Metadata\CoverEmbedder;
 use App\Services\Metadata\MetadataPipeline;
 use App\Services\MetadataHistory;
 use App\Services\MusicCredits;
-use App\Services\TitleTidier;
 use App\Services\WatchProviders;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -185,18 +184,16 @@ class EnrichMediaItemJob implements ShouldQueue
     /**
      * Last look at the title before the file is named after it.
      *
-     * Every source has had its say by now, and any of them can leave a title
-     * holding its own artist — a tag written that way, a filename read back as
-     * a title, a provider returning "Song - Artist" as the track name. The
-     * promotion in FileTagger only fires when a tag disagrees, so a file whose
-     * tag *is* "Gold - Imagine Dragons" keeps it.
+     * The title arrives holding all sorts of things it should not — a track's
+     * own artist ("Gold - Imagine Dragons"), a case nobody wants. Rather than
+     * fix each in the job, the job hands the title to the `metadata.title`
+     * filter and takes back whatever the filters make of it. The app's own
+     * artist-strip is itself one of those filters now, shipped as a bundled
+     * plugin (Title Tidier, #279) rather than hardcoded here.
      *
      * Checked here because it is the last step before filing, and filing names
      * the file after the title: left until afterwards, the bad name is already
      * on disk and the scanner will read it back as a title next time round.
-     *
-     * Deliberately narrow, the same way the other two guards are: only this
-     * track's own artist, only at the end, and never to an empty title.
      */
     private function tidyTitle(MediaItem $item): void
     {
@@ -204,24 +201,11 @@ class EnrichMediaItemJob implements ShouldQueue
             $item->refresh();
 
             $original = (string) $item->title;
-            $title = $original;
 
-            // Music: strip this track's own artist out of its title. Music-only,
-            // because only a track carries its artist in the title this way.
-            if ($item->type === MediaItemType::Music) {
-                $item->load('musicMetadata');
-
-                $title = app(TitleTidier::class)->strip($title, [
-                    $item->musicMetadata?->artist,
-                    $item->musicMetadata?->primary_artist,
-                ]) ?? $title;
-            }
-
-            // Then let a plugin have the last word on the final title, for every
-            // media type (S-264 Phase 3). The filter receives the title and the
-            // item and returns the title to keep — a no-op when none is
-            // registered, so this changes nothing for a plugin-less install.
-            $title = (string) app(Registry::class)->apply('metadata.title', $title, $item);
+            // The whole title cleanup is the filter chain now — the bundled Title
+            // Tidier and any plugin the admin added, in order. A no-op only if
+            // the platform is off and nothing is registered.
+            $title = (string) app(Registry::class)->apply('metadata.title', $original, $item);
 
             if ($title === '' || $title === $original) {
                 return;
