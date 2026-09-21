@@ -120,9 +120,10 @@ a piece of cleanup. A feature request is tracked exactly as a defect is.
 - **Set `platform` and `repo`** so it lands in the right place (this server/
   desktop work is `platform=server-desktop`, `repo=SoundChex`).
 - **Advance the item's `status`** (Planned → In progress → Shipped/Done, or
-  Deferred) as the work moves — on the Board, drag the card between columns.
-  "Shipped" is user-facing complete (on the public roadmap); "Done" is an
-  internal closed ticket.
+  Deferred) as the work moves — on the Board drag the card between columns, or
+  from the website repo `php artisan track:move <id…> --to=<status>` (takes
+  several ids at once; `--note` appends a dated line). "Shipped" is user-facing
+  complete (on the public roadmap); "Done" is an internal closed ticket.
 - **Promote to the public roadmap** by flipping `published` on the item — the
   same record appears on the site's `/roadmap`.
 - **Historical id references** (`S-nn`) are preserved as the item's `ref`; keep

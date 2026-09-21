@@ -24,7 +24,9 @@ Three more, all worth reading before changing anything:
   **Tracker** *before* the work starts — a feature request the same as a defect.
   Add it in the panel, or `php artisan track:issue` in the `SoundChexWebsite`
   repo. Advance its **status** as work moves (Planned → In progress →
-  Shipped/Done, or Deferred; drag the card on the Board). Nothing is deleted — a
+  Shipped/Done, or Deferred) — drag the card on the Board, or run
+  `php artisan track:move <id…> --to=<status>` in the `SoundChexWebsite` repo.
+  Nothing is deleted — a
   decision not to do something (Deferred) is worth as much as a fix. See §5 of
   AGENTS.md.
 - **Log anything that can fail.** Network calls, batch work, storage writes,
