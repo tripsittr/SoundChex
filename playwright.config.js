@@ -7,6 +7,15 @@ const PORT = 8111;
  * root, and entirely generated media. `tests/e2e/bootstrap.sh` builds it and
  * refuses to run unless both paths are scratch paths, so a misconfiguration
  * stops rather than touching the real library.
+ *
+ * **Run one project at a time.** All projects share this one dev server and its
+ * single SQLite database (`reuseExistingServer`, `workers: 1`). Running two
+ * projects at once — e.g. `--project=mobile` and `--project=mobile-offline` in
+ * parallel shells — makes them mutate each other's state and produces phantom
+ * failures that vanish on a solo re-run: half-offline `setOffline`, a seed row
+ * deleted mid-test, a `beforeEach` `goto` that hangs. A whole class of "flaky on
+ * WebKit" reports (S-278 among them) turned out to be exactly this. If a run
+ * fails, re-run that project alone before believing the failure.
  */
 export default defineConfig({
     testDir: './tests/e2e',
