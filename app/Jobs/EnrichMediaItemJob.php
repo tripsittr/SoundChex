@@ -200,30 +200,34 @@ class EnrichMediaItemJob implements ShouldQueue
      */
     private function tidyTitle(MediaItem $item): void
     {
-        if ($item->type !== MediaItemType::Music) {
-            return;
-        }
-
         try {
-            $item->refresh()->load('musicMetadata');
+            $item->refresh();
 
             $original = (string) $item->title;
+            $title = $original;
 
-            $title = app(TitleTidier::class)->strip($original, [
-                $item->musicMetadata?->artist,
-                $item->musicMetadata?->primary_artist,
-            ]) ?? $original;
+            // Music: strip this track's own artist out of its title. Music-only,
+            // because only a track carries its artist in the title this way.
+            if ($item->type === MediaItemType::Music) {
+                $item->load('musicMetadata');
 
-            // Let a plugin have the last word on the final title (S-264 Phase 3).
-            // The filter receives the title and the item, and returns the title
-            // to keep — a no-op when no plugin registered one.
+                $title = app(TitleTidier::class)->strip($title, [
+                    $item->musicMetadata?->artist,
+                    $item->musicMetadata?->primary_artist,
+                ]) ?? $title;
+            }
+
+            // Then let a plugin have the last word on the final title, for every
+            // media type (S-264 Phase 3). The filter receives the title and the
+            // item and returns the title to keep — a no-op when none is
+            // registered, so this changes nothing for a plugin-less install.
             $title = (string) app(Registry::class)->apply('metadata.title', $title, $item);
 
             if ($title === '' || $title === $original) {
                 return;
             }
 
-            Log::info('Adjusted a track title', [
+            Log::info('Adjusted a title', [
                 'item' => $item->id,
                 'was' => $original,
                 'now' => $title,
