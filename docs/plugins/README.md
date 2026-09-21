@@ -272,6 +272,29 @@ Implement `App\Plugins\Contracts\NotificationTarget` — `name()`,
 example under `plugins/examples/telegram-notify` posts to a Telegram chat, reading
 a bot token and chat id from settings.
 
+### An admin page
+
+Contribute a whole page to the Filament admin panel — not just a settings form,
+a full screen with its own nav entry:
+
+```php
+$registry->adminPage(AuditLog::class);
+```
+
+The class is an ordinary `Filament\Pages\Page` living in your plugin's own
+namespace. Filament only auto-discovers pages under the app's `app/Filament`, so
+this is what makes the panel aware of yours; it then appears in the nav like any
+core page. Gate it yourself through the page's `canAccess()` — reuse
+`App\Filament\Concerns\RestrictsToServerAdmins` to limit it to server admins, as
+the built-in System pages do. Ship the page's Blade view in your plugin and
+register a view namespace for it in `register()`
+(`View::addNamespace('your-plugin', __DIR__.'/../resources/views')`).
+
+The worked example is the bundled **Activity Log** plugin
+(`plugins/bundled/activity-log`): it subscribes to the whole event catalogue,
+writes each event to one audit timeline, and adds a filterable **Audit Log** page
+to the admin — the platform's own auditing, written as a plugin.
+
 ### Filters
 
 Transform a value passing through the app — the callback receives a value and
