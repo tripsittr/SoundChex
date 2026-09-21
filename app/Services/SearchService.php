@@ -73,7 +73,7 @@ class SearchService
      */
     private function titles(string $term, int $limit): Collection
     {
-        $like = '%' . $this->escapeLike($term) . '%';
+        $like = '%'.$this->escapeLike($term).'%';
 
         return $this->gate->apply(MediaItem::query())
             ->where(fn (Builder $q) => $q
@@ -95,7 +95,7 @@ class SearchService
             ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata'])
             ->orderByRaw('CASE WHEN LOWER(title) = LOWER(?) THEN 0 WHEN LOWER(title) LIKE LOWER(?) THEN 1 ELSE 2 END', [
                 $term,
-                $this->escapeLike($term) . '%',
+                $this->escapeLike($term).'%',
             ])
             ->orderBy('title')
             ->limit($limit)
@@ -114,7 +114,7 @@ class SearchService
      */
     private function people(string $term, int $limit): Collection
     {
-        $like = '%' . $this->escapeLike($term) . '%';
+        $like = '%'.$this->escapeLike($term).'%';
 
         return Person::query()
             ->where('name', 'like', $like)
@@ -127,8 +127,12 @@ class SearchService
             ->get()
             ->map(function (Person $person): array {
                 // Gated: a person's filmography must not expose a capped
-                // title through the back door.
+                // title through the back door. The metadata relations are eager
+                // loaded because the API flattens these items into its result and
+                // serialises them in full — without them a track surfaced through
+                // its artist would arrive with no artist and no file (unplayable).
                 $items = $this->gate->apply($person->mediaItems()->getQuery())
+                    ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata'])
                     ->limit(6)
                     ->get();
 
@@ -150,14 +154,18 @@ class SearchService
      */
     private function dialogue(string $term, int $limit): Collection
     {
-        $like = '%' . $this->escapeLike($term) . '%';
+        $like = '%'.$this->escapeLike($term).'%';
 
         $allowed = $this->gate->apply(MediaItem::query())->select('id');
 
         return SubtitleCue::query()
             ->where('text', 'like', $like)
             ->whereIn('media_item_id', $allowed)
-            ->with('mediaItem:id,title,type')
+            // The full item, not id/title/type only: the API serialises these
+            // flattened into its result, so a partial item would arrive with no
+            // file (unplayable) and no metadata. `file_path` drives `playable`.
+            ->with(['mediaItem', 'mediaItem.musicMetadata', 'mediaItem.movieMetadata',
+                'mediaItem.showMetadata', 'mediaItem.bookMetadata'])
             ->orderBy('media_item_id')
             ->orderBy('start_seconds')
             // Fetched wide, then deduplicated: a film with both a standard and
@@ -166,7 +174,7 @@ class SearchService
             ->limit($limit * 4)
             ->get()
             ->filter(fn (SubtitleCue $cue): bool => $cue->mediaItem !== null)
-            ->unique(fn (SubtitleCue $cue): string => $cue->media_item_id . '@' . (int) $cue->start_seconds)
+            ->unique(fn (SubtitleCue $cue): string => $cue->media_item_id.'@'.(int) $cue->start_seconds)
             ->take($limit)
             ->map(fn (SubtitleCue $cue): array => [
                 'kind' => 'cue',
@@ -175,7 +183,7 @@ class SearchService
                 'snippet' => $this->mark($cue->text, $term),
                 'timestamp' => $cue->timestamp(),
                 // Seeks straight to the line.
-                'url' => route('media.watch', $cue->mediaItem) . '?t=' . (int) $cue->start_seconds,
+                'url' => route('media.watch', $cue->mediaItem).'?t='.(int) $cue->start_seconds,
             ])
             ->values();
     }
@@ -185,7 +193,7 @@ class SearchService
      */
     private function pages(string $term, int $limit): Collection
     {
-        $like = '%' . $this->escapeLike($term) . '%';
+        $like = '%'.$this->escapeLike($term).'%';
 
         $allowed = $this->gate->apply(MediaItem::query())->select('id');
 
@@ -193,7 +201,10 @@ class SearchService
             ->whereNotNull('text')
             ->where('text', 'like', $like)
             ->whereIn('media_item_id', $allowed)
-            ->with('mediaItem:id,title,type')
+            // The full item, for the same reason as the dialogue search above —
+            // the API serialises these flattened into its result.
+            ->with(['mediaItem', 'mediaItem.musicMetadata', 'mediaItem.movieMetadata',
+                'mediaItem.showMetadata', 'mediaItem.bookMetadata'])
             ->orderBy('media_item_id')
             ->orderBy('page')
             ->limit($limit)
@@ -208,7 +219,7 @@ class SearchService
                 // Recognised text can be wrong; saying so is more useful than
                 // presenting it as the publisher's.
                 'ocr' => $row->status === 'complete',
-                'url' => route('media.read', $row->mediaItem) . '#page=' . $row->page,
+                'url' => route('media.read', $row->mediaItem).'#page='.$row->page,
             ])
             ->values();
     }
@@ -219,7 +230,7 @@ class SearchService
      */
     private function tags(string $term, int $limit): Collection
     {
-        $like = '%' . $this->escapeLike($term) . '%';
+        $like = '%'.$this->escapeLike($term).'%';
 
         return $this->gate->apply(MediaItem::query())
             ->join('media_tags', 'media_tags.media_item_id', '=', 'media_items.id')
@@ -232,13 +243,13 @@ class SearchService
             ->map(fn ($row): array => [
                 'kind' => 'tag',
                 'label' => $row->tag,
-                'detail' => $row->total . ' ' . str('title')->plural($row->total),
+                'detail' => $row->total.' '.str('title')->plural($row->total),
                 'url' => route('media.browse', [$row->type, 'genre' => $row->tag]),
             ]);
     }
 
     /**
-     * @param Collection<int, array<string, mixed>> $results
+     * @param  Collection<int, array<string, mixed>>  $results
      * @return array{key: string, label: string, hint: string|null, results: Collection}|null
      */
     private function group(string $key, string $label, ?string $hint, Collection $results): ?array
@@ -268,11 +279,11 @@ class SearchService
         $snippet = mb_substr($text, $start, mb_strlen($term) + (self::SNIPPET_PADDING * 2));
 
         if ($start > 0) {
-            $snippet = '…' . $snippet;
+            $snippet = '…'.$snippet;
         }
 
         return preg_replace(
-            '/(' . preg_quote($term, '/') . ')/iu',
+            '/('.preg_quote($term, '/').')/iu',
             "\x02$1\x03",
             $snippet,
         ) ?? $snippet;
