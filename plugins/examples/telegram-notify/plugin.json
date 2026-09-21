@@ -1,0 +1,12 @@
+{
+  "id": "soundchex.telegram-notify",
+  "name": "Telegram Notifications",
+  "version": "1.0.0",
+  "author": "SoundChex",
+  "description": "Sends server notifications (scan finished, download failed, new episode) to a Telegram chat. A worked example of a notification-target plugin — set a bot token and chat id in Settings.",
+  "minSoundChexVersion": "0.1.0",
+  "requiresPhp": "8.2",
+  "provides": ["notification-target"],
+  "entrypoint": "SoundChex\\TelegramNotify\\Plugin",
+  "license": "AGPL-3.0-or-later"
+}

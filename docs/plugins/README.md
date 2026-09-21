@@ -163,6 +163,21 @@ URL or null. Validate the result against the artist; a wrong cover is worse than
 none. The worked example under `plugins/examples/coverart-archive` reaches the
 Cover Art Archive via MusicBrainz, keyless, in ~40 lines.
 
+### A notification target
+
+Deliver server notifications (scan finished, download failed, new episode)
+somewhere the built-in Discord/Slack/generic webhooks do not reach:
+
+```php
+$registry->notificationTarget(TelegramTarget::class);
+```
+
+Implement `App\Plugins\Contracts\NotificationTarget` — `name()`,
+`isConfigured()` (the cheap gate; false skips it), and `send(Notification)`
+(swallow your own failures — a dead endpoint must not break the scan). The worked
+example under `plugins/examples/telegram-notify` posts to a Telegram chat, reading
+a bot token and chat id from settings.
+
 ### Filters
 
 Transform a value passing through the app — the callback receives a value and

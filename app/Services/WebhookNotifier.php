@@ -6,6 +6,8 @@
 namespace App\Services;
 
 use App\Models\Notification;
+use App\Plugins\Contracts\NotificationTarget;
+use App\Plugins\Registry;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -45,6 +47,14 @@ class WebhookNotifier
             }
         }
 
+        // A plugin may add its own targets (S-264, #281); if any is configured,
+        // there is work to do even with no built-in webhook set.
+        foreach ($this->pluginTargets() as $target) {
+            if ($target->isConfigured()) {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -65,6 +75,49 @@ class WebhookNotifier
 
             $this->deliver($kind, (string) $url, $notification->title, $notification->body);
         }
+
+        // Then any target a plugin contributed (S-264, #281). Each is resolved
+        // through the container and asked to send; a target that throws is
+        // logged and skipped, so one plugin cannot break the others or the
+        // event that recorded this.
+        foreach ($this->pluginTargets() as $target) {
+            if (! $target->isConfigured()) {
+                continue;
+            }
+
+            try {
+                $target->send($notification);
+            } catch (\Throwable $e) {
+                Log::warning('A plugin notification target failed', [
+                    'target' => $target->name(),
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * The plugin notification targets, resolved through the container.
+     *
+     * @return array<int, NotificationTarget>
+     */
+    private function pluginTargets(): array
+    {
+        $targets = [];
+
+        foreach (app(Registry::class)->notificationTargetClasses() as $class) {
+            if (! class_exists($class)) {
+                continue;
+            }
+
+            $target = app($class);
+
+            if ($target instanceof NotificationTarget) {
+                $targets[] = $target;
+            }
+        }
+
+        return $targets;
     }
 
     /**
