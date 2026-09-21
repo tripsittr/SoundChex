@@ -40,6 +40,7 @@ class PluginManifest
         public readonly array $provides = [],
         public readonly ?string $configPage = null,
         public readonly ?string $license = null,
+        public readonly ?string $targetApi = null,
     ) {}
 
     /**
@@ -81,6 +82,7 @@ class PluginManifest
             provides: $provides,
             configPage: self::stringOrNull($data['configPage'] ?? null),
             license: self::stringOrNull($data['license'] ?? null),
+            targetApi: self::stringOrNull($data['targetApi'] ?? null),
         );
     }
 
@@ -105,25 +107,69 @@ class PluginManifest
     }
 
     /**
-     * Whether this plugin can run on the given server and PHP versions.
+     * Whether this plugin can run on the given server, plugin API and PHP.
      *
-     * A plugin that needs a newer server than is installed is refused rather
-     * than loaded — the same gate as Jellyfin's targetAbi. A missing constraint
-     * means "no requirement", so an unconstrained plugin always passes.
+     * Three gates, and the middle one is what makes a plugin *survive versions*:
+     *
+     *   - minSoundChexVersion: the server must be at least this old — a plugin
+     *     that needs a feature added in 0.4 will not load on 0.3.
+     *   - targetApi: the plugin's contract version. It keeps working as long as
+     *     the server's plugin API is the **same major** and at least the same
+     *     minor it was built against. So a plugin built for API 1.2 runs on 1.2
+     *     through 1.9 (minors only add), and is refused on 2.0 (the deliberate
+     *     overhaul). A plugin with no targetApi is assumed current-major and
+     *     takes its chances on a future overhaul.
+     *   - requiresPhp: the runtime floor.
+     *
+     * A missing constraint means "no requirement" and passes.
      */
-    public function isCompatibleWith(string $serverVersion, string $phpVersion): bool
+    public function isCompatibleWith(string $serverVersion, string $pluginApiVersion, string $phpVersion): bool
+    {
+        return $this->incompatibilityReason($serverVersion, $pluginApiVersion, $phpVersion) === null;
+    }
+
+    /**
+     * The reason this plugin cannot run here, or null when it can — so the admin
+     * UI can say *why* an incompatible plugin is refused, not just that it is.
+     */
+    public function incompatibilityReason(string $serverVersion, string $pluginApiVersion, string $phpVersion): ?string
     {
         if ($this->minSoundChexVersion !== null
             && version_compare($serverVersion, $this->minSoundChexVersion, '<')) {
-            return false;
+            return "needs SoundChex {$this->minSoundChexVersion} or newer (this is {$serverVersion})";
         }
 
         if ($this->requiresPhp !== null
             && version_compare($phpVersion, $this->requiresPhp, '<')) {
-            return false;
+            return "needs PHP {$this->requiresPhp} or newer (this is {$phpVersion})";
         }
 
-        return true;
+        if ($this->targetApi !== null) {
+            $wantMajor = $this->majorOf($this->targetApi);
+            $haveMajor = $this->majorOf($pluginApiVersion);
+
+            // A different major is the overhaul — old plugins are refused until
+            // updated for the new contract, newer plugins expect a contract this
+            // server does not have.
+            if ($wantMajor !== $haveMajor) {
+                return "was built for plugin API {$wantMajor}.x; this server is {$pluginApiVersion} — the plugin needs updating"
+                    .($wantMajor < $haveMajor ? '' : ' (this server is older)');
+            }
+
+            // Same major, but the plugin was built against a newer minor than
+            // this server offers — it may use a seam/event not present yet.
+            if (version_compare($pluginApiVersion, $this->targetApi, '<')) {
+                return "was built for plugin API {$this->targetApi}; this server offers {$pluginApiVersion} — update the server";
+            }
+        }
+
+        return null;
+    }
+
+    /** The major component of a SemVer string ("1.4.2" -> 1). */
+    private function majorOf(string $version): int
+    {
+        return (int) explode('.', $version)[0];
     }
 
     /** Whether the plugin declares that it provides the given seam. */

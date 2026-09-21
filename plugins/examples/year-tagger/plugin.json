@@ -5,8 +5,11 @@
   "author": "SoundChex",
   "description": "A worked example: fills a film or show's release year from its filename when no provider supplied one. Keyless. Copy this as the starting point for your own plugin.",
   "minSoundChexVersion": "0.1.0",
+  "targetApi": "1.0.0",
   "requiresPhp": "8.2",
-  "provides": ["metadata-source"],
+  "provides": [
+    "metadata-source"
+  ],
   "entrypoint": "SoundChex\\YearTagger\\Plugin",
   "license": "AGPL-3.0-or-later"
 }

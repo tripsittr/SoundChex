@@ -19,6 +19,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Plugin API version
+    |--------------------------------------------------------------------------
+    |
+    | The version of the *plugin contract* — separate from the app version so a
+    | plugin survives app releases (S-264). A plugin declares the API it was
+    | built for (`targetApi` in its manifest); it keeps loading as long as this
+    | server's plugin API has the **same major** version. The rule:
+    |
+    |   - PATCH bump (1.2.0 -> 1.2.1): a fix, no contract change. Plugins survive.
+    |   - MINOR bump (1.2.0 -> 1.3.0): new seams/events added, nothing removed.
+    |     Plugins survive — a plugin built for 1.2 runs on 1.9.
+    |   - MAJOR bump (1.x -> 2.0.0): the overhaul that removes or changes the
+    |     contract. Plugins built for the old major are refused until updated.
+    |
+    | So bump MAJOR only for a deliberate breaking overhaul; add events and
+    | registry seams under a MINOR. A plugin with no `targetApi` is assumed to
+    | target the current major (it takes its chances on a future overhaul).
+    |
+    */
+    'plugin_api_version' => '1.0.0',
+
+    /*
+    |--------------------------------------------------------------------------
     | Plugins
     |--------------------------------------------------------------------------
     |

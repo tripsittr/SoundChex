@@ -79,6 +79,9 @@ class PluginMake extends Command
             'author' => $author,
             'description' => 'A new SoundChex plugin.',
             'minSoundChexVersion' => config('soundchex.version', '0.1.0'),
+            // The plugin API this was built for — it keeps working across minor
+            // API bumps, only needing an update on a major overhaul.
+            'targetApi' => config('soundchex.plugin_api_version', '1.0.0'),
             'requiresPhp' => '8.2',
             'provides' => ['metadata-source'],
             'entrypoint' => $namespace.'\\Plugin',

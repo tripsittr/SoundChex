@@ -8,8 +8,10 @@ namespace App\Jobs;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Events\CoverEmbedded;
 use App\Events\MediaItemEnriched;
 use App\Events\MediaItemReviewFlagged;
+use App\Events\MetadataTitleTidied;
 use App\Models\MediaItem;
 use App\Models\MetadataVersion;
 use App\Plugins\Registry;
@@ -223,6 +225,8 @@ class EnrichMediaItemJob implements ShouldQueue
             ]);
 
             $item->forceFill(['title' => $title])->saveQuietly();
+
+            MetadataTitleTidied::dispatch($item, $original, $title);
         } catch (\Throwable $e) {
             // The metadata is already saved; a clumsy title is not worth
             // failing the run and re-fetching everything.
@@ -250,8 +254,8 @@ class EnrichMediaItemJob implements ShouldQueue
         try {
             $embedder = app(CoverEmbedder::class);
 
-            if ($embedder->isAvailable()) {
-                $embedder->embed($item->refresh());
+            if ($embedder->isAvailable() && $embedder->embed($item->refresh())) {
+                CoverEmbedded::dispatch($item);
             }
         } catch (\Throwable $e) {
             report($e);

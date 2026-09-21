@@ -46,8 +46,14 @@ class PluginInstaller
         try {
             $manifest = $this->manifestFromZip($zipPath);
 
-            if (! $manifest->isCompatibleWith(config('soundchex.version', '0.0.0'), PHP_VERSION)) {
-                throw new PluginInstallException("{$manifest->name} needs a newer server or PHP than this one.");
+            $reason = $manifest->incompatibilityReason(
+                config('soundchex.version', '0.0.0'),
+                config('soundchex.plugin_api_version', '1.0.0'),
+                PHP_VERSION,
+            );
+
+            if ($reason !== null) {
+                throw new PluginInstallException("{$manifest->name} {$reason}.");
             }
 
             $target = rtrim((string) config('soundchex.plugins.path'), '/').'/'.$this->safeDirName($manifest->id);

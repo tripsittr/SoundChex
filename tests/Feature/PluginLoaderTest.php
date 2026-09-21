@@ -192,7 +192,7 @@ class PluginLoaderTest extends TestCase
             'minSoundChexVersion' => '0.5.0',
         ]);
 
-        $this->assertFalse($manifest->isCompatibleWith('0.4.0', PHP_VERSION));
-        $this->assertTrue($manifest->isCompatibleWith('0.5.0', PHP_VERSION));
+        $this->assertFalse($manifest->isCompatibleWith('0.4.0', '1.0.0', PHP_VERSION));
+        $this->assertTrue($manifest->isCompatibleWith('0.5.0', '1.0.0', PHP_VERSION));
     }
 }

@@ -9,6 +9,8 @@ use App\Enums\DuplicateMatch;
 use App\Enums\DuplicateStatus;
 use App\Enums\MediaItemType;
 use App\Events\DuplicateDetected;
+use App\Events\DuplicateMerged;
+use App\Events\DuplicateResolved;
 use App\Models\MediaItem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -369,6 +371,8 @@ class DuplicateDetector
                 'duplicate_status' => DuplicateStatus::Merged,
             ])->saveQuietly();
 
+            DuplicateMerged::dispatch($duplicate, $original);
+
             return true;
         }
 
@@ -395,6 +399,8 @@ class DuplicateDetector
             'file_path' => $original->file_path,
             'duplicate_status' => DuplicateStatus::Merged,
         ])->saveQuietly();
+
+        DuplicateMerged::dispatch($duplicate, $original);
 
         return true;
     }
@@ -438,6 +444,8 @@ class DuplicateDetector
         if ($loserPath === $keeperPath) {
             $duplicate->forceFill(['duplicate_status' => DuplicateStatus::Merged])->saveQuietly();
 
+            DuplicateResolved::dispatch($duplicate);
+
             return true;
         }
 
@@ -457,6 +465,8 @@ class DuplicateDetector
             'duplicate_status' => DuplicateStatus::Merged,
             'needs_cover_review' => $this->coversDiffer($keeper, $loser),
         ])->saveQuietly();
+
+        DuplicateResolved::dispatch($duplicate);
 
         return true;
     }

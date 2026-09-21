@@ -5,8 +5,10 @@
 
 namespace App\Services;
 
+use App\Events\ProfileSwitched;
 use App\Models\Profile;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 
@@ -119,7 +121,7 @@ class CurrentProfile
             // cannot name one belonging to someone else.
             $profile = Profile::where('user_id', $user->id)
                 ->get()
-                ->first(fn (Profile $candidate) => $user->tokenCan('profile:' . $candidate->id));
+                ->first(fn (Profile $candidate) => $user->tokenCan('profile:'.$candidate->id));
 
             // Fails closed: a token naming a profile that no longer exists
             // resolves to nothing rather than to a default with more access
@@ -181,6 +183,8 @@ class CurrentProfile
 
         $profile->forceFill(['last_used_at' => now()])->saveQuietly();
 
+        ProfileSwitched::dispatch($profile);
+
         $this->resolved = $profile;
         // Cleared rather than recomputed: the session was just written, and
         // the next get() rebuilds the key from it. Leaving a stale key here
@@ -241,7 +245,7 @@ class CurrentProfile
     /**
      * Every profile on the signed-in account.
      *
-     * @return \Illuminate\Support\Collection<int, Profile>
+     * @return Collection<int, Profile>
      */
     public function all()
     {

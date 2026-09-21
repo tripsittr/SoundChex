@@ -8,6 +8,7 @@ namespace App\Http\Controllers;
 use App\Enums\MediaItemType;
 use App\Events\PlaybackCompleted;
 use App\Events\PlaybackRecorded;
+use App\Events\UserSearched;
 use App\Models\MediaItem;
 use App\Models\MediaPlay;
 use App\Services\ContentGate;
@@ -388,15 +389,21 @@ class MediaCenterController extends Controller
     {
         $term = trim((string) $request->query('q', ''));
 
+        // Everything, not just titles: dialogue from subtitles and text from
+        // inside books are the whole point of a library that holds the film,
+        // the book and the soundtrack at once.
+        $results = $term === ''
+            ? ['query' => '', 'total' => 0, 'groups' => []]
+            : app(SearchService::class)->search($term);
+
+        if ($term !== '') {
+            UserSearched::dispatch($term, (int) ($results['total'] ?? 0), app(CurrentProfile::class)->id());
+        }
+
         return view('media.search', [
             'counts' => $this->browser->counts(),
             'term' => $term,
-            // Everything, not just titles: dialogue from subtitles and text
-            // from inside books are the whole point of a library that holds
-            // the film, the book and the soundtrack at once.
-            'search' => $term === ''
-                ? ['query' => '', 'total' => 0, 'groups' => []]
-                : app(SearchService::class)->search($term),
+            'search' => $results,
         ]);
     }
 
