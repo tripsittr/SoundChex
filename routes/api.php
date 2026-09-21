@@ -3,18 +3,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-use App\Http\Controllers\Api\Transfer\RequestController as TransferRequestController;
-use App\Http\Controllers\Api\Transfer\SourceController as TransferSourceController;
-use App\Http\Controllers\Api\LibraryController;
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\DeviceReportController;
+use App\Http\Controllers\Api\LibraryController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PlaylistController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\ReaderController;
 use App\Http\Controllers\Api\ServerHealthController;
-use App\Http\Controllers\Api\UpdateController;
-use App\Http\Middleware\LoopbackOnly;
+use App\Http\Controllers\Api\SubtitleController;
 use App\Http\Controllers\Api\TokenController;
+use App\Http\Controllers\Api\Transfer\RequestController as TransferRequestController;
+use App\Http\Controllers\Api\Transfer\SourceController as TransferSourceController;
+use App\Http\Controllers\Api\UpdateController;
+use App\Http\Middleware\EnsureApiAdmin;
+use App\Http\Middleware\LoopbackOnly;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -63,7 +67,6 @@ Route::prefix('v1')->group(function (): void {
     Route::get('/server/health', [ServerHealthController::class, 'show'])
         ->middleware(LoopbackOnly::class)
         ->name('api.server.health');
-
 
     // The account's profiles, to pick one before a token is minted. Verifies
     // credentials, so it is throttled like the token endpoint — confirming a
@@ -157,6 +160,24 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/items/{item}/progress', [MediaController::class, 'saveProgress'])
             ->name('api.items.progress.save');
 
+        // Caption tracks for a video, and one track's WebVTT content — the
+        // token-authed equivalent of the web's session-only subtitle routes, so
+        // the native player can list and load subtitles (S-160).
+        Route::get('/items/{item}/subtitles', [SubtitleController::class, 'index'])
+            ->name('api.items.subtitles');
+        Route::get('/items/{item}/subtitles/{subtitle}', [SubtitleController::class, 'show'])
+            ->name('api.items.subtitle');
+
+        // Book reading — the token-authed equivalent of the web reader's
+        // session-only routes: a book's format + resume point, the file to
+        // render, and saving the reading position (S-161).
+        Route::get('/items/{item}/book', [ReaderController::class, 'file'])
+            ->name('api.items.book');
+        Route::get('/items/{item}/reader', [ReaderController::class, 'show'])
+            ->name('api.items.reader');
+        Route::post('/items/{item}/reader/progress', [ReaderController::class, 'saveProgress'])
+            ->name('api.items.reader.progress');
+
         // Library search, covering titles, people, dialogue and book text.
         Route::get('/search', [MediaController::class, 'search'])->name('api.search');
 
@@ -167,25 +188,25 @@ Route::prefix('v1')->group(function (): void {
 
         // Admin surface for the app — gated to an administering profile by
         // EnsureApiAdmin, not by anything the client sends.
-        Route::middleware(\App\Http\Middleware\EnsureApiAdmin::class)->prefix('admin')->group(function (): void {
-            Route::get('/stats', [\App\Http\Controllers\Api\AdminController::class, 'stats'])
+        Route::middleware(EnsureApiAdmin::class)->prefix('admin')->group(function (): void {
+            Route::get('/stats', [AdminController::class, 'stats'])
                 ->name('api.admin.stats');
             // View/edit a media item's core fields and type metadata.
-            Route::get('/items/{item}', [\App\Http\Controllers\Api\AdminController::class, 'item'])
+            Route::get('/items/{item}', [AdminController::class, 'item'])
                 ->name('api.admin.item');
-            Route::patch('/items/{item}', [\App\Http\Controllers\Api\AdminController::class, 'updateItem'])
+            Route::patch('/items/{item}', [AdminController::class, 'updateItem'])
                 ->name('api.admin.item.update');
             // Manage the account's profiles (household members).
-            Route::get('/profiles', [\App\Http\Controllers\Api\AdminController::class, 'profiles'])
+            Route::get('/profiles', [AdminController::class, 'profiles'])
                 ->name('api.admin.profiles');
-            Route::post('/profiles', [\App\Http\Controllers\Api\AdminController::class, 'storeProfile'])
+            Route::post('/profiles', [AdminController::class, 'storeProfile'])
                 ->name('api.admin.profiles.store');
-            Route::patch('/profiles/{profile}', [\App\Http\Controllers\Api\AdminController::class, 'updateProfile'])
+            Route::patch('/profiles/{profile}', [AdminController::class, 'updateProfile'])
                 ->name('api.admin.profiles.update');
-            Route::delete('/profiles/{profile}', [\App\Http\Controllers\Api\AdminController::class, 'destroyProfile'])
+            Route::delete('/profiles/{profile}', [AdminController::class, 'destroyProfile'])
                 ->name('api.admin.profiles.destroy');
             // Add media: queue a library scan of the watched folders.
-            Route::post('/scan', [\App\Http\Controllers\Api\AdminController::class, 'scan'])
+            Route::post('/scan', [AdminController::class, 'scan'])
                 ->name('api.admin.scan');
         });
 
