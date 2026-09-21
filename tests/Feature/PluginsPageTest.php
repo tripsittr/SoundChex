@@ -142,4 +142,38 @@ class PluginsPageTest extends TestCase
             ->call('browse')
             ->assertDontSee('Already Here');
     }
+
+    /* ----------------------------------- plugin files are a server surface --- */
+
+    public function test_on_the_server_the_plugins_path_and_open_button_are_shown(): void
+    {
+        // The default test request is loopback (127.0.0.1), i.e. the operator is
+        // on the machine running the server.
+        Livewire::test(Plugins::class)
+            ->assertActionVisible('openPluginsFolder')
+            ->assertSee(config('soundchex.plugins.path'));
+    }
+
+    public function test_from_a_remote_browser_the_path_and_open_button_are_withheld(): void
+    {
+        // The panel is reachable remotely, but plugin files live on the server's
+        // own disk — managing them is a home-server-only surface. (The override
+        // stands in for a non-loopback request, which the Livewire test harness
+        // cannot itself simulate.)
+        config(['soundchex.plugins.local_management' => false]);
+
+        Livewire::test(Plugins::class)
+            ->assertActionHidden('openPluginsFolder')
+            ->assertDontSee(config('soundchex.plugins.path'))
+            ->assertSee('on the server itself');
+    }
+
+    public function test_the_local_management_override_forces_the_controls_off(): void
+    {
+        // Even a loopback request is treated as remote when an operator has set
+        // the override — the reverse-proxy case.
+        config(['soundchex.plugins.local_management' => false]);
+
+        $this->assertFalse(app(Plugins::class)->isLocalRequest());
+    }
 }
