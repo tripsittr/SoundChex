@@ -50,6 +50,16 @@ jobs:
           node-version: '20'
           cache: npm
 
+      # The frontend build imports the Filament theme from vendor/, so Composer
+      # packages must be present before `npm run build` (Tauri's
+      # beforeBuildCommand) runs — this is what a macOS-only build hid.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist --no-dev
+
       - uses: dtolnay/rust-toolchain@stable
 
       # Cache the Rust build between runs — Tauri's dependency tree is large.
