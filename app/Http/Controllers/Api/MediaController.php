@@ -171,7 +171,12 @@ class MediaController extends Controller
         $items = collect($result['groups'])
             ->flatMap(function (array $group): iterable {
                 return collect($group['results'])->flatMap(function ($row): iterable {
-                    if (($row['kind'] ?? null) === 'item' && isset($row['item'])) {
+                    // A row that carries a single item — a title, a dialogue cue,
+                    // a book page (kinds 'item', 'cue', 'page'). Keyed off the
+                    // item being present rather than the kind, so a dialogue or
+                    // page hit is not silently dropped (the app then never sees
+                    // that track, and cannot play it).
+                    if (($row['item'] ?? null) instanceof MediaItem) {
                         return [$row['item']];
                     }
 
