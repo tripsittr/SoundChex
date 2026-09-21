@@ -5,18 +5,20 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Dashboard;
+use App\Plugins\PluginLoader;
+use App\Plugins\Registry;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\Actions\Action;
+use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
-use App\Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
-use Filament\Enums\ThemeMode;
 use Filament\Support\Colors\Color;
 use Filament\Support\Icons\Heroicon;
 use Filament\View\PanelsRenderHook;
@@ -87,6 +89,13 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')
             ->pages([
                 Dashboard::class,
+                // Pages a plugin contributes via Registry::adminPage(). The
+                // loader boots first (idempotent) so a plugin's register() has
+                // run and populated the registry; each page still gates itself
+                // through its own canAccess(). Filament only auto-discovers
+                // pages under app/Filament, so a plugin's page — in its own
+                // namespace — has to be handed over explicitly like this.
+                ...$this->pluginAdminPages(),
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
@@ -140,4 +149,25 @@ class AdminPanelProvider extends PanelProvider
             ]);
     }
 
+    /**
+     * Filament page classes contributed by plugins, for the panel's page list.
+     *
+     * Boots the plugin loader first — it is idempotent, so calling it here as
+     * well as in PluginServiceProvider is harmless, and it guarantees every
+     * plugin's register() has run before we read the registry, whatever order
+     * the panel is built in. A misbehaving plugin must not take the whole panel
+     * down, so a failure here is swallowed to an empty list.
+     *
+     * @return array<int, string>
+     */
+    private function pluginAdminPages(): array
+    {
+        try {
+            app(PluginLoader::class)->boot();
+
+            return app(Registry::class)->adminPageClasses();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
 }

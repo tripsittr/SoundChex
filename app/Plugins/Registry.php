@@ -385,4 +385,44 @@ class Registry
     {
         return array_column($this->notificationTargets, 'class');
     }
+
+    /**
+     * Filament page classes contributed by plugins.
+     *
+     * @var array<int, array{plugin: string, class: string}>
+     */
+    private array $adminPages = [];
+
+    /**
+     * Contribute a page to the Filament admin panel (S-264, #284).
+     *
+     * The class is an ordinary `Filament\Pages\Page` living in the plugin's own
+     * namespace; this makes the panel aware of it, since Filament only discovers
+     * pages under `app/Filament`. The page appears in the nav like any core one,
+     * subject to its own `canAccess()` — so a plugin page can gate itself to
+     * server admins exactly as the built-in System pages do.
+     *
+     * This is the seam that lets a plugin add a whole screen, not just a settings
+     * form: the audit-log plugin is its first user.
+     */
+    public function adminPage(string $pageClass): static
+    {
+        $this->adminPages[] = [
+            'plugin' => $this->currentPlugin ?? 'unknown',
+            'class' => $pageClass,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * The plugin-contributed Filament page classes, de-duplicated so a page
+     * registered twice (a plugin re-registering) appears once in the nav.
+     *
+     * @return array<int, string>
+     */
+    public function adminPageClasses(): array
+    {
+        return array_values(array_unique(array_column($this->adminPages, 'class')));
+    }
 }
