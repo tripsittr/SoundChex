@@ -8,6 +8,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\MediaItemType;
 use App\Http\Controllers\Controller;
 use App\Jobs\ExtractBookContentJob;
+use App\Models\BookAsset;
 use App\Models\MediaItem;
 use App\Models\ReadingProgress;
 use App\Services\Books\BookTextExtractor;
@@ -16,6 +17,7 @@ use App\Services\CurrentProfile;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
@@ -102,6 +104,57 @@ class ReaderController extends Controller
                 'title' => $u->title,
                 'text' => $u->text,
             ])->values(),
+            // The book's illustrations, keyed to the page they sit on, so the
+            // reader can place each one inline with that page's text — the same
+            // text-and-images read the desktop reader gives (S-295). This is what
+            // carries a scanned or illustrated book (its pages are images).
+            'images' => $this->images($item),
+        ]);
+    }
+
+    /**
+     * The significant images of a book, keyed by page, for inline placement.
+     *
+     * @return array<int, array{page: int, url: string, width: ?int, height: ?int}>
+     */
+    private function images(MediaItem $item): array
+    {
+        return BookAsset::where('media_item_id', $item->id)
+            ->where('is_significant', true)
+            ->orderBy('page')
+            ->get()
+            ->filter(fn (BookAsset $asset): bool => $asset->exists())
+            ->map(fn (BookAsset $asset): array => [
+                'page' => $asset->page,
+                'url' => route('api.items.reader.asset', ['item' => $item, 'asset' => $asset]),
+                'width' => $asset->width,
+                'height' => $asset->height,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * One book image, for the reader to place inline. Token-authed equivalent of
+     * the web reader's asset route.
+     */
+    public function asset(MediaItem $item, BookAsset $asset): Response
+    {
+        $this->assertReadable($item);
+
+        abort_unless($asset->media_item_id === $item->id, 404);
+
+        $path = $asset->absolutePath();
+
+        abort_unless($path !== null, 404);
+
+        return response(file_get_contents($path), 200, [
+            'Content-Type' => match ($asset->format) {
+                'png' => 'image/png',
+                'tif', 'tiff' => 'image/tiff',
+                default => 'image/jpeg',
+            },
+            'Cache-Control' => 'private, max-age=604800',
         ]);
     }
 
