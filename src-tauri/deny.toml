@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 SoundChex
+#
+# The Cargo half of the licence gate (S-5). `cargo deny check licenses` fails if
+# a crate's licence forbids distributing SoundChex under the AGPL. Run in CI and
+# before a release; the Composer half is `php artisan licenses:check`.
+#
+# The audit (Documentation & Planning/LicenseAudit.md) confirmed the 524 crates
+# are clean; this keeps them clean. `allow` is the AGPL-compatible set — a crate
+# is accepted when it offers one of these (cargo-deny evaluates the crate's SPDX
+# expression, so a crate multi-licensed "MIT OR Apache-2.0" passes on either).
+
+[licenses]
+# Every crate must resolve to an allowed licence; anything else fails the check.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Zlib",
+    "MPL-2.0",
+    "LGPL-3.0-or-later",
+    "GPL-3.0-or-later",
+    "AGPL-3.0-or-later",
+    "OpenSSL",
+]
+
+# A crate whose SPDX expression is at least this confident is trusted.
+confidence-threshold = 0.9
+
+# Per-crate exceptions go here when a crate is genuinely fine but its licence id
+# is not in `allow` (e.g. a bespoke but permissive licence). Empty: the audit
+# found none needed.
+exceptions = []
+
+[bans]
+multiple-versions = "allow"
+
+[advisories]
+# Licences are this file's job; the security advisory DB is a separate concern
+# and is not failed here so a licence run is deterministic offline.
+version = 2
