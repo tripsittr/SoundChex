@@ -11,6 +11,11 @@ by dropping it into the plugins directory, and it runs as part of the server.
 > sandbox — the same is true of Filament, Emby/Jellyfin and WordPress plugins.
 > Install and enable only plugins you trust, from a source you recognise.
 
+> **This page is the server plugin platform.** For plugins that run inside the
+> iOS / Android / desktop *apps* — sandboxed HTML/CSS/JS, one format on every
+> client — see the [client-plugin specification](CLIENT-PLUGINS.md) (planned,
+> not yet built). It reuses this platform's manifest, catalogue and trust model.
+
 ---
 
 ## Your first plugin in two minutes
