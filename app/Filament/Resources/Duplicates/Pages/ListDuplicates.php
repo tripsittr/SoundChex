@@ -40,6 +40,25 @@ class ListDuplicates extends ListRecords
         ];
     }
 
+    /**
+     * Rebuild the table when the tab changes.
+     *
+     * Each tab is a different *kind* of review with different actions — the
+     * Metadata tab re-enriches, the Duplicates tab merges. `DuplicatesTable`
+     * switches the whole table config (columns and actions) on the active tab,
+     * but Filament's default `updatedActiveTab()` only resets the page, leaving
+     * the previous tab's table — and its registered actions — in place. So the
+     * Merge action leaked onto the Metadata tab after a visit to Duplicates.
+     * `resetTable()` re-runs the table build against the now-current tab, so the
+     * actions match the tab that is showing.
+     */
+    public function updatedActiveTab(): void
+    {
+        parent::updatedActiveTab();
+
+        $this->resetTable();
+    }
+
     public function getTabs(): array
     {
         // The tabs are the review *types*: Metadata, Duplicates and Cover art

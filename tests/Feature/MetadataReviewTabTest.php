@@ -5,6 +5,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\DuplicateStatus;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Filament\Resources\Duplicates\Pages\ListDuplicates;
@@ -86,6 +87,38 @@ class MetadataReviewTabTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertSame(ProcessingStatus::Complete, $flagged->fresh()->processing_status);
+    }
+
+    public function test_the_merge_action_does_not_leak_onto_the_metadata_tab_after_visiting_duplicates(): void
+    {
+        // Each tab is a different kind of review with different actions. Merge
+        // belongs to the Duplicates tab; re-enrich to Metadata. Switching between
+        // them must rebuild the table, or the previous tab's actions linger — the
+        // bug where the Metadata tab offered "Merge selected".
+        $this->item('Unsure Track', ProcessingStatus::NeedsReview);
+
+        $original = MediaItem::create([
+            'user_id' => $this->user->id, 'type' => MediaItemType::Music,
+            'title' => 'Original', 'owned' => true,
+        ]);
+        MediaItem::create([
+            'user_id' => $this->user->id, 'type' => MediaItemType::Music,
+            'title' => 'A Duplicate', 'owned' => true,
+            'duplicate_status' => DuplicateStatus::Pending, 'duplicate_of_id' => $original->id,
+        ]);
+
+        $component = Livewire::test(ListDuplicates::class);
+
+        // Metadata tab: re-enrich, never merge.
+        $component->assertSee('Re-enrich')->assertDontSee('Merge selected');
+
+        // Visit Duplicates, where merge is correct...
+        $component->set('activeTab', 'pending')->assertSee('Merge selected');
+
+        // ...then back to Metadata: merge must be gone again.
+        $component->set('activeTab', 'metadata')
+            ->assertDontSee('Merge selected')
+            ->assertSee('Re-enrich');
     }
 
     private function item(string $title, ProcessingStatus $status): MediaItem
