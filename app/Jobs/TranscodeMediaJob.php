@@ -5,6 +5,9 @@
 
 namespace App\Jobs;
 
+use App\Events\TranscodeFailed;
+use App\Events\TranscodeFinished;
+use App\Events\TranscodeStarted;
 use App\Models\MediaItem;
 use App\Services\ConversionFiler;
 use App\Services\MediaTranscoder;
@@ -55,6 +58,8 @@ class TranscodeMediaJob implements ShouldQueue
             'transcode_percent' => 0,
         ])->saveQuietly();
 
+        TranscodeStarted::dispatch($item);
+
         // Throttled: ffmpeg reports often, and a write per line would hammer
         // SQLite for a number nobody reads that precisely.
         $lastWrite = 0;
@@ -80,6 +85,8 @@ class TranscodeMediaJob implements ShouldQueue
             'transcode_status' => 'complete',
             'transcode_percent' => 100,
         ])->saveQuietly();
+
+        TranscodeFinished::dispatch($item, $path);
 
         // A conversion parked in media/converted/ is reachable only through the
         // column just written, and the scanner is told to skip that folder. Lose
@@ -112,5 +119,10 @@ class TranscodeMediaJob implements ShouldQueue
     {
         MediaItem::where('id', $this->mediaItemId)
             ->update(['transcode_status' => 'failed']);
+
+        $item = MediaItem::find($this->mediaItemId);
+        if ($item !== null) {
+            TranscodeFailed::dispatch($item, $exception->getMessage());
+        }
     }
 }

@@ -9,6 +9,7 @@ use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Events\MediaItemEnriched;
+use App\Events\MediaItemReviewFlagged;
 use App\Models\MediaItem;
 use App\Models\MetadataVersion;
 use App\Plugins\Registry;
@@ -57,6 +58,10 @@ class EnrichMediaItemJob implements ShouldQueue
 
             if ($item->processing_status !== ProcessingStatus::NeedsReview) {
                 $item->update(['processing_status' => ProcessingStatus::Complete]);
+            } else {
+                // A source found nothing it was sure of and asked for a human
+                // look (S-276).
+                MediaItemReviewFlagged::dispatch($item, $item->matched_by);
             }
 
             $this->recordHistory($item, $history, $before);

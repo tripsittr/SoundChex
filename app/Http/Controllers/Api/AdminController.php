@@ -12,7 +12,9 @@ use App\Models\Profile;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 /**
  * The admin surface for the native app.
@@ -114,7 +116,7 @@ class AdminController extends Controller
      */
     public function scan(): JsonResponse
     {
-        \Illuminate\Support\Facades\Artisan::queue('library:scan');
+        Artisan::queue('library:scan');
 
         return response()->json(['scanning' => true]);
     }
@@ -173,7 +175,7 @@ class AdminController extends Controller
             'name' => [$creating ? 'required' : 'sometimes', 'string', 'max:60'],
             'color' => ['sometimes', 'nullable', 'string', 'max:9'],
             'is_kids' => ['sometimes', 'boolean'],
-            'max_rating' => ['sometimes', 'nullable', 'string', \Illuminate\Validation\Rule::in(Profile::RATING_ORDER)],
+            'max_rating' => ['sometimes', 'nullable', 'string', Rule::in(Profile::RATING_ORDER)],
             // An empty string clears the PIN; a value sets it. Absent leaves it.
             'pin' => ['sometimes', 'nullable', 'string', 'max:6'],
         ]);

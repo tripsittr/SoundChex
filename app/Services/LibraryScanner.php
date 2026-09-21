@@ -7,7 +7,10 @@ namespace App\Services;
 
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Events\EpisodeAdded;
 use App\Events\MediaItemCatalogued;
+use App\Events\ScanFinished;
+use App\Events\ScanStarted;
 use App\Jobs\EnrichMediaItemJob;
 use App\Jobs\ExtractBookAssetsJob;
 use App\Jobs\ImportSubtitlesJob;
@@ -42,6 +45,10 @@ class LibraryScanner
     public function scan(?array $folders = null, bool $dryRun = false, bool $enrich = true): array
     {
         $folders = $this->resolveFolders($folders);
+
+        if (! $dryRun) {
+            ScanStarted::dispatch($folders);
+        }
 
         $result = [
             'imported' => 0,
@@ -218,6 +225,7 @@ class LibraryScanner
 
         if (! $dryRun) {
             $this->announceScan($result);
+            ScanFinished::dispatch($result);
         }
 
         return $result;
@@ -300,6 +308,8 @@ class LibraryScanner
                     $episode->title,
                     $episode,
                 );
+
+                EpisodeAdded::dispatch($episode);
             }
         } catch (\Throwable $e) {
             report($e);

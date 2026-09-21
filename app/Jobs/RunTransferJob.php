@@ -5,8 +5,9 @@
 
 namespace App\Jobs;
 
+use App\Events\TransferCompleted;
+use App\Events\TransferFailed;
 use App\Models\Transfer;
-use App\Models\TransferItem;
 use App\Services\TransferReceiver;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -58,6 +59,8 @@ class RunTransferJob implements ShouldQueue
                     'last_error' => $transfer->last_error ?: 'Could not read the manifest.',
                 ])->save();
 
+                TransferFailed::dispatch($transfer, $transfer->last_error);
+
                 return;
             }
 
@@ -79,6 +82,8 @@ class RunTransferJob implements ShouldQueue
         if ($transfer->wants('metadata') && ! $transfer->metadata_imported) {
             if (! $receiver->importDatabase($transfer)) {
                 $transfer->forceFill(['state' => Transfer::FAILED])->save();
+
+                TransferFailed::dispatch($transfer, $transfer->last_error);
 
                 return;
             }
@@ -141,6 +146,8 @@ class RunTransferJob implements ShouldQueue
             'state' => Transfer::COMPLETE,
             'finished_at' => now(),
         ])->save();
+
+        TransferCompleted::dispatch($transfer);
 
         Log::info('A transfer finished', [
             'transfer' => $transfer->id,

@@ -54,7 +54,7 @@ class UpdateController extends Controller
 
     public function download(string $target, string $arch, string $file)
     {
-        $path = $this->releaseDirectory($target, $arch) . '/' . basename($file);
+        $path = $this->releaseDirectory($target, $arch).'/'.basename($file);
 
         abort_unless(is_file($path), 404);
 
@@ -67,7 +67,7 @@ class UpdateController extends Controller
     private function latestFor(string $target, string $arch): ?array
     {
         $directory = $this->releaseDirectory($target, $arch);
-        $manifest = $directory . '/latest.json';
+        $manifest = $directory.'/latest.json';
 
         if (! is_file($manifest)) {
             return null;
@@ -79,7 +79,7 @@ class UpdateController extends Controller
             return null;
         }
 
-        $signature = $directory . '/' . basename($release['file'] ?? '') . '.sig';
+        $signature = $directory.'/'.basename($release['file'] ?? '').'.sig';
 
         return [
             'version' => (string) $release['version'],
@@ -95,8 +95,8 @@ class UpdateController extends Controller
         // Segments come from the URL, so anything that could climb out of the
         // directory is stripped rather than trusted.
         return storage_path('app/updates/'
-            . preg_replace('/[^a-z0-9_-]/i', '', $target) . '/'
-            . preg_replace('/[^a-z0-9_-]/i', '', $arch));
+            .preg_replace('/[^a-z0-9_-]/i', '', $target).'/'
+            .preg_replace('/[^a-z0-9_-]/i', '', $arch));
     }
 
     private function isNewer(string $candidate, string $current): bool

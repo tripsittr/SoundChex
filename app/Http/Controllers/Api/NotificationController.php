@@ -6,10 +6,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\MediaItem;
 use App\Models\Notification;
 use App\Services\ContentGate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 /**
  * Events the device has not seen yet.
@@ -65,14 +67,14 @@ class NotificationController extends Controller
         ]);
     }
 
-    private function visibleItemIds(\Illuminate\Support\Collection $ids): \Illuminate\Support\Collection
+    private function visibleItemIds(Collection $ids): Collection
     {
         if ($ids->isEmpty()) {
             return collect();
         }
 
         return app(ContentGate::class)
-            ->apply(\App\Models\MediaItem::query())
+            ->apply(MediaItem::query())
             ->whereIn('media_items.id', $ids->all())
             ->pluck('media_items.id');
     }

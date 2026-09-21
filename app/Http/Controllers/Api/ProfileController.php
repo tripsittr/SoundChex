@@ -135,7 +135,7 @@ class ProfileController extends Controller
             ]);
         }
 
-        $token = $user->createToken($data['device_name'], ['profile:' . $profile->id]);
+        $token = $user->createToken($data['device_name'], ['profile:'.$profile->id]);
 
         // Drop the token that made this request: the device is moving to the new
         // profile, and leaving the old one live would be a second key to a
@@ -169,6 +169,6 @@ class ProfileController extends Controller
 
     private function throttleKey(Request $request, string $email): string
     {
-        return 'api-profiles:' . mb_strtolower($email) . '|' . $request->ip();
+        return 'api-profiles:'.mb_strtolower($email).'|'.$request->ip();
     }
 }

@@ -5,10 +5,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\WatchlistAdded;
+use App\Events\WatchlistRemoved;
 use App\Models\MediaItem;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * A profile's list of things to get to.
@@ -19,7 +22,7 @@ use Illuminate\Http\JsonResponse;
 class WatchlistController extends Controller
 {
     public function toggle(
-        \Illuminate\Http\Request $request,
+        Request $request,
         MediaItem $item,
         CurrentProfile $profiles,
         ContentGate $gate,
@@ -56,8 +59,11 @@ class WatchlistController extends Controller
 
         if ($existing) {
             $profile->watchlist()->detach($item->id);
+            WatchlistRemoved::dispatch($item, $profile->id);
         } else {
             $profile->watchlist()->attach($item->id);
+            // The 'add to Radarr/Sonarr' automation hook (S-276).
+            WatchlistAdded::dispatch($item, $profile->id);
         }
 
         return response()->json([

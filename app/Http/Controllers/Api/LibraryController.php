@@ -13,6 +13,8 @@ use App\Services\CurrentProfile;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * The catalogue, for the device to mirror.
@@ -60,7 +62,7 @@ class LibraryController extends Controller
         // Weak ETag: the payload is generated, so byte-equality is not
         // guaranteed across runs, but "nothing changed since" is exactly the
         // question the client is asking.
-        $etag = 'W/"' . $this->fingerprint($items) . '"';
+        $etag = 'W/"'.$this->fingerprint($items).'"';
 
         if (trim((string) $request->header('If-None-Match')) === $etag) {
             return response()->json(null, 304)->header('ETag', $etag);
@@ -91,7 +93,7 @@ class LibraryController extends Controller
             'since' => ['required', 'date'],
         ]);
 
-        $since = \Illuminate\Support\Carbon::parse($data['since']);
+        $since = Carbon::parse($data['since']);
 
         $updated = $this->visible()
             ->where('media_items.updated_at', '>', $since)
@@ -156,9 +158,9 @@ class LibraryController extends Controller
      * Not a hash of the payload — that would mean building the whole thing to
      * decide whether to send it, which defeats the point of a 304.
      */
-    private function fingerprint(\Illuminate\Support\Collection $items): string
+    private function fingerprint(Collection $items): string
     {
-        return $items->count() . '-' . ($items->max('updated_at')?->timestamp ?? 0)
-            . '-' . ($this->profiles()->id() ?? 0);
+        return $items->count().'-'.($items->max('updated_at')?->timestamp ?? 0)
+            .'-'.($this->profiles()->id() ?? 0);
     }
 }

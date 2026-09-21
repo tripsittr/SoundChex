@@ -103,7 +103,7 @@ class SourceController extends Controller
      */
     private function relativePath(string $absolute): ?string
     {
-        $root = rtrim(str_replace('\\', '/', \Storage::path('')), '/') . '/';
+        $root = rtrim(str_replace('\\', '/', \Storage::path('')), '/').'/';
         $normal = str_replace('\\', '/', $absolute);
 
         if (str_starts_with($normal, $root)) {
@@ -148,7 +148,7 @@ class SourceController extends Controller
         // From the connection rather than a hardcoded path: an instance
         // configured to keep its database elsewhere would otherwise serve a
         // file it is not using, or none at all.
-        $source = config('database.connections.' . config('database.default') . '.database');
+        $source = config('database.connections.'.config('database.default').'.database');
 
         abort_unless(is_string($source) && is_file($source), 404);
 

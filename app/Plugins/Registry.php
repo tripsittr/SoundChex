@@ -5,9 +5,46 @@
 
 namespace App\Plugins;
 
+use App\Events\CoverEmbedded;
+use App\Events\CoverFetched;
+use App\Events\DeviceReported;
+use App\Events\DeviceSignedIn;
+use App\Events\DeviceSignedOut;
+use App\Events\DuplicateDetected;
+use App\Events\DuplicateMerged;
+use App\Events\DuplicateResolved;
+use App\Events\EpisodeAdded;
+use App\Events\MediaItemAdded;
 use App\Events\MediaItemCatalogued;
+use App\Events\MediaItemDeleted;
 use App\Events\MediaItemEnriched;
+use App\Events\MediaItemReviewFlagged;
+use App\Events\MetadataTitleTidied;
+use App\Events\NotificationRecorded;
+use App\Events\PlaybackCompleted;
+use App\Events\PlaybackProgress;
 use App\Events\PlaybackRecorded;
+use App\Events\PlaylistCreated;
+use App\Events\PlaylistDeleted;
+use App\Events\PlaylistUpdated;
+use App\Events\ProfileCreated;
+use App\Events\ProfileDeleted;
+use App\Events\ProfileSwitched;
+use App\Events\ScanFinished;
+use App\Events\ScanStarted;
+use App\Events\ServerExtensionMissing;
+use App\Events\ServerHealthChecked;
+use App\Events\TranscodeFailed;
+use App\Events\TranscodeFinished;
+use App\Events\TranscodeStarted;
+use App\Events\TransferCompleted;
+use App\Events\TransferFailed;
+use App\Events\TransferStarted;
+use App\Events\UploadCompleted;
+use App\Events\UserRated;
+use App\Events\UserSearched;
+use App\Events\WatchlistAdded;
+use App\Events\WatchlistRemoved;
 use Illuminate\Support\Facades\Event;
 
 /**
@@ -98,17 +135,66 @@ class Registry
      * @var array<string, class-string>
      */
     private const EVENTS = [
+        CoverEmbedded::NAME => CoverEmbedded::class,
+        CoverFetched::NAME => CoverFetched::class,
+        DeviceReported::NAME => DeviceReported::class,
+        DeviceSignedIn::NAME => DeviceSignedIn::class,
+        DeviceSignedOut::NAME => DeviceSignedOut::class,
+        DuplicateDetected::NAME => DuplicateDetected::class,
+        DuplicateMerged::NAME => DuplicateMerged::class,
+        DuplicateResolved::NAME => DuplicateResolved::class,
+        EpisodeAdded::NAME => EpisodeAdded::class,
+        MediaItemAdded::NAME => MediaItemAdded::class,
         MediaItemCatalogued::NAME => MediaItemCatalogued::class,
+        MediaItemDeleted::NAME => MediaItemDeleted::class,
         MediaItemEnriched::NAME => MediaItemEnriched::class,
+        MediaItemReviewFlagged::NAME => MediaItemReviewFlagged::class,
+        MetadataTitleTidied::NAME => MetadataTitleTidied::class,
+        NotificationRecorded::NAME => NotificationRecorded::class,
+        PlaybackCompleted::NAME => PlaybackCompleted::class,
+        PlaybackProgress::NAME => PlaybackProgress::class,
         PlaybackRecorded::NAME => PlaybackRecorded::class,
+        PlaylistCreated::NAME => PlaylistCreated::class,
+        PlaylistDeleted::NAME => PlaylistDeleted::class,
+        PlaylistUpdated::NAME => PlaylistUpdated::class,
+        ProfileCreated::NAME => ProfileCreated::class,
+        ProfileDeleted::NAME => ProfileDeleted::class,
+        ProfileSwitched::NAME => ProfileSwitched::class,
+        ScanFinished::NAME => ScanFinished::class,
+        ScanStarted::NAME => ScanStarted::class,
+        ServerExtensionMissing::NAME => ServerExtensionMissing::class,
+        ServerHealthChecked::NAME => ServerHealthChecked::class,
+        TranscodeFailed::NAME => TranscodeFailed::class,
+        TranscodeFinished::NAME => TranscodeFinished::class,
+        TranscodeStarted::NAME => TranscodeStarted::class,
+        TransferCompleted::NAME => TransferCompleted::class,
+        TransferFailed::NAME => TransferFailed::class,
+        TransferStarted::NAME => TransferStarted::class,
+        UploadCompleted::NAME => UploadCompleted::class,
+        UserRated::NAME => UserRated::class,
+        UserSearched::NAME => UserSearched::class,
+        WatchlistAdded::NAME => WatchlistAdded::class,
+        WatchlistRemoved::NAME => WatchlistRemoved::class,
     ];
 
     /**
-     * Subscribe to one of the app's named events (S-264 Phase 3).
+     * Events a plugin has defined and emits itself, so other plugins can
+     * discover and subscribe to them. Name => the defining plugin's id.
      *
-     * The listener receives the event object — e.g. a `MediaItemEnriched`
-     * carrying the item. Offered on the registry so a plugin has one object for
-     * every kind of contribution rather than reaching for the `Event` facade.
+     * @var array<string, string>
+     */
+    private array $pluginEvents = [];
+
+    /**
+     * Subscribe to a named event — one of the app's, or one another plugin
+     * defined (S-264 Phase 3, extended S-276).
+     *
+     * The listener receives the event payload. For a built-in event that is the
+     * event object (`MediaItemEnriched`, carrying the item); for a plugin-defined
+     * event it is whatever the emitting plugin passed to `emit()`. A friendly
+     * name maps to the app's event class; any other name — including a plugin's
+     * custom `acme.thing.happened` — is used as-is, so plugins can listen to each
+     * other without the app knowing the name ahead of time.
      */
     public function on(string $event, callable $listener): static
     {
@@ -118,11 +204,55 @@ class Registry
     }
 
     /**
-     * The events a plugin may subscribe to, for docs and the admin UI.
+     * Fire a plugin-defined event so any plugin (or the app) that subscribed to
+     * it runs (S-276). This is how one plugin lets others react to something it
+     * did — plugin A `emit()`s `acme.export.finished`, plugin B `on()`s it.
+     *
+     * The name should be namespaced to the plugin (reverse-DNS or the plugin id
+     * as a prefix) to avoid clashing with the app's events or another plugin's.
+     * Payload is passed straight through to every listener.
+     */
+    public function emit(string $event, mixed ...$payload): static
+    {
+        Event::dispatch($event, $payload);
+
+        return $this;
+    }
+
+    /**
+     * Declare a custom event this plugin emits, so it appears in the catalogue
+     * other plugins and the docs read (S-276). Optional — a plugin can `emit()`
+     * without declaring — but declaring makes the event discoverable rather than
+     * something another author has to know about by reading source.
+     */
+    public function defineEvent(string $event, ?string $description = null): static
+    {
+        $this->pluginEvents[$event] = $this->currentPlugin ?? 'unknown';
+
+        return $this;
+    }
+
+    /**
+     * Every event a plugin may subscribe to — the app's built-in catalogue plus
+     * any a plugin has defined. Drives the docs and the admin UI.
      *
      * @return array<int, string>
      */
-    public static function availableEvents(): array
+    public function availableEvents(): array
+    {
+        return array_values(array_unique([
+            ...array_keys(self::EVENTS),
+            ...array_keys($this->pluginEvents),
+        ]));
+    }
+
+    /**
+     * The app's built-in events only, without instantiating the registry — for
+     * static callers and the docs generator.
+     *
+     * @return array<int, string>
+     */
+    public static function builtInEvents(): array
     {
         return array_keys(self::EVENTS);
     }

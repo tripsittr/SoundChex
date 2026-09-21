@@ -5,6 +5,7 @@
 
 namespace App\Models;
 
+use App\Events\NotificationRecorded;
 use App\Jobs\SendWebhookNotificationJob;
 use App\Services\WebhookNotifier;
 use Illuminate\Database\Eloquent\Model;
@@ -68,6 +69,10 @@ class Notification extends Model
             'body' => $body,
             'media_item_id' => $item?->id,
         ]);
+
+        // The single choke point every in-app notification passes through, so a
+        // plugin subscribing to this one event catches them all (S-276).
+        NotificationRecorded::dispatch($notification);
 
         // Fan the same event out to any configured webhook (Discord, Slack, a
         // generic hook) on the queue, so a slow or dead endpoint never holds up

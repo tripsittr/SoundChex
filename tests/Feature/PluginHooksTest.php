@@ -91,7 +91,7 @@ class PluginHooksTest extends TestCase
 
     public function test_the_named_events_are_advertised(): void
     {
-        $events = Registry::availableEvents();
+        $events = Registry::builtInEvents();
 
         $this->assertContains(MediaItemCatalogued::NAME, $events);
         $this->assertContains(MediaItemEnriched::NAME, $events);

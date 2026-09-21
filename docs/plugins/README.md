@@ -134,7 +134,9 @@ source — copy it.
 
 ### Events
 
-React to something the server did:
+React to something the app did. Subscribe by the event's stable name; the
+listener receives the event object (its `public readonly` properties are the
+payload):
 
 ```php
 $registry->on('media.enriched', function ($event) {
@@ -142,11 +144,71 @@ $registry->on('media.enriched', function ($event) {
 });
 ```
 
-| Event | Fired when | Carries |
+The full catalogue — every event a plugin may subscribe to:
+
+| Event | Carries | Fired when |
 |---|---|---|
-| `media.catalogued` | a file enters the library, before enrichment | `item` |
-| `media.enriched` | the pipeline has finished an item | `item` |
-| `playback.recorded` | a play is recorded | `item`, `profileId` |
+| `cover.embedded` | item | A cover image was baked into an item's audio file |
+| `cover.fetched` | item, coverUrl | A verified album cover was fetched for an item |
+| `device.reported` | report | A device sent a diagnostic report (a crash, a failed navigation) — the hook a monitoring plugin needs |
+| `device.signedIn` | deviceName, profileId | A device signed in — an access token was issued for a profile |
+| `device.signedOut` | deviceName | A device signed out — its access token was revoked |
+| `duplicate.detected` | item, original | A duplicate was detected — a byte-identical copy or the same recording in another file |
+| `duplicate.merged` | item, original | A duplicate was merged into the copy that was kept |
+| `duplicate.resolved` | item | A content-match duplicate was resolved by keeping one copy and deleting the other |
+| `episode.added` | item | A new episode of a series already in the library was catalogued |
+| `media.added` | item | A new item finished enriching and settled into the library — distinct from being catalogued, this fires once it is a real, kept item |
+| `media.catalogued` | item | A file has just entered the library (S-264 Phase 3) |
+| `media.deleted` | item | An item was removed from the library (row deleted) |
+| `media.enriched` | item | Enrichment has finished for an item (S-264 Phase 3) |
+| `media.reviewFlagged` | item, source | The metadata pipeline flagged an item as needing a human look — an ambiguous or missing match |
+| `metadata.titleTidied` | item, was, now | An item's title was rewritten during enrichment (an artist stripped, a case change) |
+| `notification.recorded` | notification | An in-app notification was recorded — the single choke point every notification (scan finished, episode added, and future ones) passes through |
+| `playback.completed` | item, profileId | An item was watched or listened to the end (past the completion threshold) — the 'watched'/'scrobble' signal a tracker plugin reports |
+| `playback.progress` | item, profileId, position | A resume position was saved for an item |
+| `playback.recorded` | item, profileId | A play was recorded for an item (S-264 Phase 3) |
+| `playlist.created` | playlist, profileId | A playlist was created |
+| `playlist.deleted` | playlist, profileId | A playlist was deleted |
+| `playlist.updated` | playlist, profileId | A playlist's details or tracks changed |
+| `profile.created` | profile | A viewing profile was created |
+| `profile.deleted` | profile | A viewing profile was deleted |
+| `profile.switched` | profile | The active viewing profile changed |
+| `scan.finished` | result | A library scan finished, carrying its counts (imported, duplicates, unsettled) |
+| `scan.started` | folders | A library scan has begun |
+| `server.extensionMissing` | missing | A required PHP extension is missing on the server — a config fault a monitoring plugin should surface |
+| `server.healthChecked` | metrics, healthy | A scheduled server health check ran — disk, queue depth, failed jobs, scan age |
+| `transcode.failed` | item, reason | A media conversion failed for an item |
+| `transcode.finished` | item, convertedPath | A browser-playable converted copy was produced for an item (converted_path set) |
+| `transcode.started` | item | A media conversion job has begun for an item |
+| `transfer.completed` | transfer | A server-to-server library transfer finished |
+| `transfer.failed` | transfer, reason | A server-to-server library transfer failed |
+| `transfer.started` | transfer | A server-to-server library transfer began |
+| `upload.completed` | count | A bulk upload finished queuing its files for cataloguing |
+| `user.rated` | item, rating, profileId | A profile set or changed an item's rating |
+| `user.searched` | query, resultCount, profileId | Someone ran a library search — the hook for analytics or a 'popular searches' plugin |
+| `watchlist.added` | item, profileId | An item was added to a profile's watchlist — the hook an 'add to Radarr/Sonarr' automation wants |
+| `watchlist.removed` | item, profileId | An item was removed from a profile's watchlist |
+
+`Registry::builtInEvents()` returns this list at runtime.
+
+#### Your own events
+
+A plugin can define and fire its own events, so *other* plugins can react to it:
+
+```php
+// in your register():
+$registry->defineEvent('acme.export.finished', 'An export finished');
+
+// later, when it happens:
+$registry->emit('acme.export.finished', ['file' => 'out.zip']);
+
+// another plugin subscribes just like a built-in one:
+$registry->on('acme.export.finished', fn ($payload) => /* ... */);
+```
+
+Namespace your event names (prefix with your plugin id) so they can't clash with
+the app's or another plugin's. A defined event joins `availableEvents()` so other
+authors can discover it. `emit()` with no subscribers is harmless.
 
 ### A cover source
 
