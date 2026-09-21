@@ -182,4 +182,43 @@ class Registry
     {
         return ! empty($this->filters[$hook]);
     }
+
+    /**
+     * Cover-source classes contributed by plugins.
+     *
+     * @var array<int, array{plugin: string, class: string, priority: int}>
+     */
+    private array $coverSources = [];
+
+    /**
+     * Contribute a cover-art source (S-264, #280).
+     *
+     * The class must implement `CoverSource`. It is tried by CoverArtFetcher as a
+     * fallback after the built-in iTunes/Deezer lookups, in priority order among
+     * the plugin sources — so a plugin can reach an artwork provider the core
+     * does not, without disturbing the built-in path.
+     */
+    public function coverSource(string $sourceClass, int $priority = 100): static
+    {
+        $this->coverSources[] = [
+            'plugin' => $this->currentPlugin ?? 'unknown',
+            'class' => $sourceClass,
+            'priority' => $priority,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * The plugin cover-source classes, in the order they should be tried.
+     *
+     * @return array<int, string>
+     */
+    public function coverSourceClasses(): array
+    {
+        $sorted = $this->coverSources;
+        usort($sorted, fn (array $a, array $b): int => $a['priority'] <=> $b['priority']);
+
+        return array_column($sorted, 'class');
+    }
 }

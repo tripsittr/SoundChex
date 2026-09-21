@@ -5,6 +5,8 @@
 
 namespace App\Services\Metadata;
 
+use App\Plugins\Contracts\CoverSource;
+use App\Plugins\Registry;
 use App\Services\SettingsService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -63,9 +65,12 @@ class CoverArtFetcher
             return $this->albumCache[$key];
         }
 
-        // iTunes first; Deezer as an opt-in fallback for albums it misses.
+        // iTunes first; Deezer as an opt-in fallback for albums it misses; then
+        // any cover source a plugin contributed (S-264, #280), for a provider
+        // the core does not reach.
         $url = $this->itunesCoverUrl($artist, $album)
-            ?? $this->deezerCoverUrl($artist, $album);
+            ?? $this->deezerCoverUrl($artist, $album)
+            ?? $this->pluginCoverUrl($artist, $album);
 
         $path = $url === null ? null : $this->store($url);
 
@@ -79,6 +84,38 @@ class CoverArtFetcher
     }
 
     // ---------------------------------------------------------------- lookup
+
+    /**
+     * A cover URL from a plugin-contributed source, tried in priority order
+     * until one returns something (S-264, #280).
+     *
+     * Each source is resolved through the container and asked; a source that
+     * throws is logged and skipped so one plugin cannot break cover fetching.
+     */
+    private function pluginCoverUrl(string $artist, ?string $album): ?string
+    {
+        foreach (app(Registry::class)->coverSourceClasses() as $class) {
+            if (! class_exists($class)) {
+                continue;
+            }
+
+            try {
+                $source = app($class);
+
+                if ($source instanceof CoverSource) {
+                    $url = $source->coverUrlFor($artist, $album);
+
+                    if (filled($url)) {
+                        return $url;
+                    }
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return null;
+    }
 
     /**
      * A verified iTunes artwork URL for the album, at full resolution, or null.
