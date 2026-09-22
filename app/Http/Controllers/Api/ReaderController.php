@@ -97,6 +97,7 @@ class ReaderController extends Controller
                     'format' => $this->format($item),
                     'chapters' => collect($images)->map(fn (array $image): array => [
                         'position' => $image['page'],
+                        'page' => $image['page'],
                         'title' => null,
                         'text' => '',
                     ])->values(),
@@ -113,7 +114,7 @@ class ReaderController extends Controller
 
         $units = $item->bookContents()
             ->orderBy('position')
-            ->get(['position', 'title', 'text']);
+            ->get(['position', 'page', 'title', 'text']);
 
         if ($units->isEmpty()) {
             // Text extraction produced nothing. If there are images, the book is
@@ -124,6 +125,7 @@ class ReaderController extends Controller
 
             $units = collect($images)->map(fn (array $image): object => (object) [
                 'position' => $image['page'],
+                'page' => $image['page'],
                 'title' => null,
                 'text' => '',
             ]);
@@ -134,6 +136,7 @@ class ReaderController extends Controller
             'format' => $this->format($item),
             'chapters' => $units->map(fn ($u): array => [
                 'position' => $u->position,
+                'page' => $u->page,
                 'title' => $u->title,
                 'text' => $u->text,
             ])->values(),
