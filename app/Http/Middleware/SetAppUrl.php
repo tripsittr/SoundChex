@@ -31,6 +31,19 @@ use Illuminate\Support\Facades\URL;
  */
 class SetAppUrl
 {
+    /**
+     * Config key holding the address this server was configured with, which
+     * this middleware deliberately leaves alone.
+     *
+     * Anything needing the server's own stable address rather than the one the
+     * current request came in on reads this. OAuth redirect URIs are the case
+     * that forced it (S-322): a service matches the redirect_uri against the
+     * single one registered for the app, so it cannot move with the request.
+     * It is defined in `config/app.php` from the same `APP_URL`, so it is set
+     * before any middleware runs and survives a cached config.
+     */
+    public const CONFIGURED_URL = 'app.configured_url';
+
     public function handle(Request $request, Closure $next): Response
     {
         $scheme = $request->getScheme();          // http / https, via TrustProxies
