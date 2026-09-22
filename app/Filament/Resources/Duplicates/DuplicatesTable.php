@@ -17,7 +17,6 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Forms\Components\Radio;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -221,14 +220,10 @@ class DuplicatesTable
                     ->badge()
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                // The "why": a compact info icon whose tooltip carries the
-                // one-line reason, so the column takes a few pixels rather than a
-                // wide wrapped block that pushed the actions away.
-                IconColumn::make('review_reason')
-                    ->label('Why')
-                    ->icon('heroicon-o-information-circle')
-                    ->color('gray')
-                    ->tooltip(fn (MediaItem $record): string => static::reviewReason($record)),
+                // No "Why" column: the one-line reason now rides as the tooltip
+                // on the "Why?" action, which already opens the full provenance —
+                // one info icon that summarises on hover and details on click,
+                // rather than a column and an action doing the same job twice.
 
                 TextColumn::make('match_confidence')
                     ->label('Confidence')
@@ -304,6 +299,10 @@ class DuplicatesTable
             ->label('Why?')
             ->icon('heroicon-o-information-circle')
             ->color('gray')
+            // The one-line reason on hover; the full source-by-source provenance
+            // on click. One info icon, so the reason isn't duplicated across a
+            // column and an action.
+            ->tooltip(fn (MediaItem $record): string => static::reviewReason($record))
             ->modalHeading('What the pipeline found')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Close')
