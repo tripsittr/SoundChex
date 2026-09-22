@@ -208,10 +208,17 @@ class BookTextExtractor
                 continue;
             }
 
+            // The heading is read from the raw text (its own line) before the body
+            // is reflowed into paragraphs, so joining lines can't swallow it.
+            $title = $this->chapterHeading($text);
+
             $units[] = [
                 'page' => $number,
-                'title' => $this->chapterHeading($text),
-                'text' => $text,
+                'title' => $title,
+                // Unwrap pdftotext's physical line breaks into flowing paragraphs
+                // so the reader re-wraps clean prose, not pre-wrapped ragged lines
+                // (S-306).
+                'text' => $this->reflowParagraphs($text),
             ];
         }
 
@@ -316,6 +323,96 @@ class BookTextExtractor
         $isCapitalised = preg_match('/^\p{Lu}?[\p{Ll}\'-]+$/u', $token) === 1;
 
         return $isAllCaps || $isCapitalised;
+    }
+
+    /**
+     * Unwraps a page's physical line breaks into flowing paragraphs (S-306).
+     *
+     * `pdftotext` keeps each visual line of the PDF as its own line, so a narrow
+     * column arrives pre-wrapped: "pursuing the\nnegative generates the positive.
+     * The pain\nyou pursue in the gym". Handed to a reflowable reader that wraps
+     * the text itself, those hard breaks read as ragged, jumbled lines. This
+     * rejoins soft-wrapped lines into paragraphs and keeps only the real breaks:
+     *
+     *  - a blank line is a paragraph break (kept);
+     *  - a line ending in a hyphen is a word split across lines — join with no
+     *    space and drop the hyphen ("some-\nthing" → "something");
+     *  - a short line that ends a paragraph (ends in sentence punctuation and the
+     *    next line starts a new capitalised sentence, or is much shorter than the
+     *    ones around it) ends the paragraph;
+     *  - otherwise the line is a soft wrap and joins the next with a space.
+     */
+    private function reflowParagraphs(string $text): string
+    {
+        $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
+
+        // A page's typical line length, to spot a short line that ends a
+        // paragraph versus one that merely wrapped.
+        $lengths = array_map(fn (string $l): int => mb_strlen(trim($l)), array_filter($lines, fn ($l) => trim($l) !== ''));
+        $typical = $lengths === [] ? 0 : (array_sum($lengths) / count($lengths));
+
+        $paragraphs = [];
+        $current = '';
+
+        $flush = function () use (&$paragraphs, &$current): void {
+            $current = trim(preg_replace('/[ \t]+/', ' ', $current) ?? $current);
+            if ($current !== '') {
+                $paragraphs[] = $current;
+            }
+            $current = '';
+        };
+
+        // Set when the previous line ended mid-word (a hyphenated break), so the
+        // next line joins it with no space.
+        $joinNoSpace = false;
+
+        $count = count($lines);
+        foreach ($lines as $i => $raw) {
+            $line = rtrim($raw);
+            $trimmed = trim($line);
+
+            if ($trimmed === '') {
+                // Blank line: a real paragraph break.
+                $joinNoSpace = false;
+                $flush();
+
+                continue;
+            }
+
+            if ($joinNoSpace) {
+                // Continue the word split across the previous line break.
+                $current .= $trimmed;
+                $joinNoSpace = false;
+            } else {
+                $current .= ($current === '' ? '' : ' ').$trimmed;
+            }
+
+            // A word hyphenated across this line break — drop the trailing hyphen
+            // and let the next line join with no space.
+            if (preg_match('/(\p{L})[\x{2010}\x{2011}-]$/u', $trimmed)) {
+                $current = mb_substr($current, 0, -1);
+                $joinNoSpace = true;
+
+                continue;
+            }
+
+            // Decide whether this line ends the paragraph. Look at the next line:
+            // end the paragraph on the last line, before a blank, or when this
+            // line is noticeably short (a paragraph's last line) and closes a
+            // sentence.
+            $next = $i + 1 < $count ? trim($lines[$i + 1]) : '';
+            $endsSentence = (bool) preg_match('/[.!?][")\x{2019}\x{201D}]?$/u', $trimmed);
+            $isShort = $typical > 0 && mb_strlen($trimmed) < $typical * 0.6;
+
+            if ($next === '' || ($endsSentence && $isShort)) {
+                $flush();
+            }
+        }
+
+        $flush();
+
+        // Paragraphs separated by a blank line, so the reader shows real spacing.
+        return implode("\n\n", $paragraphs);
     }
 
     /**
