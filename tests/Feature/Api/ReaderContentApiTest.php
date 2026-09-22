@@ -108,6 +108,31 @@ class ReaderContentApiTest extends TestCase
             ->assertHeader('Content-Type', 'image/png');
     }
 
+    public function test_a_scanned_book_reads_as_its_page_images_without_waiting_on_ocr(): void
+    {
+        // A scan has no text layer, so it is not "fast" — but its pages are
+        // already extracted as images. It should open straight to those pages
+        // (ready), not hang on the OCR queue, and queue OCR to add text later.
+        Queue::fake();
+        $book = $this->book(name: 'scan.pdf'); // placeholder bytes: no text layer
+
+        $assetPath = 'book-assets/'.$book->id.'/img-001.png';
+        Storage::disk('local')->put($assetPath, 'PNGDATA');
+        BookAsset::create([
+            'media_item_id' => $book->id, 'page' => 1, 'path' => $assetPath,
+            'width' => 800, 'height' => 1200, 'format' => 'png', 'is_significant' => true,
+        ]);
+
+        $this->getJson(route('api.items.reader.content', $book))
+            ->assertOk()
+            ->assertJsonPath('status', 'ready')
+            ->assertJsonPath('chapters.0.position', 1)
+            ->assertJsonPath('images.0.page', 1);
+
+        // OCR still queued, to enrich the pages with selectable text later.
+        Queue::assertPushed(ExtractBookContentJob::class);
+    }
+
     public function test_a_non_book_has_no_content_endpoint(): void
     {
         $movie = MediaItem::create([
