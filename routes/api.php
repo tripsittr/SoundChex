@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\LibraryController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PlaylistController;
+use App\Http\Controllers\Api\PlaylistImportController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReaderController;
 use App\Http\Controllers\Api\ServerHealthController;
@@ -219,6 +220,14 @@ Route::prefix('v1')->group(function (): void {
         // Playlists (Collections), account-scoped and gated per track.
         Route::get('/playlists', [PlaylistController::class, 'index'])->name('api.playlists');
         Route::post('/playlists', [PlaylistController::class, 'store'])->name('api.playlists.store');
+
+        // Porting a playlist in from a file (S-310). Declared before the
+        // `{collection}` routes so "imports" is not read as a playlist id.
+        Route::get('/playlists/imports', [PlaylistImportController::class, 'index'])->name('api.playlists.imports');
+        Route::post('/playlists/imports', [PlaylistImportController::class, 'store'])->name('api.playlists.imports.store');
+        Route::get('/playlists/imports/{import}', [PlaylistImportController::class, 'show'])->name('api.playlists.imports.show');
+        Route::post('/playlists/imports/{import}/resolve', [PlaylistImportController::class, 'resolve'])->name('api.playlists.imports.resolve');
+
         Route::get('/playlists/{collection}', [PlaylistController::class, 'show'])->name('api.playlists.show');
         Route::patch('/playlists/{collection}', [PlaylistController::class, 'update'])->name('api.playlists.update');
         Route::delete('/playlists/{collection}', [PlaylistController::class, 'destroy'])->name('api.playlists.destroy');
