@@ -77,7 +77,7 @@ class MetadataReviewTabTest extends TestCase
         Queue::assertPushed(EnrichMediaItemJob::class);
     }
 
-    public function test_marking_reviewed_clears_the_flag(): void
+    public function test_marking_reviewed_clears_the_flag_and_stamps_reviewed_at(): void
     {
         $flagged = $this->item('Unsure Track', ProcessingStatus::NeedsReview);
 
@@ -86,7 +86,42 @@ class MetadataReviewTabTest extends TestCase
             ->callAction(TestAction::make('markReviewed')->table($flagged))
             ->assertHasNoErrors();
 
-        $this->assertSame(ProcessingStatus::Complete, $flagged->fresh()->processing_status);
+        $fresh = $flagged->fresh();
+        $this->assertSame(ProcessingStatus::Complete, $fresh->processing_status);
+        // The human-reviewed stamp is what stops a later re-enrichment re-flagging
+        // it (S-302).
+        $this->assertNotNull($fresh->reviewed_at);
+    }
+
+    public function test_reenrichment_does_not_reflag_a_human_reviewed_item(): void
+    {
+        // The bug (S-302): a bulk re-enrich marched through the library and sent
+        // already-reviewed songs back to the review queue. With reviewed_at set,
+        // the job must keep the item complete even when the pipeline flags review.
+        $item = $this->item('Reviewed Track', ProcessingStatus::Complete);
+        $item->forceFill(['reviewed_at' => now()])->saveQuietly();
+
+        // A pipeline that always asks for review, as an ambiguous match would.
+        $this->app->bind(\App\Services\Metadata\MetadataPipeline::class, function () {
+            return new class extends \App\Services\Metadata\MetadataPipeline
+            {
+                public function __construct() {}
+
+                public function run(MediaItem $item): void
+                {
+                    $item->update(['processing_status' => ProcessingStatus::NeedsReview]);
+                }
+            };
+        });
+
+        (new EnrichMediaItemJob($item->id))->handle(
+            app(\App\Services\Metadata\MetadataPipeline::class),
+            app(\App\Services\LibraryOrganizer::class),
+            app(\App\Services\MetadataHistory::class),
+        );
+
+        // Stayed complete — the human's decision was respected.
+        $this->assertSame(ProcessingStatus::Complete, $item->fresh()->processing_status);
     }
 
     public function test_the_merge_action_does_not_leak_onto_the_metadata_tab_after_visiting_duplicates(): void

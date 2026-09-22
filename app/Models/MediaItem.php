@@ -51,6 +51,7 @@ class MediaItem extends Model
         'transcode_status',
         'transcode_percent',
         'processing_status',
+        'reviewed_at',
         'match_confidence',
         'matched_by',
         'source_service',
@@ -66,6 +67,7 @@ class MediaItem extends Model
     protected $casts = [
         'type' => MediaItemType::class,
         'processing_status' => ProcessingStatus::class,
+        'reviewed_at' => 'datetime',
         'match_confidence' => MatchConfidence::class,
         'duplicate_status' => DuplicateStatus::class,
         'duplicate_match' => DuplicateMatch::class,

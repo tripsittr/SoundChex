@@ -61,6 +61,12 @@ class EnrichMediaItemJob implements ShouldQueue
 
             if ($item->processing_status !== ProcessingStatus::NeedsReview) {
                 $item->update(['processing_status' => ProcessingStatus::Complete]);
+            } elseif ($item->reviewed_at !== null) {
+                // A human has already looked at this item and judged it fine
+                // (S-302). A re-enrichment must not overrule that and send it back
+                // to the review queue — that is what made reviewed songs keep
+                // reappearing. Keep it complete and leave the review flag off.
+                $item->update(['processing_status' => ProcessingStatus::Complete]);
             } else {
                 // A source found nothing it was sure of and asked for a human
                 // look (S-276).

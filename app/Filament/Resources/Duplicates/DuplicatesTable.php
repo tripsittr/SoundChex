@@ -289,6 +289,12 @@ class DuplicatesTable
             ->icon('heroicon-o-arrow-path')
             ->color('warning')
             ->action(function (MediaItem $record): void {
+                // An explicit re-enrich is a request to re-check, so clear the
+                // human-reviewed stamp — this run *may* surface a review again
+                // (S-302). Background/bulk enrichment does not clear it, so it
+                // keeps respecting a prior "Looks fine".
+                $record->forceFill(['reviewed_at' => null])->saveQuietly();
+
                 EnrichMediaItemJob::dispatch($record->id);
 
                 Notification::make()
@@ -331,7 +337,12 @@ class DuplicatesTable
             ->color('gray')
             ->visible(fn (MediaItem $record): bool => $record->processing_status === ProcessingStatus::NeedsReview)
             ->action(function (MediaItem $record): void {
-                $record->forceFill(['processing_status' => ProcessingStatus::Complete])->saveQuietly();
+                // Stamp reviewed_at so a later re-enrichment leaves this decision
+                // alone instead of re-flagging it (S-302).
+                $record->forceFill([
+                    'processing_status' => ProcessingStatus::Complete,
+                    'reviewed_at' => now(),
+                ])->saveQuietly();
 
                 Notification::make()
                     ->title('Marked reviewed')
@@ -349,6 +360,9 @@ class DuplicatesTable
             ->color('warning')
             ->action(function (Collection $records): void {
                 foreach ($records as $record) {
+                    // Explicit re-check: clear the reviewed stamp so this run may
+                    // flag review again (S-302).
+                    $record->forceFill(['reviewed_at' => null])->saveQuietly();
                     EnrichMediaItemJob::dispatch($record->id);
                 }
 
@@ -372,7 +386,12 @@ class DuplicatesTable
 
                 foreach ($records as $record) {
                     if ($record->processing_status === ProcessingStatus::NeedsReview) {
-                        $record->forceFill(['processing_status' => ProcessingStatus::Complete])->saveQuietly();
+                        // Stamp reviewed_at so re-enrichment respects the human's
+                        // call and won't re-flag it (S-302).
+                        $record->forceFill([
+                            'processing_status' => ProcessingStatus::Complete,
+                            'reviewed_at' => now(),
+                        ])->saveQuietly();
                         $cleared++;
                     }
                 }
