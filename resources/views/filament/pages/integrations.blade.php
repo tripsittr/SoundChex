@@ -108,7 +108,8 @@
                                     color="danger"
                                     outlined
                                     wire:click="unlink('{{ $row['key'] }}')"
-                                    wire:confirm="Forget this key? Nothing is uninstalled — this install just stops talking to it.">
+                                    wire:loading.attr="disabled"
+                                    wire:target="unlink">
                                     Unlink
                                 </x-filament::button>
                             @else
