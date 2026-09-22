@@ -20,6 +20,7 @@ class BookContent extends Model
     protected $fillable = [
         'media_item_id',
         'position',
+        'page',
         'title',
         'text',
     ];
@@ -28,6 +29,7 @@ class BookContent extends Model
     {
         return [
             'position' => 'integer',
+            'page' => 'integer',
         ];
     }
 

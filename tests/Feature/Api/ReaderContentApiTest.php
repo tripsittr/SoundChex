@@ -84,6 +84,36 @@ class ReaderContentApiTest extends TestCase
             ->assertJsonPath('chapters.1.position', 2);
     }
 
+    public function test_content_carries_each_units_source_page(): void
+    {
+        // The reader shows "Page N" as it scrolls, so the page a unit came from
+        // rides along with it (null for EPUB, which has no fixed pages).
+        $book = $this->book();
+        BookContent::create(['media_item_id' => $book->id, 'position' => 1, 'page' => 12, 'title' => 'Chapter 1: Start', 'text' => 'Body.']);
+        BookContent::create(['media_item_id' => $book->id, 'position' => 2, 'page' => 13, 'title' => null, 'text' => 'More.']);
+
+        $this->getJson(route('api.items.reader.content', $book))
+            ->assertOk()
+            ->assertJsonPath('chapters.0.page', 12)
+            ->assertJsonPath('chapters.0.title', 'Chapter 1: Start')
+            ->assertJsonPath('chapters.1.page', 13)
+            ->assertJsonPath('chapters.1.title', null);
+    }
+
+    public function test_epub_units_have_no_page_number(): void
+    {
+        // An EPUB has no fixed pages; every unit's page is null so the reader
+        // shows the chapter instead.
+        $book = $this->book(name: 'book.epub');
+        Storage::disk('local')->put($book->file_path, $this->minimalEpub());
+
+        app(BookTextExtractor::class)->extract($book->fresh());
+
+        foreach ($book->bookContents()->get() as $unit) {
+            $this->assertNull($unit->page);
+        }
+    }
+
     public function test_content_carries_a_books_images_keyed_by_page(): void
     {
         $book = $this->book();

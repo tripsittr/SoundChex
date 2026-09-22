@@ -36,11 +36,31 @@ class BookTextExtractor
     public function __construct(private OcrService $ocr) {}
 
     /**
-     * Whether a book already has extracted content.
+     * Whether a book already has *current* extracted content.
+     *
+     * False when it has none, and also when what it has predates the page-aware
+     * extraction (S-298): a PDF whose cached rows carry no page number is from
+     * the old "Page N"-titled scheme, so it re-extracts once on next open and
+     * self-heals — no mass reprocessing needed. EPUB rows have no page by design,
+     * so they are judged current as long as any row exists.
      */
     public function hasContent(MediaItem $item): bool
     {
-        return BookContent::where('media_item_id', $item->id)->exists();
+        $rows = BookContent::where('media_item_id', $item->id);
+
+        if (! $rows->exists()) {
+            return false;
+        }
+
+        $path = $item->absoluteFilePath();
+        $isPdf = $path !== null && strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'pdf';
+
+        // A PDF extracted under the old scheme has pages null throughout; re-run.
+        if ($isPdf && ! (clone $rows)->whereNotNull('page')->exists()) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -113,6 +133,7 @@ class BookTextExtractor
                 BookContent::create([
                     'media_item_id' => $item->id,
                     'position' => $index + 1,
+                    'page' => $unit['page'] ?? null,
                     'title' => $unit['title'],
                     'text' => $unit['text'],
                 ]);
@@ -127,7 +148,13 @@ class BookTextExtractor
     /**
      * Every page's text — embedded where present, OCR where the page is a scan.
      *
-     * @return array<int, array{title: ?string, text: string}>
+     * Each unit carries the source `page` number (so the reader can show it) and,
+     * when the page opens a chapter, that chapter's heading as `title`. It does
+     * *not* title every page "Page N": a bold "Page N" atop every screen of a
+     * reflowed book is noise, and reads as jumbled. Blank pages (covers, section
+     * breaks) are dropped, not emitted as empty units.
+     *
+     * @return array<int, array{page: int, title: ?string, text: string}>
      */
     private function fromPdf(MediaItem $item, string $path, bool $allowOcr = true): array
     {
@@ -153,18 +180,43 @@ class BookTextExtractor
                 $text = trim((string) ($ocr ?? $text));
             }
 
+            // A blank page (a cover, a section break) contributes nothing to a
+            // reflowed read — skip it rather than leave an empty unit that shows
+            // as a gap. Its page number is simply not represented.
+            if ($text === '') {
+                continue;
+            }
+
             $units[] = [
-                'title' => 'Page '.$number,
+                'page' => $number,
+                'title' => $this->chapterHeading($text),
                 'text' => $text,
             ];
         }
 
-        // Drop trailing blank pages so the reader does not end on emptiness.
-        while (! empty($units) && $units[count($units) - 1]['text'] === '') {
-            array_pop($units);
+        return $units;
+    }
+
+    /**
+     * A chapter heading if the page opens one — e.g. "CHAPTER 1: Don't Try" or a
+     * bare "Chapter Five" — so the reader can show which chapter is being read.
+     * Null when the page is mid-chapter (most pages), so no false headings appear.
+     */
+    private function chapterHeading(string $text): ?string
+    {
+        // Look only at the first non-empty line: a chapter starts at the top of a
+        // page, not buried in its body (where "chapter" may just be a word).
+        $firstLine = trim(strtok($text, "\n") ?: '');
+
+        if ($firstLine === '' || mb_strlen($firstLine) > 80) {
+            return null;
         }
 
-        return $units;
+        if (preg_match('/^(chapter|part|book)\b[\s.:\-—]*(\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)?\b.*/iu', $firstLine)) {
+            return $firstLine;
+        }
+
+        return null;
     }
 
     /**
@@ -201,7 +253,9 @@ class BookTextExtractor
     /**
      * An EPUB's chapters in spine order, each stripped to plain text.
      *
-     * @return array<int, array{title: ?string, text: string}>
+     * EPUB has no fixed pages, so `page` is null; the reader shows the chapter.
+     *
+     * @return array<int, array{page: null, title: ?string, text: string}>
      */
     private function fromEpub(string $path): array
     {
@@ -243,6 +297,7 @@ class BookTextExtractor
                 }
 
                 $units[] = [
+                    'page' => null,
                     'title' => $this->firstHeading($content),
                     'text' => $text,
                 ];
