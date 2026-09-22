@@ -22,6 +22,7 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -206,7 +207,16 @@ class DuplicatesTable
 
                 TextColumn::make('title')
                     ->label('Item')
-                    ->searchable()
+                    // Search the title *and* the track's artist/album (which show
+                    // as the subtitle), so typing an artist finds their songs —
+                    // not just an exact title match.
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        return $query
+                            ->where('title', 'like', "%{$search}%")
+                            ->orWhereHas('musicMetadata', fn (Builder $meta): Builder => $meta
+                                ->where('artist', 'like', "%{$search}%")
+                                ->orWhere('album', 'like', "%{$search}%"));
+                    })
                     // Capped and wrapped so a long title doesn't stretch the row
                     // and push the actions off-screen — the reason it was hard to
                     // review.
