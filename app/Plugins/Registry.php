@@ -451,8 +451,13 @@ class Registry
      * vertical rather than a UI over always-present core routes.
      *
      * `prefix` and `middleware` wrap the file's routes, so a plugin's API can sit
-     * under the same `auth:sanctum` guard the core API uses without repeating it
-     * on every route.
+     * under the same guard the core API uses without repeating it on every route.
+     *
+     * IMPORTANT for an API: include the `api` middleware group, not just
+     * `auth:sanctum`. The `api` group carries `SubstituteBindings`, which resolves
+     * route-model parameters (`{import}`, `{item}`); without it every bound route
+     * returns a bare 404 even though the URL matched. So an authed API plugin
+     * registers `middleware: ['api', 'auth:sanctum']`.
      *
      * @param  array<int, string>  $middleware
      */

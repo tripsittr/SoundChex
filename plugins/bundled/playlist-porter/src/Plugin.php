@@ -42,9 +42,12 @@ class Plugin implements SoundChexPlugin
         $registry->migrations(__DIR__.'/../database/migrations');
 
         // The plugin owns its own API too: the /playlists/imports and
-        // /playlists/sources endpoints. Under the same api/v1 prefix and
-        // auth:sanctum guard the core API uses, so the URLs are unchanged.
-        $registry->routes(__DIR__.'/../routes/api.php', prefix: 'api/v1', middleware: ['auth:sanctum']);
+        // /playlists/sources endpoints. Under the same api/v1 prefix, the `api`
+        // middleware group and the auth:sanctum guard the core API uses, so the
+        // URLs and behaviour are unchanged. The `api` group is essential: it
+        // carries SubstituteBindings, which resolves route-model params like
+        // {import} — without it every bound route (show, resolve) 404s.
+        $registry->routes(__DIR__.'/../routes/api.php', prefix: 'api/v1', middleware: ['api', 'auth:sanctum']);
     }
 
     public function boot(Registry $registry): void
