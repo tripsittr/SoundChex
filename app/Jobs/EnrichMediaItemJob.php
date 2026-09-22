@@ -77,6 +77,7 @@ class EnrichMediaItemJob implements ShouldQueue
 
             $this->writeCredits($item);
             $this->tidyTitle($item);
+            $this->normalizeAlbum($item);
             $this->embedCover($item);
             $this->refreshAvailability($item);
             $this->fileIntoLibrary($item, $organizer);
@@ -242,6 +243,38 @@ class EnrichMediaItemJob implements ShouldQueue
         } catch (\Throwable $e) {
             // The metadata is already saved; a clumsy title is not worth
             // failing the run and re-fetching everything.
+            report($e);
+        }
+    }
+
+    /**
+     * Adopt the album spelling already prevailing in the library, so a track
+     * whose source title-cases "the"/"of" differently doesn't split the album
+     * into a capitalization duplicate (S-303). Music only.
+     *
+     * Non-fatal: a mismatched album casing is cosmetic, not worth failing the run.
+     */
+    private function normalizeAlbum(MediaItem $item): void
+    {
+        if ($item->type !== MediaItemType::Music) {
+            return;
+        }
+
+        try {
+            $item->refresh()->load('musicMetadata');
+            $meta = $item->musicMetadata;
+
+            if ($meta === null || blank($meta->album)) {
+                return;
+            }
+
+            $canonical = app(\App\Services\Metadata\AlbumTitleNormalizer::class)
+                ->canonicalForAlbum($meta->artist, $meta->album);
+
+            if ($canonical !== null && $canonical !== $meta->album) {
+                $meta->forceFill(['album' => $canonical])->saveQuietly();
+            }
+        } catch (\Throwable $e) {
             report($e);
         }
     }
