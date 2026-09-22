@@ -425,4 +425,106 @@ class Registry
     {
         return array_values(array_unique(array_column($this->adminPages, 'class')));
     }
+
+    // MARK: - Self-contained seams: routes, migrations, bindings (S-314)
+
+    /**
+     * Route files contributed by plugins, loaded only while the plugin is on.
+     *
+     * @var array<int, array{plugin: string, path: string, prefix: ?string, middleware: array<int, string>}>
+     */
+    private array $routeFiles = [];
+
+    /**
+     * Migration directories contributed by plugins.
+     *
+     * @var array<int, array{plugin: string, path: string}>
+     */
+    private array $migrationPaths = [];
+
+    /**
+     * Contribute a routes file so a plugin can own its own endpoints (S-314).
+     *
+     * The file is an ordinary Laravel routes file (`Route::get(...)`), loaded
+     * only while the plugin is enabled — so disabling the plugin removes its
+     * endpoints entirely (they 404), which is what makes a plugin a self-contained
+     * vertical rather than a UI over always-present core routes.
+     *
+     * `prefix` and `middleware` wrap the file's routes, so a plugin's API can sit
+     * under the same `auth:sanctum` guard the core API uses without repeating it
+     * on every route.
+     *
+     * @param  array<int, string>  $middleware
+     */
+    public function routes(string $path, ?string $prefix = null, array $middleware = []): static
+    {
+        $this->routeFiles[] = [
+            'plugin' => $this->currentPlugin ?? 'unknown',
+            'path' => $path,
+            'prefix' => $prefix,
+            'middleware' => $middleware,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * The route files contributed by enabled plugins.
+     *
+     * @return array<int, array{plugin: string, path: string, prefix: ?string, middleware: array<int, string>}>
+     */
+    public function routeFiles(): array
+    {
+        return $this->routeFiles;
+    }
+
+    /**
+     * Contribute a directory of migrations so a plugin can ship its own schema
+     * (S-314). Registered with Laravel's migrator, so `migrate` runs them with
+     * the core migrations and a plugin can own its tables.
+     */
+    public function migrations(string $path): static
+    {
+        $this->migrationPaths[] = [
+            'plugin' => $this->currentPlugin ?? 'unknown',
+            'path' => $path,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * The migration directories contributed by plugins, de-duplicated.
+     *
+     * @return array<int, string>
+     */
+    public function migrationPaths(): array
+    {
+        return array_values(array_unique(array_column($this->migrationPaths, 'path')));
+    }
+
+    /**
+     * Bind a service into the container for a plugin (S-314).
+     *
+     * A plugin's own services (a parser, a matcher, a source) are bound here
+     * rather than the plugin reaching into the container directly, so the binding
+     * is attributed and applied as part of loading an enabled plugin. `shared`
+     * makes it a singleton. The concrete may be a class name or a factory closure.
+     */
+    public function binding(string $abstract, string|\Closure $concrete, bool $shared = false): static
+    {
+        if ($shared) {
+            app()->singleton($abstract, $concrete);
+        } else {
+            app()->bind($abstract, $concrete);
+        }
+
+        return $this;
+    }
+
+    /** A shared (singleton) binding — the common case for a plugin's services. */
+    public function singleton(string $abstract, string|\Closure $concrete): static
+    {
+        return $this->binding($abstract, $concrete, shared: true);
+    }
 }
