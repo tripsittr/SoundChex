@@ -93,6 +93,23 @@ class OAuthRedirectTest extends TestCase
         );
     }
 
+    public function test_clearing_the_override_falls_back_to_the_server_address(): void
+    {
+        $settings = app(SettingsService::class);
+        $redirects = app(OAuthRedirect::class);
+
+        $settings->set(OAuthRedirect::BASE_SETTING, 'https://music.example.com');
+        $this->assertStringStartsWith('https://music.example.com', $redirects->for('spotify'));
+
+        // An empty override is how the form offers a way back to the default.
+        $settings->set(OAuthRedirect::BASE_SETTING, '');
+
+        $this->assertSame(
+            $redirects->defaultBaseUrl().'/playlist-porter/oauth/spotify/callback',
+            $redirects->for('spotify'),
+        );
+    }
+
     public function test_configured_base_url_does_not_double_its_slash(): void
     {
         app(SettingsService::class)->set(OAuthRedirect::BASE_SETTING, 'https://music.example.com///');
