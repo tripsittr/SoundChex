@@ -58,15 +58,34 @@ class ReaderContentApiTest extends TestCase
         Queue::assertNotPushed(ExtractBookContentJob::class);
     }
 
-    public function test_a_fast_book_with_no_text_settles_as_empty(): void
+    public function test_a_book_with_no_text_and_no_ocr_settles_as_empty(): void
     {
-        // A "fast" book whose bytes aren't a real EPUB extracts to nothing and is
-        // reported empty rather than looping — the reader stops asking.
+        // A book whose bytes yield no text and that OCR cannot help (an EPUB, or a
+        // PDF with OCR off) is reported empty rather than looping — the reader
+        // stops asking instead of polling a job that can never produce content.
         $book = $this->book(name: 'book.epub'); // placeholder bytes, not a real epub
 
         $this->getJson(route('api.items.reader.content', $book))
             ->assertOk()
             ->assertJsonPath('status', 'empty');
+    }
+
+    public function test_a_text_book_opens_in_request_without_touching_the_queue(): void
+    {
+        // The reader-hang fix (S-299): a text PDF/EPUB is extracted in the
+        // request and returned ready, with no ExtractBookContentJob queued — so
+        // opening a book never waits on a background worker that may not be
+        // watching the queue.
+        Queue::fake();
+        $book = $this->book(name: 'book.epub');
+        Storage::disk('local')->put($book->file_path, $this->minimalEpub());
+
+        $this->getJson(route('api.items.reader.content', $book))
+            ->assertOk()
+            ->assertJsonPath('status', 'ready')
+            ->assertJsonPath('chapters.0.text', fn ($t): bool => str_contains((string) $t, 'Ishmael'));
+
+        Queue::assertNotPushed(ExtractBookContentJob::class);
     }
 
     public function test_it_returns_the_ordered_chapters_once_extracted(): void

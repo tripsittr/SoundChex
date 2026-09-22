@@ -76,39 +76,54 @@ class ReaderController extends Controller
         $images = $this->images($item);
 
         if (! $extractor->hasContent($item)) {
-            // A text PDF or an EPUB extracts in a fraction of a second, so do it
-            // now rather than making the reader wait on a queue. Crucially with
-            // OCR *off*: a text book may still have a few blank scanned pages
-            // (covers), and OCR-ing them in the request pushes it from ~0.4s to
-            // several seconds — long enough that the app's poll times out and
-            // loops forever. Those pages come back empty (they were blank); a
-            // later queued run OCRs them if they turn out to hold anything.
-            if ($extractor->isFast($item)) {
-                $extractor->extract($item, allowOcr: false);
-            } elseif (! empty($images)) {
-                // A scanned book: its pages *are* the images, and they are already
-                // extracted. Show them now — one page per image — so the book
-                // opens straight away, and queue the (slow) OCR to add selectable
-                // text to those pages on a later open.
-                ExtractBookContentJob::dispatch($item->id);
+            // Extract the text now, in the request, rather than making the reader
+            // wait on a background worker — a text PDF or EPUB is a fraction of a
+            // second. This is done with OCR *off*, which is the important part:
+            //  - a text book extracts in ~0.5s and comes back ready immediately;
+            //  - a scanned page has no embedded text, so it comes back empty here
+            //    and is carried by its page image (below) instead — never OCR'd in
+            //    the request, which would take seconds and time out the poll.
+            // Crucially we no longer gate this on isFast(): the page-sampling
+            // heuristic can misjudge a book (lots of front matter, an unusual text
+            // layer), and when it guessed "scan" the book was dispatched to the
+            // queue and — if no worker is watching that queue — hung on "preparing
+            // this book" forever. Extracting unconditionally means opening never
+            // depends on a worker; the queue is only for adding OCR text later.
+            $extractor->extract($item, allowOcr: false);
 
-                return response()->json([
-                    'status' => 'ready',
-                    'format' => $this->format($item),
-                    'chapters' => collect($images)->map(fn (array $image): array => [
-                        'position' => $image['page'],
-                        'page' => $image['page'],
-                        'title' => null,
-                        'text' => '',
-                    ])->values(),
-                    'images' => $images,
-                ]);
-            } else {
-                // No text layer and no images to fall back on — OCR is the only
-                // hope, on the queue.
-                ExtractBookContentJob::dispatch($item->id);
+            // If the text pass found nothing (a true scan) but the book's pages
+            // are already available as images, show those now — one page per
+            // image — and queue the slow OCR to add selectable text on a later
+            // open.
+            if (! $extractor->hasContent($item)) {
+                if (! empty($images)) {
+                    ExtractBookContentJob::dispatch($item->id);
 
-                return response()->json(['status' => 'processing']);
+                    return response()->json([
+                        'status' => 'ready',
+                        'format' => $this->format($item),
+                        'chapters' => collect($images)->map(fn (array $image): array => [
+                            'position' => $image['page'],
+                            'page' => $image['page'],
+                            'title' => null,
+                            'text' => '',
+                        ])->values(),
+                        'images' => $images,
+                    ]);
+                }
+
+                // No text and no images. OCR is the only thing that could still
+                // produce a read — and only for a scanned PDF with OCR available.
+                // Anything else (an EPUB with no text, a PDF when OCR is off) will
+                // never yield content, so settle as `empty` rather than queue a
+                // job that can't help and leave the reader polling forever.
+                if ($this->canOcr($item)) {
+                    ExtractBookContentJob::dispatch($item->id);
+
+                    return response()->json(['status' => 'processing']);
+                }
+
+                return response()->json(['status' => 'empty']);
             }
         }
 
@@ -146,6 +161,18 @@ class ReaderController extends Controller
             // carries a scanned or illustrated book (its pages are images).
             'images' => $images,
         ]);
+    }
+
+    /**
+     * Whether OCR could still turn this book into a read — i.e. it is a scanned
+     * PDF and OCR is available. An EPUB is never OCR'd (it is markup, not pages),
+     * and with OCR off nothing more can be extracted, so in those cases a book
+     * with no text is simply empty rather than "processing" forever.
+     */
+    private function canOcr(MediaItem $item): bool
+    {
+        return $this->format($item) === 'pdf'
+            && app(\App\Services\OcrService::class)->isAvailable();
     }
 
     /**
