@@ -116,53 +116,59 @@
             </p>
         </x-filament::section>
     @else
-        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
             @foreach ($plugins as $plugin)
-                <div @class([
-                    'flex flex-col gap-3 rounded-xl border p-5 transition',
-                    'border-primary-500/40 bg-primary-50/30 dark:bg-primary-500/5' => $plugin['enabled'],
-                    'border-gray-200 dark:border-white/10' => ! $plugin['enabled'],
-                ])>
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span class="font-semibold">{{ $plugin['name'] }}</span>
-                                <span class="font-mono text-xs opacity-60">{{ $plugin['version'] }}</span>
-                                @if ($plugin['enabled'])
-                                    <x-filament::badge color="success" size="sm">Enabled</x-filament::badge>
-                                @else
-                                    <x-filament::badge color="gray" size="sm">Disabled</x-filament::badge>
-                                @endif
-                            </div>
-                            @if ($plugin['author'])
-                                <p class="mt-0.5 text-xs opacity-60">by {{ $plugin['author'] }}</p>
-                            @endif
-                        </div>
+                <x-filament::section>
+                    {{-- Heading row: name + version on the left, status badge on the right --}}
+                    <x-slot name="heading">
+                        <span class="flex items-center gap-2">
+                            {{ $plugin['name'] }}
+                            <span class="text-xs font-normal text-gray-400 dark:text-gray-500">v{{ $plugin['version'] }}</span>
+                        </span>
+                    </x-slot>
 
-                        <x-filament::button
-                            size="sm"
-                            :color="$plugin['enabled'] ? 'danger' : 'primary'"
-                            :outlined="$plugin['enabled']"
-                            wire:click="toggle('{{ $plugin['id'] }}')"
-                            :wire:confirm="$plugin['enabled'] ? false : 'Enable ' . $plugin['name'] . '? It runs as part of SoundChex, with full access. Only enable a plugin you trust.'"
-                        >
-                            {{ $plugin['enabled'] ? 'Disable' : 'Enable' }}
-                        </x-filament::button>
-                    </div>
-
-                    @if ($plugin['description'])
-                        <p class="text-sm opacity-80">{{ $plugin['description'] }}</p>
+                    @if ($plugin['author'])
+                        <x-slot name="description">by {{ $plugin['author'] }}</x-slot>
                     @endif
 
-                    <div class="flex flex-wrap items-center gap-1.5">
-                        @foreach ($plugin['provides'] as $seam)
-                            <span class="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs opacity-70 dark:bg-white/10">{{ $seam }}</span>
-                        @endforeach
-                        @if ($plugin['license'])
-                            <span class="ml-auto text-xs opacity-50">{{ $plugin['license'] }}</span>
+                    <x-slot name="afterHeader">
+                        @if ($plugin['enabled'])
+                            <x-filament::badge color="success">Enabled</x-filament::badge>
+                        @else
+                            <x-filament::badge color="gray">Disabled</x-filament::badge>
+                        @endif
+                    </x-slot>
+
+                    <div class="space-y-4">
+                        @if ($plugin['description'])
+                            <p class="text-sm text-gray-600 dark:text-gray-400">{{ $plugin['description'] }}</p>
+                        @endif
+
+                        @if (! empty($plugin['provides']) || $plugin['license'])
+                            <div class="flex flex-wrap items-center gap-2">
+                                @foreach ($plugin['provides'] as $seam)
+                                    <x-filament::badge color="gray">{{ $seam }}</x-filament::badge>
+                                @endforeach
+                                @if ($plugin['license'])
+                                    <span class="ml-auto text-xs text-gray-400 dark:text-gray-500">{{ $plugin['license'] }}</span>
+                                @endif
+                            </div>
                         @endif
                     </div>
-                </div>
+
+                    <x-slot name="footer">
+                        <div class="flex justify-end">
+                            <x-filament::button
+                                :color="$plugin['enabled'] ? 'danger' : 'primary'"
+                                :outlined="$plugin['enabled']"
+                                wire:click="toggle('{{ $plugin['id'] }}')"
+                                :wire:confirm="$plugin['enabled'] ? false : 'Enable ' . $plugin['name'] . '? It runs as part of SoundChex, with full access. Only enable a plugin you trust.'"
+                            >
+                                {{ $plugin['enabled'] ? 'Disable' : 'Enable' }}
+                            </x-filament::button>
+                        </div>
+                    </x-slot>
+                </x-filament::section>
             @endforeach
         </div>
     @endif
