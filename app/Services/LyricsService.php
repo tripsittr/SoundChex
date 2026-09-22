@@ -6,22 +6,27 @@
 namespace App\Services;
 
 use App\Models\MediaItem;
+use getID3;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Finds and caches lyrics for a track.
+ * Finds and caches lyrics for a track — plain and time-synced (LRC).
  *
- * Lyrics are looked up from a provider once and stored on the track's music
- * metadata, so the same request is not made on every play. The default provider
- * is LRCLIB — free, no API key, and it matches on the metadata a scanned library
- * already has (artist, title, album, duration). Genius and Musixmatch are
- * anticipated by the integrations page and can be added as further providers
- * behind this same interface; LRCLIB is what works with nothing configured.
+ * Sources are tried in a deliberate order, most trustworthy first (S-300):
  *
- * A track with genuinely no lyrics is remembered as such (via
- * `lyrics_checked_at`) so a miss is not re-fetched on every open — but a caller
- * can force a fresh lookup.
+ *  1. **Embedded** — lyrics that ship with the file itself: a `.lrc` sidecar
+ *     next to the track (the de-facto synced-lyrics format), then the file's own
+ *     tags (id3 SYLT/USLT, Vorbis `LYRICS`). These are the user's own data, need
+ *     no network, and honour the "your own library" ethos.
+ *  2. **Provider** — LRCLIB (free, no key), which returns both plain and synced
+ *     lyrics, matched on the metadata a scanned library already has.
+ *  3. **Plain fallback** — when no timing is available anywhere, the unsynced
+ *     words still show, just without the scroll-highlight.
+ *
+ * The result is stored on the track's music metadata so the lookup runs once,
+ * not on every play. A track with genuinely nothing is remembered as such (via
+ * `lyrics_checked_at`) so a miss is not re-fetched every open.
  */
 class LyricsService
 {
@@ -31,59 +36,83 @@ class LyricsService
     /**
      * The plain-text lyrics for an item, fetching and caching on a miss.
      *
-     * Returns null for anything that is not music, has no artist/title to match
-     * on, or that the provider does not have. Never throws to the caller: a
-     * lyric lookup failing must not break playback.
+     * Kept for callers that only want the words; {@see lyricsPayloadFor()} gives
+     * both plain and synced.
      */
     public function lyricsFor(MediaItem $item): ?string
     {
+        return $this->lyricsPayloadFor($item)['plain'];
+    }
+
+    /**
+     * Both the plain and the time-synced (LRC) lyrics for an item, fetching and
+     * caching on a miss.
+     *
+     * Returns `['plain' => ?string, 'synced' => ?string]`; either may be null.
+     * `synced` is LRC text — lines prefixed with `[mm:ss.xx]` timestamps — which
+     * the player uses to highlight the current line; `plain` is the words alone.
+     * Never throws: a lyric lookup failing must not break playback.
+     *
+     * @return array{plain: ?string, synced: ?string}
+     */
+    public function lyricsPayloadFor(MediaItem $item): array
+    {
         if ($item->type->value !== 'music') {
-            return null;
+            return ['plain' => null, 'synced' => null];
         }
 
         $meta = $item->musicMetadata;
 
         if ($meta === null) {
-            return null;
+            return ['plain' => null, 'synced' => null];
         }
 
         // A stored answer wins — including a stored empty (checked, none found)
-        // that is still recent enough not to re-ask.
-        if (filled($meta->lyrics)) {
-            return $meta->lyrics;
+        // still recent enough not to re-ask.
+        if (filled($meta->lyrics) || filled($meta->lyrics_synced)) {
+            return ['plain' => $meta->lyrics, 'synced' => $meta->lyrics_synced];
         }
 
         if ($meta->lyrics_checked_at !== null
             && $meta->lyrics_checked_at->gt(now()->subDays(self::RECHECK_AFTER_DAYS))) {
-            return null;
+            return ['plain' => null, 'synced' => null];
         }
 
         return $this->fetchAndStore($item, $meta);
     }
 
-    private function fetchAndStore(MediaItem $item, $meta): ?string
+    /**
+     * @return array{plain: ?string, synced: ?string}
+     */
+    private function fetchAndStore(MediaItem $item, $meta): array
     {
-        $artist = $meta->artist ?? $meta->primary_artist;
-        $title = $item->title;
+        // 1. Embedded — the file's own lyrics. No network, always tried first.
+        $found = $this->fromEmbedded($item);
 
-        // Nothing to match on.
-        if (blank($artist) || blank($title)) {
-            $meta->forceFill(['lyrics_checked_at' => now()])->save();
+        // 2. Provider — only when the file carries nothing (or no timing).
+        if (blank($found['plain']) && blank($found['synced'])) {
+            $artist = $meta->artist ?? $meta->primary_artist;
+            $title = $item->title;
 
-            return null;
-        }
+            if (blank($artist) || blank($title)) {
+                // Nothing embedded and nothing to match a provider on.
+                $meta->forceFill(['lyrics_checked_at' => now()])->save();
 
-        try {
-            $found = $this->fromLrclib($artist, $title, $meta->album, $meta->duration_ms);
-        } catch (\Throwable $e) {
-            // Logged, not thrown: a provider being down is not a playback error,
-            // and the checked-at stamp is deliberately not set so it retries.
-            Log::warning('lyrics:lookup-failed', [
-                'item' => $item->id,
-                'reason' => $e->getMessage(),
-            ]);
+                return ['plain' => null, 'synced' => null];
+            }
 
-            return null;
+            try {
+                $found = $this->fromLrclib($artist, $title, $meta->album, $meta->duration_ms);
+            } catch (\Throwable $e) {
+                // Logged, not thrown: a provider being down is not a playback
+                // error, and checked-at is deliberately left unset so it retries.
+                Log::warning('lyrics:lookup-failed', [
+                    'item' => $item->id,
+                    'reason' => $e->getMessage(),
+                ]);
+
+                return ['plain' => null, 'synced' => null];
+            }
         }
 
         $meta->forceFill([
@@ -92,7 +121,167 @@ class LyricsService
             'lyrics_checked_at' => now(),
         ])->save();
 
-        return $found['plain'] ?? null;
+        return ['plain' => $found['plain'] ?? null, 'synced' => $found['synced'] ?? null];
+    }
+
+    /**
+     * Lyrics that ship with the file: a `.lrc` sidecar beside the track (synced),
+     * then the file's own tags (id3 SYLT/USLT, Vorbis `LYRICS`).
+     *
+     * @return array{plain: ?string, synced: ?string}
+     */
+    private function fromEmbedded(MediaItem $item): array
+    {
+        $path = $item->absoluteFilePath();
+
+        if ($path === null || ! is_file($path)) {
+            return ['plain' => null, 'synced' => null];
+        }
+
+        // A .lrc sidecar next to the file — the same basename, .lrc extension —
+        // is the common way synced lyrics travel, and it is authoritative.
+        $sidecar = preg_replace('/\.[^.\/]+$/', '.lrc', $path);
+
+        if ($sidecar !== null && $sidecar !== $path && is_file($sidecar)) {
+            $lrc = trim((string) @file_get_contents($sidecar));
+
+            if ($lrc !== '') {
+                return [
+                    'synced' => $this->looksSynced($lrc) ? $lrc : null,
+                    'plain' => $this->looksSynced($lrc) ? $this->stripTimestamps($lrc) : $lrc,
+                ];
+            }
+        }
+
+        // Embedded tags. getID3 surfaces both a synced list and unsynced text.
+        try {
+            $info = (new getID3)->analyze($path);
+        } catch (\Throwable $e) {
+            return ['plain' => null, 'synced' => null];
+        }
+
+        $synced = $this->syncedFromTags($info);
+        $plain = $this->plainFromTags($info);
+
+        return [
+            'synced' => $synced,
+            'plain' => $plain ?? ($synced !== null ? $this->stripTimestamps($synced) : null),
+        ];
+    }
+
+    /**
+     * A synced-lyrics LRC string from getID3's parse, if the file carries one.
+     *
+     * id3v2 SYLT is reported as a structured list of {timestamp(ms), text}; a
+     * `.lrc` stored in an unsynced field (USLT/LYRICS) already reads as LRC.
+     */
+    private function syncedFromTags(array $info): ?string
+    {
+        // id3v2 SYLT — structured synced lyrics.
+        $sylt = $info['id3v2']['SYLT'][0]['data'] ?? null;
+
+        if (is_array($sylt) && $sylt !== []) {
+            $lines = [];
+            foreach ($sylt as $entry) {
+                $ms = $entry['timestamp'] ?? null;
+                $text = trim((string) ($entry['data'] ?? $entry['lyric'] ?? ''));
+                if ($ms !== null && $text !== '') {
+                    $lines[] = $this->lrcTimestamp((int) $ms).' '.$text;
+                }
+            }
+            if ($lines !== []) {
+                return implode("\n", $lines);
+            }
+        }
+
+        // An LRC hiding in an unsynced field (some taggers store it in USLT or a
+        // Vorbis LYRICS comment).
+        foreach ($this->unsyncedCandidates($info) as $candidate) {
+            if ($this->looksSynced($candidate)) {
+                return trim($candidate);
+            }
+        }
+
+        return null;
+    }
+
+    private function plainFromTags(array $info): ?string
+    {
+        foreach ($this->unsyncedCandidates($info) as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate === '') {
+                continue;
+            }
+
+            return $this->looksSynced($candidate) ? $this->stripTimestamps($candidate) : $candidate;
+        }
+
+        return null;
+    }
+
+    /**
+     * Raw lyric strings from every tag field getID3 might put them in.
+     *
+     * @return array<int, string>
+     */
+    private function unsyncedCandidates(array $info): array
+    {
+        $out = [];
+
+        // id3v2 USLT (unsynchronised lyrics).
+        foreach ($info['id3v2']['USLT'] ?? [] as $uslt) {
+            if (filled($uslt['data'] ?? null)) {
+                $out[] = (string) $uslt['data'];
+            }
+        }
+
+        // Flattened comment tags across formats (Vorbis LYRICS, etc.).
+        $tags = $info['tags'] ?? [];
+        foreach ($tags as $format => $fields) {
+            foreach (['lyrics', 'unsynced lyrics', 'unsyncedlyrics', 'lyrics-xxx'] as $key) {
+                foreach ((array) ($fields[$key] ?? []) as $value) {
+                    if (filled($value)) {
+                        $out[] = (string) $value;
+                    }
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /** An `[mm:ss.xx]` timestamp for a millisecond offset. */
+    private function lrcTimestamp(int $ms): string
+    {
+        $totalCentis = intdiv($ms, 10);
+        $centis = $totalCentis % 100;
+        $totalSeconds = intdiv($totalCentis, 100);
+        $seconds = $totalSeconds % 60;
+        $minutes = intdiv($totalSeconds, 60);
+
+        return sprintf('[%02d:%02d.%02d]', $minutes, $seconds, $centis);
+    }
+
+    /** Whether a lyric string carries `[mm:ss]` timing (i.e. is LRC/synced). */
+    private function looksSynced(string $text): bool
+    {
+        return preg_match('/^\s*\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/m', $text) === 1;
+    }
+
+    /** The words of an LRC, with the leading `[mm:ss.xx]` timestamps removed. */
+    private function stripTimestamps(string $lrc): string
+    {
+        $lines = [];
+        foreach (preg_split('/\r\n|\r|\n/', $lrc) as $line) {
+            // Drop leading timestamps and LRC id tags ([ar:], [ti:], [length:]).
+            $stripped = preg_replace('/^\s*(\[[^\]]*\]\s*)+/', '', $line);
+            $stripped = trim((string) $stripped);
+            if ($stripped !== '') {
+                $lines[] = $stripped;
+            }
+        }
+
+        return implode("\n", $lines);
     }
 
     /**
