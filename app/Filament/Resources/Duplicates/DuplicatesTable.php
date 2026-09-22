@@ -17,6 +17,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Forms\Components\Radio;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -73,6 +74,10 @@ class DuplicatesTable
                     ->label($onCoverTab ? 'Track' : 'Duplicate')
                     ->searchable()
                     ->weight($onCoverTab ? 'medium' : null)
+                    // Constrained on the table so a long title/path doesn't push
+                    // the actions off-screen; the grid keeps its natural width.
+                    ->wrap(! $onCoverTab)
+                    ->lineClamp($onCoverTab ? null : 2)
                     // On the cover grid, show artist · album under the title so
                     // the reviewer can judge whether the cover matches. In the
                     // table, the file path is more useful.
@@ -88,10 +93,14 @@ class DuplicatesTable
                         ? static::shortPath($record->duplicateOf)
                         : '—'),
 
+                // Secondary columns are hidden by default so the review table
+                // stays narrow — the cover, title and actions must sit close for
+                // a quick yes/no. Toggle these on from the columns menu when a
+                // pair needs a closer look.
                 TextColumn::make('type')
                     ->badge()
                     ->visible(! $onCoverTab)
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 // Why the pair was flagged — an identical file, or the same
                 // recording in a different file (and how sure we are of that).
@@ -100,7 +109,7 @@ class DuplicatesTable
                     ->badge()
                     ->placeholder('Identical file')
                     ->visible(! $onCoverTab)
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 // The important one: "same file" means there's nothing on disk
                 // to reclaim, only a redundant catalog row.
@@ -121,17 +130,20 @@ class DuplicatesTable
                     ->visible(! $onCoverTab)
                     ->toggleable(),
 
+                // Hidden by default: the tab already says the status, and "found"
+                // time rarely changes a merge decision. Kept toggleable.
                 TextColumn::make('duplicate_status')
                     ->label('Status')
                     ->badge()
-                    ->visible(! $onCoverTab),
+                    ->visible(! $onCoverTab)
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('duplicate_detected_at')
                     ->label('Found')
                     ->since()
                     ->sortable()
                     ->visible(! $onCoverTab)
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('content_hash')
                     ->label('Hash')
@@ -195,18 +207,28 @@ class DuplicatesTable
                 TextColumn::make('title')
                     ->label('Item')
                     ->searchable()
+                    // Capped and wrapped so a long title doesn't stretch the row
+                    // and push the actions off-screen — the reason it was hard to
+                    // review.
+                    ->width('1%')
+                    ->wrap()
+                    ->lineClamp(2)
                     ->description(fn (MediaItem $record): string => static::metaSubtitle($record)),
 
+                // Hidden by default so the cover, item, reason and actions stay
+                // close for quick triage; toggle on from the columns menu.
                 TextColumn::make('type')
                     ->badge()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
-                // The "why": a one-line reason drawn from the last enrichment run,
-                // so a reviewer can triage without opening each item.
-                TextColumn::make('review_reason')
+                // The "why": a compact info icon whose tooltip carries the
+                // one-line reason, so the column takes a few pixels rather than a
+                // wide wrapped block that pushed the actions away.
+                IconColumn::make('review_reason')
                     ->label('Why')
-                    ->state(fn (MediaItem $record): string => static::reviewReason($record))
-                    ->wrap(),
+                    ->icon('heroicon-o-information-circle')
+                    ->color('gray')
+                    ->tooltip(fn (MediaItem $record): string => static::reviewReason($record)),
 
                 TextColumn::make('match_confidence')
                     ->label('Confidence')
@@ -222,13 +244,13 @@ class DuplicatesTable
                 TextColumn::make('processing_status')
                     ->label('Status')
                     ->badge()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('updated_at')
                     ->label('Enriched')
                     ->since()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('type')
