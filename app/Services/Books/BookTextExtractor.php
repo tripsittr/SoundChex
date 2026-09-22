@@ -30,8 +30,22 @@ use Symfony\Component\Process\Process;
  */
 class BookTextExtractor
 {
-    /** A scan is a page whose embedded text is shorter than this. */
+    /**
+     * Below this many characters of embedded text, a page is treated as having
+     * no text layer and is a candidate for OCR. Used to *classify* a book as fast
+     * (has a text layer) vs a scan.
+     */
     private const EMBEDDED_TEXT_THRESHOLD = 24;
+
+    /**
+     * A page is only OCR'd when its embedded text is at or below this — i.e. it is
+     * genuinely image-only. Kept deliberately low: a title or part page carries a
+     * little real embedded text amid ornamental artwork, and OCR turns that
+     * artwork into gibberish ("XSite iPh NY BRID Bh…"). Any real embedded text
+     * means the page has a text layer, so we keep it rather than OCR over it
+     * (S-305).
+     */
+    private const OCR_ONLY_BELOW = 3;
 
     public function __construct(private OcrService $ocr) {}
 
@@ -168,16 +182,23 @@ class BookTextExtractor
 
         foreach ($pages as $number => $text) {
             $text = trim($text);
+            $embeddedLength = mb_strlen(preg_replace('/\s+/', '', $text) ?? '');
 
-            // A scan: no usable embedded text. Fall back to OCR, which the reader
-            // already uses for these on the web — unless this is the fast,
-            // in-request pass, which leaves the scanned pages for the queue.
-            if ($allowOcr
-                && mb_strlen(preg_replace('/\s+/', '', $text) ?? '') < self::EMBEDDED_TEXT_THRESHOLD) {
-                $ocr = $this->ocr->isAvailable()
-                    ? $this->ocr->recognizePage($item, $number)?->text
-                    : null;
-                $text = trim((string) ($ocr ?? $text));
+            // OCR only a page that is genuinely image-only (essentially no
+            // embedded text). A page with even a few real characters has a text
+            // layer — a decorative title page, a part divider — and OCR-ing it
+            // replaces real text with gibberish read off the artwork (S-305), so
+            // we keep the embedded text instead. Skipped entirely in the fast,
+            // in-request pass, which leaves scans for the queue.
+            if ($allowOcr && $embeddedLength <= self::OCR_ONLY_BELOW && $this->ocr->isAvailable()) {
+                $ocr = $this->cleanOcr((string) ($this->ocr->recognizePage($item, $number)?->text ?? ''));
+
+                // Only take OCR when it actually produced usable text — after
+                // dropping the garbled lines OCR reads off artwork (S-305), so a
+                // bad OCR pass can never make a page worse than leaving it blank.
+                if (mb_strlen($ocr) > $embeddedLength) {
+                    $text = $ocr;
+                }
             }
 
             // A blank page (a cover, a section break) contributes nothing to a
@@ -195,6 +216,106 @@ class BookTextExtractor
         }
 
         return $units;
+    }
+
+    /**
+     * Cleans an OCR page, dropping the garbled lines OCR reads off artwork while
+     * keeping the real text (S-305).
+     *
+     * OCR of a decorative cover mixes genuine lines ("THE HOBBIT", "J.R.R.
+     * TOLKIEN") with gibberish read off the artwork ("XSite iPh NY BRID Bh
+     * REPMRM-BSX-BRAN", "ee ———X—_=_[_.__"). Judging the page as a whole keeps or
+     * drops both together; judging line by line keeps the title and removes the
+     * junk. A line is kept when it reads like language: mostly letters, and made
+     * of plausible words rather than symbol soup.
+     */
+    private function cleanOcr(string $text): string
+    {
+        $kept = [];
+
+        foreach (preg_split('/\r\n|\r|\n/', trim($text)) as $line) {
+            $line = trim($line);
+
+            if ($line === '' || $this->isGarbledLine($line)) {
+                continue;
+            }
+
+            $kept[] = $line;
+        }
+
+        return implode("\n", $kept);
+    }
+
+    /**
+     * Whether a single OCR line is gibberish rather than language.
+     *
+     * Real lines are mostly letters and spaces and made of ordinary words; a
+     * garbled line is short symbol-and-caps soup with stray punctuation.
+     */
+    private function isGarbledLine(string $line): bool
+    {
+        $length = mb_strlen($line);
+
+        // The share of letters and spaces. A real line is high; artwork noise is
+        // full of symbols and underscores.
+        $letters = preg_match_all('/[\p{L}\s]/u', $line);
+
+        if ($length > 0 && ($letters / $length) < 0.7) {
+            return true;
+        }
+
+        // Tokens on the line, and how many read like real words (a run of letters
+        // long enough, not a lone stray capital or a two-letter fragment).
+        $tokens = preg_split('/\s+/', $line) ?: [];
+        $tokens = array_filter($tokens, fn (string $t): bool => $t !== '');
+
+        if ($tokens === []) {
+            return true;
+        }
+
+        $wordish = array_filter($tokens, fn (string $t): bool => $this->looksLikeWord($t));
+
+        // A line is language when at least half its tokens read like real words.
+        // Otherwise it is gibberish — even if it is "letters", like the OCR of
+        // artwork ("XSite iPh NY BRID Bh REPMRM-BSX-BRAN").
+        return (count($wordish) / count($tokens)) < 0.5;
+    }
+
+    /**
+     * Whether a token reads like an ordinary word rather than OCR noise.
+     *
+     * A real word (or a normal all-caps word like "THE") has a vowel and normal
+     * casing. OCR gibberish off artwork is vowelless fragments ("BRD", "BSX") or
+     * words with capitals in the middle ("XSite", "iPh", "REPMRM-BSX") — patterns
+     * ordinary text does not have.
+     */
+    private function looksLikeWord(string $token): bool
+    {
+        // Strip surrounding punctuation (quotes, a trailing colon, a period).
+        $token = trim($token, ".,;:!?\"'()[]—-");
+
+        // Short tokens are fine as long as they are a real short word or initial.
+        if (mb_strlen($token) <= 2) {
+            return preg_match('/^(a|i|an|as|at|be|by|do|go|he|if|in|is|it|me|my|no|of|on|or|so|to|up|us|we)$/iu', $token) === 1
+                || preg_match('/^\p{Lu}\.?$/u', $token) === 1; // an initial, e.g. "J"
+        }
+
+        // Must be letters (with an inner apostrophe/hyphen allowed) …
+        if (preg_match('/^\p{L}[\p{L}\'-]*\p{L}$/u', $token) !== 1) {
+            return false;
+        }
+
+        // … contain a vowel (English words do; "BRD", "BSX" do not) …
+        if (preg_match('/[aeiouyAEIOUY]/u', $token) !== 1) {
+            return false;
+        }
+
+        // … and not have a capital in the middle (XSite, iPh, REPMRM read wrong;
+        // ALL-CAPS and Capitalised and lowercase are all fine).
+        $isAllCaps = $token === mb_strtoupper($token);
+        $isCapitalised = preg_match('/^\p{Lu}?[\p{Ll}\'-]+$/u', $token) === 1;
+
+        return $isAllCaps || $isCapitalised;
     }
 
     /**
