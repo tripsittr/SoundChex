@@ -7,6 +7,7 @@ namespace App\Providers;
 
 use App\Plugins\PluginLoader;
 use App\Plugins\Registry;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -38,6 +39,13 @@ class PluginServiceProvider extends ServiceProvider
         $loader = $this->app->make(PluginLoader::class);
         $loader->boot();
 
+        // Plugins that ship their own vertical (S-314): load the routes and
+        // migrations they registered. Both run only for enabled plugins, because
+        // the loader only ran the `register()` of enabled ones — so disabling a
+        // plugin removes its endpoints and stops its migrations being offered.
+        $this->registerPluginRoutes($this->app->make(Registry::class));
+        $this->registerPluginMigrations($this->app->make(Registry::class));
+
         // Each plugin's serving-time boot runs once the app is handling a
         // request, kept off console and queue boots where it has no business.
         $this->app->booted(function () use ($loader): void {
@@ -47,5 +55,44 @@ class PluginServiceProvider extends ServiceProvider
 
             $loader->bootLoaded();
         });
+    }
+
+    /**
+     * Load each enabled plugin's routes file, wrapped in the prefix and
+     * middleware it asked for (S-314). Non-fatal per plugin: a broken routes file
+     * is logged and skipped rather than taking the whole app's routing down.
+     */
+    private function registerPluginRoutes(Registry $registry): void
+    {
+        foreach ($registry->routeFiles() as $route) {
+            if (! is_file($route['path'])) {
+                continue;
+            }
+
+            try {
+                $registrar = Route::middleware($route['middleware']);
+
+                if ($route['prefix'] !== null) {
+                    $registrar = $registrar->prefix($route['prefix']);
+                }
+
+                $registrar->group($route['path']);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+    }
+
+    /**
+     * Register each enabled plugin's migration directory with Laravel's migrator,
+     * so `migrate` runs a plugin's own schema alongside the core migrations.
+     */
+    private function registerPluginMigrations(Registry $registry): void
+    {
+        $paths = array_filter($registry->migrationPaths(), 'is_dir');
+
+        if ($paths !== []) {
+            $this->loadMigrationsFrom($paths);
+        }
     }
 }
