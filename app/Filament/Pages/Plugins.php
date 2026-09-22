@@ -168,17 +168,103 @@ class Plugins extends Page
         $plugin = InstalledPlugin::query()->where('plugin_id', $pluginId)->first();
 
         if ($plugin === null) {
+            Notification::make()
+                ->title('Plugin not found')
+                ->body('No installed plugin matches this id — try Re-scan.')
+                ->danger()
+                ->send();
+
             return;
         }
 
         $plugin->forceFill(['enabled' => ! $plugin->enabled])->save();
         $this->load();
 
+        // On enable, actually try to load the plugin now and surface any failure,
+        // so a plugin that errors on boot says so with the reason rather than
+        // silently doing nothing — the loader otherwise logs-and-skips it.
+        if ($plugin->enabled) {
+            $error = $this->loadError($plugin);
+
+            if ($error !== null) {
+                Notification::make()
+                    ->title($plugin->name.' could not be loaded')
+                    ->body($error)
+                    ->danger()
+                    ->persistent()
+                    ->actions([
+                        \Filament\Notifications\Actions\Action::make('viewLogs')
+                            ->label('View logs')
+                            ->button()
+                            ->dispatch('open-plugin-logs'),
+                    ])
+                    ->send();
+
+                return;
+            }
+
+            Notification::make()
+                ->title($plugin->name.' enabled')
+                ->body('Reload this page to see its features (new admin pages appear at the next full load).')
+                ->success()
+                ->send();
+
+            return;
+        }
+
         Notification::make()
-            ->title($plugin->enabled ? $plugin->name.' enabled' : $plugin->name.' disabled')
+            ->title($plugin->name.' disabled')
             ->body('Takes effect on the next page load.')
             ->success()
             ->send();
+    }
+
+    /**
+     * Boots the plugin in isolation and returns the reason it failed to load, or
+     * null when it loaded cleanly. This is what turns a silent "logged and
+     * skipped" into a visible error the admin can act on.
+     */
+    private function loadError(InstalledPlugin $plugin): ?string
+    {
+        try {
+            $registry = new \App\Plugins\Registry;
+            $loader = new PluginLoader(app(), $registry);
+            $loader->boot();
+
+            $loaded = collect($loader->loaded())
+                ->contains(fn (array $entry): bool => ($entry['id'] ?? null) === $plugin->plugin_id);
+
+            if (! $loaded) {
+                return 'The plugin is enabled but did not load — its manifest, entry class, or server compatibility may be at fault. See the logs for the exact reason.';
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            return $e->getMessage();
+        }
+    }
+
+    /**
+     * The recent plugin-related log lines, for the "View logs" panel.
+     *
+     * @return array<int, string>
+     */
+    public function pluginLogLines(): array
+    {
+        $path = storage_path('logs/laravel.log');
+
+        if (! is_file($path)) {
+            return [];
+        }
+
+        // The tail of the log, keeping only lines that mention a plugin — enough
+        // to explain a load failure without dumping the whole file.
+        $lines = array_slice(file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [], -400);
+
+        return array_values(array_filter(
+            $lines,
+            fn (string $line): bool => stripos($line, 'plugin') !== false,
+        ));
     }
 
     /* -------------------------------------------------------- catalog --- */
@@ -318,6 +404,20 @@ class Plugins extends Page
                         ->success()
                         ->send();
                 }),
+
+            // The plugin logs, so a failure to load can be diagnosed from here
+            // rather than by opening a file on the server. Also opened by the
+            // "View logs" button on a load-error toast.
+            Action::make('viewLogs')
+                ->label('View logs')
+                ->icon(Heroicon::OutlinedDocumentText)
+                ->color('gray')
+                ->modalHeading('Plugin logs')
+                ->modalSubmitAction(false)
+                ->modalCancelActionLabel('Close')
+                ->modalContent(fn () => view('filament.pages.partials.plugin-logs', [
+                    'lines' => $this->pluginLogLines(),
+                ])),
         ];
     }
 }
