@@ -77,9 +77,14 @@ class ReaderController extends Controller
 
         if (! $extractor->hasContent($item)) {
             // A text PDF or an EPUB extracts in a fraction of a second, so do it
-            // now rather than making the reader wait on a queue.
+            // now rather than making the reader wait on a queue. Crucially with
+            // OCR *off*: a text book may still have a few blank scanned pages
+            // (covers), and OCR-ing them in the request pushes it from ~0.4s to
+            // several seconds — long enough that the app's poll times out and
+            // loops forever. Those pages come back empty (they were blank); a
+            // later queued run OCRs them if they turn out to hold anything.
             if ($extractor->isFast($item)) {
-                $extractor->extract($item);
+                $extractor->extract($item, allowOcr: false);
             } elseif (! empty($images)) {
                 // A scanned book: its pages *are* the images, and they are already
                 // extracted. Show them now — one page per image — so the book
