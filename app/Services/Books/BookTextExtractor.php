@@ -66,9 +66,18 @@ class BookTextExtractor
             return false;
         }
 
-        // A PDF is fast when its first page already has embedded text — i.e. it
-        // is not a scan needing OCR.
-        return $this->ocr->embeddedTextLength($path, 1) >= self::EMBEDDED_TEXT_THRESHOLD;
+        // A PDF is fast when it has embedded text — i.e. it is not a scan needing
+        // OCR. Sample several early pages, not just the first: a cover or title
+        // page is often blank, which would wrongly mark an ordinary book as a
+        // scan and send it to the (slow) OCR queue. Any page with real text means
+        // the book has a text layer and extracts quickly.
+        foreach ([1, 2, 3, 5, 8] as $page) {
+            if ($this->ocr->embeddedTextLength($path, $page) >= self::EMBEDDED_TEXT_THRESHOLD) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

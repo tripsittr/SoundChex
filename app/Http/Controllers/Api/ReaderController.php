@@ -73,15 +73,33 @@ class ReaderController extends Controller
         $this->assertReadable($item);
 
         $extractor = app(BookTextExtractor::class);
+        $images = $this->images($item);
 
         if (! $extractor->hasContent($item)) {
             // A text PDF or an EPUB extracts in a fraction of a second, so do it
-            // now rather than making the reader wait on a queue that may be busy.
-            // A scanned PDF needs OCR — slow — so that goes to the queue, and the
-            // reader polls (the job is unique, so repeated polls don't pile up).
+            // now rather than making the reader wait on a queue.
             if ($extractor->isFast($item)) {
                 $extractor->extract($item);
+            } elseif (! empty($images)) {
+                // A scanned book: its pages *are* the images, and they are already
+                // extracted. Show them now — one page per image — so the book
+                // opens straight away, and queue the (slow) OCR to add selectable
+                // text to those pages on a later open.
+                ExtractBookContentJob::dispatch($item->id);
+
+                return response()->json([
+                    'status' => 'ready',
+                    'format' => $this->format($item),
+                    'chapters' => collect($images)->map(fn (array $image): array => [
+                        'position' => $image['page'],
+                        'title' => null,
+                        'text' => '',
+                    ])->values(),
+                    'images' => $images,
+                ]);
             } else {
+                // No text layer and no images to fall back on — OCR is the only
+                // hope, on the queue.
                 ExtractBookContentJob::dispatch($item->id);
 
                 return response()->json(['status' => 'processing']);
@@ -93,7 +111,17 @@ class ReaderController extends Controller
             ->get(['position', 'title', 'text']);
 
         if ($units->isEmpty()) {
-            return response()->json(['status' => 'empty']);
+            // Text extraction produced nothing. If there are images, the book is
+            // still readable as pages; otherwise there is nothing to show.
+            if (empty($images)) {
+                return response()->json(['status' => 'empty']);
+            }
+
+            $units = collect($images)->map(fn (array $image): object => (object) [
+                'position' => $image['page'],
+                'title' => null,
+                'text' => '',
+            ]);
         }
 
         return response()->json([
@@ -108,7 +136,7 @@ class ReaderController extends Controller
             // reader can place each one inline with that page's text — the same
             // text-and-images read the desktop reader gives (S-295). This is what
             // carries a scanned or illustrated book (its pages are images).
-            'images' => $this->images($item),
+            'images' => $images,
         ]);
     }
 
