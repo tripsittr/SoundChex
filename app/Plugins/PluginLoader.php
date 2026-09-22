@@ -58,15 +58,10 @@ class PluginLoader
             return;
         }
 
-        // First-party bundled plugins: always on, no install-table gate. These
-        // are the app's own behaviours written as plugins, and load even before
-        // the install table exists (a fresh migrate, or an un-migrated test).
-        foreach ($this->bundled() as $directory => $manifest) {
-            $this->load($directory, $manifest, bundled: true);
-        }
-
-        // Installed plugins are gated on the install table; skip them until it
-        // exists rather than fail the whole boot.
+        // Every plugin is installed and enabled — there are no always-on bundled
+        // plugins (S-321). A fresh install has none until the user installs one
+        // from a repository. Installed plugins are gated on the install table;
+        // skip them until it exists rather than fail the whole boot.
         if ($this->installTableReady()) {
             foreach ($this->discover() as $directory => $manifest) {
                 $this->load($directory, $manifest);
@@ -82,18 +77,6 @@ class PluginLoader
         } catch (\Throwable) {
             return false;
         }
-    }
-
-    /**
-     * The first-party bundled plugins, read from the repo's bundled path. Unlike
-     * installed plugins they are not reconciled into the install table — they are
-     * part of the app, loaded whenever the platform is on.
-     *
-     * @return array<string, PluginManifest>
-     */
-    public function bundled(): array
-    {
-        return $this->manifestsIn(config('soundchex.plugins.bundled_path'));
     }
 
     /**
@@ -275,18 +258,16 @@ class PluginLoader
      * instantiate the entry class, and collect its registrations. Any failure is
      * logged and swallowed so one bad plugin cannot break the boot.
      *
-     * A bundled plugin skips the install-table gate — it is first-party and
-     * always on — but is still compatibility-checked and still fails safe.
+     * Every plugin is gated on an enabled install row (S-321) — there is no
+     * always-on path. A plugin that is present but not enabled does not load.
      */
-    private function load(string $directory, PluginManifest $manifest, bool $bundled = false): void
+    private function load(string $directory, PluginManifest $manifest): void
     {
         try {
-            if (! $bundled) {
-                $record = InstalledPlugin::query()->where('plugin_id', $manifest->id)->first();
+            $record = InstalledPlugin::query()->where('plugin_id', $manifest->id)->first();
 
-                if ($record === null || ! $record->enabled) {
-                    return;
-                }
+            if ($record === null || ! $record->enabled) {
+                return;
             }
 
             $reason = $manifest->incompatibilityReason(

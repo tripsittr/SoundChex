@@ -61,17 +61,18 @@ return [
         // path. `SOUNDCHEX_PLUGINS_PATH` (or `SOUNDCHEX_DATA_DIR`) overrides it.
         'path' => DataPaths::plugins(),
 
-        // First-party plugins that ship with the app and are always on. These
-        // are the platform dogfooding itself: behaviours that could be core but
-        // are written as plugins (the title tidier, cover sources, notification
-        // targets). They live in the repo, load enabled, and never appear in the
-        // install/enable flow — disabling one is `SOUNDCHEX_PLUGINS_ENABLED` or
-        // editing the app, not a toggle, because they are the app.
-        'bundled_path' => base_path('plugins/bundled'),
-
         // A master switch. Off, the loader does nothing and no third-party code
         // runs — the kill switch that makes "disable everything" a config flip.
+        // There are no bundled/always-on plugins (S-321): a fresh install has no
+        // plugins until the operator installs one from a repository.
         'enabled' => env('SOUNDCHEX_PLUGINS_ENABLED', true),
+
+        // The official plugin repository — a catalogue URL the app trusts by
+        // default, so a fresh install can discover and install the first-party
+        // plugins (activity log, title tidier, playlist porter) and any others
+        // the project curates. Seeded as an `official` repository; users can add
+        // their own repository URLs alongside it. Empty until published.
+        'official_repository' => env('SOUNDCHEX_PLUGIN_REPOSITORY', ''),
 
         // Whether the local-only plugin-folder controls (the path and the
         // "Open Plugins Folder" button) are offered. Null — the default — lets
