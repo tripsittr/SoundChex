@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-namespace App\Services\Import\Parsers;
+namespace SoundChex\PlaylistPorter\Services\Parsers;
 
-use App\Services\Import\ImportedTrack;
+use SoundChex\PlaylistPorter\Services\ImportedTrack;
 
 /**
  * Parses M3U / M3U8 playlists (S-310).

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-namespace App\Services\Import;
+namespace SoundChex\PlaylistPorter\Services;
 
 /**
  * One track from an imported playlist, normalised across sources (S-310).

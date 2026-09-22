@@ -96,7 +96,7 @@ class PlaylistPorterPluginTest extends TestCase
             ->assertHasNoErrors();
 
         $importId = $component->get('importId');
-        $playlist = \App\Models\PlaylistImport::find($importId)->collection;
+        $playlist = \SoundChex\PlaylistPorter\Models\PlaylistImport::find($importId)->collection;
         $this->assertSame(2, $playlist->mediaItems()->count());
     }
 

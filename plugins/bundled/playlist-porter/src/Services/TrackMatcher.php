@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-namespace App\Services\Import;
+namespace SoundChex\PlaylistPorter\Services;
 
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;

@@ -3,12 +3,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-namespace App\Services\Import\Sources;
+namespace SoundChex\PlaylistPorter\Services\Sources;
 
-use App\Services\Import\ImportedTrack;
 use App\Services\SettingsService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
+use SoundChex\PlaylistPorter\Services\ImportedTrack;
 
 /**
  * Imports playlists from Spotify (S-312).

@@ -9,8 +9,6 @@ use App\Http\Controllers\Api\LibraryController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PlaylistController;
-use App\Http\Controllers\Api\PlaylistImportController;
-use App\Http\Controllers\Api\PlaylistSourceController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReaderController;
 use App\Http\Controllers\Api\ServerHealthController;
@@ -222,21 +220,11 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/playlists', [PlaylistController::class, 'index'])->name('api.playlists');
         Route::post('/playlists', [PlaylistController::class, 'store'])->name('api.playlists.store');
 
-        // Porting a playlist in from a file (S-310). Declared before the
-        // `{collection}` routes so "imports" is not read as a playlist id.
-        Route::get('/playlists/imports', [PlaylistImportController::class, 'index'])->name('api.playlists.imports');
-        Route::post('/playlists/imports', [PlaylistImportController::class, 'store'])->name('api.playlists.imports.store');
-        Route::get('/playlists/imports/{import}', [PlaylistImportController::class, 'show'])->name('api.playlists.imports.show');
-        Route::post('/playlists/imports/{import}/resolve', [PlaylistImportController::class, 'resolve'])->name('api.playlists.imports.resolve');
-
-        // Porting from a connected streaming service (S-312). Also before the
-        // `{collection}` routes so "sources" is not read as a playlist id.
-        Route::get('/playlists/sources', [PlaylistSourceController::class, 'index'])->name('api.playlists.sources');
-        Route::post('/playlists/sources/{source}/authorize', [PlaylistSourceController::class, 'authorize'])->name('api.playlists.sources.authorize');
-        Route::post('/playlists/sources/{source}/callback', [PlaylistSourceController::class, 'callback'])->name('api.playlists.sources.callback');
-        Route::delete('/playlists/sources/{source}', [PlaylistSourceController::class, 'disconnect'])->name('api.playlists.sources.disconnect');
-        Route::get('/playlists/sources/{source}/playlists', [PlaylistSourceController::class, 'playlists'])->name('api.playlists.sources.playlists');
-        Route::post('/playlists/sources/{source}/import', [PlaylistSourceController::class, 'import'])->name('api.playlists.sources.import');
+        // Porting a playlist in from a file (S-310) and from a connected
+        // streaming service (S-312) is the Playlist Porter plugin's own API now
+        // (S-315) — its routes file registers /playlists/imports/* and
+        // /playlists/sources/* under this same api/v1 prefix, ahead of the
+        // `{collection}` catch-all so "imports"/"sources" are not read as ids.
 
         Route::get('/playlists/{collection}', [PlaylistController::class, 'show'])->name('api.playlists.show');
         Route::patch('/playlists/{collection}', [PlaylistController::class, 'update'])->name('api.playlists.update');
