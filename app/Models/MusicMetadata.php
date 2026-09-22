@@ -5,11 +5,29 @@
 
 namespace App\Models;
 
+use App\Services\Metadata\AlbumTitleNormalizer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MusicMetadata extends Model
 {
+    /**
+     * Keep `album_key` — the canonical grouping key the album browse groups on
+     * (S-308) — in step with `album` whenever a row is saved, so a variant
+     * spelling ("(Deluxe)", a different bracket style) always groups with its
+     * album no matter how or when it was imported.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $meta): void {
+            if ($meta->isDirty('album') || $meta->album_key === null) {
+                $meta->album_key = filled($meta->album)
+                    ? app(AlbumTitleNormalizer::class)->canonicalKey((string) $meta->album)
+                    : null;
+            }
+        });
+    }
+
     /**
      * Above this, a "track number" is not one.
      *
@@ -53,6 +71,7 @@ class MusicMetadata extends Model
         'artist',
         'primary_artist',
         'album',
+        'album_key',
         'track_number',
         'disc_number',
         'release_year',

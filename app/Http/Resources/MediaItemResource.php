@@ -62,6 +62,12 @@ class MediaItemResource extends JsonResource
                 'primary_artist' => $item->musicMetadata?->primary_artist
                     ?: $item->musicMetadata?->artist,
                 'album' => $item->musicMetadata?->album,
+                // The canonical album key, for grouping (S-308): edition and
+                // punctuation variants of one album share it, so a client groups
+                // on this instead of the raw album string and never shows the same
+                // album twice. Falls back to the album for anything unkeyed.
+                'album_key' => $item->musicMetadata?->album_key
+                    ?: $item->musicMetadata?->album,
                 // Through the accessor: most tags in a real library carry a
                 // library-wide position rather than a track number, and
                 // sending that would sort albums wrongly on the device too.

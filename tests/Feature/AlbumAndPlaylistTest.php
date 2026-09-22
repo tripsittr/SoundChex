@@ -70,6 +70,41 @@ class AlbumAndPlaylistTest extends TestCase
         $this->assertSame(2, app(AlbumBrowser::class)->paginate()->total());
     }
 
+    public function test_edition_variants_group_into_one_album(): void
+    {
+        // The same album, imported as separate spellings (the batch-import gap):
+        // grouping on album_key shows them as one album, not three (S-308).
+        $this->track('T1', 'The Verve', 'Urban Hymns', 1);
+        $this->track('T2', 'The Verve', 'Urban Hymns (Remastered 2016)', 2);
+        $this->track('T3', 'The Verve', 'Urban Hymns (Deluxe / Remastered 2016)', 3);
+
+        $albums = app(AlbumBrowser::class)->paginate();
+
+        $this->assertSame(1, $albums->total());
+        // The plain title represents the group.
+        $this->assertSame('Urban Hymns', $albums->items()[0]->album);
+        $this->assertSame(3, (int) $albums->items()[0]->track_count);
+    }
+
+    public function test_tracks_gathers_every_edition_variant(): void
+    {
+        $this->track('A', 'The Verve', 'Urban Hymns', 1);
+        $this->track('B', 'The Verve', 'Urban Hymns (Deluxe Edition)', 2);
+
+        // Clicking either spelling lists both tracks.
+        $this->assertCount(2, app(AlbumBrowser::class)->tracks('The Verve', 'Urban Hymns'));
+        $this->assertCount(2, app(AlbumBrowser::class)->tracks('The Verve', 'Urban Hymns (Deluxe Edition)'));
+    }
+
+    public function test_numbered_sequels_stay_separate_albums(): void
+    {
+        // "(II)" is a different release, not an edition — must not merge.
+        $this->track('X', '$uicideboy$', 'I No Longer Fear the Razor', 1);
+        $this->track('Y', '$uicideboy$', 'I No Longer Fear the Razor (II)', 1);
+
+        $this->assertSame(2, app(AlbumBrowser::class)->paginate()->total());
+    }
+
     public function test_tracks_are_ordered_by_disc_then_number(): void
     {
         // Insertion order is deliberately wrong here, so a pass cannot come
