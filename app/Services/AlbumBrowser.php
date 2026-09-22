@@ -38,19 +38,20 @@ class AlbumBrowser
     public function paginate(int $perPage = 60): LengthAwarePaginator
     {
         return $this->baseQuery()
-            ->selectRaw('music_metadata.album as album')
+            // Group on the canonical album_key, not the raw album string, so
+            // edition/punctuation variants collapse into one album (S-308). One
+            // representative spelling is shown — MIN keeps it stable across pages.
+            ->selectRaw('MIN(music_metadata.album) as album')
             ->selectRaw('music_metadata.artist as artist')
             ->selectRaw('COUNT(*) as track_count')
             ->selectRaw('MIN(media_items.id) as sample_item_id')
-            ->groupBy('music_metadata.album', 'music_metadata.artist')
+            ->groupBy('music_metadata.album_key', 'music_metadata.artist')
             ->orderByRaw('LOWER(music_metadata.artist)')
-            ->orderByRaw('LOWER(music_metadata.album)')
-            // Tiebreakers on the exact group keys, so two albums that differ
-            // only in case do not swap places between pages and duplicate. The
-            // case-folded order decides what a human sees; these decide the
-            // ties it leaves, deterministically.
+            ->orderByRaw('LOWER(MIN(music_metadata.album))')
+            // Tiebreakers on the exact group keys, so two albums do not swap
+            // places between pages and duplicate.
             ->orderBy('music_metadata.artist')
-            ->orderBy('music_metadata.album')
+            ->orderBy('music_metadata.album_key')
             ->paginate($perPage);
     }
 
@@ -107,13 +108,15 @@ class AlbumBrowser
     public function forArtist(string $artist): Collection
     {
         return $this->baseQuery()
-            ->selectRaw('music_metadata.album as album')
+            ->selectRaw('MIN(music_metadata.album) as album')
             ->selectRaw(self::PRIMARY . ' as artist')
             ->selectRaw('COUNT(*) as track_count')
             ->selectRaw('MIN(media_items.id) as sample_item_id')
             ->whereRaw(self::PRIMARY . ' = ?', [$artist])
-            ->groupBy('music_metadata.album', DB::raw(self::PRIMARY))
-            ->orderByRaw('LOWER(music_metadata.album)')
+            // Group on the canonical key so an artist's deluxe/remaster variants
+            // list as one album (S-308).
+            ->groupBy('music_metadata.album_key', DB::raw(self::PRIMARY))
+            ->orderByRaw('LOWER(MIN(music_metadata.album))')
             ->get();
     }
 
@@ -128,11 +131,15 @@ class AlbumBrowser
      */
     public function tracks(string $artist, string $album): Collection
     {
+        // Match on the canonical album key, so every edition/punctuation variant
+        // of the album is listed together (S-308).
+        $albumKey = app(\App\Services\Metadata\AlbumTitleNormalizer::class)->canonicalKey($album);
+
         return $this->gate->apply(MediaItem::query())
             ->where('media_items.type', MediaItemType::Music)
             ->whereHas('musicMetadata', fn (Builder $q) => $q
                 ->where('artist', $artist)
-                ->where('album', $album))
+                ->where('album_key', $albumKey))
             // `plays` too: every one of these feeds playerPayload(), which
             // asks for a resume position and would query per track without it.
             ->with(['musicMetadata', 'plays'])
