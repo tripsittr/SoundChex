@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             DefaultOrgRolesSeeder::class,
+            OfficialPluginRepositorySeeder::class,
         ]);
 
         User::factory()->create([
