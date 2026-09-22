@@ -198,16 +198,22 @@ class MediaController extends Controller
     /**
      * The lyrics for a track, fetched and cached from a provider on first ask.
      *
-     * Only music, and only what the content gate allows. Returns `{ lyrics }`,
-     * which is null when the track has none — the app shows the section only when
-     * there is something to show, so a null is a normal answer, not an error.
+     * Only music, and only what the content gate allows. Returns
+     * `{ lyrics, synced }`: `lyrics` is the plain words (null when the track has
+     * none), `synced` is time-synced LRC text for the scroll-highlight (null when
+     * only unsynced words exist). The app shows the section only when there is
+     * something to show, so nulls are a normal answer, not an error. `lyrics`
+     * stays for older clients that read only that key.
      */
     public function lyrics(MediaItem $item, LyricsService $lyrics): JsonResponse
     {
         abort_unless(app(ContentGate::class)->allows($item), 404);
 
+        $payload = $lyrics->lyricsPayloadFor($item);
+
         return response()->json([
-            'lyrics' => $lyrics->lyricsFor($item),
+            'lyrics' => $payload['plain'],
+            'synced' => $payload['synced'],
         ]);
     }
 
