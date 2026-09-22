@@ -77,6 +77,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Configured Application URL
+    |--------------------------------------------------------------------------
+    |
+    | The address this server was configured with, kept separate because the
+    | SetAppUrl middleware replaces 'url' above with whichever of this server's
+    | several addresses the current request arrived on. Anything needing the
+    | server's own stable address reads this instead — OAuth redirect URIs
+    | above all (S-322), since a service matches the redirect_uri against the
+    | single one registered for the app and it cannot move with the request.
+    |
+    */
+
+    'configured_url' => env('APP_URL', 'http://localhost'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
