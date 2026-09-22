@@ -3,15 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-namespace App\Services\Import;
+namespace SoundChex\PlaylistPorter\Services;
 
 use App\Models\Collection;
-use App\Models\PlaylistImport;
-use App\Services\Import\Parsers\CsvParser;
-use App\Services\Import\Parsers\M3uParser;
-use App\Services\Import\Parsers\PlaylistFileParser;
-use App\Services\Import\Parsers\XspfParser;
 use Illuminate\Support\Facades\Log;
+use SoundChex\PlaylistPorter\Models\PlaylistImport;
+use SoundChex\PlaylistPorter\Services\Parsers\CsvParser;
+use SoundChex\PlaylistPorter\Services\Parsers\M3uParser;
+use SoundChex\PlaylistPorter\Services\Parsers\PlaylistFileParser;
+use SoundChex\PlaylistPorter\Services\Parsers\XspfParser;
 
 /**
  * Ports a playlist into the library (S-310).

@@ -3,19 +3,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-namespace App\Http\Controllers\Api;
+namespace SoundChex\PlaylistPorter\Http;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\ImportPlaylistJob;
-use App\Models\PlaylistImport;
 use App\Services\CurrentProfile;
-use App\Services\Import\PlaylistImportService;
-use App\Services\Import\Sources\PlaylistSource;
-use App\Services\Import\Sources\PlaylistSourceRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use SoundChex\PlaylistPorter\Jobs\ImportPlaylistJob;
+use SoundChex\PlaylistPorter\Models\PlaylistImport;
+use SoundChex\PlaylistPorter\Services\PlaylistImportService;
+use SoundChex\PlaylistPorter\Services\Sources\PlaylistSource;
+use SoundChex\PlaylistPorter\Services\Sources\PlaylistSourceRegistry;
 
 /**
  * Porting playlists from a connected streaming service (S-312).

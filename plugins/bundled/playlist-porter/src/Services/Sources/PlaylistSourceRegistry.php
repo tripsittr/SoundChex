@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-namespace App\Services\Import\Sources;
+namespace SoundChex\PlaylistPorter\Services\Sources;
 
 /**
  * The streaming services playlists can be ported from (S-312).

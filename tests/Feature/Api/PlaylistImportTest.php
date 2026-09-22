@@ -165,7 +165,7 @@ class PlaylistImportTest extends TestCase
         ]);
 
         $response->assertCreated()->assertJsonPath('status', 'pending')->assertJsonPath('total', 41);
-        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\ImportPlaylistJob::class);
+        \Illuminate\Support\Facades\Queue::assertPushed(\SoundChex\PlaylistPorter\Jobs\ImportPlaylistJob::class);
     }
 
     private function track(string $title, string $artist, ?string $album): MediaItem

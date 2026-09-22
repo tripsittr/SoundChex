@@ -3,15 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-namespace App\Jobs;
+namespace SoundChex\PlaylistPorter\Jobs;
 
-use App\Models\PlaylistImport;
 use App\Services\CurrentProfile;
-use App\Services\Import\ImportedTrack;
-use App\Services\Import\PlaylistImportService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use SoundChex\PlaylistPorter\Models\PlaylistImport;
+use SoundChex\PlaylistPorter\Services\ImportedTrack;
+use SoundChex\PlaylistPorter\Services\PlaylistImportService;
 
 /**
  * Ports a playlist in the background (S-310).

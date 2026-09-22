@@ -131,7 +131,7 @@ class SpotifyImportTest extends TestCase
         ]);
 
         Cache::put('playlist-oauth:teststate', $this->user->id, now()->addMinutes(5));
-        app(\App\Services\Import\Sources\SpotifySource::class)->connect('code', 'https://app.example/callback');
+        app(\SoundChex\PlaylistPorter\Services\Sources\SpotifySource::class)->connect('code', 'https://app.example/callback');
     }
 
     private function track(string $title, string $artist): MediaItem
