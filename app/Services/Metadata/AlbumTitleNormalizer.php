@@ -38,6 +38,20 @@ class AlbumTitleNormalizer
             return null;
         }
 
+        // Prefer the plain album name over an "(Deluxe)"/"(Remastered)" one: the
+        // edition tail is metadata noise, not the album's name. If any variant has
+        // no edition qualifier, choose only among those; the edition spellings can
+        // never win the display even when they happen to be more common.
+        $plain = array_filter(
+            $variantCounts,
+            fn (int $count, string $spelling): bool => ! $this->hasEditionQualifier($spelling),
+            ARRAY_FILTER_USE_BOTH,
+        );
+
+        if ($plain !== []) {
+            $variantCounts = $plain;
+        }
+
         $best = null;
         $bestCount = -1;
 
@@ -71,7 +85,7 @@ class AlbumTitleNormalizer
         $groups = [];
 
         foreach ($rows as $row) {
-            $key = mb_strtolower(trim((string) $row->artist))."\0".mb_strtolower(trim((string) $row->album));
+            $key = $this->artistKey($row->artist)."\0".$this->canonicalKey((string) $row->album);
             $groups[$key]['artist'] = $row->artist;
             $groups[$key]['variants'][trim((string) $row->album)] =
                 ($groups[$key]['variants'][trim((string) $row->album)] ?? 0) + 1;
@@ -101,13 +115,13 @@ class AlbumTitleNormalizer
 
         foreach ($this->groupsNeedingNormalization() as $group) {
             $canonical = $group['canonical'];
+            $key = $this->canonicalKey($canonical);
 
-            // Pull the group's rows once, then rewrite only the ones whose exact
-            // (case-sensitive) album spelling differs from the canonical. A SQL
-            // `LOWER(album) = ?` update would also match the canonical rows —
-            // some collations are case-insensitive — and rewrite the whole group.
+            // Rewrite every row of this album (by artist + canonical key, so the
+            // edition/punctuation variants are caught) whose spelling differs from
+            // the canonical one. Filtered in PHP by the key, since it is not a
+            // plain SQL expression.
             $rows = MusicMetadata::query()
-                ->whereRaw('LOWER(TRIM(album)) = ?', [mb_strtolower($canonical)])
                 ->when(
                     filled($group['artist']),
                     fn ($q) => $q->whereRaw('LOWER(TRIM(artist)) = ?', [mb_strtolower(trim((string) $group['artist']))]),
@@ -116,7 +130,8 @@ class AlbumTitleNormalizer
                 ->get(['id', 'album']);
 
             foreach ($rows as $row) {
-                if (trim((string) $row->album) === $canonical) {
+                if (trim((string) $row->album) === $canonical
+                    || $this->canonicalKey((string) $row->album) !== $key) {
                     continue;
                 }
 
@@ -140,13 +155,17 @@ class AlbumTitleNormalizer
             return $album;
         }
 
+        $key = $this->canonicalKey($album);
+
         $variants = MusicMetadata::query()
-            ->whereRaw('LOWER(TRIM(album)) = ?', [mb_strtolower(trim($album))])
             ->when(
                 filled($artist),
                 fn ($q) => $q->whereRaw('LOWER(TRIM(artist)) = ?', [mb_strtolower(trim((string) $artist))]),
             )
             ->get(['album'])
+            // Same album by canonical key — the edition/punctuation variants too,
+            // not just the same casing.
+            ->filter(fn (MusicMetadata $m): bool => $this->canonicalKey((string) $m->album) === $key)
             ->groupBy(fn (MusicMetadata $m): string => trim((string) $m->album))
             ->map->count()
             ->all();
@@ -156,6 +175,60 @@ class AlbumTitleNormalizer
         $variants[trim($album)] = ($variants[trim($album)] ?? 0) + 1;
 
         return $this->canonicalFor($variants);
+    }
+
+    /**
+     * A canonical key that groups the *same* album written different ways, while
+     * keeping genuinely different releases apart (S-307).
+     *
+     * Folds away the things that split one album into duplicates — case, smart vs
+     * straight quotes, bracket style, and edition/version qualifiers ("(Deluxe)",
+     * "(Remastered 2016)", "(U.S. Version)", "(30th Anniversary Edition)") — but
+     * deliberately keeps numbered sequels and volumes ("(Part IV)", "(II)"),
+     * which are distinct records, by only stripping qualifiers that carry an
+     * edition keyword.
+     */
+    public function canonicalKey(string $album): string
+    {
+        $key = mb_strtolower(trim($album));
+
+        // Smart quotes and dashes → their plain forms; bracket styles unified.
+        $key = strtr($key, [
+            "\u{2018}" => "'", "\u{2019}" => "'",
+            "\u{201C}" => '"', "\u{201D}" => '"',
+            "\u{2013}" => '-', "\u{2014}" => '-',
+            '[' => '(', ']' => ')',
+        ]);
+
+        // Drop a parenthetical only when it names an edition/version — never a
+        // bare "(II)" or "(Part IV)", which mark a different release.
+        $key = preg_replace(
+            '/\s*\([^)]*\b(edition|deluxe|remaster|remastered|expanded|version|explicit|bonus|anniversary|mono|stereo|reissue|special|original|super)\b[^)]*\)/iu',
+            '',
+            $key,
+        ) ?? $key;
+
+        // Everything else that is pure punctuation or spacing is noise for keying.
+        $key = preg_replace('/[[:punct:]]/u', '', $key) ?? $key;
+
+        return trim(preg_replace('/\s+/', ' ', $key) ?? $key);
+    }
+
+    /** Whether an album title carries an edition/version qualifier tail. */
+    private function hasEditionQualifier(string $album): bool
+    {
+        return preg_match(
+            '/[\(\[][^)\]]*\b(edition|deluxe|remaster|remastered|expanded|version|explicit|bonus|anniversary|mono|stereo|reissue|special|original|super)\b[^)\]]*[\)\]]/iu',
+            $album,
+        ) === 1;
+    }
+
+    /** The artist half of a group key — case- and punctuation-insensitive. */
+    private function artistKey(?string $artist): string
+    {
+        $key = preg_replace('/[[:punct:]]/u', '', mb_strtolower(trim((string) $artist))) ?? '';
+
+        return trim(preg_replace('/\s+/', ' ', $key) ?? $key);
     }
 
     /**
@@ -179,6 +252,12 @@ class AlbumTitleNormalizer
 
         if ($sa !== $sb) {
             return $sa > $sb;
+        }
+
+        // On a tie, prefer the plainer title — the one without the "(Deluxe)" /
+        // "(Remastered)" tail — which is usually the shorter string.
+        if (mb_strlen($a) !== mb_strlen($b)) {
+            return mb_strlen($a) < mb_strlen($b);
         }
 
         return strcmp($a, $b) < 0;

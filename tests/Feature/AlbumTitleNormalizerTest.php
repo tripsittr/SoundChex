@@ -69,6 +69,45 @@ class AlbumTitleNormalizerTest extends TestCase
         $this->assertSame('A Brand New Record', $canonical);
     }
 
+    public function test_it_collapses_edition_and_punctuation_variants(): void
+    {
+        // The same album, split by deluxe/remaster tails and bracket style.
+        $this->track('(What\'s the Story) Morning Glory?', 'Oasis');
+        $this->track('(What\'s the Story) Morning Glory?', 'Oasis');
+        $this->track('[What\'s The Story] Morning Glory', 'Oasis');
+        $this->track('(What\'s The Story) Morning Glory? (Deluxe Remastered Edition)', 'Oasis');
+
+        $changed = app(AlbumTitleNormalizer::class)->normalizeLibrary();
+
+        // Two variants rewritten onto the most common plain spelling.
+        $this->assertSame(2, $changed);
+        $albums = \App\Models\MusicMetadata::pluck('album')->unique()->values()->all();
+        $this->assertSame(['(What\'s the Story) Morning Glory?'], $albums);
+    }
+
+    public function test_it_does_not_merge_numbered_sequels(): void
+    {
+        // "(II)" and "(Part IV/V)" are different releases, not editions.
+        $this->track('I No Longer Fear the Razor', '$uicideboy$');
+        $this->track('I No Longer Fear the Razor (II)', '$uicideboy$');
+        $this->track('Kill Yourself (Part IV)', '$uicideboy$');
+        $this->track('Kill Yourself (Part V)', '$uicideboy$');
+
+        $this->assertSame(0, app(AlbumTitleNormalizer::class)->normalizeLibrary());
+    }
+
+    public function test_a_deluxe_edition_collapses_onto_the_plain_album_at_enrichment(): void
+    {
+        $this->track('Urban Hymns', 'The Verve');
+        $this->track('Urban Hymns', 'The Verve');
+
+        // A newly-enriched deluxe pressing adopts the plain album already there.
+        $canonical = app(AlbumTitleNormalizer::class)
+            ->canonicalForAlbum('The Verve', 'Urban Hymns (Deluxe / Remastered 2016)');
+
+        $this->assertSame('Urban Hymns', $canonical);
+    }
+
     private function track(string $album, string $artist): MediaItem
     {
         $item = MediaItem::create([
