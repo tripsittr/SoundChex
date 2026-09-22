@@ -91,7 +91,8 @@
                                     <x-filament::button
                                         size="sm"
                                         wire:click="install('{{ $entry['id'] }}')"
-                                        wire:confirm="Install {{ $entry['name'] }}? It downloads and installs the plugin, disabled. You enable it after reviewing it.">
+                                        wire:loading.attr="disabled"
+                                        wire:target="install">
                                         Install
                                     </x-filament::button>
                                 @else
@@ -162,7 +163,8 @@
                                 :color="$plugin['enabled'] ? 'danger' : 'primary'"
                                 :outlined="$plugin['enabled']"
                                 wire:click="toggle('{{ $plugin['id'] }}')"
-                                :wire:confirm="$plugin['enabled'] ? false : 'Enable ' . $plugin['name'] . '? It runs as part of SoundChex, with full access. Only enable a plugin you trust.'"
+                                wire:loading.attr="disabled"
+                                wire:target="toggle"
                             >
                                 {{ $plugin['enabled'] ? 'Disable' : 'Enable' }}
                             </x-filament::button>

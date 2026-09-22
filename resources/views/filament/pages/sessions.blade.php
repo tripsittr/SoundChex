@@ -42,7 +42,8 @@
                                         color="danger"
                                         outlined
                                         wire:click="revoke({{ $login['id'] }})"
-                                        wire:confirm="Sign this device out? It will need to log in again.">
+                                        wire:loading.attr="disabled"
+                                        wire:target="revoke">
                                         Sign out
                                     </x-filament::button>
                                 </td>
