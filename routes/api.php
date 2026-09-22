@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PlaylistController;
 use App\Http\Controllers\Api\PlaylistImportController;
+use App\Http\Controllers\Api\PlaylistSourceController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ReaderController;
 use App\Http\Controllers\Api\ServerHealthController;
@@ -227,6 +228,15 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/playlists/imports', [PlaylistImportController::class, 'store'])->name('api.playlists.imports.store');
         Route::get('/playlists/imports/{import}', [PlaylistImportController::class, 'show'])->name('api.playlists.imports.show');
         Route::post('/playlists/imports/{import}/resolve', [PlaylistImportController::class, 'resolve'])->name('api.playlists.imports.resolve');
+
+        // Porting from a connected streaming service (S-312). Also before the
+        // `{collection}` routes so "sources" is not read as a playlist id.
+        Route::get('/playlists/sources', [PlaylistSourceController::class, 'index'])->name('api.playlists.sources');
+        Route::post('/playlists/sources/{source}/authorize', [PlaylistSourceController::class, 'authorize'])->name('api.playlists.sources.authorize');
+        Route::post('/playlists/sources/{source}/callback', [PlaylistSourceController::class, 'callback'])->name('api.playlists.sources.callback');
+        Route::delete('/playlists/sources/{source}', [PlaylistSourceController::class, 'disconnect'])->name('api.playlists.sources.disconnect');
+        Route::get('/playlists/sources/{source}/playlists', [PlaylistSourceController::class, 'playlists'])->name('api.playlists.sources.playlists');
+        Route::post('/playlists/sources/{source}/import', [PlaylistSourceController::class, 'import'])->name('api.playlists.sources.import');
 
         Route::get('/playlists/{collection}', [PlaylistController::class, 'show'])->name('api.playlists.show');
         Route::patch('/playlists/{collection}', [PlaylistController::class, 'update'])->name('api.playlists.update');
