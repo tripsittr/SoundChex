@@ -41,6 +41,18 @@ use Illuminate\Support\Facades\Storage;
 class DuplicateDetector
 {
     /**
+     * The algorithm every content hash in the app is stored in.
+     *
+     * Canonical here because this is what writes `content_hash`. Anything that
+     * verifies or compares those hashes must use this same constant —
+     * TransferReceiver and LibraryOrganizer both do. Hashing with a different
+     * algorithm would make every file look changed: the transfer would call
+     * each arrival corrupt and delete it, and the organiser would stop
+     * recognising a file as its own duplicate.
+     */
+    public const HASH = 'xxh128';
+
+    /**
      * How far two copies of the same song may differ in length before the
      * looser pass stops offering them as probably-the-same (S-339).
      *
@@ -73,7 +85,7 @@ class DuplicateDetector
             return null;
         }
 
-        $hash = @hash_file('xxh128', $absolutePath);
+        $hash = @hash_file(self::HASH, $absolutePath);
 
         return $hash === false ? null : $hash;
     }
@@ -278,12 +290,9 @@ class DuplicateDetector
 
         $tolerance = $this->settings->duplicateDurationToleranceMs();
 
-        $candidates = $this->musicCandidates($item)
-            ->whereRaw('LOWER(TRIM(title)) = ?', [$this->normalise($item->title)])
+        $candidates = $this->sameTitleAs($item)
             ->whereHas('musicMetadata', function ($q) use ($meta, $tolerance, $matchArtist) {
-                // Compare on the primary artist, falling back to the raw credit
-                // for rows that have no primary set yet.
-                $q->whereRaw('LOWER(TRIM(COALESCE(NULLIF(primary_artist, ""), artist))) = ?', [$matchArtist]);
+                $this->whereSameArtist($q, $matchArtist);
 
                 // Album must match when this track has one — a single and the
                 // album cut of the same song are legitimately separate files.
@@ -292,14 +301,8 @@ class DuplicateDetector
                 }
 
                 // Length within tolerance, when both sides know their length.
-                if ($meta->duration_ms !== null && $tolerance > 0) {
-                    $q->where(function ($inner) use ($meta, $tolerance) {
-                        $inner->whereNull('duration_ms')
-                            ->orWhereBetween('duration_ms', [
-                                $meta->duration_ms - $tolerance,
-                                $meta->duration_ms + $tolerance,
-                            ]);
-                    });
+                if ($tolerance > 0) {
+                    $this->whereDurationWithin($q, $meta->duration_ms, $tolerance);
                 }
             })
             ->get();
@@ -333,23 +336,14 @@ class DuplicateDetector
         // master, so it is not offered at all.
         $limit = self::LIKELY_DURATION_LIMIT_MS;
 
-        $candidates = $this->musicCandidates($item)
-            ->whereRaw('LOWER(TRIM(title)) = ?', [$this->normalise($item->title)])
+        $candidates = $this->sameTitleAs($item)
             ->whereHas('musicMetadata', function ($q) use ($meta, $matchArtist, $limit) {
-                $q->whereRaw('LOWER(TRIM(COALESCE(NULLIF(primary_artist, ""), artist))) = ?', [$matchArtist]);
+                $this->whereSameArtist($q, $matchArtist);
 
                 // The album is deliberately not compared here — differing on it
                 // is the common case this pass exists to catch. The length is,
                 // but loosely, and only when both sides know it.
-                if ($meta->duration_ms !== null) {
-                    $q->where(function ($inner) use ($meta, $limit) {
-                        $inner->whereNull('duration_ms')
-                            ->orWhereBetween('duration_ms', [
-                                $meta->duration_ms - $limit,
-                                $meta->duration_ms + $limit,
-                            ]);
-                    });
-                }
+                $this->whereDurationWithin($q, $meta->duration_ms, $limit);
             })
             ->get();
 
@@ -369,6 +363,45 @@ class DuplicateDetector
             ->where('type', MediaItemType::Music)
             ->whereNull('duplicate_of_id')
             ->orderBy('id');
+    }
+
+    /** Music candidates whose title matches this item's, normalised. */
+    private function sameTitleAs(MediaItem $item): Builder
+    {
+        return $this->musicCandidates($item)
+            ->whereRaw('LOWER(TRIM(title)) = ?', [$this->normalise((string) $item->title)]);
+    }
+
+    /**
+     * Constrains a metadata query to one normalised primary artist.
+     *
+     * Shared by the strict and the looser pass so the two cannot disagree on
+     * what counts as the same artist. Compares on the primary artist, falling
+     * back to the raw credit for rows that have no primary set yet.
+     */
+    private function whereSameArtist(Builder $query, string $artist): void
+    {
+        $query->whereRaw('LOWER(TRIM(COALESCE(NULLIF(primary_artist, ""), artist))) = ?', [$artist]);
+    }
+
+    /**
+     * Constrains a metadata query to lengths within `$window` of `$durationMs`.
+     *
+     * A row that does not know its own length is kept rather than excluded:
+     * an untagged duration is missing information, not evidence of a
+     * different recording. Nothing is constrained when this side's length is
+     * unknown either, for the same reason.
+     */
+    private function whereDurationWithin(Builder $query, ?int $durationMs, int $window): void
+    {
+        if ($durationMs === null) {
+            return;
+        }
+
+        $query->where(function ($inner) use ($durationMs, $window) {
+            $inner->whereNull('duration_ms')
+                ->orWhereBetween('duration_ms', [$durationMs - $window, $durationMs + $window]);
+        });
     }
 
     /**
@@ -571,7 +604,7 @@ class DuplicateDetector
             return null;
         }
 
-        $hash = @hash_file('xxh128', $path);
+        $hash = @hash_file(self::HASH, $path);
 
         return $hash === false ? null : $hash;
     }
@@ -681,7 +714,7 @@ class DuplicateDetector
         if ($ra !== null && $rb !== null) {
             // 5% (or ~16 kbps) apart to count as a real difference, not encoder
             // noise between two rips of the same track.
-            $margin = max(16000, (int) ($this->maxValue($ra, $rb) * 0.05));
+            $margin = max(16000, (int) (max($ra, $rb) * 0.05));
 
             if (abs($ra - $rb) >= $margin) {
                 return [$ra > $rb ? $a : $b, 'bitrate'];
@@ -740,11 +773,6 @@ class DuplicateDetector
             + (int) filled($meta?->artist);
     }
 
-    private function maxValue(int $a, int $b): int
-    {
-        return $a > $b ? $a : $b;
-    }
-
     /**
      * Marks a pair as deliberately kept, so it stops being offered for review.
      */
@@ -790,8 +818,8 @@ class DuplicateDetector
             return false;
         }
 
-        $hashA = @hash_file('xxh128', $a);
-        $hashB = @hash_file('xxh128', $b);
+        $hashA = @hash_file(self::HASH, $a);
+        $hashB = @hash_file(self::HASH, $b);
 
         return $hashA !== false && $hashA === $hashB;
     }

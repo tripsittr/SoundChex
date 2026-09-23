@@ -30,6 +30,17 @@ class LibraryStatistics
     /** Top-N default. The request was for hundreds, not tens. */
     public const TOP = 100;
 
+    /**
+     * Total listening time for a group of plays.
+     *
+     * One spelling, because six queries select it and the page compares their
+     * numbers against each other. COALESCE rather than a bare SUM so a group
+     * whose plays all have a null `listened_seconds` reports 0 rather than
+     * null — the difference between "listened to for no time" and "no data",
+     * which the templates format very differently.
+     */
+    private const SECONDS = 'COALESCE(SUM(media_plays.listened_seconds), 0) as seconds';
+
     public function __construct(private ContentGate $gate) {}
 
     /**
@@ -222,7 +233,7 @@ class LibraryStatistics
         $row = $this->plays($from, $to, $profileId)
             ->selectRaw('COUNT(*) as plays')
             ->selectRaw('COUNT(DISTINCT media_plays.media_item_id) as tracks')
-            ->selectRaw('COALESCE(SUM(media_plays.listened_seconds), 0) as seconds')
+            ->selectRaw(self::SECONDS)
             ->selectRaw('SUM(CASE WHEN media_plays.completed = 1 THEN 1 ELSE 0 END) as completed')
             // Rows from before listening time was recorded. Counted so the
             // page can say the total is understated rather than implying the
@@ -264,7 +275,7 @@ class LibraryStatistics
             ->selectRaw("{$id} as id")
             ->selectRaw("{$shape['primary']} as grouping")
             ->selectRaw('COUNT(*) as plays')
-            ->selectRaw('COALESCE(SUM(media_plays.listened_seconds), 0) as seconds')
+            ->selectRaw(self::SECONDS)
             ->groupBy(DB::raw($id), DB::raw($shape['primary']))
             ->orderByDesc('plays')
             ->limit($limit)
@@ -302,7 +313,7 @@ class LibraryStatistics
             ->selectRaw("{$shape['primary']} as grouping")
             ->selectRaw('COUNT(*) as plays')
             ->selectRaw('COUNT(DISTINCT media_plays.media_item_id) as items')
-            ->selectRaw('COALESCE(SUM(media_plays.listened_seconds), 0) as seconds')
+            ->selectRaw(self::SECONDS)
             ->groupBy(DB::raw($shape['primary']))
             ->orderByDesc('plays')
             ->limit($limit)
@@ -336,7 +347,7 @@ class LibraryStatistics
             ->where('media_tags.type', 'genre')
             ->selectRaw('media_tags.value as genre')
             ->selectRaw('COUNT(*) as plays')
-            ->selectRaw('COALESCE(SUM(media_plays.listened_seconds), 0) as seconds')
+            ->selectRaw(self::SECONDS)
             ->groupBy('media_tags.value')
             ->orderByDesc('plays')
             ->limit($limit)
@@ -360,7 +371,7 @@ class LibraryStatistics
             ->selectRaw('collections.id')
             ->selectRaw('collections.name')
             ->selectRaw('COUNT(*) as plays')
-            ->selectRaw('COALESCE(SUM(media_plays.listened_seconds), 0) as seconds')
+            ->selectRaw(self::SECONDS)
             ->groupBy('collections.id', 'collections.name')
             ->orderByDesc('plays')
             ->limit($limit)
@@ -635,7 +646,7 @@ class LibraryStatistics
             ->selectRaw('profiles.id')
             ->selectRaw('profiles.name')
             ->selectRaw('COUNT(media_plays.id) as plays')
-            ->selectRaw('COALESCE(SUM(media_plays.listened_seconds), 0) as seconds')
+            ->selectRaw(self::SECONDS)
             ->groupBy('profiles.id', 'profiles.name')
             ->orderByDesc('plays')
             ->get();

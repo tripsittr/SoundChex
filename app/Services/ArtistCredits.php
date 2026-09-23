@@ -258,20 +258,4 @@ class ArtistCredits
 
         return $found;
     }
-
-    private function isIndivisible(string $credit): bool
-    {
-        return $this->indivisiblePrefix($credit) !== null
-            && mb_strtolower($this->indivisiblePrefix($credit)) === mb_strtolower(trim($credit));
-    }
-
-    /**
-     * "Hank Williams, Jr." — a comma followed only by a generational suffix.
-     */
-    private function endsWithSuffix(string $credit): bool
-    {
-        $pattern = '/,\s*(' . implode('|', self::SUFFIXES) . ')\.?\s*$/i';
-
-        return (bool) preg_match($pattern, $credit);
-    }
 }

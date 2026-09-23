@@ -104,79 +104,13 @@ class LibraryScanner
                     continue;
                 }
 
-                $type = $this->typeForExtension($file->getExtension());
+                $classified = $this->classify($file, $path);
 
-                if ($type === null) {
+                if ($classified === null) {
                     continue;
                 }
 
-                // An extension is a guess about a container, and .mp4 carries
-                // audio just as happily as video — three Spotify exports were
-                // catalogued as films on the strength of it. Asked only when
-                // the answer could differ, and only trusted when it is a
-                // definite no: a missing ffprobe must not retype a library.
-                if ($type === MediaItemType::Movie
-                    && $this->containers->isAmbiguous($path)
-                    && $this->containers->hasVideo($path) === false) {
-                    $type = MediaItemType::Music;
-                }
-
-                $basename = $file->getBasename('.'.$file->getExtension());
-
-                // Extension cannot separate a film from an episode — both are
-                // .mkv — so the filename decides. A recognised SxxEyy makes
-                // this a show rather than the movie it was classified as.
-                $parsed = $type === MediaItemType::Movie
-                    ? $this->episodes->parse($basename)
-                    : null;
-
-                // Type is decided by whether this is television, not by
-                // whether it can be filed. Reading a refusal to file as "not a
-                // show" put 48 season-zero specials in the library as films.
-                $marker = $type === MediaItemType::Movie
-                    ? $this->episodes->marker($basename)
-                    : null;
-
-                if ($type === MediaItemType::Movie && $this->episodes->isTelevision($basename)) {
-                    $type = MediaItemType::Show;
-                }
-
-                // From the marker rather than the filing result: without it
-                // all 48 specials were catalogued under the bare series name,
-                // indistinguishable from one another. A multi-episode file has
-                // no single code to carry, so it keeps its cleaned filename.
-                $title = $marker !== null && ! $this->episodes->isMultiEpisode($basename)
-                    // The episode's own title is filled by enrichment; until
-                    // then the code identifies it unambiguously.
-                    ? sprintf('%s S%02dE%02d', $marker['series'], $marker['season'], $marker['episode'])
-                    : $this->cleanTitle($basename, $type);
-
-                // A filename that carries no readable title — a temp-upload
-                // hash, say — would only send noise to the metadata sources.
-                if ($title === null) {
-                    continue;
-                }
-
-                // The filename's author is the one piece of evidence about a
-                // book that doesn't come from the lookup being checked, so it
-                // is seeded before enrichment rather than discarded.
-                $seed = [];
-
-                if ($type === MediaItemType::Book) {
-                    $author = $this->authorHintFrom($basename);
-
-                    if ($author !== null) {
-                        $seed['author'] = $author;
-                    }
-                }
-
-                // Numbering comes from the filename and is authoritative about
-                // which episode this file is — an online lookup can correct the
-                // title but not which file you are holding.
-                if ($parsed !== null) {
-                    $seed['season_number'] = $parsed['season'];
-                    $seed['episode_number'] = $parsed['episode'];
-                }
+                ['type' => $type, 'title' => $title, 'marker' => $marker, 'seed' => $seed] = $classified;
 
                 if (! $dryRun) {
                     $item = $this->catalog($path, $title, $type, $userId, $seed);
@@ -317,9 +251,6 @@ class LibraryScanner
     }
 
     /**
-     * @param  array<string, mixed>  $attributes  Seed values for the metadata row.
-     */
-    /**
      * Rebuilds catalogue rows for media that is already filed.
      *
      * The scanner deliberately refuses to look inside its own output — filed
@@ -367,65 +298,19 @@ class LibraryScanner
                     continue;
                 }
 
-                $type = $this->typeForExtension($file->getExtension());
+                $classified = $this->classify($file, $path);
 
-                if ($type === null) {
-                    continue;
-                }
-
-                // An extension is a guess about a container, and .mp4 carries
-                // audio just as happily as video — three Spotify exports were
-                // catalogued as films on the strength of it. Asked only when
-                // the answer could differ, and only trusted when it is a
-                // definite no: a missing ffprobe must not retype a library.
-                if ($type === MediaItemType::Movie
-                    && $this->containers->isAmbiguous($path)
-                    && $this->containers->hasVideo($path) === false) {
-                    $type = MediaItemType::Music;
-                }
-
-                $basename = $file->getBasename('.'.$file->getExtension());
-                $parsed = $type === MediaItemType::Movie
-                    ? $this->episodes->parse($basename)
-                    : null;
-
-                // Type is decided by whether this is television, not by
-                // whether it can be filed. Reading a refusal to file as "not a
-                // show" put 48 season-zero specials in the library as films.
-                $marker = $type === MediaItemType::Movie
-                    ? $this->episodes->marker($basename)
-                    : null;
-
-                if ($type === MediaItemType::Movie && $this->episodes->isTelevision($basename)) {
-                    $type = MediaItemType::Show;
-                }
-
-                // From the marker rather than the filing result — see the same
-                // decision in scan() above.
-                $title = $marker !== null && ! $this->episodes->isMultiEpisode($basename)
-                    ? sprintf('%s S%02dE%02d', $marker['series'], $marker['season'], $marker['episode'])
-                    : $this->cleanTitle($basename, $type);
-
-                if ($title === null) {
-                    $result['skipped']++;
-
-                    continue;
-                }
-
-                $seed = [];
-
-                if ($type === MediaItemType::Book) {
-                    $author = $this->authorHintFrom($basename);
-
-                    if ($author !== null) {
-                        $seed['author'] = $author;
+                if ($classified === null) {
+                    // An unrecognised extension is not worth counting; an
+                    // unreadable title is a file that was passed over.
+                    if ($this->typeForExtension($file->getExtension()) !== null) {
+                        $result['skipped']++;
                     }
+
+                    continue;
                 }
 
-                if ($parsed !== null) {
-                    $seed['season_number'] = $parsed['season'];
-                    $seed['episode_number'] = $parsed['episode'];
-                }
+                ['type' => $type, 'title' => $title, 'marker' => $marker, 'seed' => $seed] = $classified;
 
                 if (! $dryRun) {
                     $item = $this->catalog($path, $title, $type, $userId, $seed);
@@ -455,6 +340,99 @@ class LibraryScanner
         return $result;
     }
 
+    /**
+     * Decides what a file on disk is, and what to call it.
+     *
+     * Shared by `scan()` and `recover()`, which must agree: the two walk the
+     * same kinds of file and disagreeing would mean a recovered library was
+     * typed and titled differently from a scanned one. It was duplicated
+     * between them and had already started to drift.
+     *
+     * @return array{type: MediaItemType, title: string, marker: array<string, mixed>|null, seed: array<string, mixed>}|null
+     *                                                  null when the file is not media, or carries no usable title.
+     */
+    private function classify(SplFileInfo $file, string $path): ?array
+    {
+        $type = $this->typeForExtension($file->getExtension());
+
+        if ($type === null) {
+            return null;
+        }
+
+        // An extension is a guess about a container, and .mp4 carries
+        // audio just as happily as video — three Spotify exports were
+        // catalogued as films on the strength of it. Asked only when
+        // the answer could differ, and only trusted when it is a
+        // definite no: a missing ffprobe must not retype a library.
+        if ($type === MediaItemType::Movie
+            && $this->containers->isAmbiguous($path)
+            && $this->containers->hasVideo($path) === false) {
+            $type = MediaItemType::Music;
+        }
+
+        $basename = $file->getBasename('.'.$file->getExtension());
+
+        // Extension cannot separate a film from an episode — both are
+        // .mkv — so the filename decides. A recognised SxxEyy makes
+        // this a show rather than the movie it was classified as.
+        $parsed = $type === MediaItemType::Movie
+            ? $this->episodes->parse($basename)
+            : null;
+
+        // Type is decided by whether this is television, not by
+        // whether it can be filed. Reading a refusal to file as "not a
+        // show" put 48 season-zero specials in the library as films.
+        $marker = $type === MediaItemType::Movie
+            ? $this->episodes->marker($basename)
+            : null;
+
+        if ($type === MediaItemType::Movie && $this->episodes->isTelevision($basename)) {
+            $type = MediaItemType::Show;
+        }
+
+        // From the marker rather than the filing result: without it
+        // all 48 specials were catalogued under the bare series name,
+        // indistinguishable from one another. A multi-episode file has
+        // no single code to carry, so it keeps its cleaned filename.
+        $title = $marker !== null && ! $this->episodes->isMultiEpisode($basename)
+            // The episode's own title is filled by enrichment; until
+            // then the code identifies it unambiguously.
+            ? sprintf('%s S%02dE%02d', $marker['series'], $marker['season'], $marker['episode'])
+            : $this->cleanTitle($basename, $type);
+
+        // A filename that carries no readable title — a temp-upload
+        // hash, say — would only send noise to the metadata sources.
+        if ($title === null) {
+            return null;
+        }
+
+        // The filename's author is the one piece of evidence about a
+        // book that doesn't come from the lookup being checked, so it
+        // is seeded before enrichment rather than discarded.
+        $seed = [];
+
+        if ($type === MediaItemType::Book) {
+            $author = $this->authorHintFrom($basename);
+
+            if ($author !== null) {
+                $seed['author'] = $author;
+            }
+        }
+
+        // Numbering comes from the filename and is authoritative about
+        // which episode this file is — an online lookup can correct the
+        // title but not which file you are holding.
+        if ($parsed !== null) {
+            $seed['season_number'] = $parsed['season'];
+            $seed['episode_number'] = $parsed['episode'];
+        }
+
+        return ['type' => $type, 'title' => $title, 'marker' => $marker, 'seed' => $seed];
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes  Seed values for the metadata row.
+     */
     private function catalog(string $path, string $title, MediaItemType $type, ?int $userId, array $attributes = []): MediaItem
     {
         $item = MediaItem::create([
@@ -508,17 +486,6 @@ class LibraryScanner
     }
 
     /**
-     * Turns a filename into something a metadata source can actually match.
-     *
-     * Downloaded files carry a lot of noise — site stamps like "(z-lib.org)",
-     * a trailing "by Author", quality tags, and separators. Passing the raw
-     * filename through means the lookup searches for a title no book has, and
-     * comes back empty.
-     *
-     * Returns null when nothing usable survives, so a temp-upload hash is
-     * skipped rather than catalogued as a book named after its own hash.
-     */
-    /**
      * Pulls the author out of a "Title by Author Name" filename.
      *
      * `cleanTitle()` strips this so the title search isn't polluted, but the
@@ -549,6 +516,17 @@ class LibraryScanner
             : null;
     }
 
+    /**
+     * Turns a filename into something a metadata source can actually match.
+     *
+     * Downloaded files carry a lot of noise — site stamps like "(z-lib.org)",
+     * a trailing "by Author", quality tags, and separators. Passing the raw
+     * filename through means the lookup searches for a title no book has, and
+     * comes back empty.
+     *
+     * Returns null when nothing usable survives, so a temp-upload hash is
+     * skipped rather than catalogued as a book named after its own hash.
+     */
     private function cleanTitle(string $filename, MediaItemType $type): ?string
     {
         $title = $filename;
@@ -632,13 +610,6 @@ class LibraryScanner
     }
 
     /**
-     * Classifies a dropped file by extension.
-     *
-     * The inbox accepts anything, so this is what decides whether a file
-     * becomes a track, a film, or a book. Unknown extensions are ignored
-     * rather than guessed at.
-     */
-    /**
      * One spelling of a path, so two spellings of the same file match.
      *
      * `getRealPath()` returns `C:\…\media\library\x.avi`, while
@@ -658,6 +629,13 @@ class LibraryScanner
         return PHP_OS_FAMILY === 'Windows' ? mb_strtolower($path) : $path;
     }
 
+    /**
+     * Classifies a dropped file by extension.
+     *
+     * The inbox accepts anything, so this is what decides whether a file
+     * becomes a track, a film, or a book. Unknown extensions are ignored
+     * rather than guessed at.
+     */
     private function typeForExtension(string $extension): ?MediaItemType
     {
         $extension = strtolower($extension);

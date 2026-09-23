@@ -469,9 +469,6 @@ class LibraryOrganizer
     }
 
     /**
-     * Appends a counter until the path is free.
-     */
-    /**
      * Whether two paths hold byte-identical content.
      *
      * This decides whether a file gets deleted, so a size match alone isn't
@@ -491,8 +488,10 @@ class LibraryOrganizer
             return false;
         }
 
-        $hashA = @hash_file('xxh128', $a);
-        $hashB = @hash_file('xxh128', $b);
+        // The same algorithm the catalogue stores content hashes in, so a
+        // file this decides is a duplicate is one DuplicateDetector agrees on.
+        $hashA = @hash_file(DuplicateDetector::HASH, $a);
+        $hashB = @hash_file(DuplicateDetector::HASH, $b);
 
         return $hashA !== false && $hashA === $hashB;
     }
@@ -522,6 +521,9 @@ class LibraryOrganizer
         return $relative;
     }
 
+    /**
+     * Appends a counter until the path is free.
+     */
     private function uniquePath(string $path): string
     {
         if (! file_exists($path)) {

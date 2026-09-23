@@ -38,14 +38,6 @@ class ContentGate
     }
 
     /**
-     * Restricts a media query to what the current profile may see.
-     *
-     * Titles with no rating are allowed through: most music and books carry
-     * none, and excluding them would empty a kids profile rather than protect
-     * it. The cap is about keeping an R-rated film out, not about hiding
-     * everything unlabelled.
-     */
-    /**
      * Hides rows that have been merged into another copy.
      *
      * `DuplicateDetector::merge()` keeps the duplicate row on purpose — play
@@ -70,6 +62,14 @@ class ContentGate
         );
     }
 
+    /**
+     * Restricts a media query to what the current profile may see.
+     *
+     * Titles with no rating are allowed through: most music and books carry
+     * none, and excluding them would empty a kids profile rather than protect
+     * it. The cap is about keeping an R-rated film out, not about hiding
+     * everything unlabelled.
+     */
     public function apply(Builder $query): Builder
     {
         $query = $this->withoutMergedDuplicates($query);

@@ -66,12 +66,6 @@ class HostServices
     }
 
     /**
-     * Copies the agent into place and loads it.
-     *
-     * Idempotent: installing twice must not produce two agents, so an existing
-     * one is unloaded first.
-     */
-    /**
      * Why the last install, start or stop failed.
      *
      * These return a bare boolean, which left the screen able to say only
@@ -81,6 +75,12 @@ class HostServices
      */
     public ?string $lastError = null;
 
+    /**
+     * Copies the agent into place and loads it.
+     *
+     * Idempotent: installing twice must not produce two agents, so an existing
+     * one is unloaded first.
+     */
     public function install(string $key): bool
     {
         $this->lastError = null;
@@ -364,13 +364,6 @@ class HostServices
     }
 
     /**
-     * Runs a command, returning its output or null when it failed.
-     *
-     * launchctl is noisy about things that are not errors — unloading an agent
-     * that is not loaded, for one — so the exit code decides rather than the
-     * output.
-     */
-    /**
      * Runs a command and returns whatever it complained about.
      *
      * launchctl reports real failures on stderr while still exiting zero, so
@@ -403,6 +396,13 @@ class HostServices
         return $err !== '' ? $err : $out;
     }
 
+    /**
+     * Runs a command, returning its output or null when it failed.
+     *
+     * launchctl is noisy about things that are not errors — unloading an agent
+     * that is not loaded, for one — so the exit code decides rather than the
+     * output.
+     */
     private function run(array $command): ?string
     {
         if (! $this->supported()) {
