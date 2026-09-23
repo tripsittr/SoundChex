@@ -241,7 +241,7 @@ class Plugins extends Page
      */
     private function syncStyles(InstalledPlugin $plugin): void
     {
-        $directory = $this->pluginDirectory($plugin);
+        $directory = $this->pluginPath($plugin);
 
         if ($directory === null) {
             return;
@@ -250,16 +250,38 @@ class Plugins extends Page
         $compiler = app(StyleCompiler::class);
 
         if ($plugin->enabled) {
-            $compiler->compile($directory, $plugin->plugin_id);
+            // Compiling needs the directory to actually be there; nothing to
+            // scan otherwise.
+            if (is_dir($directory)) {
+                $compiler->compile($directory, $plugin->plugin_id);
+            }
 
             return;
         }
 
+        // Clearing does not. Resolving the directory with an `is_dir()` test
+        // meant that disabling a plugin whose folder had been deleted returned
+        // early and left its compiled stylesheet behind — the opposite of what
+        // disabling is for (S-357).
         $compiler->clear($directory);
     }
 
     /** Absolute path to a plugin's directory, if it is still there. */
     private function pluginDirectory(InstalledPlugin $plugin): ?string
+    {
+        $path = $this->pluginPath($plugin);
+
+        return $path !== null && is_dir($path) ? $path : null;
+    }
+
+    /**
+     * Where a plugin's directory *would* be, whether or not it is still there.
+     *
+     * Separate from `pluginDirectory()` because the two questions differ:
+     * reading a plugin needs the folder to exist, while cleaning up after one
+     * must work precisely when it does not.
+     */
+    private function pluginPath(InstalledPlugin $plugin): ?string
     {
         $base = (string) config('soundchex.plugins.path');
 
@@ -267,9 +289,13 @@ class Plugins extends Page
             return null;
         }
 
-        $path = $base.DIRECTORY_SEPARATOR.$plugin->directory;
+        // The loader stores this as a single path segment. Refuse anything
+        // that has since become a traversal.
+        if (str_contains((string) $plugin->directory, DIRECTORY_SEPARATOR)) {
+            return null;
+        }
 
-        return is_dir($path) ? $path : null;
+        return $base.DIRECTORY_SEPARATOR.$plugin->directory;
     }
 
     /**

@@ -199,6 +199,60 @@ class PluginStyleCompilerTest extends TestCase
         $this->get('/plugin-styles/acme.demo.css')->assertRedirect();
     }
 
+    public function test_the_clear_path_does_not_require_the_folder_to_exist(): void
+    {
+        // Disabling must clean up precisely when the folder is gone — the case
+        // where a compiled stylesheet would otherwise be stranded. Resolving
+        // the path with an is_dir() test made that impossible: the clear
+        // returned early exactly when it was needed (S-357). The two questions
+        // are separate now, so `pluginPath()` answers for a missing folder
+        // while `pluginDirectory()` still refuses one.
+        $plugin = InstalledPlugin::create([
+            'plugin_id' => 'acme.gone',
+            'name' => 'Acme Gone',
+            'version' => '1.0.0',
+            'enabled' => false,
+            'directory' => 'acme-gone',          // never created on disk
+            'manifest' => '{}',
+        ]);
+
+        $page = new \App\Filament\Pages\Plugins;
+
+        $path = new \ReflectionMethod($page, 'pluginPath');
+        $path->setAccessible(true);
+
+        $directory = new \ReflectionMethod($page, 'pluginDirectory');
+        $directory->setAccessible(true);
+
+        $this->assertNotNull(
+            $path->invoke($page, $plugin),
+            'the clear path must resolve even when the folder has been deleted',
+        );
+
+        $this->assertNull(
+            $directory->invoke($page, $plugin),
+            'reading a plugin still requires the folder to be there',
+        );
+    }
+
+    public function test_a_directory_that_became_a_traversal_is_refused(): void
+    {
+        $plugin = InstalledPlugin::create([
+            'plugin_id' => 'acme.evil',
+            'name' => 'Acme Evil',
+            'version' => '1.0.0',
+            'enabled' => false,
+            'directory' => '../../etc',
+            'manifest' => '{}',
+        ]);
+
+        $page = new \App\Filament\Pages\Plugins;
+        $path = new \ReflectionMethod($page, 'pluginPath');
+        $path->setAccessible(true);
+
+        $this->assertNull($path->invoke($page, $plugin));
+    }
+
     private function skipWithoutCli(): void
     {
         $binary = (string) config('plugin-styles.binary');
