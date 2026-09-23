@@ -5,7 +5,7 @@
 
 namespace App\Filament\Resources\Movies\Pages;
 
-use App\Enums\ProcessingStatus;
+use App\Filament\Resources\Concerns\HasNeedsReviewTab;
 use App\Filament\Resources\Movies\MovieResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ListMovies extends ListRecords
 {
+    use HasNeedsReviewTab;
+
     protected static string $resource = MovieResource::class;
 
     protected function getHeaderActions(): array
@@ -34,18 +36,7 @@ class ListMovies extends ListRecords
             'wishlist' => Tab::make('Wishlist')
                 ->modifyQueryUsing(fn (Builder $query) => $query->where('wishlist', true)),
 
-            'needs_review' => Tab::make('Needs review')
-                ->badge(fn (): int => MovieResource::getEloquentQuery()
-                    ->whereIn('processing_status', [
-                        ProcessingStatus::NeedsReview->value,
-                        ProcessingStatus::Failed->value,
-                    ])
-                    ->count())
-                ->badgeColor('warning')
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereIn('processing_status', [
-                    ProcessingStatus::NeedsReview->value,
-                    ProcessingStatus::Failed->value,
-                ])),
+            'needs_review' => $this->needsReviewTab(),
         ];
     }
 }

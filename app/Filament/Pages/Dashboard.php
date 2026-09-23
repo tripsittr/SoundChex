@@ -24,17 +24,15 @@ class Dashboard extends BaseDashboard
     use RestrictsToAdmins;
 
     /**
-     * Shield generates this one as `View:Dashboard` rather than the `Access:`
-     * prefix the trait derives for pages. Naming it here keeps the check
-     * pointed at a permission that exists — the alternative fails closed for
-     * everyone but the owner, which looks like working access control right
-     * up until a granted admin is locked out.
-     */
-    /**
      * The narrow key. Library admins reach the dashboard through the floor;
      * this is the grantable `View:Dashboard` for a member given the landing
-     * page without the rest of the panel. The default derivation would ask
-     * for `Access:Dashboard`, which is not a real permission.
+     * page without the rest of the panel.
+     *
+     * Shield generates it as `View:Dashboard` rather than the `Access:` prefix
+     * the trait derives for pages, so it is named here explicitly. The default
+     * derivation would ask for `Access:Dashboard`, which is not a real
+     * permission — that fails closed for everyone but the owner, which looks
+     * like working access control right up until a granted admin is locked out.
      */
     protected static function requiredPermission(): ?string
     {

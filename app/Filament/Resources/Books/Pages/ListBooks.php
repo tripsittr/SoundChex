@@ -8,6 +8,7 @@ namespace App\Filament\Resources\Books\Pages;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Filament\Resources\Books\BookResource;
+use App\Filament\Resources\Concerns\HasNeedsReviewTab;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
 use Filament\Actions\Action;
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\Auth;
 
 class ListBooks extends ListRecords
 {
+    use HasNeedsReviewTab;
+
     protected static string $resource = BookResource::class;
 
     protected function getHeaderActions(): array
@@ -94,18 +97,7 @@ class ListBooks extends ListRecords
             'wishlist' => Tab::make('Reading list')
                 ->modifyQueryUsing(fn (Builder $query) => $query->where('wishlist', true)),
 
-            'needs_review' => Tab::make('Needs review')
-                ->badge(fn (): int => BookResource::getEloquentQuery()
-                    ->whereIn('processing_status', [
-                        ProcessingStatus::NeedsReview->value,
-                        ProcessingStatus::Failed->value,
-                    ])
-                    ->count())
-                ->badgeColor('warning')
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereIn('processing_status', [
-                    ProcessingStatus::NeedsReview->value,
-                    ProcessingStatus::Failed->value,
-                ])),
+            'needs_review' => $this->needsReviewTab(),
         ];
     }
 }

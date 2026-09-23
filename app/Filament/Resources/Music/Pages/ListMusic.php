@@ -7,6 +7,7 @@ namespace App\Filament\Resources\Music\Pages;
 
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Filament\Resources\Concerns\HasNeedsReviewTab;
 use App\Filament\Resources\Music\MusicResource;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
@@ -22,6 +23,8 @@ use Illuminate\Support\Facades\Auth;
 
 class ListMusic extends ListRecords
 {
+    use HasNeedsReviewTab;
+
     protected static string $resource = MusicResource::class;
 
     protected function getHeaderActions(): array
@@ -129,18 +132,7 @@ class ListMusic extends ListRecords
             'wishlist' => Tab::make('Wishlist')
                 ->modifyQueryUsing(fn (Builder $query) => $query->where('wishlist', true)),
 
-            'needs_review' => Tab::make('Needs review')
-                ->badge(fn (): int => MusicResource::getEloquentQuery()
-                    ->whereIn('processing_status', [
-                        ProcessingStatus::NeedsReview->value,
-                        ProcessingStatus::Failed->value,
-                    ])
-                    ->count())
-                ->badgeColor('warning')
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereIn('processing_status', [
-                    ProcessingStatus::NeedsReview->value,
-                    ProcessingStatus::Failed->value,
-                ])),
+            'needs_review' => $this->needsReviewTab(),
         ];
     }
 }

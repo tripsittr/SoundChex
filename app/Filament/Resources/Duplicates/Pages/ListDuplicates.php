@@ -6,7 +6,7 @@
 namespace App\Filament\Resources\Duplicates\Pages;
 
 use App\Enums\DuplicateStatus;
-use App\Enums\ProcessingStatus;
+use App\Filament\Resources\Concerns\HasNeedsReviewStatuses;
 use App\Filament\Resources\Duplicates\DuplicateResource;
 use App\Jobs\DetectDuplicatesJob;
 use Filament\Actions\Action;
@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ListDuplicates extends ListRecords
 {
+    use HasNeedsReviewStatuses;
+
     protected static string $resource = DuplicateResource::class;
 
     protected function getHeaderActions(): array
@@ -73,10 +75,7 @@ class ListDuplicates extends ListRecords
                 ->badge(fn (): int => static::countMetadataReview())
                 ->badgeColor('warning')
                 ->modifyQueryUsing(fn (Builder $query) => $query
-                    ->whereIn('processing_status', [
-                        ProcessingStatus::NeedsReview->value,
-                        ProcessingStatus::Failed->value,
-                    ])),
+                    ->whereIn('processing_status', static::needsReviewStatuses())),
 
             'pending' => Tab::make('Duplicates')
                 ->badge(fn (): int => static::countByStatus(DuplicateStatus::Pending))
@@ -121,10 +120,7 @@ class ListDuplicates extends ListRecords
     private static function countMetadataReview(): int
     {
         return DuplicateResource::getEloquentQuery()
-            ->whereIn('processing_status', [
-                ProcessingStatus::NeedsReview->value,
-                ProcessingStatus::Failed->value,
-            ])
+            ->whereIn('processing_status', static::needsReviewStatuses())
             ->count();
     }
 }

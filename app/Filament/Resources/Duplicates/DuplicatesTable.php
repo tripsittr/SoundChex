@@ -58,15 +58,8 @@ class DuplicatesTable
             ]))
             ->columns([
                 // The kept copy's cover. On the cover grid it is the big card
-                // image; in the table it is a small thumbnail. Resolved through
-                // coverUrl() (the stored value is a public-disk path with spaces,
-                // not a ready URL), or a raw ImageColumn renders many blank.
-                ImageColumn::make('cover_image_url')
-                    ->label('Cover')
-                    ->square()
-                    ->size($onCoverTab ? 220 : 56)
-                    ->getStateUsing(fn (MediaItem $record): ?string => $record->coverUrl())
-                    ->defaultImageUrl('https://placehold.co/220x220/1f2937/6b7280?text=%3F')
+                // image; in the table it is a small thumbnail.
+                static::coverColumn($onCoverTab ? 220 : 56)
                     ->extraImgAttributes($onCoverTab ? ['class' => 'w-full rounded-lg'] : [])
                     ->toggleable(! $onCoverTab),
 
@@ -157,15 +150,7 @@ class DuplicatesTable
             // the tab — the Merged tab plus a filter still defaulting to Pending
             // resolved to "merged AND pending", i.e. nothing, so the tab read 0.
             // Type is the only filter that belongs here.
-            ->filters([
-                SelectFilter::make('type')
-                    ->options([
-                        'music' => 'Music',
-                        'movie' => 'Movies',
-                        'show' => 'TV',
-                        'book' => 'Books',
-                    ]),
-            ])
+            ->filters([static::typeFilter()])
             ->recordActions([
                 static::mergeAction(),
                 static::resolveContentAction(),
@@ -196,13 +181,7 @@ class DuplicatesTable
         return $table
             ->defaultSort('updated_at', 'desc')
             ->columns([
-                ImageColumn::make('cover_image_url')
-                    ->label('Cover')
-                    ->square()
-                    ->size(56)
-                    ->getStateUsing(fn (MediaItem $record): ?string => $record->coverUrl())
-                    ->defaultImageUrl('https://placehold.co/220x220/1f2937/6b7280?text=%3F')
-                    ->toggleable(),
+                static::coverColumn(56)->toggleable(),
 
                 TextColumn::make('title')
                     ->label('Item')
@@ -257,15 +236,7 @@ class DuplicatesTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->filters([
-                SelectFilter::make('type')
-                    ->options([
-                        'music' => 'Music',
-                        'movie' => 'Movies',
-                        'show' => 'TV',
-                        'book' => 'Books',
-                    ]),
-            ])
+            ->filters([static::typeFilter()])
             ->recordActions([
                 static::reenrichAction(),
                 static::whyAction(),
@@ -289,13 +260,7 @@ class DuplicatesTable
             ->icon('heroicon-o-arrow-path')
             ->color('warning')
             ->action(function (MediaItem $record): void {
-                // An explicit re-enrich is a request to re-check, so clear the
-                // human-reviewed stamp — this run *may* surface a review again
-                // (S-302). Background/bulk enrichment does not clear it, so it
-                // keeps respecting a prior "Looks fine".
-                $record->forceFill(['reviewed_at' => null])->saveQuietly();
-
-                EnrichMediaItemJob::dispatch($record->id);
+                static::requeueForEnrichment($record);
 
                 Notification::make()
                     ->title('Re-enriching')
@@ -337,12 +302,7 @@ class DuplicatesTable
             ->color('gray')
             ->visible(fn (MediaItem $record): bool => $record->processing_status === ProcessingStatus::NeedsReview)
             ->action(function (MediaItem $record): void {
-                // Stamp reviewed_at so a later re-enrichment leaves this decision
-                // alone instead of re-flagging it (S-302).
-                $record->forceFill([
-                    'processing_status' => ProcessingStatus::Complete,
-                    'reviewed_at' => now(),
-                ])->saveQuietly();
+                static::stampReviewed($record);
 
                 Notification::make()
                     ->title('Marked reviewed')
@@ -360,10 +320,7 @@ class DuplicatesTable
             ->color('warning')
             ->action(function (Collection $records): void {
                 foreach ($records as $record) {
-                    // Explicit re-check: clear the reviewed stamp so this run may
-                    // flag review again (S-302).
-                    $record->forceFill(['reviewed_at' => null])->saveQuietly();
-                    EnrichMediaItemJob::dispatch($record->id);
+                    static::requeueForEnrichment($record);
                 }
 
                 Notification::make()
@@ -386,12 +343,7 @@ class DuplicatesTable
 
                 foreach ($records as $record) {
                     if ($record->processing_status === ProcessingStatus::NeedsReview) {
-                        // Stamp reviewed_at so re-enrichment respects the human's
-                        // call and won't re-flag it (S-302).
-                        $record->forceFill([
-                            'processing_status' => ProcessingStatus::Complete,
-                            'reviewed_at' => now(),
-                        ])->saveQuietly();
+                        static::stampReviewed($record);
                         $cleared++;
                     }
                 }
@@ -402,6 +354,35 @@ class DuplicatesTable
                     ->send();
             })
             ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * Queue one item for another enrichment run, at the human's request.
+     *
+     * An explicit re-enrich is a request to re-check, so the human-reviewed
+     * stamp is cleared first — this run *may* surface a review again (S-302).
+     * Background/bulk enrichment does not clear it, so it keeps respecting a
+     * prior "Looks fine".
+     */
+    private static function requeueForEnrichment(MediaItem $record): void
+    {
+        $record->forceFill(['reviewed_at' => null])->saveQuietly();
+
+        EnrichMediaItemJob::dispatch($record->id);
+    }
+
+    /**
+     * Record that a human looked at this item and judged it fine as-is.
+     *
+     * Stamps reviewed_at as well as completing it, so a later re-enrichment
+     * respects the decision instead of re-flagging it (S-302).
+     */
+    private static function stampReviewed(MediaItem $record): void
+    {
+        $record->forceFill([
+            'processing_status' => ProcessingStatus::Complete,
+            'reviewed_at' => now(),
+        ])->saveQuietly();
     }
 
     /** The stored one-line reason, or a sensible fallback from the confidence. */
@@ -690,10 +671,7 @@ class DuplicatesTable
 
             if (! static::isContentMatch($record)) {
                 $identical++;
-                $path = $record->absoluteFilePath();
-                if ($path !== null && is_file($path)) {
-                    $reclaim += filesize($path);
-                }
+                $reclaim += static::fileBytes($record) ?? 0;
 
                 continue;
             }
@@ -707,10 +685,7 @@ class DuplicatesTable
             $reason === 'newer' ? $newer++ : $quality++;
 
             $loser = $winner->is($record) ? $record->duplicateOf : $record;
-            $path = $loser?->absoluteFilePath();
-            if ($path !== null && is_file($path)) {
-                $reclaim += filesize($path);
-            }
+            $reclaim += static::fileBytes($loser) ?? 0;
         }
 
         $parts = [];
@@ -827,6 +802,42 @@ class DuplicatesTable
             ->deselectRecordsAfterCompletion();
     }
 
+    /**
+     * The cover thumbnail, shared by the duplicate and metadata tables.
+     *
+     * Resolved through coverUrl() (the stored value is a public-disk path with
+     * spaces, not a ready URL), or a raw ImageColumn renders many blank. The
+     * fallback image is one literal so both tables show the same placeholder
+     * for a missing cover.
+     */
+    private static function coverColumn(int $size): ImageColumn
+    {
+        return ImageColumn::make('cover_image_url')
+            ->label('Cover')
+            ->square()
+            ->size($size)
+            ->getStateUsing(fn (MediaItem $record): ?string => $record->coverUrl())
+            ->defaultImageUrl('https://placehold.co/220x220/1f2937/6b7280?text=%3F');
+    }
+
+    /**
+     * The media-type filter, shared by the duplicate and metadata tables.
+     *
+     * One definition because the two tables must offer the same four types —
+     * they filter the same `type` column, and a type listed on one tab but not
+     * the other would read as a missing tab rather than a missing option.
+     */
+    private static function typeFilter(): SelectFilter
+    {
+        return SelectFilter::make('type')
+            ->options([
+                'music' => 'Music',
+                'movie' => 'Movies',
+                'show' => 'TV',
+                'book' => 'Books',
+            ]);
+    }
+
     /** The list page's currently-selected tab key ('pending', 'cover', …). */
     private static function activeTab($livewire): ?string
     {
@@ -878,16 +889,30 @@ class DuplicatesTable
         return $record->duplicate_match?->isContent() === true;
     }
 
-    /** " · 4.2 MB" for a copy, when its file is on disk; empty otherwise. */
-    private static function sizeSuffix(?MediaItem $record): string
+    /**
+     * The size on disk of a copy's file in bytes, or null when the file is
+     * missing — a catalogued path whose file has since been moved or deleted is
+     * normal here, and must not be counted as reclaimable space.
+     */
+    private static function fileBytes(?MediaItem $record): ?int
     {
         $path = $record?->absoluteFilePath();
 
         if ($path === null || ! is_file($path)) {
-            return '';
+            return null;
         }
 
-        return ' · '.number_format(filesize($path) / 1048576, 1).' MB';
+        $bytes = filesize($path);
+
+        return $bytes === false ? null : $bytes;
+    }
+
+    /** " · 4.2 MB" for a copy, when its file is on disk; empty otherwise. */
+    private static function sizeSuffix(?MediaItem $record): string
+    {
+        $bytes = static::fileBytes($record);
+
+        return $bytes === null ? '' : ' · '.static::megabytes($bytes).' MB';
     }
 
     private static function reclaimable(MediaItem $record): string
@@ -896,13 +921,15 @@ class DuplicatesTable
             return '—';
         }
 
-        $path = $record->absoluteFilePath();
+        $bytes = static::fileBytes($record);
 
-        if ($path === null || ! is_file($path)) {
-            return '—';
-        }
+        return $bytes === null ? '—' : static::megabytes($bytes).' MB';
+    }
 
-        return number_format(filesize($path) / 1048576, 1).' MB';
+    /** Bytes as whole megabytes to one decimal, the unit this page reports in. */
+    private static function megabytes(int $bytes): string
+    {
+        return number_format($bytes / 1048576, 1);
     }
 
     /** The last two path segments — enough to tell two files apart. */

@@ -6,8 +6,8 @@
 namespace App\Filament\Resources\Duplicates;
 
 use App\Enums\DuplicateStatus;
-use App\Enums\ProcessingStatus;
 use App\Filament\Concerns\RestrictsToAdmins;
+use App\Filament\Resources\Concerns\HasNeedsReviewStatuses;
 use App\Filament\Resources\Duplicates\Pages\ListDuplicates;
 use App\Models\MediaItem;
 use BackedEnum;
@@ -26,6 +26,7 @@ use UnitEnum;
  */
 class DuplicateResource extends Resource
 {
+    use HasNeedsReviewStatuses;
     use RestrictsToAdmins;
 
     protected static ?string $model = MediaItem::class;
@@ -60,10 +61,7 @@ class DuplicateResource extends Resource
             ->where(fn (Builder $q) => $q
                 ->whereNotNull('duplicate_status')
                 ->orWhere('needs_cover_review', true)
-                ->orWhereIn('processing_status', [
-                    ProcessingStatus::NeedsReview->value,
-                    ProcessingStatus::Failed->value,
-                ]))
+                ->orWhereIn('processing_status', static::needsReviewStatuses()))
             ->with('duplicateOf');
     }
 
@@ -88,10 +86,7 @@ class DuplicateResource extends Resource
                 ->where('needs_cover_review', true)
                 ->count()
             + $model::query()
-                ->whereIn('processing_status', [
-                    ProcessingStatus::NeedsReview->value,
-                    ProcessingStatus::Failed->value,
-                ])
+                ->whereIn('processing_status', static::needsReviewStatuses())
                 ->count();
 
         return $waiting > 0 ? (string) $waiting : null;

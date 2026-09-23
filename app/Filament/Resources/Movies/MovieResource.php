@@ -8,7 +8,6 @@ namespace App\Filament\Resources\Movies;
 use App\Filament\Concerns\RestrictsToAdmins;
 
 use App\Enums\MediaItemType;
-use App\Filament\Resources\Concerns\BuildsMediaTable;
 use App\Filament\Resources\Concerns\IsMediaTypeResource;
 use App\Filament\Resources\Movies\Pages\CreateMovie;
 use App\Filament\Resources\Movies\Pages\EditMovie;

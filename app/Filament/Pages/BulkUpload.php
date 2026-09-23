@@ -5,6 +5,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Concerns\RestrictsToAdmins;
 use App\Services\LibraryScanner;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -30,6 +31,8 @@ use UnitEnum;
  */
 class BulkUpload extends Page
 {
+    use RestrictsToAdmins;
+
     protected string $view = 'filament.pages.bulk-upload';
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowUpTray;
@@ -46,8 +49,6 @@ class BulkUpload extends Page
      * @var array<string, mixed>
      */
     public ?array $data = [];
-
-    use \App\Filament\Concerns\RestrictsToAdmins;
 
     /**
      * Initialises the form state.
