@@ -86,6 +86,15 @@ on real, often irreplaceable files. Rules learned the hard way:
   were reported as errors and retried forever. Name each outcome.
 - **Default to doing nothing.** Duplicate handling defaults to `review`, never
   auto-delete.
+- **A stored hash describes a path. Clear it whenever the path moves.**
+  `content_hash` is the bytes at `file_path`; rewriting one without the other
+  leaves a fingerprint for a file the row no longer points at. That is not
+  theoretical — after the S-328 path repair, **54% of hashes no longer matched
+  their file**, byte-identical duplicate detection went blind, and a reviewed
+  track kept returning to the queue because two rows on one file held two
+  different hashes and neither matched the file (S-346). `LibraryOrganizer` and
+  `library:reconcile-paths` now null the hash on every path write; anything new
+  that moves a file must do the same.
 
 ### 3. Verify, don't assume
 
@@ -98,6 +107,13 @@ profile; two admin links where only one was gated.
 - Test edge cases explicitly (empty, single item, boundary, malformed).
 - When a fix is claimed, show the before and after.
 - If something is unverified, say so plainly.
+- **`grep` lies about generated output.** Minified CSS and JS are one long
+  line, which `grep` may treat as binary and report nothing for — and a
+  too-literal pattern finds nothing in *any* file. Both happened here: a
+  "missing" Tailwind class was present all along, and a checksum match against
+  upstream's `./name` prefix silently found nothing and would have skipped
+  verification entirely. Count occurrences in Python, or use `grep -a`, before
+  concluding something is absent.
 
 ### 4. Follow the existing idiom
 
@@ -276,7 +292,7 @@ reader doesn't ship a PDF engine to someone playing music.
 
 Run `npm run build` after any change to `resources/`.
 
-### Two traps that have bitten repeatedly
+### Three traps that have bitten repeatedly
 
 **Inline `<style>` beats Tailwind.** Blade `<style>` blocks are emitted *after*
 the compiled stylesheet, so `.panel { display: flex }` overrides `.hidden` at
@@ -285,6 +301,22 @@ display: none }` at the **end** of the block, after every rule it must beat.
 
 **Tailwind utility names are not CSS properties.** `ring-offset-color` in a raw
 `<style>` block is silently dropped. Write real CSS there.
+
+**A plugin's Blade cannot use the app's Tailwind.** The stylesheets declare
+their `@source` paths (`resources/css/app.css`, `resources/css/filament/admin/
+theme.css`) and none covers plugins — and a plugin installed from the catalogue
+lives in the user's application-support directory, outside the repo, so its
+markup did not exist when `public/build` was compiled. A utility class written
+in a plugin simply has no rule, and **nothing errors to say so**: two rounds of
+UI fixes shipped doing nothing before this was understood (S-347).
+
+Filament's own components are safe — `x-filament::button`, `badge`, `modal`,
+`slide-over` — because those classes come from Filament's build. Anything else
+a plugin needs must come from CSS the plugin ships itself, or from the Tailwind
+CLI the runtime now bundles, which compiles the plugin's own stylesheet when it
+is enabled (S-350, `app/Plugins/StyleCompiler.php`). A plugin can also map the
+app's design tokens into `@theme` and write `bg-sc-base-900`, so plugin UI
+matches the product rather than inventing its own palette.
 
 ---
 
