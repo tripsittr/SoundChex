@@ -7,6 +7,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Concerns\RestrictsToServerAdmins;
 use App\Models\InstalledPlugin;
+use App\Plugins\StyleCompiler;
 use App\Models\PluginRepository;
 use App\Plugins\Catalog\CatalogEntry;
 use App\Plugins\Catalog\PluginCatalog;
@@ -179,6 +180,12 @@ class Plugins extends Page
             }
 
             $plugin->forceFill(['enabled' => ! $plugin->enabled])->save();
+
+            // Build (or clear) the plugin's stylesheet as it is turned on and
+            // off, so its UI is styled the moment it appears and a disabled
+            // plugin leaves nothing of itself in the page (S-350).
+            $this->syncStyles($plugin);
+
             $this->load();
 
             // On enable, actually try to load the plugin now and surface any failure,
@@ -229,6 +236,46 @@ class Plugins extends Page
      * null when it loaded cleanly. This is what turns a silent "logged and
      * skipped" into a visible error the admin can act on.
      */
+    /**
+     * Compile the plugin's stylesheet on enable, remove it on disable (S-350).
+     *
+     * Best-effort: a plugin whose CSS cannot be built still enables, with
+     * whatever stylesheet it ships. Failing an enable over styling would be
+     * the wrong trade.
+     */
+    private function syncStyles(InstalledPlugin $plugin): void
+    {
+        $directory = $this->pluginDirectory($plugin);
+
+        if ($directory === null) {
+            return;
+        }
+
+        $compiler = app(StyleCompiler::class);
+
+        if ($plugin->enabled) {
+            $compiler->compile($directory, $plugin->plugin_id);
+
+            return;
+        }
+
+        $compiler->clear($directory);
+    }
+
+    /** Absolute path to a plugin's directory, if it is still there. */
+    private function pluginDirectory(InstalledPlugin $plugin): ?string
+    {
+        $base = (string) config('soundchex.plugins.path');
+
+        if ($base === '' || blank($plugin->directory)) {
+            return null;
+        }
+
+        $path = $base.DIRECTORY_SEPARATOR.$plugin->directory;
+
+        return is_dir($path) ? $path : null;
+    }
+
     private function loadError(InstalledPlugin $plugin): ?string
     {
         try {

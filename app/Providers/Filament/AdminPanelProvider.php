@@ -57,6 +57,14 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::STYLES_AFTER,
                 fn (): string => (string) app(Vite::class)('resources/css/filament/admin/theme.css'),
             )
+            // Each enabled plugin's compiled stylesheet, after the theme so a
+            // plugin can lean on the panel's own variables (S-350). Built when
+            // the plugin is enabled; absent until then, and absent entirely for
+            // a plugin with no UI.
+            ->renderHook(
+                PanelsRenderHook::STYLES_AFTER,
+                fn (): string => $this->pluginStyleTags(),
+            )
             // The upload indicator. Registered here as well as in the media
             // center because uploading happens *in the panel* — the two share
             // no bundle, so leaving it out would mean no progress shown on the
@@ -170,4 +178,45 @@ class AdminPanelProvider extends PanelProvider
             return [];
         }
     }
+
+    /**
+     * `<link>` tags for every enabled plugin that has a compiled stylesheet.
+     *
+     * Reads the install table rather than the loader, so this works on the very
+     * request that follows an enable — before the loader has booted the plugin.
+     */
+    private function pluginStyleTags(): string
+    {
+        // The plugins table may not exist yet on a fresh install mid-migration.
+        if (! \Illuminate\Support\Facades\Schema::hasTable('installed_plugins')) {
+            return '';
+        }
+
+        $base = (string) config('soundchex.plugins.path');
+
+        if ($base === '') {
+            return '';
+        }
+
+        $compiler = app(\App\Plugins\StyleCompiler::class);
+        $tags = '';
+
+        foreach (\App\Models\InstalledPlugin::query()->where('enabled', true)->get() as $plugin) {
+            $directory = $base.DIRECTORY_SEPARATOR.$plugin->directory;
+
+            if ($compiler->compiledPath($directory) === null) {
+                continue;
+            }
+
+            // Cache-bust on the file's own mtime, so a recompiled stylesheet is
+            // picked up without the user clearing anything.
+            $url = route('plugin.styles', ['plugin' => $plugin->plugin_id])
+                .'?v='.filemtime($directory.'/'.\App\Plugins\StyleCompiler::OUTPUT);
+
+            $tags .= '<link rel="stylesheet" href="'.e($url).'">';
+        }
+
+        return $tags;
+    }
+
 }
