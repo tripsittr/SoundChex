@@ -59,14 +59,45 @@ class BackupDatabase extends Command
         $source = fopen($plain, 'rb');
         $target = gzopen($compressed, 'wb9');
 
+        // If only one handle opened, close it and take the uncompressed
+        // snapshot with it. `prune()` reaps `*.sqlite.gz` and nothing else, so
+        // a stranded `.sqlite` is permanent — and it is a full-size copy of the
+        // database. On a daily schedule that accumulates until the disk fills,
+        // which is the very thing `prune()` exists to prevent (S-359).
         if ($source === false || $target === false) {
+            if ($source !== false) {
+                fclose($source);
+            }
+
+            if ($target !== false) {
+                gzclose($target);
+                @unlink($compressed);
+            }
+
+            @unlink($plain);
+
             $this->error('Could not compress the snapshot.');
 
             return self::FAILURE;
         }
 
         while (! feof($source)) {
-            gzwrite($target, (string) fread($source, 262_144));
+            $chunk = (string) fread($source, 262_144);
+
+            // A short write means the disk filled part-way through. Leaving a
+            // truncated `.gz` behind would be worse than no backup at all: it
+            // looks like one, and `prune()` would count it as a good copy and
+            // delete an older, valid one to make room for it.
+            if ($chunk !== '' && gzwrite($target, $chunk) === false) {
+                fclose($source);
+                gzclose($target);
+                @unlink($compressed);
+                @unlink($plain);
+
+                $this->error('Could not write the compressed snapshot — disk full?');
+
+                return self::FAILURE;
+            }
         }
 
         fclose($source);
@@ -104,6 +135,36 @@ class BackupDatabase extends Command
 
         foreach (array_slice($backups, $keep) as $old) {
             @unlink($old);
+        }
+
+        $this->sweepStrandedSnapshots($directory);
+    }
+
+    /**
+     * Removes uncompressed snapshots a failed run left behind.
+     *
+     * Only ones this command names (`soundchex-<stamp>.sqlite`) and only when
+     * no run is in flight — a `.sqlite` with no matching `.gz` is either an
+     * orphan from a failure, or the working file of a backup happening right
+     * now. Age decides: anything still being written was created seconds ago.
+     *
+     * Deliberately not touching hand-named snapshots like
+     * `pre-migration-….sqlite`; those are somebody's deliberate safety net.
+     */
+    private function sweepStrandedSnapshots(string $directory): void
+    {
+        foreach (glob($directory . '/soundchex-*.sqlite') ?: [] as $stray) {
+            if (is_file($stray . '.gz')) {
+                continue; // Mid-run, between the write and the unlink.
+            }
+
+            $age = time() - (filemtime($stray) ?: time());
+
+            if ($age < 3600) {
+                continue; // Possibly a run in flight; leave it for next time.
+            }
+
+            @unlink($stray);
         }
     }
 

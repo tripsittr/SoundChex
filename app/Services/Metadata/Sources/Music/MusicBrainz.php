@@ -606,7 +606,14 @@ class MusicBrainz implements MetadataSource
         $dirty = false;
 
         foreach ($values as $field => $value) {
-            if (blank($meta->{$field})) {
+            // `filled($value)` as well as the blank check, matching the same
+            // method on the OpenLibrary and TMDB sources. Without it a blank
+            // field could be overwritten with an empty value — no better than
+            // it was, but now recorded as though a source had answered, and
+            // `blank()` would let the next run write over it again anyway.
+            // The two call sites happen to filter empties out first, so this
+            // was safe by accident rather than by construction (S-355).
+            if (blank($meta->{$field}) && filled($value)) {
                 $meta->{$field} = $value;
                 $dirty = true;
             }
