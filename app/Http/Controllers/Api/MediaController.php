@@ -9,6 +9,7 @@ use App\Events\PlaybackCompleted;
 use App\Events\PlaybackProgress;
 use App\Events\PlaybackRecorded;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\MediaCenterController;
 use App\Http\Resources\MediaItemResource;
 use App\Models\MediaItem;
 use App\Models\MediaPlay;
@@ -31,15 +32,14 @@ use Symfony\Component\HttpFoundation\ResponseHeaderBag;
  * same operations under `auth:sanctum`, reusing the models and services the web
  * controllers use so behaviour — the content-rating gate, range streaming, the
  * offline-replay staleness rule — stays identical across the two front ends.
+ *
+ * The completion fraction and the listened-time step are read from
+ * MediaCenterController rather than restated here: they are the same rule, and
+ * a copy that drifted would make one front end call a film watched while the
+ * other still offered to resume it.
  */
 class MediaController extends Controller
 {
-    /** Past this fraction, a title counts as finished — see saveProgress. */
-    private const COMPLETE_FRACTION = 0.95;
-
-    /** The largest forward jump counted as listening rather than a seek. */
-    private const LISTENED_MAX_STEP = 90;
-
     /**
      * The media bytes, with HTTP Range support so the app can seek.
      *
@@ -101,7 +101,7 @@ class MediaController extends Controller
         $play = $this->recentPlay($item);
 
         $duration = $data['duration'] ?? 0;
-        $completed = $duration > 0 && $data['position'] >= $duration * self::COMPLETE_FRACTION;
+        $completed = $duration > 0 && $data['position'] >= $duration * MediaCenterController::COMPLETE_FRACTION;
 
         // A replayed (offline-queued) write applies only if it is newer than
         // what is stored, or it would undo progress made since. Checked before
@@ -129,7 +129,7 @@ class MediaController extends Controller
         // Only forward movement small enough to be playback counts as listened,
         // so a scrub to the end does not bank the whole track.
         $advanced = $data['position'] - (int) ($play->position_seconds ?? 0);
-        $listened = ($advanced > 0 && $advanced <= self::LISTENED_MAX_STEP) ? $advanced : 0;
+        $listened = ($advanced > 0 && $advanced <= MediaCenterController::LISTENED_MAX_STEP) ? $advanced : 0;
 
         $wasCompleted = (bool) $play->completed;
 

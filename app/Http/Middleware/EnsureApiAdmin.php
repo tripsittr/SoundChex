@@ -24,8 +24,13 @@ class EnsureApiAdmin
     {
         $profile = app(CurrentProfile::class)->get();
 
+        // canAdministerLibrary() alone, matching the web panel's door
+        // (Filament\Concerns\RestrictsToAdmins): it resolves through can(),
+        // which short-circuits true for the owner, so an explicit isOwner()
+        // here would only restate that — and a second copy of the rule is a
+        // second place for it to drift.
         abort_if(
-            $profile === null || ! ($profile->isOwner() || $profile->canAdministerLibrary()),
+            $profile === null || ! $profile->canAdministerLibrary(),
             403,
             'This profile cannot administer the library.',
         );

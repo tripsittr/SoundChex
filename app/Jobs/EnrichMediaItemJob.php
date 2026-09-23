@@ -133,13 +133,6 @@ class EnrichMediaItemJob implements ShouldQueue
     }
 
     /**
-     * Refreshes where this title can currently be streamed.
-     *
-     * Non-fatal like the organizer below: metadata is already saved, and a
-     * TMDB outage or a missing key shouldn't fail the job and re-run the whole
-     * pipeline. Availability simply stays as it was until the next pass.
-     */
-    /**
      * Records who is credited on a track.
      *
      * After the pipeline, so it reads whatever artist the sources settled on
@@ -307,6 +300,13 @@ class EnrichMediaItemJob implements ShouldQueue
         }
     }
 
+    /**
+     * Refreshes where this title can currently be streamed.
+     *
+     * Non-fatal like the organizer below: metadata is already saved, and a
+     * TMDB outage or a missing key shouldn't fail the job and re-run the whole
+     * pipeline. Availability simply stays as it was until the next pass.
+     */
     private function refreshAvailability(MediaItem $item): void
     {
         try {

@@ -136,8 +136,10 @@ class TokenController extends Controller
                 'is_owner' => (bool) $profile->is_owner,
                 'max_rating' => $profile->max_rating,
                 // Whether this profile may reach the admin surface in the app —
-                // the same test the web panel's door uses.
-                'is_admin' => $profile->isOwner() || $profile->canAdministerLibrary(),
+                // the same test the web panel's door and EnsureApiAdmin use, so
+                // the flag the app hides its admin surface behind agrees with
+                // what the server will actually allow.
+                'is_admin' => $profile->canAdministerLibrary(),
             ],
         ]);
     }

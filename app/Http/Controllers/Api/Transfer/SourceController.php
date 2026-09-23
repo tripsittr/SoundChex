@@ -204,8 +204,7 @@ class SourceController extends Controller
      *
      * Checked per call rather than once at the start: a 46 GB transfer runs
      * for hours, and revoking it half way has to actually stop it.
-     */
-    /**
+     *
      * @param  string|array<int, string>  $want  Any one of these is enough.
      */
     private function authorizeTransfer(Request $request, string|array $want): void
