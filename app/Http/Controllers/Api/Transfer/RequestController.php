@@ -140,19 +140,6 @@ class RequestController extends Controller
     }
 
     /**
-     * The receiver calling off its own transfer.
-     *
-     * Which request is being cancelled comes from the token, never from the
-     * URL. A receiver holds a token for exactly one request, so it can end
-     * that one and no other — otherwise cancelling would be a way to stop
-     * somebody else's transfer by guessing an id, and the id is a small
-     * integer.
-     *
-     * Cancelling destroys the token, so a second attempt with it is refused
-     * at authentication rather than answered here. The receiver reads that
-     * refusal as already-ended, which it is.
-     */
-    /**
      * The receiver saying how far it has got.
      *
      * The machine doing the copying is the only one that knows, and the
@@ -216,6 +203,19 @@ class RequestController extends Controller
         return response()->json(['recorded' => true]);
     }
 
+    /**
+     * The receiver calling off its own transfer.
+     *
+     * Which request is being cancelled comes from the token, never from the
+     * URL. A receiver holds a token for exactly one request, so it can end
+     * that one and no other — otherwise cancelling would be a way to stop
+     * somebody else's transfer by guessing an id, and the id is a small
+     * integer.
+     *
+     * Cancelling destroys the token, so a second attempt with it is refused
+     * at authentication rather than answered here. The receiver reads that
+     * refusal as already-ended, which it is.
+     */
     public function cancel(Request $request): JsonResponse
     {
         $token = $request->user()?->currentAccessToken();

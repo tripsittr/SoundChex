@@ -40,6 +40,15 @@ class MusicMetadata extends Model
     private const MAX_PLAUSIBLE_TRACK = 100;
 
     /**
+     * Above this, a "disc number" is not one either.
+     *
+     * Lower than the track ceiling because box sets are the extreme case and
+     * even those stay well under fifty discs; a larger value is the same kind
+     * of mis-tagging.
+     */
+    private const MAX_PLAUSIBLE_DISC = 50;
+
+    /**
      * The track number, or null when the tag is not believable.
      *
      * Read through rather than corrected in the database: the file's tag is
@@ -63,7 +72,9 @@ class MusicMetadata extends Model
     {
         $raw = $this->disc_number;
 
-        return $raw !== null && $raw >= 1 && $raw <= 50 ? (int) $raw : null;
+        return $raw !== null && $raw >= 1 && $raw <= self::MAX_PLAUSIBLE_DISC
+            ? (int) $raw
+            : null;
     }
 
     protected $fillable = [

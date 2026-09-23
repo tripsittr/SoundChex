@@ -161,18 +161,6 @@ class Profile extends Model
     }
 
     /**
-     * Whether this person may do something.
-     *
-     * The household shares one login, so the account cannot be the boundary —
-     * everyone signing in would otherwise hold every right the owner needs.
-     * Capability lives here instead, and this is the only place that decides
-     * it. A permission check that fails open is worse than none, and with a
-     * shared account there is nothing behind it to catch a mistake.
-     *
-     * The owner short-circuits: they created the household and must not be
-     * able to lock themselves out of it.
-     */
-    /**
      * Administering the machine, as distinct from administering the library.
      *
      * Named here rather than in the trait that enforces it: a trait constant
@@ -191,6 +179,18 @@ class Profile extends Model
      */
     public const LIBRARY_ADMINISTRATION = 'Access:LibraryAdministration';
 
+    /**
+     * Whether this person may do something.
+     *
+     * The household shares one login, so the account cannot be the boundary —
+     * everyone signing in would otherwise hold every right the owner needs.
+     * Capability lives here instead, and this is the only place that decides
+     * it. A permission check that fails open is worse than none, and with a
+     * shared account there is nothing behind it to catch a mistake.
+     *
+     * The owner short-circuits: they created the household and must not be
+     * able to lock themselves out of it.
+     */
     public function can(string $permission): bool
     {
         if ($this->isOwner()) {

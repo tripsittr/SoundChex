@@ -180,19 +180,14 @@ class ReaderController extends Controller
             ]);
         }
 
-        // Read, and there was nothing on it. A settled answer, so the reader
-        // stops asking rather than retrying a blank page forever.
-        if ($row?->status === 'blank') {
-            return response()->json(['status' => 'blank']);
-        }
-
-        // This page has its own text; the reader should use pdf.js's layer.
-        if ($row?->status === 'skipped') {
-            return response()->json(['status' => 'skipped']);
-        }
-
-        if ($row?->status === 'failed') {
-            return response()->json(['status' => 'failed']);
+        // Settled answers, each meaning recognition will never add anything:
+        //   blank   — read, and there was nothing on it;
+        //   skipped — the page has its own text, so the reader uses pdf.js's layer;
+        //   failed  — recognition ran and could not read it.
+        // Returned as-is so the reader stops asking rather than retrying a page
+        // that will never change.
+        if (in_array($row?->status, ['blank', 'skipped', 'failed'], true)) {
+            return response()->json(['status' => $row->status]);
         }
 
         $ocr = app(OcrService::class);

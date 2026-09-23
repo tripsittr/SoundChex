@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\MediaItemType;
 use App\Events\UserRated;
 use App\Http\Controllers\Controller;
 use App\Models\MediaItem;
@@ -227,60 +228,53 @@ class AdminController extends Controller
         abort_unless($profile->user_id === $request->user()->id, 404);
     }
 
-    /** The editable metadata for the item's type. @return array<string, mixed> */
+    /**
+     * The metadata fields a phone may read and write, per type.
+     *
+     * One list rather than one per direction: a field readable but not
+     * writable (or the reverse) is invisible until someone edits it and the
+     * change silently vanishes. `editableMeta()` and `updateMeta()` are the
+     * two halves of the same contract, so they read the same list.
+     *
+     * Anything absent from it is ignored on write, which is what keeps the
+     * metadata row's scan-derived fields (ISRC, MusicBrainz ids, …) safe.
+     *
+     * @return array<int, string>
+     */
+    private function editableFields(MediaItem $item): array
+    {
+        return match ($item->type) {
+            MediaItemType::Music => ['artist', 'album', 'release_year'],
+            MediaItemType::Movie => ['director', 'release_year'],
+            MediaItemType::Show => ['episode_title', 'season_number', 'episode_number'],
+            MediaItemType::Book => ['author', 'publisher'],
+        };
+    }
+
+    /**
+     * The editable metadata for the item's type.
+     *
+     * @return array<string, mixed>
+     */
     private function editableMeta(MediaItem $item): array
     {
-        return match ($item->type->value) {
-            'music' => [
-                'artist' => $item->musicMetadata?->artist,
-                'album' => $item->musicMetadata?->album,
-                'release_year' => $item->musicMetadata?->release_year,
-            ],
-            'movie' => [
-                'director' => $item->movieMetadata?->director,
-                'release_year' => $item->movieMetadata?->release_year,
-            ],
-            'show' => [
-                'episode_title' => $item->showMetadata?->episode_title,
-                'season_number' => $item->showMetadata?->season_number,
-                'episode_number' => $item->showMetadata?->episode_number,
-            ],
-            'book' => [
-                'author' => $item->bookMetadata?->author,
-                'publisher' => $item->bookMetadata?->publisher,
-            ],
-            default => [],
-        };
+        $metadata = $item->metadata()->getResults();
+
+        return collect($this->editableFields($item))
+            ->mapWithKeys(fn (string $field): array => [$field => $metadata?->{$field}])
+            ->all();
     }
 
     /** Applies edited metadata to the item's type row, creating it if absent. */
     private function updateMeta(MediaItem $item, array $meta): void
     {
-        // The keys a phone may edit, per type — anything else is ignored, so the
-        // metadata row's scan-derived fields (ISRC, MusicBrainz ids, …) are safe.
-        $allowed = match ($item->type->value) {
-            'music' => ['artist', 'album', 'release_year'],
-            'movie' => ['director', 'release_year'],
-            'show' => ['episode_title', 'season_number', 'episode_number'],
-            'book' => ['author', 'publisher'],
-            default => [],
-        };
-
-        $fields = array_intersect_key($meta, array_flip($allowed));
+        $fields = array_intersect_key($meta, array_flip($this->editableFields($item)));
 
         if ($fields === []) {
             return;
         }
 
-        $relation = match ($item->type->value) {
-            'music' => $item->musicMetadata(),
-            'movie' => $item->movieMetadata(),
-            'show' => $item->showMetadata(),
-            'book' => $item->bookMetadata(),
-            default => null,
-        };
-
-        $relation?->updateOrCreate(['media_item_id' => $item->id], $fields);
+        $item->metadata()->updateOrCreate(['media_item_id' => $item->id], $fields);
     }
 
     /**

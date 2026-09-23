@@ -60,9 +60,13 @@ class ReclassifyTelevision extends Command
         $rows = [];
 
         foreach ($wrong as $item) {
-            $marker = $episodes->marker($this->basename($item));
+            $basename = $this->basename($item);
+            $marker = $episodes->marker($basename);
 
-            $title = $marker !== null && ! $episodes->isMultiEpisode($this->basename($item))
+            // A multi-episode file ("S01E01-E02") keeps its existing title: the
+            // marker names only the first episode, so renaming to it would claim
+            // the file is just that one.
+            $title = $marker !== null && ! $episodes->isMultiEpisode($basename)
                 ? sprintf('%s S%02dE%02d', $marker['series'], $marker['season'], $marker['episode'])
                 : $item->title;
 

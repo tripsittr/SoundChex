@@ -107,13 +107,13 @@ class ImportMusicFolder extends Command
             }
 
             $item = MediaItem::create([
-                'user_id'           => $userId,
-                'type'              => MediaItemType::Music,
+                'user_id' => $userId,
+                'type' => MediaItemType::Music,
                 // FileTagger promotes the real title once tags are read.
-                'title'             => $file->getBasename('.' . $file->getExtension()),
-                'file_path'         => $storedPath,
+                'title' => $file->getBasename('.' . $file->getExtension()),
+                'file_path' => $storedPath,
                 'processing_status' => ProcessingStatus::Pending,
-                'owned'             => true,
+                'owned' => true,
             ]);
 
             // FileTagger writes into this row, so it must exist first.

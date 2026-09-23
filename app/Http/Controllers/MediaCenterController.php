@@ -19,6 +19,7 @@ use App\Services\SearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -34,6 +35,20 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class MediaCenterController extends Controller
 {
     /**
+     * Past this fraction of the duration, a title counts as finished.
+     *
+     * Credits and trailing silence mean almost nothing is ever played to its
+     * literal final second, so a strict 100% would leave films permanently
+     * "in progress" on the Continue Watching rail.
+     *
+     * Api\MediaController mirrors this endpoint for the native app and reads
+     * this same constant: if the two front ends disagreed about what finished
+     * means, the same film would read as watched in one and unwatched in the
+     * other.
+     */
+    public const COMPLETE_FRACTION = 0.95;
+
+    /**
      * The largest forward jump counted as listening rather than a seek.
      *
      * The player reports at most once every 10 seconds (`reportProgress()`),
@@ -43,8 +58,11 @@ class MediaCenterController extends Controller
      * phone that suspended the webview for a minute, should still count what
      * was genuinely played. Beyond it, the movement is not listening and
      * banking it would let one drag of the scrubber claim a whole track.
+     *
+     * Shared with Api\MediaController for the same reason as the fraction
+     * above — one definition, so both front ends bank listening identically.
      */
-    private const LISTENED_MAX_STEP = 90;
+    public const LISTENED_MAX_STEP = 90;
 
     public function __construct(private readonly MediaBrowser $browser) {}
 
@@ -284,9 +302,8 @@ class MediaCenterController extends Controller
 
         $duration = $data['duration'] ?? 0;
 
-        // Past 95% counts as finished — credits and trailing silence mean
-        // almost nothing is ever played to its literal final second.
-        $completed = $duration > 0 && $data['position'] >= $duration * 0.95;
+        $completed = $duration > 0
+            && $data['position'] >= $duration * self::COMPLETE_FRACTION;
 
         // A replayed write is only applied if it is newer than what is already
         // stored. Without this, reconnecting after a drive replays an hour-old
@@ -345,11 +362,11 @@ class MediaCenterController extends Controller
 
         // A resume point was saved — fires on every progress write, distinct
         // from the once-only completion crossing below (S-285).
-        PlaybackProgress::dispatch($item, app(CurrentProfile::class)->id(), $data['position']);
+        PlaybackProgress::dispatch($item, $profileId, $data['position']);
 
         // The "watched to the end" signal, fired once at the crossing (S-276).
         if ($completed && ! $wasCompleted) {
-            PlaybackCompleted::dispatch($item, app(CurrentProfile::class)->id());
+            PlaybackCompleted::dispatch($item, $profileId);
         }
 
         return response()->json(['completed' => $completed]);
@@ -478,8 +495,10 @@ class MediaCenterController extends Controller
 
     /**
      * Other items sharing a genre — the "more like this" rail.
+     *
+     * @return Collection<int, MediaItem>
      */
-    private function relatedTo(MediaItem $item)
+    private function relatedTo(MediaItem $item): Collection
     {
         $genres = $item->tags->where('type', 'genre')->pluck('value');
 
