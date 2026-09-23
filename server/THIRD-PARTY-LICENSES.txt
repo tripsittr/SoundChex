@@ -57,3 +57,21 @@ FFmpeg  (full GPL build — ffmpeg + ffprobe)
     SoundChex is free to end users and the encoding is performed by the user on
     their own media (the VLC/Handbrake posture); see BundledServer.md for the
     project's reasoning. This notice concerns copyright licenses only.
+
+-------------------------------------------------------------------------------
+Tailwind CSS CLI  (standalone binary — plugin stylesheet compilation)
+    License: MIT
+    https://github.com/tailwindlabs/tailwindcss/blob/main/LICENSE
+    Used to compile a plugin's stylesheet when that plugin is enabled, so a
+    plugin author can write ordinary Tailwind classes. This is the same Tailwind
+    CSS that the web interface is built with, shipped as a self-contained
+    executable so no Node.js toolchain is required on the user's machine.
+    Embedded components and their licenses:
+      - Bun               MIT (the JavaScript runtime the binary is built on)
+      - JavaScriptCore /  LGPL-2.1-or-later (the JS engine inside Bun)
+        WebKit            https://webkit.org/licensing-webkit/
+    Corresponding source: Tailwind CSS from the repository above; Bun from
+    https://github.com/oven-sh/bun; WebKit/JavaScriptCore from
+    https://webkit.org/getting-the-code/. The binary is redistributed unmodified
+    from the upstream release, and may be replaced by the user with another
+    build of the same version.

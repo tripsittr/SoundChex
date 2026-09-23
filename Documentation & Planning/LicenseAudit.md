@@ -1,6 +1,6 @@
 # Dependency license audit
 
-**Audited 17 Sep 2026.** SoundChex is **AGPL-3.0-or-later**
+**Audited 17 Sep 2026. Re-audited 23 Sep 2026** (bundled binaries reconciled against what actually ships; Tailwind CLI added). SoundChex is **AGPL-3.0-or-later**
 ([[soundchex-license]]). This audit confirms every third-party dependency
 offers a license compatible with distributing SoundChex under AGPLv3. It is the
 basis for the eventual `THIRD-PARTY-LICENSES.txt` that ships with the bundled
@@ -48,13 +48,48 @@ Overwhelmingly `MIT OR Apache-2.0` (244) and MIT (116), plus Apache-2.0, BSD,
 Zlib, Unicode-3.0, MPL-2.0, ISC — all permissive. The only AGPL entry is our own
 `soundchex` crate. No concerns.
 
-## The one thing that is NOT a dependency-license question: FFmpeg
+## Bundled binaries — not a package-manager question
 
-FFmpeg is not a linked dependency — the app **shells out** to a user-installed
-binary today (`config/transcode.php`, `MediaTranscoder`). When it is *bundled*
-(S-151, Step 8), the plan is a full GPL ffmpeg, which is fine **because we are
-AGPLv3** (GPL-compatible). Recorded here so the ffmpeg decision isn't confused
-with the dependency audit. See [[soundchex-license]] and `BundledServer.md`.
+These ship inside the app and are **not** covered by the Composer/npm/Cargo
+scans above, because no package manager knows about them. Each is an unmodified
+upstream build that SoundChex redistributes; the per-component detail lives in
+`server/THIRD-PARTY-LICENSES.txt`, which is the notice shipped to users.
+
+| Binary | Version | License | AGPLv3? |
+| --- | --- | --- | --- |
+| `php`, `php-fpm` | 8.4 (static-php-cli) | PHP License 3.01 | ✅ permissive |
+| `caddy` | 2.11.4 | Apache-2.0 | ✅ permissive |
+| `ffmpeg`, `ffprobe` | 9.0.1 | **GPL-3.0** (`--enable-gpl --enable-version3`) | ✅ AGPLv3 is GPL-3.0-compatible |
+| `cacert.pem` | — | MPL-2.0 | ✅ compatible |
+| `tailwindcss` (planned, S-350) | 4.3.3 | **MIT**; embeds Bun (MIT) + JavaScriptCore (**LGPL-2.1**) | ✅ compatible |
+
+### FFmpeg is bundled now, and it is the full GPL build
+
+Verified 23 Sep 2026 against the shipped binary: `--enable-gpl
+--enable-version3`, and **no `--enable-nonfree`**. That last point is the one
+that would actually break us — a nonfree build is redistributable by nobody,
+GPL or otherwise. Being AGPLv3 is what makes the GPL build fine; a
+permissively-licensed product could not ship it. See [[soundchex-license]] and
+`BundledServer.md`.
+
+### The Tailwind CLI (S-350)
+
+Compiling a plugin's stylesheet when the plugin is enabled means shipping
+Tailwind's standalone binary next to the others. Tailwind CSS itself is
+**MIT** — and is already an npm dependency, so it is not a new project, only a
+new *form* of the same one.
+
+The standalone binary embeds **Bun** (MIT), which in turn embeds
+**JavaScriptCore/WebKit** (**LGPL-2.1-or-later**). LGPL is AGPL-compatible, and
+the project already redistributes LGPL-2.1 components in the same way
+(`libiconv`, `libmp3lame` inside PHP and FFmpeg). The LGPL obligation this
+carries is the usual one: state the component, its license and where to get its
+source, and do not prevent a user replacing it. Redistributing an unmodified
+upstream binary and naming its origin satisfies that the same way the existing
+binaries do.
+
+**Nothing here is a new class of obligation.** It is the fourth instance of a
+pattern the project already follows.
 
 ## What "legal review" still means (separate task)
 
