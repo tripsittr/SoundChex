@@ -148,13 +148,6 @@ class ArrServices
     }
 
     /**
-     * The key, preferring the encrypted setting over the environment.
-     *
-     * Settings first because that is where the admin panel writes it and where
-     * every other credential in this app lives; env only so a headless install
-     * can be configured without opening a browser.
-     */
-    /**
      * Where this app actually lives.
      *
      * Settings first, then config, then the documented default. The default is
@@ -175,6 +168,13 @@ class ArrServices
         return rtrim((string) config("arr.apps.{$name}.url"), '/');
     }
 
+    /**
+     * The key, preferring the encrypted setting over the environment.
+     *
+     * Settings first because that is where the admin panel writes it and where
+     * every other credential in this app lives; env only so a headless install
+     * can be configured without opening a browser.
+     */
     private function apiKey(string $name): ?string
     {
         $stored = $this->settings->get("arr.{$name}.api_key");

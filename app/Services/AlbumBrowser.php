@@ -57,14 +57,6 @@ class AlbumBrowser
     }
 
     /**
-     * Every artist in the library, with what they have.
-     *
-     * Grouped in SQL rather than by loading tracks and folding them, because
-     * the artist list is a browse page and the library is thousands of rows.
-     *
-     * @return LengthAwarePaginator<int, object>
-     */
-    /**
      * The artist a track is browsed under.
      *
      * The credits in `media_item_person` are the truth; `primary_artist` is
@@ -74,6 +66,14 @@ class AlbumBrowser
      */
     private const PRIMARY = "COALESCE(NULLIF(music_metadata.primary_artist, ''), music_metadata.artist)";
 
+    /**
+     * Every artist in the library, with what they have.
+     *
+     * Grouped in SQL rather than by loading tracks and folding them, because
+     * the artist list is a browse page and the library is thousands of rows.
+     *
+     * @return LengthAwarePaginator<int, object>
+     */
     public function artists(int $perPage = 100): LengthAwarePaginator
     {
         return $this->gate->apply(MediaItem::query())

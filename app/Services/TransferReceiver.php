@@ -26,9 +26,10 @@ class TransferReceiver
      *
      * xxh128 rather than sha256, and it has to match DuplicateDetector exactly
      * — verifying with a different algorithm would mark every file corrupt,
-     * delete it, and report a transfer where nothing arrived.
+     * delete it, and report a transfer where nothing arrived. Taken from there
+     * rather than restated, so the two cannot drift apart.
      */
-    public const HASH = 'xxh128';
+    public const HASH = DuplicateDetector::HASH;
 
     /** Asks a server for permission, and records what it said. */
     public function request(Transfer $transfer): bool
@@ -56,10 +57,10 @@ class TransferReceiver
             );
 
             if (! $response->successful()) {
-                $transfer->forceFill([
-                    'state' => Transfer::FAILED,
-                    'last_error' => 'The server refused the request (' . $response->status() . ').',
-                ])->save();
+                $this->failTransfer(
+                    $transfer,
+                    'The server refused the request (' . $response->status() . ').',
+                );
 
                 return false;
             }
@@ -71,10 +72,7 @@ class TransferReceiver
 
             return true;
         } catch (\Throwable $e) {
-            $transfer->forceFill([
-                'state' => Transfer::FAILED,
-                'last_error' => $this->explain($e),
-            ])->save();
+            $this->failTransfer($transfer, $this->explain($e));
 
             return false;
         }
@@ -186,12 +184,11 @@ class TransferReceiver
                 || in_array($response->status(), [401, 403, 404], true);
 
             if (! $told) {
-                $transfer->forceFill([
-                    'last_error' => $this->truncate(
-                        'Cancelled here, but that server answered ' . $response->status()
-                        . ' and may still hold the request open.',
-                    ),
-                ])->save();
+                $this->noteError(
+                    $transfer,
+                    'Cancelled here, but that server answered ' . $response->status()
+                    . ' and may still hold the request open.',
+                );
 
                 Log::warning('A cancelled transfer could not be called off at the source', [
                     'transfer' => $transfer->id,
@@ -202,11 +199,10 @@ class TransferReceiver
 
             return $told;
         } catch (\Throwable $e) {
-            $transfer->forceFill([
-                'last_error' => $this->truncate(
-                    'Cancelled here, but that server could not be told: ' . $this->explain($e),
-                ),
-            ])->save();
+            $this->noteError(
+                $transfer,
+                'Cancelled here, but that server could not be told: ' . $this->explain($e),
+            );
 
             Log::warning('A cancelled transfer could not be called off at the source', [
                 'transfer' => $transfer->id,
@@ -233,14 +229,12 @@ class TransferReceiver
             return;
         }
 
-        $transfer->forceFill([
-            'state' => Transfer::FAILED,
-            'last_error' => $this->truncate(
-                'That server answered ' . $status . ' — the transfer is no longer approved. '
-                . 'Tokens last four hours, so it has most likely expired. Ask again and approve '
-                . 'it on that machine; what has already copied is kept.',
-            ),
-        ])->save();
+        $this->failTransfer(
+            $transfer,
+            'That server answered ' . $status . ' — the transfer is no longer approved. '
+            . 'Tokens last four hours, so it has most likely expired. Ask again and approve '
+            . 'it on that machine; what has already copied is kept.',
+        );
 
         Log::warning('A transfer lost its authorisation part way through', [
             'transfer' => $transfer->id,
@@ -310,10 +304,7 @@ class TransferReceiver
             }
 
             if (in_array($state, ['denied', 'expired', 'revoked'], true)) {
-                $transfer->forceFill([
-                    'state' => Transfer::FAILED,
-                    'last_error' => 'The other server ' . $state . ' this transfer.',
-                ])->save();
+                $this->failTransfer($transfer, 'The other server ' . $state . ' this transfer.');
             }
 
             return $state;
@@ -437,14 +428,6 @@ class TransferReceiver
     }
 
     /**
-     * Fetches one file, verifying before and after.
-     *
-     * Before, because a file already present with the right hash needs no
-     * fetching — which is what makes a resumed transfer cheap and a repeated
-     * one free. After, because a truncated file that looks present is worse
-     * than one plainly absent.
-     */
-    /**
      * Tells the source how far this copy has got.
      *
      * The receiver is the only machine that knows, and the source had no way
@@ -496,6 +479,14 @@ class TransferReceiver
         }
     }
 
+    /**
+     * Fetches one file, verifying before and after.
+     *
+     * Before, because a file already present with the right hash needs no
+     * fetching — which is what makes a resumed transfer cheap and a repeated
+     * one free. After, because a truncated file that looks present is worse
+     * than one plainly absent.
+     */
     public function fetch(TransferItem $item): bool
     {
         $transfer = $item->transfer;
@@ -591,9 +582,10 @@ class TransferReceiver
         $backup = $this->backupExisting();
 
         if ($backup === null) {
-            $transfer->forceFill([
-                'last_error' => 'Could not back up this machine\'s database, so nothing was replaced.',
-            ])->save();
+            $this->noteError(
+                $transfer,
+                'Could not back up this machine\'s database, so nothing was replaced.',
+            );
 
             return false;
         }
@@ -616,12 +608,11 @@ class TransferReceiver
             $this->releaseSink($response);
 
             if (! $response->successful()) {
-                $transfer->forceFill([
-                    'last_error' => $this->truncate(
-                        'The catalogue could not be read (' . $response->status() . ').'
-                        . $this->reasonFrom($temporary),
-                    ),
-                ])->save();
+                $this->noteError(
+                    $transfer,
+                    'The catalogue could not be read (' . $response->status() . ').'
+                    . $this->reasonFrom($temporary),
+                );
 
                 Log::error('A catalogue transfer failed', [
                     'transfer' => $transfer->id,
@@ -638,9 +629,7 @@ class TransferReceiver
                 return false;
             }
         } catch (\Throwable $e) {
-            $transfer->forceFill([
-                'last_error' => $this->truncate('The catalogue transfer failed: ' . $this->explain($e)),
-            ])->save();
+            $this->noteError($transfer, 'The catalogue transfer failed: ' . $this->explain($e));
 
             Log::error('A catalogue transfer failed', [
                 'transfer' => $transfer->id,
@@ -839,6 +828,20 @@ class TransferReceiver
             // but only the readable part of it.
             : trim(strip_tags($head));
 
+        return $this->quoteServer($message);
+    }
+
+    /**
+     * The source's own words, ready to append to a message of ours.
+     *
+     * Shared so the two places that quote the other end cannot drift apart on
+     * the wording or on collapsing the whitespace — an HTML error page is
+     * mostly newlines, and `last_error` is a single line.
+     *
+     * @return string '' when the server said nothing worth repeating
+     */
+    private function quoteServer(mixed $message): string
+    {
         if (! is_string($message) || trim($message) === '') {
             return '';
         }
@@ -846,7 +849,27 @@ class TransferReceiver
         return ' The server said: ' . trim(preg_replace('/\s+/', ' ', $message));
     }
 
-    /** `last_error` is a 255-column, and a truncated reason beats a lost one. */
+    /**
+     * Records why a transfer is unhappy, without changing what it is doing.
+     *
+     * Every write to `last_error` goes through here so the truncation below
+     * cannot be forgotten at one call site: it is a 255-column, and a
+     * truncated reason beats a lost one — or a rejected write.
+     */
+    private function noteError(Transfer $transfer, string $message): void
+    {
+        $transfer->forceFill(['last_error' => $this->truncate($message)])->save();
+    }
+
+    /** Stops a transfer and says why. */
+    private function failTransfer(Transfer $transfer, string $message): void
+    {
+        $transfer->forceFill([
+            'state' => Transfer::FAILED,
+            'last_error' => $this->truncate($message),
+        ])->save();
+    }
+
     private function truncate(string $message): string
     {
         return mb_strlen($message) > 255
@@ -865,9 +888,7 @@ class TransferReceiver
         $target = $this->databaseFile();
 
         if ($target === null) {
-            $transfer->forceFill([
-                'last_error' => 'This instance has no database file to replace.',
-            ])->save();
+            $this->noteError($transfer, 'This instance has no database file to replace.');
 
             return false;
         }
@@ -878,7 +899,7 @@ class TransferReceiver
         $out = fopen($staged, 'wb');
 
         if ($in === false || $out === false) {
-            $transfer->forceFill(['last_error' => 'Could not unpack the catalogue.'])->save();
+            $this->noteError($transfer, 'Could not unpack the catalogue.');
 
             return false;
         }
@@ -897,9 +918,7 @@ class TransferReceiver
         if (file_get_contents($staged, false, null, 0, 15) !== 'SQLite format 3') {
             @unlink($staged);
 
-            $transfer->forceFill([
-                'last_error' => 'What arrived was not a database. Nothing was replaced.',
-            ])->save();
+            $this->noteError($transfer, 'What arrived was not a database. Nothing was replaced.');
 
             return false;
         }
@@ -908,13 +927,12 @@ class TransferReceiver
             // Kept, not deleted. What arrived is correct — it downloaded,
             // unpacked and passed the header check — and throwing it away
             // means fetching the whole catalogue again to retry a rename.
-            $transfer->forceFill([
-                'last_error' => $this->truncate(
-                    'The catalogue arrived but could not be put in place. Something else '
-                    . 'still has the database open — stop the app and the queue worker, '
-                    . 'then resume. It is kept at ' . basename($staged) . '.',
-                ),
-            ])->save();
+            $this->noteError(
+                $transfer,
+                'The catalogue arrived but could not be put in place. Something else '
+                . 'still has the database open — stop the app and the queue worker, '
+                . 'then resume. It is kept at ' . basename($staged) . '.',
+            );
 
             Log::error('A catalogue could not be put in place', [
                 'transfer' => $transfer->id,
@@ -1194,14 +1212,10 @@ class TransferReceiver
             if (! $response->successful()) {
                 $reason = $response->json('message') ?: trim(strip_tags($response->body()));
 
-                $transfer->forceFill([
-                    'last_error' => $this->truncate(
-                        $path . ' answered ' . $response->status() . '.'
-                        . (is_string($reason) && $reason !== ''
-                            ? ' The server said: ' . trim(preg_replace('/\s+/', ' ', $reason))
-                            : ''),
-                    ),
-                ])->save();
+                $this->noteError(
+                    $transfer,
+                    $path . ' answered ' . $response->status() . '.' . $this->quoteServer($reason),
+                );
 
                 Log::warning('A transfer request was refused', [
                     'transfer' => $transfer->id,
@@ -1215,7 +1229,7 @@ class TransferReceiver
 
             return $response;
         } catch (\Throwable $e) {
-            $transfer->forceFill(['last_error' => $e->getMessage()])->save();
+            $this->noteError($transfer, $e->getMessage());
 
             Log::warning('A transfer request failed', [
                 'transfer' => $transfer->id,
@@ -1233,14 +1247,6 @@ class TransferReceiver
     }
 
     /**
-     * HTTP client for transfer calls.
-     *
-     * cURL/OpenSSL trust can differ between long-running PHP processes on
-     * Windows. When a CA bundle is configured or found beside the running PHP
-     * binary, force that bundle so transfer requests do not fail with
-     * "unable to get local issuer certificate".
-     */
-    /**
      * How long to wait for the other machine to answer the phone.
      *
      * The default is ten seconds, and three failures in one transfer were
@@ -1256,6 +1262,14 @@ class TransferReceiver
      */
     private const CONNECT_SECONDS = 30;
 
+    /**
+     * HTTP client for transfer calls.
+     *
+     * cURL/OpenSSL trust can differ between long-running PHP processes on
+     * Windows. When a CA bundle is configured or found beside the running PHP
+     * binary, force that bundle so transfer requests do not fail with
+     * "unable to get local issuer certificate".
+     */
     private function http(): \Illuminate\Http\Client\PendingRequest
     {
         $ca = $this->caBundlePath();

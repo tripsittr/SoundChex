@@ -130,10 +130,6 @@ class ConversionFiler
     }
 
     /**
-     * Where the organiser would file this item, with the conversion's own
-     * extension rather than the original's.
-     */
-    /**
      * Files a conversion whose original has gone missing.
      *
      * There is nothing to archive, so the archive step is skipped entirely.
@@ -215,6 +211,10 @@ class ConversionFiler
         return str_contains($relative, '/');
     }
 
+    /**
+     * Where the organiser would file this item, with the conversion's own
+     * extension rather than the original's.
+     */
     private function filedPathFor(MediaItem $item, string $conversion): string
     {
         $target = $this->organizer->targetPath($item);

@@ -126,12 +126,6 @@ class NetworkAddresses
     }
 
     /**
-     * Where the tailscale command actually is.
-     *
-     * Checked in the usual places rather than trusted to PATH, which under
-     * launchd contains none of them.
-     */
-    /**
      * The address of the interface actually carrying traffic.
      *
      * Asked of the operating system rather than derived, because a machine has
@@ -165,6 +159,12 @@ class NetworkAddresses
         return $found === '' ? null : $found;
     }
 
+    /**
+     * Where the tailscale command actually is.
+     *
+     * Checked in the usual places rather than trusted to PATH, which under
+     * launchd contains none of them.
+     */
     private function tailscaleBinary(): string
     {
         if (PHP_OS_FAMILY === 'Windows') {
