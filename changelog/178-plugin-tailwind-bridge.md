@@ -69,11 +69,18 @@ runtime already carries.
 
 ## Worth knowing (bundling)
 
-The **client** app deliberately does not ship it. The client is a viewer that
-connects to a server — it has no PHP runtime, runs no plugins, and could not
-use the binary if it had one; `build-client.yml` says as much about the server
-runtime generally. Bundling it there would add 80–105 MB of unreachable code
-to every desktop client.
+The **client** app deliberately does not ship it — but it does use plugins.
+
+The client is a webview that navigates to the server's own origin, so it
+renders whatever that server serves: plugin admin pages, plugin routes, and
+`/plugin-styles/{plugin}.css` like any other stylesheet. A plugin installed on
+the server works in the client, styling and all.
+
+What the client does not have is anything to *compile*. The plugin's files live
+on the server, and so does the PHP that reads them; the client has no plugin
+directory to scan. Compilation belongs where the files are, and its output
+travels over HTTP like the rest of the page. Bundling the binary in the client
+would add 80–105 MB with nothing to point it at.
 
 ## Still wrong
 
