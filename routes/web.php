@@ -106,6 +106,13 @@ Route::middleware(['auth'])->group(function (): void {
 
     Route::get('/dashboard', fn () => redirect()->route('media.home'))->name('dashboard');
 
+    // A plugin's compiled stylesheet (S-350). The file sits in the plugin's own
+    // directory under application support, which is not web-served, so it is
+    // handed out here — signed in, and only for an enabled plugin.
+    Route::get('/plugin-styles/{plugin}.css', \App\Http\Controllers\PluginStyleController::class)
+        ->where('plugin', '[A-Za-z0-9._-]+')
+        ->name('plugin.styles');
+
     /*
     |----------------------------------------------------------------------
     | Viewing profiles

@@ -12,10 +12,18 @@ Contents
   bin/caddy          Caddy (owns the port + TLS; serves static; proxies PHP)
   bin/cacert.pem     CA bundle — MUST stay beside bin/php (the app locates it
                      as dirname(PHP_BINARY)/cacert.pem)
+  bin/ffmpeg         Full GPL FFmpeg + ffprobe, for transcoding and media
+  bin/ffprobe        inspection. Found the same way, beside bin/php.
+  bin/tailwindcss    Tailwind CLI. Compiles an installed plugin's stylesheet
+                     when that plugin is enabled, so a plugin author can write
+                     ordinary Tailwind classes. Also found beside bin/php.
+                     Removing it only means plugins keep whatever CSS they
+                     ship.
   Caddyfile          Caddy config template (placeholders substituted at launch)
   php-fpm.conf       php-fpm pool template (placeholders substituted at launch)
   LICENSE            SoundChex is AGPL-3.0-or-later
-  THIRD-PARTY-LICENSES.txt  Notices for PHP, Caddy + Go deps, SQLite, etc.
+  THIRD-PARTY-LICENSES.txt  Notices for PHP, Caddy, FFmpeg, the Tailwind CLI
+                     and their bundled components.
 
 This runtime is normally installed and supervised by the SoundChex desktop app
 or the headless installer — you do not usually run these binaries by hand. To
