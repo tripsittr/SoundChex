@@ -233,11 +233,6 @@ class Plugins extends Page
     }
 
     /**
-     * Boots the plugin in isolation and returns the reason it failed to load, or
-     * null when it loaded cleanly. This is what turns a silent "logged and
-     * skipped" into a visible error the admin can act on.
-     */
-    /**
      * Compile the plugin's stylesheet on enable, remove it on disable (S-350).
      *
      * Best-effort: a plugin whose CSS cannot be built still enables, with
@@ -277,6 +272,11 @@ class Plugins extends Page
         return is_dir($path) ? $path : null;
     }
 
+    /**
+     * Boots the plugin in isolation and returns the reason it failed to load, or
+     * null when it loaded cleanly. This is what turns a silent "logged and
+     * skipped" into a visible error the admin can act on.
+     */
     private function loadError(InstalledPlugin $plugin): ?string
     {
         try {
