@@ -347,7 +347,7 @@ class Registry
     public function coverSourceClasses(): array
     {
         $sorted = $this->coverSources;
-        usort($sorted, fn(array $a, array $b): int => $a['priority'] <=> $b['priority']);
+        usort($sorted, fn (array $a, array $b): int => $a['priority'] <=> $b['priority']);
 
         return array_column($sorted, 'class');
     }

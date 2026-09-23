@@ -25,6 +25,17 @@ use Illuminate\Support\Collection;
 class AlbumTitleNormalizer
 {
     /**
+     * The words that mark a parenthetical as an *edition* rather than part of
+     * the album's name — the tails that split one record into duplicates.
+     *
+     * Shared by the key builder and the display-spelling preference so the two
+     * can never disagree about what counts as an edition: a qualifier stripped
+     * for keying but not recognised for display would group two spellings and
+     * then pick the edition one as the name to show.
+     */
+    private const EDITION_KEYWORDS = 'edition|deluxe|remaster|remastered|expanded|version|explicit|bonus|anniversary|mono|stereo|reissue|special|original|super';
+
+    /**
      * The canonical spelling for one album, given how a set of variants are
      * distributed. Returns the most common spelling; ties break toward the one
      * with more lowercase small-words (the more conventional title case), then
@@ -203,22 +214,20 @@ class AlbumTitleNormalizer
         // Drop a parenthetical only when it names an edition/version — never a
         // bare "(II)" or "(Part IV)", which mark a different release.
         $key = preg_replace(
-            '/\s*\([^)]*\b(edition|deluxe|remaster|remastered|expanded|version|explicit|bonus|anniversary|mono|stereo|reissue|special|original|super)\b[^)]*\)/iu',
+            '/\s*\([^)]*\b(' . self::EDITION_KEYWORDS . ')\b[^)]*\)/iu',
             '',
             $key,
         ) ?? $key;
 
         // Everything else that is pure punctuation or spacing is noise for keying.
-        $key = preg_replace('/[[:punct:]]/u', '', $key) ?? $key;
-
-        return trim(preg_replace('/\s+/', ' ', $key) ?? $key);
+        return $this->stripToKey($key);
     }
 
     /** Whether an album title carries an edition/version qualifier tail. */
     private function hasEditionQualifier(string $album): bool
     {
         return preg_match(
-            '/[\(\[][^)\]]*\b(edition|deluxe|remaster|remastered|expanded|version|explicit|bonus|anniversary|mono|stereo|reissue|special|original|super)\b[^)\]]*[\)\]]/iu',
+            '/[\(\[][^)\]]*\b(' . self::EDITION_KEYWORDS . ')\b[^)\]]*[\)\]]/iu',
             $album,
         ) === 1;
     }
@@ -226,9 +235,18 @@ class AlbumTitleNormalizer
     /** The artist half of a group key — case- and punctuation-insensitive. */
     private function artistKey(?string $artist): string
     {
-        $key = preg_replace('/[[:punct:]]/u', '', mb_strtolower(trim((string) $artist))) ?? '';
+        return $this->stripToKey(mb_strtolower(trim((string) $artist)));
+    }
 
-        return trim(preg_replace('/\s+/', ' ', $key) ?? $key);
+    /**
+     * The tail both key builders share: drop all punctuation, collapse runs of
+     * whitespace, trim. What is left is comparable across spellings.
+     */
+    private function stripToKey(string $value): string
+    {
+        $value = preg_replace('/[[:punct:]]/u', '', $value) ?? $value;
+
+        return trim(preg_replace('/\s+/', ' ', $value) ?? $value);
     }
 
     /**

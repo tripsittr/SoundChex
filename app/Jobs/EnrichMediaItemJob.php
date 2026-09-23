@@ -17,6 +17,7 @@ use App\Models\MediaItem;
 use App\Models\MetadataVersion;
 use App\Plugins\Registry;
 use App\Services\LibraryOrganizer;
+use App\Services\Metadata\AlbumTitleNormalizer;
 use App\Services\Metadata\CoverEmbedder;
 use App\Services\Metadata\MetadataPipeline;
 use App\Services\MetadataHistory;
@@ -59,13 +60,12 @@ class EnrichMediaItemJob implements ShouldQueue
             // outranks a blanket "complete" — don't bury it.
             $item->refresh();
 
-            if ($item->processing_status !== ProcessingStatus::NeedsReview) {
-                $item->update(['processing_status' => ProcessingStatus::Complete]);
-            } elseif ($item->reviewed_at !== null) {
-                // A human has already looked at this item and judged it fine
-                // (S-302). A re-enrichment must not overrule that and send it back
-                // to the review queue — that is what made reviewed songs keep
-                // reappearing. Keep it complete and leave the review flag off.
+            // Complete when the run raised no review, and also when it did but a
+            // human has already judged this item fine (S-302): a re-enrichment
+            // must not overrule that and send it back to the review queue — that
+            // is what made reviewed songs keep reappearing.
+            if ($item->processing_status !== ProcessingStatus::NeedsReview
+                || $item->reviewed_at !== null) {
                 $item->update(['processing_status' => ProcessingStatus::Complete]);
             } else {
                 // A source found nothing it was sure of and asked for a human
@@ -268,7 +268,7 @@ class EnrichMediaItemJob implements ShouldQueue
                 return;
             }
 
-            $canonical = app(\App\Services\Metadata\AlbumTitleNormalizer::class)
+            $canonical = app(AlbumTitleNormalizer::class)
                 ->canonicalForAlbum($meta->artist, $meta->album);
 
             if ($canonical !== null && $canonical !== $meta->album) {

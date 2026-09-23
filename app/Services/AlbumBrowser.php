@@ -8,6 +8,7 @@ namespace App\Services;
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
 use App\Models\Person;
+use App\Services\Metadata\AlbumTitleNormalizer;
 use App\Services\MusicCredits;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -133,7 +134,7 @@ class AlbumBrowser
     {
         // Match on the canonical album key, so every edition/punctuation variant
         // of the album is listed together (S-308).
-        $albumKey = app(\App\Services\Metadata\AlbumTitleNormalizer::class)->canonicalKey($album);
+        $albumKey = app(AlbumTitleNormalizer::class)->canonicalKey($album);
 
         return $this->gate->apply(MediaItem::query())
             ->where('media_items.type', MediaItemType::Music)
@@ -150,21 +151,26 @@ class AlbumBrowser
             // discNumber() — which is what an untagged album gives — made it
             // reverse the pair instead of falling through to the track number.
             // Albums listed backwards as a result.
-            //
-            // Through the accessors, so an implausible tag sorts as absent
-            // rather than throwing an album into an arbitrary order.
-            ->sort(function (MediaItem $a, MediaItem $b): int {
-                return [
-                    $a->musicMetadata?->discNumber() ?? 1,
-                    $a->musicMetadata?->trackNumber() ?? PHP_INT_MAX,
-                    mb_strtolower($a->title ?? ''),
-                ] <=> [
-                    $b->musicMetadata?->discNumber() ?? 1,
-                    $b->musicMetadata?->trackNumber() ?? PHP_INT_MAX,
-                    mb_strtolower($b->title ?? ''),
-                ];
-            })
+            ->sort(fn (MediaItem $a, MediaItem $b): int => $this->playingOrderKey($a) <=> $this->playingOrderKey($b))
             ->values();
+    }
+
+    /**
+     * The disc/track/title key an album is listed in.
+     *
+     * Through the accessors, so an implausible tag sorts as absent rather than
+     * throwing an album into an arbitrary order. An untagged disc sorts as 1 and
+     * an untagged track last, so loose files fall to the end rather than the top.
+     *
+     * @return array{int, int, string}
+     */
+    private function playingOrderKey(MediaItem $item): array
+    {
+        return [
+            $item->musicMetadata?->discNumber() ?? 1,
+            $item->musicMetadata?->trackNumber() ?? PHP_INT_MAX,
+            mb_strtolower($item->title ?? ''),
+        ];
     }
 
     /**

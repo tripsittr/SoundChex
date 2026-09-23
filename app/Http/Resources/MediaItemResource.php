@@ -75,27 +75,27 @@ class MediaItemResource extends JsonResource
                 'disc_number' => $item->musicMetadata?->discNumber(),
                 'duration_ms' => $item->musicMetadata?->duration_ms,
                 'release_year' => $item->musicMetadata?->release_year,
-            ], fn($value) => $value !== null),
+            ], fn ($value) => $value !== null),
 
             'movie' => array_filter([
                 'release_year' => $item->movieMetadata?->release_year,
                 'mpaa_rating' => $item->movieMetadata?->mpaa_rating,
                 'runtime_minutes' => $item->movieMetadata?->runtime_minutes,
                 'director' => $item->movieMetadata?->director,
-            ], fn($value) => $value !== null),
+            ], fn ($value) => $value !== null),
 
             'show' => array_filter([
                 'season_number' => $item->showMetadata?->season_number,
                 'episode_number' => $item->showMetadata?->episode_number,
                 'episode_title' => $item->showMetadata?->episode_title,
                 'content_rating' => $item->showMetadata?->content_rating,
-            ], fn($value) => $value !== null),
+            ], fn ($value) => $value !== null),
 
             'book' => array_filter([
                 'author' => $item->bookMetadata?->author,
                 'publisher' => $item->bookMetadata?->publisher,
                 'pages' => $item->bookMetadata?->pages,
-            ], fn($value) => $value !== null),
+            ], fn ($value) => $value !== null),
 
             default => [],
         };
