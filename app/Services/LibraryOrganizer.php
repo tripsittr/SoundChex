@@ -601,7 +601,7 @@ class LibraryOrganizer
             // A watch folder must survive being emptied, or the next scheduled
             // scan has nothing left to watch.
             ...array_map(
-                fn(string $folder) => realpath($this->expandPath($folder)) ?: null,
+                fn (string $folder) => realpath($this->expandPath($folder)) ?: null,
                 (array) config('library.watch_folders', []),
             ),
         ]);

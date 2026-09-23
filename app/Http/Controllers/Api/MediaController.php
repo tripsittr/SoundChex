@@ -117,10 +117,12 @@ class MediaController extends Controller
             ]);
         }
 
+        $profileId = app(CurrentProfile::class)->id();
+
         if ($play === null) {
             $play = $item->plays()->create([
                 'user_id' => Auth::id(),
-                'profile_id' => app(CurrentProfile::class)->id(),
+                'profile_id' => $profileId,
             ]);
         }
 
@@ -139,13 +141,13 @@ class MediaController extends Controller
 
         // A resume point was saved — fires on every progress write, matching
         // the web endpoint so both front ends emit the same signal (S-285).
-        PlaybackProgress::dispatch($item, app(CurrentProfile::class)->id(), $data['position']);
+        PlaybackProgress::dispatch($item, $profileId, $data['position']);
 
         // Fire once, when it crosses into complete — the "watched"/"scrobble"
         // signal a tracker plugin reports at the end, distinct from the play
         // start (S-276).
         if ($completed && ! $wasCompleted) {
-            PlaybackCompleted::dispatch($item, app(CurrentProfile::class)->id());
+            PlaybackCompleted::dispatch($item, $profileId);
         }
 
         return response()->json(['completed' => $completed]);
@@ -220,7 +222,7 @@ class MediaController extends Controller
     // MARK: - Shared helpers (the same shape MediaCenterController uses)
 
     /** The recent play row for this item and profile, or null. */
-    private function recentPlay(MediaItem $item)
+    private function recentPlay(MediaItem $item): ?MediaPlay
     {
         $userId = Auth::id();
         $profileId = app(CurrentProfile::class)->id();

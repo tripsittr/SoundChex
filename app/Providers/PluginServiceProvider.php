@@ -43,8 +43,10 @@ class PluginServiceProvider extends ServiceProvider
         // migrations they registered. Both run only for enabled plugins, because
         // the loader only ran the `register()` of enabled ones — so disabling a
         // plugin removes its endpoints and stops its migrations being offered.
-        $this->registerPluginRoutes($this->app->make(Registry::class));
-        $this->registerPluginMigrations($this->app->make(Registry::class));
+        $registry = $this->app->make(Registry::class);
+
+        $this->registerPluginRoutes($registry);
+        $this->registerPluginMigrations($registry);
 
         // Each plugin's serving-time boot runs once the app is handling a
         // request, kept off console and queue boots where it has no business.

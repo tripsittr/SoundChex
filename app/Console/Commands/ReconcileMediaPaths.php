@@ -182,7 +182,7 @@ class ReconcileMediaPaths extends Command
 
         $files = array_values(array_filter(
             scandir($directory) ?: [],
-            fn(string $name): bool => $name !== '.' && $name !== '..' && is_file($directory . DIRECTORY_SEPARATOR . $name),
+            fn (string $name): bool => $name !== '.' && $name !== '..' && is_file($directory . DIRECTORY_SEPARATOR . $name),
         ));
 
         if ($files === []) {
@@ -265,11 +265,8 @@ class ReconcileMediaPaths extends Command
             return null;
         }
 
-        // Keep absolute paths absolute; only relative paths should stay relative.
-        if (str_starts_with($path, '/') || preg_match('#^[A-Za-z]:[\\/]#', $path) === 1) {
-            return $this->normalizePath(dirname($path));
-        }
-
+        // dirname() preserves whichever form the stored path was in, so an
+        // absolute path stays absolute and a relative one stays relative.
         return $this->normalizePath(dirname($path));
     }
 

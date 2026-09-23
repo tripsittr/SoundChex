@@ -6,7 +6,9 @@
 namespace App\Services;
 
 use App\Models\MediaItem;
+use App\Models\MusicMetadata;
 use getID3;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -33,6 +35,9 @@ class LyricsService
     /** Re-check a track that had no lyrics no more than this often. */
     private const RECHECK_AFTER_DAYS = 30;
 
+    /** The "nothing found" answer, in the shape every lookup returns. */
+    private const NOTHING = ['plain' => null, 'synced' => null];
+
     /**
      * The plain-text lyrics for an item, fetching and caching on a miss.
      *
@@ -58,13 +63,13 @@ class LyricsService
     public function lyricsPayloadFor(MediaItem $item): array
     {
         if ($item->type->value !== 'music') {
-            return ['plain' => null, 'synced' => null];
+            return self::NOTHING;
         }
 
         $meta = $item->musicMetadata;
 
         if ($meta === null) {
-            return ['plain' => null, 'synced' => null];
+            return self::NOTHING;
         }
 
         // A stored answer wins — including a stored empty (checked, none found)
@@ -75,7 +80,7 @@ class LyricsService
 
         if ($meta->lyrics_checked_at !== null
             && $meta->lyrics_checked_at->gt(now()->subDays(self::RECHECK_AFTER_DAYS))) {
-            return ['plain' => null, 'synced' => null];
+            return self::NOTHING;
         }
 
         return $this->fetchAndStore($item, $meta);
@@ -84,7 +89,7 @@ class LyricsService
     /**
      * @return array{plain: ?string, synced: ?string}
      */
-    private function fetchAndStore(MediaItem $item, $meta): array
+    private function fetchAndStore(MediaItem $item, MusicMetadata $meta): array
     {
         // 1. Embedded — the file's own lyrics. No network, always tried first.
         $found = $this->fromEmbedded($item);
@@ -98,7 +103,7 @@ class LyricsService
                 // Nothing embedded and nothing to match a provider on.
                 $meta->forceFill(['lyrics_checked_at' => now()])->save();
 
-                return ['plain' => null, 'synced' => null];
+                return self::NOTHING;
             }
 
             try {
@@ -111,7 +116,7 @@ class LyricsService
                     'reason' => $e->getMessage(),
                 ]);
 
-                return ['plain' => null, 'synced' => null];
+                return self::NOTHING;
             }
         }
 
@@ -135,7 +140,7 @@ class LyricsService
         $path = $item->absoluteFilePath();
 
         if ($path === null || ! is_file($path)) {
-            return ['plain' => null, 'synced' => null];
+            return self::NOTHING;
         }
 
         // A .lrc sidecar next to the file — the same basename, .lrc extension —
@@ -146,9 +151,11 @@ class LyricsService
             $lrc = trim((string) @file_get_contents($sidecar));
 
             if ($lrc !== '') {
+                $synced = $this->looksSynced($lrc);
+
                 return [
-                    'synced' => $this->looksSynced($lrc) ? $lrc : null,
-                    'plain' => $this->looksSynced($lrc) ? $this->stripTimestamps($lrc) : $lrc,
+                    'synced' => $synced ? $lrc : null,
+                    'plain' => $synced ? $this->stripTimestamps($lrc) : $lrc,
                 ];
             }
         }
@@ -157,7 +164,7 @@ class LyricsService
         try {
             $info = (new getID3)->analyze($path);
         } catch (\Throwable $e) {
-            return ['plain' => null, 'synced' => null];
+            return self::NOTHING;
         }
 
         $synced = $this->syncedFromTags($info);
@@ -311,9 +318,7 @@ class LyricsService
 
         // The `get` endpoint wants an exact match; on a miss (404) fall back to
         // `search`, which is fuzzier, and take the first hit.
-        $response = Http::timeout(8)
-            ->withHeaders(['User-Agent' => 'SoundChex (self-hosted media server)'])
-            ->get('https://lrclib.net/api/get', $params);
+        $response = $this->lrclib()->get('https://lrclib.net/api/get', $params);
 
         if ($response->status() === 404) {
             return $this->searchLrclib($artist, $title);
@@ -328,21 +333,30 @@ class LyricsService
         ];
     }
 
+    /**
+     * The HTTP client both LRCLIB endpoints use — identifying the app, since
+     * LRCLIB asks callers to say who they are, and capped so a slow provider
+     * cannot hold up a track opening.
+     */
+    private function lrclib(): PendingRequest
+    {
+        return Http::timeout(8)
+            ->withHeaders(['User-Agent' => 'SoundChex (self-hosted media server)']);
+    }
+
     /** @return array{plain: ?string, synced: ?string} */
     private function searchLrclib(string $artist, string $title): array
     {
-        $response = Http::timeout(8)
-            ->withHeaders(['User-Agent' => 'SoundChex (self-hosted media server)'])
-            ->get('https://lrclib.net/api/search', [
-                'artist_name' => $artist,
-                'track_name' => $title,
-            ]);
+        $response = $this->lrclib()->get('https://lrclib.net/api/search', [
+            'artist_name' => $artist,
+            'track_name' => $title,
+        ]);
 
         $response->throw();
         $first = $response->json()[0] ?? null;
 
         if ($first === null) {
-            return ['plain' => null, 'synced' => null];
+            return self::NOTHING;
         }
 
         return [

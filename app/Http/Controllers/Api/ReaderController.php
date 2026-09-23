@@ -14,10 +14,12 @@ use App\Models\ReadingProgress;
 use App\Services\Books\BookTextExtractor;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
+use App\Services\OcrService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
@@ -99,17 +101,7 @@ class ReaderController extends Controller
                 if (! empty($images)) {
                     ExtractBookContentJob::dispatch($item->id);
 
-                    return response()->json([
-                        'status' => 'ready',
-                        'format' => $this->format($item),
-                        'chapters' => collect($images)->map(fn (array $image): array => [
-                            'position' => $image['page'],
-                            'page' => $image['page'],
-                            'title' => null,
-                            'text' => '',
-                        ])->values(),
-                        'images' => $images,
-                    ]);
+                    return $this->readyResponse($item, $this->imagesAsUnits($images), $images);
                 }
 
                 // No text and no images. OCR is the only thing that could still
@@ -138,27 +130,50 @@ class ReaderController extends Controller
                 return response()->json(['status' => 'empty']);
             }
 
-            $units = collect($images)->map(fn (array $image): object => (object) [
-                'position' => $image['page'],
-                'page' => $image['page'],
-                'title' => null,
-                'text' => '',
-            ]);
+            $units = $this->imagesAsUnits($images);
         }
 
+        return $this->readyResponse($item, $units, $images);
+    }
+
+    /**
+     * A scanned book's page images as text-less units, so a book with no
+     * extractable text is still read page by page (the images carry it).
+     *
+     * @param  array<int, array{page: int, url: string, width: ?int, height: ?int}>  $images
+     * @return Collection<int, object>
+     */
+    private function imagesAsUnits(array $images): Collection
+    {
+        return collect($images)->map(fn (array $image): object => (object) [
+            'position' => $image['page'],
+            'page' => $image['page'],
+            'title' => null,
+            'text' => '',
+        ])->values();
+    }
+
+    /**
+     * The `ready` answer: the book's units as chapters, plus its illustrations
+     * keyed to the page they sit on, so the reader can place each one inline
+     * with that page's text — the same text-and-images read the desktop reader
+     * gives (S-295). This is what carries a scanned or illustrated book, whose
+     * pages *are* the images.
+     *
+     * @param  Collection<int, object>  $units
+     * @param  array<int, array{page: int, url: string, width: ?int, height: ?int}>  $images
+     */
+    private function readyResponse(MediaItem $item, Collection $units, array $images): JsonResponse
+    {
         return response()->json([
             'status' => 'ready',
             'format' => $this->format($item),
-            'chapters' => $units->map(fn ($u): array => [
-                'position' => $u->position,
-                'page' => $u->page,
-                'title' => $u->title,
-                'text' => $u->text,
+            'chapters' => $units->map(fn ($unit): array => [
+                'position' => $unit->position,
+                'page' => $unit->page,
+                'title' => $unit->title,
+                'text' => $unit->text,
             ])->values(),
-            // The book's illustrations, keyed to the page they sit on, so the
-            // reader can place each one inline with that page's text — the same
-            // text-and-images read the desktop reader gives (S-295). This is what
-            // carries a scanned or illustrated book (its pages are images).
             'images' => $images,
         ]);
     }
@@ -172,7 +187,7 @@ class ReaderController extends Controller
     private function canOcr(MediaItem $item): bool
     {
         return $this->format($item) === 'pdf'
-            && app(\App\Services\OcrService::class)->isAvailable();
+            && app(OcrService::class)->isAvailable();
     }
 
     /**

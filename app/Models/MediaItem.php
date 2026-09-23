@@ -13,6 +13,7 @@ use App\Enums\ProcessingStatus;
 use App\Observers\MediaItemObserver;
 use App\Services\CurrentProfile;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -589,30 +590,35 @@ class MediaItem extends Model
     /**
      * Linked candidates that may hold the surviving readable copy.
      *
-     * @return \Illuminate\Database\Eloquent\Collection<int, self>
+     * Three ways a row can be linked to the same underlying file: the original
+     * it was filed under, that original's other duplicates (its siblings), and
+     * its own duplicates.
+     *
+     * @return EloquentCollection<int, self>
      */
-    private function readableLinkedCandidates(): \Illuminate\Database\Eloquent\Collection
+    private function readableLinkedCandidates(): EloquentCollection
     {
-        $candidateIds = [];
+        $candidateIds = collect();
 
         if ($this->duplicate_of_id !== null) {
-            $candidateIds[] = (int) $this->duplicate_of_id;
+            $candidateIds->push((int) $this->duplicate_of_id);
 
-            $candidateIds = array_merge(
-                $candidateIds,
+            $candidateIds = $candidateIds->merge(
                 static::query()
                     ->where('duplicate_of_id', $this->duplicate_of_id)
                     ->where('id', '!=', $this->id)
-                    ->pluck('id')
-                    ->all(),
+                    ->pluck('id'),
             );
         }
 
-        $candidateIds = array_merge($candidateIds, $this->duplicates()->pluck('id')->all());
-        $candidateIds = array_values(array_unique(array_map('intval', $candidateIds)));
+        $candidateIds = $candidateIds
+            ->merge($this->duplicates()->pluck('id'))
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
 
-        if ($candidateIds === []) {
-            return new \Illuminate\Database\Eloquent\Collection();
+        if ($candidateIds->isEmpty()) {
+            return new EloquentCollection;
         }
 
         return static::query()->whereIn('id', $candidateIds)->get();
@@ -699,10 +705,10 @@ class MediaItem extends Model
         return static::query()
             ->where('type', MediaItemType::Music)
             ->whereNotNull('file_path')
-            ->whereHas('musicMetadata', fn($query) => $query
+            ->whereHas('musicMetadata', fn ($query) => $query
                 ->where('album', $meta->album)
                 // Same album title by a different artist is a different record.
-                ->when(filled($meta->artist), fn($q) => $q->where('artist', $meta->artist)))
+                ->when(filled($meta->artist), fn ($q) => $q->where('artist', $meta->artist)))
             // `plays` too: the detail page turns this into a player payload
             // per track, and each one asks for a resume position.
             ->with(['musicMetadata', 'plays'])
@@ -747,8 +753,8 @@ class MediaItem extends Model
         // expression would mean loading every play row to filter it in memory.
         if ($this->relationLoaded('plays')) {
             $play = $this->plays
-                ->when($profileId, fn($plays) => $plays->where('profile_id', $profileId))
-                ->when(! $profileId, fn($plays) => $plays->where('user_id', Auth::id()))
+                ->when($profileId, fn ($plays) => $plays->where('profile_id', $profileId))
+                ->when(! $profileId, fn ($plays) => $plays->where('user_id', Auth::id()))
                 ->where('completed', false)
                 ->sortByDesc('id')
                 ->first();
@@ -759,8 +765,8 @@ class MediaItem extends Model
         $play = $this->plays()
             // Scoped to the profile, not the account: two people sharing a
             // login must not resume into each other's film.
-            ->when($profileId, fn($query) => $query->where('profile_id', $profileId))
-            ->when(! $profileId, fn($query) => $query->where('user_id', Auth::id()))
+            ->when($profileId, fn ($query) => $query->where('profile_id', $profileId))
+            ->when(! $profileId, fn ($query) => $query->where('user_id', Auth::id()))
             ->where('completed', false)
             ->latest('id')
             ->first();

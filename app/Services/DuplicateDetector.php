@@ -12,6 +12,7 @@ use App\Events\DuplicateDetected;
 use App\Events\DuplicateMerged;
 use App\Events\DuplicateResolved;
 use App\Models\MediaItem;
+use App\Models\MusicMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
@@ -325,10 +326,8 @@ class DuplicateDetector
      * So they are flagged, but as `Likely`, which is never auto-merged: a
      * different album *and* a very different length really can be a separate
      * recording — a live cut, an edit — and that is a judgement for a person.
-     *
-     * @param  \App\Models\MusicMetadata  $meta
      */
-    private function findLikelyMatch(MediaItem $item, $meta, string $matchArtist): ?array
+    private function findLikelyMatch(MediaItem $item, MusicMetadata $meta, string $matchArtist): ?array
     {
         // A length this far apart is a different performance, not a different
         // master, so it is not offered at all.

@@ -14,6 +14,7 @@ use App\Plugins\Catalog\PluginCatalog;
 use App\Plugins\Catalog\PluginInstaller;
 use App\Plugins\Exceptions\PluginInstallException;
 use App\Plugins\PluginLoader;
+use App\Plugins\Registry;
 use App\Support\RevealInFileManager;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -146,7 +147,7 @@ class Plugins extends Page
         $this->plugins = InstalledPlugin::query()
             ->orderBy('name')
             ->get()
-            ->map(fn(InstalledPlugin $p): array => [
+            ->map(fn (InstalledPlugin $p): array => [
                 'id' => $p->plugin_id,
                 'name' => $p->name,
                 'version' => $p->version,
@@ -279,12 +280,12 @@ class Plugins extends Page
     private function loadError(InstalledPlugin $plugin): ?string
     {
         try {
-            $registry = new \App\Plugins\Registry;
+            $registry = new Registry;
             $loader = new PluginLoader(app(), $registry);
             $loader->boot();
 
             $loaded = collect($loader->loaded())
-                ->contains(fn(array $entry): bool => ($entry['id'] ?? null) === $plugin->plugin_id);
+                ->contains(fn (array $entry): bool => ($entry['id'] ?? null) === $plugin->plugin_id);
 
             if (! $loaded) {
                 return 'The plugin is enabled but did not load — its manifest, entry class, or server compatibility may be at fault. See the logs for the exact reason.';
@@ -315,7 +316,7 @@ class Plugins extends Page
 
         return array_values(array_filter(
             $lines,
-            fn(string $line): bool => stripos($line, 'plugin') !== false,
+            fn (string $line): bool => stripos($line, 'plugin') !== false,
         ));
     }
 
@@ -442,8 +443,8 @@ class Plugins extends Page
                 ->label('Open Plugins Folder')
                 ->icon(Heroicon::OutlinedFolderOpen)
                 ->color('gray')
-                ->visible(fn(): bool => $this->isLocalRequest())
-                ->action(fn() => $this->openPluginsFolder()),
+                ->visible(fn (): bool => $this->isLocalRequest())
+                ->action(fn () => $this->openPluginsFolder()),
 
             Action::make('rescan')
                 ->label('Re-scan')
@@ -467,7 +468,7 @@ class Plugins extends Page
                 ->modalHeading('Plugin logs')
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Close')
-                ->modalContent(fn() => view('filament.pages.partials.plugin-logs', [
+                ->modalContent(fn () => view('filament.pages.partials.plugin-logs', [
                     'lines' => $this->pluginLogLines(),
                 ])),
         ];
