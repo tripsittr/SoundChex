@@ -54,12 +54,28 @@ its own theme, cache-busted on the file's mtime.
   `server/THIRD-PARTY-LICENSES.txt` (S-351): Tailwind is MIT, and the binary
   embeds Bun (MIT) and JavaScriptCore (LGPL-2.1-or-later).
 
+### Shipped with the server runtime
+
+`package-runtime.sh` fetches the CLI for every platform it packages — macOS
+(arm64/x64), Linux (arm64/x64) and Windows (x64) — verifying it against
+upstream's published `sha256sums.txt` before it is staged, and refusing to
+package on a mismatch. It lands beside `php`, which is how
+`config/plugin-styles.php` finds it, so a packaged server compiles plugin
+styles with no configuration at all. `SKIP_TAILWIND=1` builds a smaller
+runtime; plugins then keep whatever CSS they ship.
+
+Adds roughly 80 MB on macOS and 105 MB elsewhere, against the ~300 MB the
+runtime already carries.
+
+## Worth knowing (bundling)
+
+The **client** app deliberately does not ship it. The client is a viewer that
+connects to a server — it has no PHP runtime, runs no plugins, and could not
+use the binary if it had one; `build-client.yml` says as much about the server
+runtime generally. Bundling it there would add 80–105 MB of unreachable code
+to every desktop client.
+
 ## Still wrong
 
-- **The binary is not bundled yet.** Nothing in `src-tauri/runtime/bin` ships
-  it, so on a packaged build this is inert until the build script fetches it —
-  ~80 MB per platform, which is a real decision against the 298 MB already
-  bundled. Until then it works wherever `tailwindcss` is on `PATH` or
-  `TAILWIND_PATH` is set.
 - Compilation happens on enable, not on plugin update: a plugin updated in
   place keeps its old stylesheet until `plugins:styles` is run.

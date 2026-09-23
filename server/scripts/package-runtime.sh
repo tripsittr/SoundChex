@@ -25,6 +25,7 @@ FPM_BIN="${4:?path to built php-fpm}"
 OUT_DIR="${5:?output dir}"
 
 CADDY_VERSION="2.11.4"
+TAILWIND_VERSION="4.3.3"   # keep in step with package.json
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # server/
 NAME="soundchex-server-${OS}-${ARCH}"
 STAGE="${OUT_DIR}/${NAME}"
@@ -112,6 +113,61 @@ if [ "${SKIP_FFMPEG:-0}" != "1" ]; then
   if [ "$OS" != "windows" ] && [ -x "$STAGE/bin/ffmpeg" ]; then
     FF_CFG="$("$STAGE/bin/ffmpeg" -version 2>/dev/null | tr ' ' '\n' | grep -E 'enable-(gpl|libx264|libmp3lame)' | sort -u | tr '\n' ' ')"
     echo "    ffmpeg: ${FF_CFG:-(could not read config — cross-arch?)}"
+  fi
+fi
+
+# --- Tailwind CLI (S-350) -------------------------------------------------
+# Compiles an installed plugin's stylesheet when that plugin is enabled. A
+# plugin's Blade cannot use the app's Tailwind — the app's CSS is built before
+# release and a catalogue-installed plugin lives outside the repo on the user's
+# machine — so without this a plugin has to hand-write CSS.
+#
+# Sits beside php, which is how config/plugin-styles.php finds it. MIT; the
+# binary embeds Bun (MIT) and JavaScriptCore (LGPL-2.1) — see
+# THIRD-PARTY-LICENSES.txt. Set SKIP_TAILWIND=1 for a smaller runtime; plugins
+# then keep whatever CSS they ship, which is the pre-S-350 behaviour.
+if [ "${SKIP_TAILWIND:-0}" != "1" ]; then
+  case "${OS}_${ARCH}" in
+    macos_aarch64)  TW_ASSET="tailwindcss-macos-arm64" ;;
+    macos_x86_64)   TW_ASSET="tailwindcss-macos-x64" ;;
+    linux_aarch64)  TW_ASSET="tailwindcss-linux-arm64" ;;
+    linux_x86_64)   TW_ASSET="tailwindcss-linux-x64" ;;
+    windows_x86_64) TW_ASSET="tailwindcss-windows-x64.exe" ;;
+  esac
+
+  echo "    fetching tailwindcss ${TAILWIND_VERSION} (${TW_ASSET})"
+  TW_TMP="$(mktemp -d)"
+  TW_BASE="https://github.com/tailwindlabs/tailwindcss/releases/download/v${TAILWIND_VERSION}"
+
+  curl -fsSL -o "$TW_TMP/tw" "${TW_BASE}/${TW_ASSET}"
+  # Verify against the published checksums rather than trusting the transfer.
+  # Upstream lists names as "./tailwindcss-…", so match the tail of the line.
+  if curl -fsSL -o "$TW_TMP/sha256sums.txt" "${TW_BASE}/sha256sums.txt"; then
+    TW_WANT=$(grep -E "[ /]${TW_ASSET}$" "$TW_TMP/sha256sums.txt" | head -1 | cut -d' ' -f1)
+    if [ -n "$TW_WANT" ]; then
+      if command -v sha256sum >/dev/null 2>&1; then
+        TW_GOT=$(sha256sum "$TW_TMP/tw" | cut -d' ' -f1)
+      else
+        TW_GOT=$(shasum -a 256 "$TW_TMP/tw" | cut -d' ' -f1)
+      fi
+      if [ "$TW_WANT" != "$TW_GOT" ]; then
+        echo "tailwindcss checksum mismatch: expected $TW_WANT, got $TW_GOT" >&2
+        exit 1
+      fi
+      echo "    tailwindcss: checksum ok"
+    else
+      echo "    tailwindcss: no checksum published for ${TW_ASSET} — skipping verification" >&2
+    fi
+  fi
+
+  cp "$TW_TMP/tw" "$STAGE/bin/tailwindcss${EXE}"
+  chmod +x "$STAGE/bin/tailwindcss${EXE}" 2>/dev/null || true
+  rm -rf "$TW_TMP"
+
+  # Confirm it runs and is the version we expect (POSIX, same-arch only).
+  if [ "$OS" != "windows" ] && [ -x "$STAGE/bin/tailwindcss" ]; then
+    TW_REPORTED=$("$STAGE/bin/tailwindcss" --help 2>&1 | head -1)
+    echo "    tailwindcss: ${TW_REPORTED:-(could not read version — cross-arch?)}"
   fi
 fi
 
