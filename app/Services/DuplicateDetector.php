@@ -39,6 +39,17 @@ use Illuminate\Support\Facades\Storage;
  */
 class DuplicateDetector
 {
+    /**
+     * How far two copies of the same song may differ in length before the
+     * looser pass stops offering them as probably-the-same (S-339).
+     *
+     * Twelve seconds covers a remaster, a different fade, or a tacked-on count
+     * in — the cases that were being missed. It deliberately stops short of a
+     * radio edit, which typically trims thirty seconds or more and is a
+     * genuinely different cut, not a duplicate.
+     */
+    private const LIKELY_DURATION_LIMIT_MS = 12_000;
+
     public function __construct(private LibrarySettings $settings) {}
 
     /**
@@ -294,7 +305,58 @@ class DuplicateDetector
 
         $original = $this->pickOriginal($candidates);
 
-        return $original ? ['original' => $original, 'reason' => DuplicateMatch::Fuzzy] : null;
+        if ($original) {
+            return ['original' => $original, 'reason' => DuplicateMatch::Fuzzy];
+        }
+
+        return $this->findLikelyMatch($item, $meta, $matchArtist);
+    }
+
+    /**
+     * Same artist and title, but a different release or length (S-339).
+     *
+     * The strict pass above requires an equal album and a length within
+     * tolerance. That is the right bar for a merge and too high for finding
+     * everything worth a look: on this library it missed 78 groups the owner
+     * could see were duplicates — a greatest-hits copy against the original
+     * album, a remaster a few seconds longer. Those are the same song to a
+     * listener.
+     *
+     * So they are flagged, but as `Likely`, which is never auto-merged: a
+     * different album *and* a very different length really can be a separate
+     * recording — a live cut, an edit — and that is a judgement for a person.
+     *
+     * @param  \App\Models\MusicMetadata  $meta
+     */
+    private function findLikelyMatch(MediaItem $item, $meta, string $matchArtist): ?array
+    {
+        // A length this far apart is a different performance, not a different
+        // master, so it is not offered at all.
+        $limit = self::LIKELY_DURATION_LIMIT_MS;
+
+        $candidates = $this->musicCandidates($item)
+            ->whereRaw('LOWER(TRIM(title)) = ?', [$this->normalise($item->title)])
+            ->whereHas('musicMetadata', function ($q) use ($meta, $matchArtist, $limit) {
+                $q->whereRaw('LOWER(TRIM(COALESCE(NULLIF(primary_artist, ""), artist))) = ?', [$matchArtist]);
+
+                // The album is deliberately not compared here — differing on it
+                // is the common case this pass exists to catch. The length is,
+                // but loosely, and only when both sides know it.
+                if ($meta->duration_ms !== null) {
+                    $q->where(function ($inner) use ($meta, $limit) {
+                        $inner->whereNull('duration_ms')
+                            ->orWhereBetween('duration_ms', [
+                                $meta->duration_ms - $limit,
+                                $meta->duration_ms + $limit,
+                            ]);
+                    });
+                }
+            })
+            ->get();
+
+        $original = $this->pickOriginal($candidates);
+
+        return $original ? ['original' => $original, 'reason' => DuplicateMatch::Likely] : null;
     }
 
     /**

@@ -46,13 +46,13 @@ comes back.
 
 ## How it is put together
 
-| | |
-| --- | --- |
-| **Server** | Laravel 13, PHP 8.4, SQLite |
-| **Admin** | Filament 5 |
-| **Frontend** | Blade, Tailwind v4, Alpine, vanilla ES modules |
-| **Apps** | Tauri 2 — macOS, Windows, Linux, iOS |
-| **Media** | FFmpeg for transcoding, Chromaprint for fingerprinting |
+|              |                                                        |
+| ------------ | ------------------------------------------------------ |
+| **Server**   | Laravel 13, PHP 8.4, SQLite                            |
+| **Admin**    | Filament 5                                             |
+| **Frontend** | Blade, Tailwind v4, Alpine, vanilla ES modules         |
+| **Apps**     | Tauri 2 — macOS, Windows, Linux, iOS                   |
+| **Media**    | FFmpeg for transcoding, Chromaprint for fingerprinting |
 
 SQLite rather than MySQL on purpose: one file to back up, no service to keep
 running, and a library of a few thousand items never gets near its limits.
@@ -129,6 +129,13 @@ login on macOS.
 npm run tauri ios build -- --export-method debugging
 npm run tauri build                    # desktop
 npm run build:server                   # the host app, with service controls
+npm run reinstall:server               # rebuild + reinstall /Applications/SoundChex Server.app
+```
+
+For a faster reinstall when the app is already built:
+
+```bash
+npm run reinstall:server -- --skip-build
 ```
 
 iOS needs a paid Apple developer account for a profile that lasts a year; a

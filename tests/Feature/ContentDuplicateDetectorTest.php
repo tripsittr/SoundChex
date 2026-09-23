@@ -108,13 +108,20 @@ class ContentDuplicateDetectorTest extends TestCase
         $this->assertNull($edit->fresh()->duplicate_status);
     }
 
-    public function test_a_different_album_is_not_a_fuzzy_match(): void
+    public function test_a_different_album_is_offered_for_review_not_merged(): void
     {
-        // The single and the album cut of the same song are separate files.
-        $this->track('song.flac', 'aaa', ['artist' => 'X', 'album' => 'Single', 'duration_ms' => 200000], title: 'Song');
+        // Before S-339 this was rejected outright, which lost 78 real duplicate
+        // groups on the owner's library — the same song on a greatest-hits or a
+        // soundtrack. It is still not a *fuzzy* (mergeable) match; it is
+        // offered for a person to decide.
+        $original = $this->track('song.flac', 'aaa', ['artist' => 'X', 'album' => 'Single', 'duration_ms' => 200000], title: 'Song');
         $albumCut = $this->track('song2.mp3', 'bbb', ['artist' => 'X', 'album' => 'The Album', 'duration_ms' => 200000], title: 'Song');
 
-        $this->assertNull($this->detector->check($albumCut));
+        $this->detector->check($albumCut);
+
+        $this->assertSame($original->id, $albumCut->fresh()->duplicate_of_id);
+        $this->assertSame(DuplicateMatch::Likely, $albumCut->fresh()->duplicate_match);
+        $this->assertSame(DuplicateStatus::Pending, $albumCut->fresh()->duplicate_status);
     }
 
     public function test_a_featured_variant_matches_the_lead_artist_on_the_primary(): void
@@ -485,6 +492,71 @@ class ContentDuplicateDetectorTest extends TestCase
      *
      * @param  array<string, mixed>  $meta
      */
+    public function test_the_same_song_on_a_different_album_is_flagged_for_review(): void
+    {
+        // A greatest-hits copy against the original album: the same song to a
+        // listener, but the strict pass rejected it on the album alone and 78
+        // such groups were left unflagged on the real library (S-339).
+        $original = $this->track('a.mp3', 'aaa', [
+            'artist' => 'Nitty Gritty Dirt Band',
+            'primary_artist' => 'Nitty Gritty Dirt Band',
+            'album' => 'Hold On',
+            'duration_ms' => 201600,
+        ], title: 'Fishin in the Dark');
+
+        $copy = $this->track('b.mp3', 'bbb', [
+            'artist' => 'Nitty Gritty Dirt Band',
+            'primary_artist' => 'Nitty Gritty Dirt Band',
+            'album' => 'Rhino Hi-Five',
+            'duration_ms' => 202815,
+        ], title: 'Fishin in the Dark');
+
+        $this->detector->check($copy);
+
+        $this->assertSame($original->id, $copy->fresh()->duplicate_of_id);
+        $this->assertSame(DuplicateMatch::Likely, $copy->fresh()->duplicate_match);
+    }
+
+    public function test_a_likely_match_is_never_auto_deleted(): void
+    {
+        // Deciding between two different files is the user's call, always.
+        $original = $this->track('c.mp3', 'ccc', [
+            'artist' => 'Richard Ashcroft', 'primary_artist' => 'Richard Ashcroft',
+            'album' => 'Alone With Everybody', 'duration_ms' => 326208,
+        ], title: 'A Song For The Lovers');
+
+        $copy = $this->track('d.mp3', 'ddd', [
+            'artist' => 'Richard Ashcroft', 'primary_artist' => 'Richard Ashcroft',
+            'album' => 'Alone With Everybody', 'duration_ms' => 322064,
+        ], title: 'A Song For The Lovers');
+
+        $this->detector->check($copy);
+
+        // Both files survive: deciding between two different files is the
+        // user's call, so a Likely match is never auto-deleted.
+        $this->assertDatabaseHas('media_items', ['id' => $copy->id]);
+        $this->assertSame(DuplicateStatus::Pending, $copy->fresh()->duplicate_status);
+        $this->assertNotNull($original->fresh());
+    }
+
+    public function test_a_very_different_length_is_not_offered_as_a_duplicate(): void
+    {
+        // A live take or an extended mix is a different recording, not a copy.
+        $this->track('e.mp3', 'eee', [
+            'artist' => 'Zac Brown Band', 'primary_artist' => 'Zac Brown Band',
+            'album' => 'The Foundation', 'duration_ms' => 251794,
+        ], title: 'Toes');
+
+        $live = $this->track('f.mp3', 'fff', [
+            'artist' => 'Zac Brown Band', 'primary_artist' => 'Zac Brown Band',
+            'album' => 'Live At Red Rocks', 'duration_ms' => 400000,
+        ], title: 'Toes');
+
+        $this->detector->check($live);
+
+        $this->assertNull($live->fresh()->duplicate_of_id);
+    }
+
     private function track(
         string $filename,
         string $contents,

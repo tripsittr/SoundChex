@@ -14,7 +14,8 @@
         "check:target": "node scripts/check-stale-target.mjs",
         "tauri:build": "npm run check:target && cross-env CI=true tauri build",
         "build:server": "npm run check:target && npm run build && cross-env CI=true tauri build --config src-tauri/tauri.server.conf.json",
-        "dev:server": "npm run check:target && tauri dev --config src-tauri/tauri.server.conf.json"
+        "dev:server": "npm run check:target && tauri dev --config src-tauri/tauri.server.conf.json",
+        "reinstall:server": "bash scripts/reinstall-server-app.sh"
     },
     "devDependencies": {
         "@playwright/test": "^1.62.1",

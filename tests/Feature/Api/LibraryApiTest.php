@@ -10,6 +10,7 @@ use App\Models\MediaItem;
 use App\Models\Profile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -163,6 +164,39 @@ class LibraryApiTest extends TestCase
 
         $this->assertStringNotContainsString('file_path', $body);
         $this->assertStringNotContainsString('/media/library', $body);
+    }
+
+    public function test_playable_reflects_catalogue_presence_not_disk_probe(): void
+    {
+        Storage::fake('local');
+
+        $broken = MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => 'Broken Track',
+            'file_path' => 'media/library/Music/Broken Track.mp3',
+            'owned' => true,
+        ]);
+
+        $livePath = 'media/library/Music/Live Track.mp3';
+        Storage::disk('local')->put($livePath, 'bytes');
+
+        $live = MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => 'Live Track',
+            'file_path' => $livePath,
+            'owned' => true,
+        ]);
+
+        $items = collect($this->asProfile($this->owner)
+            ->getJson(route('api.library'))
+            ->assertOk()
+            ->json('items'))
+            ->keyBy('id');
+
+        $this->assertTrue((bool) $items[$broken->id]['playable']);
+        $this->assertTrue((bool) $items[$live->id]['playable']);
     }
 
     public function test_an_unchanged_library_answers_304(): void

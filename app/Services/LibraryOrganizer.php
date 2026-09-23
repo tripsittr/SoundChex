@@ -126,6 +126,8 @@ class LibraryOrganizer
      */
     public function organize(MediaItem $item, bool $dryRun = false): ?string
     {
+        $storedSource = $item->file_path;
+
         if (! $this->canOrganize($item)) {
             return null;
         }
@@ -213,6 +215,8 @@ class LibraryOrganizer
 
         $item->file_path = $relative;
         $item->saveQuietly();
+
+        $this->repointPeersForSharedSource($item, $storedSource, $relative);
 
         $this->pruneEmptyParents(dirname($source));
 
@@ -495,10 +499,13 @@ class LibraryOrganizer
      */
     private function adoptExisting(MediaItem $item, string $source, string $absoluteTarget): string
     {
+        $storedSource = $item->file_path;
         $relative = $this->toRelative($absoluteTarget);
 
         $item->file_path = $relative;
         $item->saveQuietly();
+
+        $this->repointPeersForSharedSource($item, $storedSource, $relative);
 
         @unlink($source);
 
@@ -526,6 +533,25 @@ class LibraryOrganizer
         }
 
         return $path;
+    }
+
+    /**
+     * Repoints rows that still reference the same original source path.
+     *
+     * Organizing one row moves the underlying file once. If another row pointed
+     * at that same source path (common after duplicate scans/imports), it would
+     * otherwise keep the now-missing path and become unplayable.
+     */
+    private function repointPeersForSharedSource(MediaItem $item, ?string $from, string $to): void
+    {
+        if (blank($from) || $from === $to) {
+            return;
+        }
+
+        MediaItem::query()
+            ->where('id', '!=', $item->id)
+            ->where('file_path', $from)
+            ->update(['file_path' => $to]);
     }
 
     /**
@@ -567,7 +593,7 @@ class LibraryOrganizer
             // A watch folder must survive being emptied, or the next scheduled
             // scan has nothing left to watch.
             ...array_map(
-                fn (string $folder) => realpath($this->expandPath($folder)) ?: null,
+                fn(string $folder) => realpath($this->expandPath($folder)) ?: null,
                 (array) config('library.watch_folders', []),
             ),
         ]);
