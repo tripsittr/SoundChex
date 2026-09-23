@@ -34,6 +34,18 @@ enum DuplicateMatch: string implements HasColor, HasLabel
     /** Close tag match: same artist + title (+ album) and near-equal duration. */
     case Fuzzy = 'fuzzy';
 
+    /**
+     * Same artist and title, but the release or the length disagrees (S-339).
+     *
+     * The strict fuzzy pass above demands an equal album and a length within
+     * tolerance, which is right for deciding a merge and wrong for finding
+     * everything worth a look: a greatest-hits copy and the original album cut
+     * are the same song to a listener, and were being missed entirely. This is
+     * only ever offered for review — never auto-merged — because sometimes it
+     * really is a different recording.
+     */
+    case Likely = 'likely';
+
     public function getLabel(): string
     {
         return match ($this) {
@@ -42,6 +54,7 @@ enum DuplicateMatch: string implements HasColor, HasLabel
             self::MusicBrainz => 'Same MusicBrainz recording',
             self::AcoustId => 'Same audio fingerprint',
             self::Fuzzy => 'Same track (tags + length)',
+            self::Likely => 'Probably the same track',
         };
     }
 
@@ -53,6 +66,7 @@ enum DuplicateMatch: string implements HasColor, HasLabel
             self::MusicBrainz => 'success',
             self::AcoustId => 'info',
             self::Fuzzy => 'warning',
+            self::Likely => 'gray',
         };
     }
 
@@ -78,6 +92,7 @@ enum DuplicateMatch: string implements HasColor, HasLabel
             self::MusicBrainz => 90,
             self::AcoustId => 85,
             self::Fuzzy => 60,
+            self::Likely => 40,
         };
     }
 }

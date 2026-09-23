@@ -145,7 +145,7 @@ class Plugins extends Page
         $this->plugins = InstalledPlugin::query()
             ->orderBy('name')
             ->get()
-            ->map(fn (InstalledPlugin $p): array => [
+            ->map(fn(InstalledPlugin $p): array => [
                 'id' => $p->plugin_id,
                 'name' => $p->name,
                 'version' => $p->version,
@@ -165,58 +165,63 @@ class Plugins extends Page
      */
     public function toggle(string $pluginId): void
     {
-        $plugin = InstalledPlugin::query()->where('plugin_id', $pluginId)->first();
+        try {
+            $plugin = InstalledPlugin::query()->where('plugin_id', $pluginId)->first();
 
-        if ($plugin === null) {
-            Notification::make()
-                ->title('Plugin not found')
-                ->body('No installed plugin matches this id — try Re-scan.')
-                ->danger()
-                ->send();
-
-            return;
-        }
-
-        $plugin->forceFill(['enabled' => ! $plugin->enabled])->save();
-        $this->load();
-
-        // On enable, actually try to load the plugin now and surface any failure,
-        // so a plugin that errors on boot says so with the reason rather than
-        // silently doing nothing — the loader otherwise logs-and-skips it.
-        if ($plugin->enabled) {
-            $error = $this->loadError($plugin);
-
-            if ($error !== null) {
+            if ($plugin === null) {
                 Notification::make()
-                    ->title($plugin->name.' could not be loaded')
-                    ->body($error)
+                    ->title('Plugin not found')
+                    ->body('No installed plugin matches this id — try Re-scan.')
                     ->danger()
-                    ->persistent()
-                    ->actions([
-                        \Filament\Notifications\Actions\Action::make('viewLogs')
-                            ->label('View logs')
-                            ->button()
-                            ->dispatch('open-plugin-logs'),
-                    ])
+                    ->send();
+
+                return;
+            }
+
+            $plugin->forceFill(['enabled' => ! $plugin->enabled])->save();
+            $this->load();
+
+            // On enable, actually try to load the plugin now and surface any failure,
+            // so a plugin that errors on boot says so with the reason rather than
+            // silently doing nothing — the loader otherwise logs-and-skips it.
+            if ($plugin->enabled) {
+                $error = $this->loadError($plugin);
+
+                if ($error !== null) {
+                    Notification::make()
+                        ->title($plugin->name . ' could not be loaded')
+                        ->body($error)
+                        ->danger()
+                        ->persistent()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title($plugin->name . ' enabled')
+                    ->body('Reload this page to see its features (new admin pages appear at the next full load).')
+                    ->success()
                     ->send();
 
                 return;
             }
 
             Notification::make()
-                ->title($plugin->name.' enabled')
-                ->body('Reload this page to see its features (new admin pages appear at the next full load).')
+                ->title($plugin->name . ' disabled')
+                ->body('Takes effect on the next page load.')
                 ->success()
                 ->send();
+        } catch (\Throwable $e) {
+            report($e);
 
-            return;
+            Notification::make()
+                ->title('Plugin toggle failed')
+                ->body($e->getMessage())
+                ->danger()
+                ->persistent()
+                ->send();
         }
-
-        Notification::make()
-            ->title($plugin->name.' disabled')
-            ->body('Takes effect on the next page load.')
-            ->success()
-            ->send();
     }
 
     /**
@@ -232,7 +237,7 @@ class Plugins extends Page
             $loader->boot();
 
             $loaded = collect($loader->loaded())
-                ->contains(fn (array $entry): bool => ($entry['id'] ?? null) === $plugin->plugin_id);
+                ->contains(fn(array $entry): bool => ($entry['id'] ?? null) === $plugin->plugin_id);
 
             if (! $loaded) {
                 return 'The plugin is enabled but did not load — its manifest, entry class, or server compatibility may be at fault. See the logs for the exact reason.';
@@ -263,7 +268,7 @@ class Plugins extends Page
 
         return array_values(array_filter(
             $lines,
-            fn (string $line): bool => stripos($line, 'plugin') !== false,
+            fn(string $line): bool => stripos($line, 'plugin') !== false,
         ));
     }
 
@@ -337,7 +342,7 @@ class Plugins extends Page
             app(PluginInstaller::class)->install($entry);
 
             Notification::make()
-                ->title($entry->name.' installed')
+                ->title($entry->name . ' installed')
                 ->body('It is disabled — enable it below once you have reviewed it.')
                 ->success()
                 ->send();
@@ -390,8 +395,8 @@ class Plugins extends Page
                 ->label('Open Plugins Folder')
                 ->icon(Heroicon::OutlinedFolderOpen)
                 ->color('gray')
-                ->visible(fn (): bool => $this->isLocalRequest())
-                ->action(fn () => $this->openPluginsFolder()),
+                ->visible(fn(): bool => $this->isLocalRequest())
+                ->action(fn() => $this->openPluginsFolder()),
 
             Action::make('rescan')
                 ->label('Re-scan')
@@ -400,7 +405,7 @@ class Plugins extends Page
                     $this->rescan();
 
                     Notification::make()
-                        ->title(count($this->plugins).' '.str('plugin')->plural(count($this->plugins)).' found')
+                        ->title(count($this->plugins) . ' ' . str('plugin')->plural(count($this->plugins)) . ' found')
                         ->success()
                         ->send();
                 }),
@@ -415,7 +420,7 @@ class Plugins extends Page
                 ->modalHeading('Plugin logs')
                 ->modalSubmitAction(false)
                 ->modalCancelActionLabel('Close')
-                ->modalContent(fn () => view('filament.pages.partials.plugin-logs', [
+                ->modalContent(fn() => view('filament.pages.partials.plugin-logs', [
                     'lines' => $this->pluginLogLines(),
                 ])),
         ];

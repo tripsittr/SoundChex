@@ -18,6 +18,9 @@ fn main() {
                 "media_remove",
                 "media_list",
                 "media_manifest",
+                "server_start",
+                "server_stop",
+                "server_status",
             ]),
         ),
     )

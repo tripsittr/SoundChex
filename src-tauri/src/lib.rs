@@ -582,31 +582,17 @@ pub fn run() {
         // page's buttons for Radarr, Sonarr and Lidarr.
         .plugin(tauri_plugin_opener::init());
 
-    // The main window is built here rather than from `tauri.conf.json`, because
-    // an init script cannot be added to a config-created window after the fact —
-    // and injecting the Tauri bridge on all frames is the whole point on mobile,
-    // where the app is served from a remote origin that otherwise has no
-    // `window.__TAURI__`. Desktop builds the same window without the script.
+    // The mobile build injects the Tauri bridge into every frame. Desktop windows
+    // come from the Tauri config; creating one here would duplicate the default
+    // `main` window and panic at startup.
+    #[cfg(mobile)]
     let builder = builder.setup(|app| {
         use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-        let mut win = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-            .title("SoundChex");
-
-        #[cfg(desktop)]
-        {
-            win = win
-                .inner_size(1280.0, 820.0)
-                .min_inner_size(380.0, 560.0)
-                .resizable(true);
-        }
-
-        #[cfg(mobile)]
-        {
-            win = win.initialization_script_for_all_frames(TAURI_BRIDGE);
-        }
-
-        win.build()?;
+        WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            .title("SoundChex")
+            .initialization_script_for_all_frames(TAURI_BRIDGE)
+            .build()?;
 
         Ok(())
     });

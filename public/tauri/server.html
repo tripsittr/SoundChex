@@ -1,443 +1,454 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SoundChex Server</title>
-<style>
-    /*
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SoundChex Server</title>
+    <style>
+        /*
       Deliberately self-contained. This page has to render before the Laravel
       server is running — it is the thing you open *because* it is not running —
       so it cannot load a stylesheet from it.
     */
-    :root {
-        --base-900: #0b0b0f;
-        --base-800: #14141b;
-        --base-700: #1e1e28;
-        --base-600: #2a2a36;
-        --ink-100: #f4f4f5;
-        --ink-300: #c8c8d0;
-        --ink-500: #8b8b96;
-        --accent: #6d5efc;
-        --good: #34d399;
-        --bad: #fca5a5;
-        --warn: #fbbf24;
-    }
+        :root {
+            --base-900: #0b0b0f;
+            --base-800: #14141b;
+            --base-700: #1e1e28;
+            --base-600: #2a2a36;
+            --ink-100: #f4f4f5;
+            --ink-300: #c8c8d0;
+            --ink-500: #8b8b96;
+            --accent: #6d5efc;
+            --good: #34d399;
+            --bad: #fca5a5;
+            --warn: #fbbf24;
+        }
 
-    * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+        }
 
-    body {
-        margin: 0;
-        min-height: 100vh;
-        background: var(--base-900);
-        color: var(--ink-100);
-        font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-        -webkit-font-smoothing: antialiased;
-    }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--base-900);
+            color: var(--ink-100);
+            font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
 
-    main { max-width: 46rem; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+        main {
+            max-width: 46rem;
+            margin: 0 auto;
+            padding: 2.5rem 1.5rem 4rem;
+        }
 
-    h1 { margin: 0 0 0.25rem; font-size: 1.5rem; letter-spacing: -0.01em; }
-    .lede { margin: 0 0 2rem; color: var(--ink-500); font-size: 0.9rem; }
+        h1 {
+            margin: 0 0 0.25rem;
+            font-size: 1.5rem;
+            letter-spacing: -0.01em;
+        }
 
-    .card {
-        border: 1px solid var(--base-600);
-        border-radius: 0.75rem;
-        background: var(--base-800);
-        padding: 0.25rem 1rem 0.75rem;
-        margin-bottom: 1rem;
-    }
+        .lede {
+            margin: 0 0 2rem;
+            color: var(--ink-500);
+            font-size: 0.9rem;
+        }
 
-    .card h2 {
-        margin: 0;
-        padding: 0.875rem 0 0.5rem;
-        font-size: 0.7rem;
-        font-weight: 600;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--ink-500);
-    }
+        .card {
+            border: 1px solid var(--base-600);
+            border-radius: 0.75rem;
+            background: var(--base-800);
+            padding: 0.25rem 1rem 0.75rem;
+            margin-bottom: 1rem;
+        }
 
-    .row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        padding: 0.75rem 0;
-        border-top: 1px solid var(--base-700);
-    }
+        .card h2 {
+            margin: 0;
+            padding: 0.875rem 0 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--ink-500);
+        }
 
-    .card h2 + .row { border-top: 0; }
+        .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.75rem 0;
+            border-top: 1px solid var(--base-700);
+        }
 
-    .row__name { font-size: 0.875rem; }
-    .row__hint { display: block; font-size: 0.75rem; color: var(--ink-500); }
+        .card h2+.row {
+            border-top: 0;
+        }
 
-    .state {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        font-size: 0.8125rem;
-        color: var(--ink-300);
-        white-space: nowrap;
-    }
+        .row__name {
+            font-size: 0.875rem;
+        }
 
-    .dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; background: var(--ink-500); }
-    .dot[data-state='up'] { background: var(--good); }
-    .dot[data-state='down'] { background: var(--bad); }
-    .dot[data-state='unknown'] { background: var(--warn); }
+        .row__hint {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--ink-500);
+        }
 
-    button {
-        min-height: 2.25rem;
-        border-radius: 0.5rem;
-        border: 1px solid var(--base-600);
-        background: var(--base-700);
-        color: var(--ink-100);
-        padding: 0 0.875rem;
-        font-size: 0.8125rem;
-        font-weight: 500;
-        cursor: pointer;
-    }
+        .state {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.8125rem;
+            color: var(--ink-300);
+            white-space: nowrap;
+        }
 
-    button:hover { border-color: var(--ink-500); }
-    button.primary { background: var(--accent); border-color: var(--accent); }
+        .dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 999px;
+            background: var(--ink-500);
+        }
 
-    .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; padding: 0.75rem 0 0.25rem; }
+        .dot[data-state='up'] {
+            background: var(--good);
+        }
 
-    /* Inline with the state it acts on, so it reads as "this one is stopped,
+        .dot[data-state='down'] {
+            background: var(--bad);
+        }
+
+        .dot[data-state='unknown'] {
+            background: var(--warn);
+        }
+
+        button {
+            min-height: 2.25rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--base-600);
+            background: var(--base-700);
+            color: var(--ink-100);
+            padding: 0 0.875rem;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        button:hover {
+            border-color: var(--ink-500);
+        }
+
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            padding: 0.75rem 0 0.25rem;
+        }
+
+        /* Inline with the state it acts on, so it reads as "this one is stopped,
        start it" rather than a control floating on its own. */
-    .state button {
-        min-height: 1.9rem;
-        padding: 0 0.625rem;
-        font-size: 0.75rem;
-        background: var(--accent);
-        border-color: var(--accent);
-    }
+        .state button {
+            min-height: 1.9rem;
+            padding: 0 0.625rem;
+            font-size: 0.75rem;
+            background: var(--accent);
+            border-color: var(--accent);
+        }
 
-    .state button[hidden] { display: none; }
-    .state button:disabled { opacity: 0.6; cursor: default; }
+        .state button[hidden] {
+            display: none;
+        }
 
-    #status { min-height: 1.25rem; font-size: 0.8125rem; color: var(--ink-500); }
-    #status[data-error='true'] { color: var(--bad); }
-</style>
+        .state button:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+
+        #status {
+            min-height: 1.25rem;
+            font-size: 0.8125rem;
+            color: var(--ink-500);
+        }
+
+        #status[data-error='true'] {
+            color: var(--bad);
+        }
+    </style>
 </head>
+
 <body>
-<main>
-    <h1>SoundChex Server</h1>
-    <p class="lede">The host for your library. This is where it runs, not where you watch.</p>
+    <main>
+        <h1>SoundChex Server</h1>
+        <p class="lede">The host for your library. This is where it runs, not where you watch.</p>
 
-    <div class="card">
-        <h2>Services</h2>
+        <div class="card">
+            <h2>Services</h2>
 
-        <div class="row">
-            <span class="row__name">
-                Web server
-                <span class="row__hint">Serves the library to every device.</span>
-            </span>
-            <span class="state">
-                <span class="dot" data-state="unknown" data-dot="serve"></span>
-                <span data-label="serve">Checking…</span>
-                <button type="button" data-start="serve" hidden>Start</button>
-            </span>
+            <div class="row">
+                <span class="row__name">
+                    Web server
+                    <span class="row__hint">Serves the library to every device.</span>
+                </span>
+                <span class="state">
+                    <span class="dot" data-state="unknown" data-dot="serve"></span>
+                    <span data-label="serve">Checking…</span>
+                    <button type="button" data-start="serve" hidden>Start</button>
+                </span>
+            </div>
+
+            <div class="row">
+                <span class="row__name">
+                    Queue worker
+                    <span class="row__hint">Identifies new media, imports subtitles, transcodes.</span>
+                </span>
+                <span class="state">
+                    <span class="dot" data-state="unknown" data-dot="queue"></span>
+                    <span data-label="queue">Checking…</span>
+                    <button type="button" data-start="queue" hidden>Start</button>
+                </span>
+            </div>
+
+            <div class="row">
+                <span class="row__name">
+                    Scheduler
+                    <span class="row__hint">Scans watched folders and backs up nightly.</span>
+                </span>
+                <span class="state">
+                    <span class="dot" data-state="unknown" data-dot="scheduler"></span>
+                    <span data-label="scheduler">Checking…</span>
+                    <button type="button" data-start="scheduler" hidden>Start</button>
+                </span>
+            </div>
+
+            <div class="actions">
+                <button type="button" class="primary" id="open-admin">Open library management</button>
+                <button type="button" id="open-library">Open the library</button>
+                <button type="button" id="recheck">Recheck</button>
+            </div>
+
+            <p id="status" data-error="false"></p>
         </div>
 
-        <div class="row">
-            <span class="row__name">
-                Queue worker
-                <span class="row__hint">Identifies new media, imports subtitles, transcodes.</span>
-            </span>
-            <span class="state">
-                <span class="dot" data-state="unknown" data-dot="queue"></span>
-                <span data-label="queue">Checking…</span>
-                <button type="button" data-start="queue" hidden>Start</button>
-            </span>
+        <div class="card">
+            <h2>Reaching this server</h2>
+            <div class="row">
+                <span class="row__name">
+                    Addresses
+                    <span class="row__hint" id="addresses">Waiting for the server…</span>
+                </span>
+            </div>
         </div>
+    </main>
 
-        <div class="row">
-            <span class="row__name">
-                Scheduler
-                <span class="row__hint">Scans watched folders and backs up nightly.</span>
-            </span>
-            <span class="state">
-                <span class="dot" data-state="unknown" data-dot="scheduler"></span>
-                <span data-label="scheduler">Checking…</span>
-                <button type="button" data-start="scheduler" hidden>Start</button>
-            </span>
-        </div>
+    <script type="module">
+        /**
+         * The host application.
+         *
+         * Deliberately thin, and deliberately independent of the Laravel server: this
+         * page is what you open when the server is *not* running, so it cannot depend
+         * on it for styling, scripts or data.
+         *
+         * Its one job for now is to say whether the services are up and give you a way
+         * into library management. Starting and stopping them is the next step, and
+         * needs a Rust command to shell out to launchctl.
+         */
+        const ORIGIN = 'http://127.0.0.1:8000';
 
-        <div class="actions">
-            <button type="button" class="primary" id="open-admin">Open library management</button>
-            <button type="button" id="open-library">Open the library</button>
-            <button type="button" id="recheck">Recheck</button>
-        </div>
+        const invoke = (command, args) => window.__TAURI__?.core?.invoke?.(command, args);
 
-        <p id="status" data-error="false"></p>
-    </div>
+        /**
+         * Starts the bundled runtime that ships inside the SoundChex Server app.
+         *
+         * This is the first-run wiring the bundled-server plan called for: the server
+         * app should start its own runtime directly, not wait for a separate launchd
+         * install flow.
+         */
+        async function startRuntime(button = null) {
+            if (!invoke) {
+                status('Starting the bundled runtime needs the SoundChex Server app.', true);
 
-    <div class="card">
-        <h2>Reaching this server</h2>
-        <div class="row">
-            <span class="row__name">
-                Addresses
-                <span class="row__hint" id="addresses">Waiting for the server…</span>
-            </span>
-        </div>
-    </div>
-</main>
+                return false;
+            }
 
-<script type="module">
-/**
- * The host application.
- *
- * Deliberately thin, and deliberately independent of the Laravel server: this
- * page is what you open when the server is *not* running, so it cannot depend
- * on it for styling, scripts or data.
- *
- * Its one job for now is to say whether the services are up and give you a way
- * into library management. Starting and stopping them is the next step, and
- * needs a Rust command to shell out to launchctl.
- */
-const ORIGIN = 'http://127.0.0.1:8000';
+            const original = button?.textContent ?? '';
 
-/**
- * Where the plists live, so the shell can install them.
- *
- * Baked in at build time rather than discovered: the app is bundled from this
- * repository, and asking the user where their own source tree is would be a
- * worse question than the one this screen exists to answer.
- */
-const REPO = '/Users/tripsittr/Documents/GitHub/SoundChex';
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Starting…';
+            }
 
-const invoke = (command, args) => window.__TAURI__?.core?.invoke?.(command, args);
+            try {
+                await invoke('server_start');
+                status('Started. Waiting for it to answer…');
 
-/**
- * Starts a stopped service.
- *
- * The admin panel does this too and does it better — it can report queue depth
- * and when the scheduler last ran. But it is served by the web server, so when
- * that is down the one page that could start it is unreachable. This is the way
- * out of that.
- */
-async function startService(key, button) {
-    if (!invoke) {
-        status('Service management needs the SoundChex Server app.', true);
+                // The supervisor starts quickly, but the socket takes a moment to
+                // accept requests. Recheck after a short delay.
+                setTimeout(refresh, 1500);
 
-        return;
-    }
+                return true;
+            } catch (error) {
+                status(`Could not start the bundled runtime: ${error}`, true);
 
-    const original = button.textContent;
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = original;
+                }
 
-    button.disabled = true;
-    button.textContent = 'Starting…';
+                return false;
+            }
+        }
 
-    try {
-        await invoke('start_service', { key, repo: REPO });
+        const status = (message, isError = false) => {
+            const el = document.getElementById('status');
 
-        status('Started. Waiting for it to answer…');
+            el.textContent = message;
+            el.dataset.error = String(isError);
+        };
 
-        // launchd returns as soon as it has accepted the job, which is before
-        // the server is listening.
-        setTimeout(refresh, 1500);
-    } catch (error) {
-        status(`Could not start it: ${error}`, true);
-        button.disabled = false;
-        button.textContent = original;
-    }
-}
+        const setState = (name, state, label) => {
+            document.querySelector(`[data-dot="${name}"]`)?.setAttribute('data-state', state);
 
-const status = (message, isError = false) => {
-    const el = document.getElementById('status');
+            const text = document.querySelector(`[data-label="${name}"]`);
 
-    el.textContent = message;
-    el.dataset.error = String(isError);
-};
+            if (text) text.textContent = label;
+        };
 
-const setState = (name, state, label) => {
-    document.querySelector(`[data-dot="${name}"]`)?.setAttribute('data-state', state);
+        /**
+         * Whether the web server is answering.
+         *
+         * The identity endpoint rather than any old route: something else on port 8000
+         * would otherwise read as a healthy SoundChex.
+         */
+        async function checkServer() {
+            try {
+                const response = await fetch(`${ORIGIN}/soundchex.json`, { cache: 'no-store' });
+                const body = response.ok ? await response.json() : null;
 
-    const text = document.querySelector(`[data-label="${name}"]`);
+                return body?.app === 'soundchex';
+            } catch {
+                return false;
+            }
+        }
 
-    if (text) text.textContent = label;
-};
+        async function refresh() {
+            status('Checking services…');
 
-/**
- * Whether the web server is answering.
- *
- * The identity endpoint rather than any old route: something else on port 8000
- * would otherwise read as a healthy SoundChex.
- */
-async function checkServer() {
-    try {
-        const response = await fetch(`${ORIGIN}/soundchex.json`, { cache: 'no-store' });
-        const body = response.ok ? await response.json() : null;
+            const up = await checkServer();
 
-        return body?.app === 'soundchex';
-    } catch {
-        return false;
-    }
-}
+            setState('serve', up ? 'up' : 'down', up ? 'Running' : 'Not running');
 
-async function refresh() {
-    status('Checking services…');
+            // Offered only where it can work, and only for what is stopped.
+            document.querySelectorAll('[data-start]').forEach((button) => {
+                button.hidden = !invoke;
+            });
 
-    const up = await checkServer();
+            const serveButton = document.querySelector('[data-start="serve"]');
 
-    setState('serve', up ? 'up' : 'down', up ? 'Running' : 'Not running');
+            if (serveButton) {
+                serveButton.hidden = !invoke || up;
+                serveButton.disabled = false;
+                serveButton.textContent = 'Start';
+            }
 
-    // Offered only where it can work, and only for what is stopped.
-    document.querySelectorAll('[data-start]').forEach((button) => {
-        button.hidden = !invoke;
-    });
+            if (!up) {
+                // The other two cannot be inspected from here without the server, and
+                // guessing would be worse than admitting it.
+                setState('queue', 'unknown', 'Unknown');
+                setState('scheduler', 'unknown', 'Unknown');
+                document.getElementById('addresses').textContent = 'Start the web server to see this.';
+                status(invoke
+                    ? 'The web server is not running. Start it to reach your library.'
+                    : 'The web server is not running, so nothing can reach your library.', true);
 
-    const serveButton = document.querySelector('[data-start="serve"]');
+                // Hidden while the server is down: their state cannot be read without
+                // it, and offering a button whose effect is invisible is worse than
+                // offering none.
+                ['queue', 'scheduler'].forEach((key) => {
+                    const button = document.querySelector(`[data-start="${key}"]`);
 
-    if (serveButton) {
-        serveButton.hidden = !invoke || up;
-        serveButton.disabled = false;
-        serveButton.textContent = 'Start';
-    }
+                    if (button) button.hidden = true;
+                });
 
-    if (!up) {
-        // The other two cannot be inspected from here without the server, and
-        // guessing would be worse than admitting it.
-        setState('queue', 'unknown', 'Unknown');
-        setState('scheduler', 'unknown', 'Unknown');
-        document.getElementById('addresses').textContent = 'Start the web server to see this.';
-        status(invoke
-            ? 'The web server is not running. Start it to reach your library.'
-            : 'The web server is not running, so nothing can reach your library.', true);
+                return;
+            }
 
-        // Hidden while the server is down: their state cannot be read without
-        // it, and offering a button whose effect is invisible is worse than
-        // offering none.
-        ['queue', 'scheduler'].forEach((key) => {
-            const button = document.querySelector(`[data-start="${key}"]`);
+            status('');
 
-            if (button) button.hidden = true;
+            try {
+                const health = await fetch(`${ORIGIN}/api/v1/server/health`, { cache: 'no-store' })
+                    .then((r) => (r.ok ? r.json() : null));
+
+                if (health) {
+                    setState('queue', health.queue_running ? 'up' : 'down', health.queue_running ? 'Running' : 'Not running');
+                    setState('scheduler', health.scheduler_running ? 'up' : 'down', health.scheduler_running ? 'Running' : 'Not running');
+                    document.getElementById('addresses').textContent = (health.addresses ?? []).join(' · ') || 'None detected.';
+                }
+            } catch {
+                setState('queue', 'unknown', 'Unknown');
+                setState('scheduler', 'unknown', 'Unknown');
+            }
+        }
+
+        document.getElementById('recheck').addEventListener('click', refresh);
+
+        document.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-start]');
+
+            if (button) startRuntime(button);
+        });
+        document.getElementById('open-admin').addEventListener('click', () => {
+            window.location.href = `${ORIGIN}/admin`;
         });
 
-        return;
-    }
+        // The host is usually also a place someone watches from, so the library is one
+        // click away rather than a reason to install the client app as well.
+        document.getElementById('open-library').addEventListener('click', () => {
+            window.location.href = `${ORIGIN}/app`;
+        });
 
-    status('');
+        /**
+         * Straight to library management when the server is up.
+         *
+         * This page is a fallback, not a destination: the admin panel is where the
+         * server is administered, and it now manages the services too. But it is served
+         * *by* the thing being administered, so it cannot render when that is down —
+         * which is the one case this page exists for.
+         */
+        async function openOrExplain() {
+            if (await checkServer()) {
+                window.location.replace(`${ORIGIN}/admin`);
 
-    try {
-        const health = await fetch(`${ORIGIN}/api/v1/server/health`, { cache: 'no-store' })
-            .then((r) => (r.ok ? r.json() : null));
+                return;
+            }
 
-        if (health) {
-            setState('queue', health.queue_running ? 'up' : 'down', health.queue_running ? 'Running' : 'Not running');
-            setState('scheduler', health.scheduler_running ? 'up' : 'down', health.scheduler_running ? 'Running' : 'Not running');
-            document.getElementById('addresses').textContent = (health.addresses ?? []).join(' · ') || 'None detected.';
+            await startRuntime();
+            await refresh();
         }
-    } catch {
-        setState('queue', 'unknown', 'Unknown');
-        setState('scheduler', 'unknown', 'Unknown');
-    }
-}
 
-document.getElementById('recheck').addEventListener('click', refresh);
+        // Start the bundled runtime immediately; if it is already up, go straight to
+        // the admin panel.
+        openOrExplain();
 
-document.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-start]');
+        // Kept checking, so starting the server elsewhere brings this window back to
+        // the panel without anyone having to reopen it.
+        setInterval(async () => {
+            if (await checkServer()) {
+                window.location.replace(`${ORIGIN}/admin`);
 
-    if (button) startService(button.dataset.start, button);
-});
-document.getElementById('open-admin').addEventListener('click', () => {
-    window.location.href = `${ORIGIN}/admin`;
-});
+                return;
+            }
 
-// The host is usually also a place someone watches from, so the library is one
-// click away rather than a reason to install the client app as well.
-document.getElementById('open-library').addEventListener('click', () => {
-    window.location.href = `${ORIGIN}/app`;
-});
-
-/**
- * Straight to library management when the server is up.
- *
- * This page is a fallback, not a destination: the admin panel is where the
- * server is administered, and it now manages the services too. But it is served
- * *by* the thing being administered, so it cannot render when that is down —
- * which is the one case this page exists for.
- */
-/** Whether setup has been offered on this machine before. */
-const SETUP_KEY = 'soundchex.server.setup-offered';
-
-/**
- * Offers to install the services, once.
- *
- * Asked at first open rather than assumed: installing registers launchd agents
- * that start on login and outlive the app, which is a change to the machine and
- * should be a decision. Asked *only* once, because a prompt that returns every
- * launch is one people learn to dismiss without reading.
- */
-async function offerSetup() {
-    if (!invoke) return;
-
-    try {
-        if (localStorage.getItem(SETUP_KEY)) return;
-    } catch {
-        // Private browsing. Better to skip the prompt than to show it forever.
-        return;
-    }
-
-    const wanted = window.confirm(
-        'Keep SoundChex running?\n\n'
-        + 'The web server, queue worker and scheduler can start themselves on login '
-        + 'and restart if they stop. Without this the library goes offline whenever '
-        + 'the server is closed, which on a phone looks like the app being broken.\n\n'
-        + 'You can change this later under Services in library management.',
-    );
-
-    try {
-        localStorage.setItem(SETUP_KEY, '1');
-    } catch {
-        // Nothing to do; the prompt simply appears again next launch.
-    }
-
-    if (!wanted) return;
-
-    status('Setting up…');
-
-    for (const key of ['serve', 'queue', 'scheduler']) {
-        try {
-            await invoke('start_service', { key, repo: REPO });
-        } catch (error) {
-            status(`Could not set up ${key}: ${error}`, true);
-
-            return;
-        }
-    }
-
-    status('Set up. Starting…');
-    setTimeout(refresh, 2000);
-}
-
-async function openOrExplain() {
-    if (await checkServer()) {
-        window.location.replace(`${ORIGIN}/admin`);
-
-        return;
-    }
-
-    await refresh();
-}
-
-// Offered before the redirect, or a working server would send the window to the
-// admin panel and the question would never be asked.
-offerSetup().then(openOrExplain);
-
-// Kept checking, so starting the server elsewhere brings this window back to
-// the panel without anyone having to reopen it.
-setInterval(async () => {
-    if (await checkServer()) {
-        window.location.replace(`${ORIGIN}/admin`);
-
-        return;
-    }
-
-    refresh();
-}, 5000);
-</script>
+            refresh();
+        }, 5000);
+    </script>
 </body>
+
 </html>

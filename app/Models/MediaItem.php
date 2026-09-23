@@ -397,7 +397,7 @@ class MediaItem extends Model
         // Path segments may contain spaces and commas from artist/album names.
         $encoded = implode('/', array_map('rawurlencode', explode('/', ltrim($value, '/'))));
 
-        return url('storage/'.$encoded);
+        return url('storage/' . $encoded);
     }
 
     /**
@@ -513,11 +513,109 @@ class MediaItem extends Model
      */
     public function playbackPath(): ?string
     {
+        $direct = $this->directReadablePlaybackPath();
+
+        if ($direct !== null) {
+            return $direct;
+        }
+
+        // Historical duplicate merges could leave the "original" row pointing
+        // at a path that no longer exists while a linked duplicate still points
+        // at the surviving file. Repoint once here so stream/download do not
+        // require a manual reconciliation run.
+        if ($this->repointToReadableLinkedFile()) {
+            return $this->directReadablePlaybackPath();
+        }
+
+        return $this->fallbackReadablePlaybackPath();
+    }
+
+    /**
+     * Repoints this row to a readable linked file when its own path is stale.
+     */
+    private function repointToReadableLinkedFile(): bool
+    {
+        if ($this->absoluteFilePath() !== null) {
+            return false;
+        }
+
+        foreach ($this->readableLinkedCandidates() as $candidate) {
+            $candidatePath = $candidate->absoluteFilePath();
+
+            if ($candidatePath === null || blank($candidate->file_path)) {
+                continue;
+            }
+
+            $this->forceFill(['file_path' => $candidate->file_path])->saveQuietly();
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * The item's own readable playback file, without consulting duplicates.
+     */
+    private function directReadablePlaybackPath(): ?string
+    {
         if ($this->hasConvertedCopy()) {
             return Storage::path($this->converted_path);
         }
 
         return $this->absoluteFilePath();
+    }
+
+    /**
+     * A readable playback file from a linked duplicate/original row.
+     *
+     * A stale "original" can survive while one of its duplicate rows still
+     * points at the real filed copy. Falling back here keeps stream/download
+     * working until reconciliation repoints the stale row.
+     */
+    private function fallbackReadablePlaybackPath(): ?string
+    {
+        foreach ($this->readableLinkedCandidates() as $candidate) {
+            $path = $candidate->directReadablePlaybackPath();
+
+            if ($path !== null) {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Linked candidates that may hold the surviving readable copy.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, self>
+     */
+    private function readableLinkedCandidates(): \Illuminate\Database\Eloquent\Collection
+    {
+        $candidateIds = [];
+
+        if ($this->duplicate_of_id !== null) {
+            $candidateIds[] = (int) $this->duplicate_of_id;
+
+            $candidateIds = array_merge(
+                $candidateIds,
+                static::query()
+                    ->where('duplicate_of_id', $this->duplicate_of_id)
+                    ->where('id', '!=', $this->id)
+                    ->pluck('id')
+                    ->all(),
+            );
+        }
+
+        $candidateIds = array_merge($candidateIds, $this->duplicates()->pluck('id')->all());
+        $candidateIds = array_values(array_unique(array_map('intval', $candidateIds)));
+
+        if ($candidateIds === []) {
+            return new \Illuminate\Database\Eloquent\Collection();
+        }
+
+        return static::query()->whereIn('id', $candidateIds)->get();
     }
 
     /**
@@ -601,10 +699,10 @@ class MediaItem extends Model
         return static::query()
             ->where('type', MediaItemType::Music)
             ->whereNotNull('file_path')
-            ->whereHas('musicMetadata', fn ($query) => $query
+            ->whereHas('musicMetadata', fn($query) => $query
                 ->where('album', $meta->album)
                 // Same album title by a different artist is a different record.
-                ->when(filled($meta->artist), fn ($q) => $q->where('artist', $meta->artist)))
+                ->when(filled($meta->artist), fn($q) => $q->where('artist', $meta->artist)))
             // `plays` too: the detail page turns this into a player payload
             // per track, and each one asks for a resume position.
             ->with(['musicMetadata', 'plays'])
@@ -649,8 +747,8 @@ class MediaItem extends Model
         // expression would mean loading every play row to filter it in memory.
         if ($this->relationLoaded('plays')) {
             $play = $this->plays
-                ->when($profileId, fn ($plays) => $plays->where('profile_id', $profileId))
-                ->when(! $profileId, fn ($plays) => $plays->where('user_id', Auth::id()))
+                ->when($profileId, fn($plays) => $plays->where('profile_id', $profileId))
+                ->when(! $profileId, fn($plays) => $plays->where('user_id', Auth::id()))
                 ->where('completed', false)
                 ->sortByDesc('id')
                 ->first();
@@ -661,8 +759,8 @@ class MediaItem extends Model
         $play = $this->plays()
             // Scoped to the profile, not the account: two people sharing a
             // login must not resume into each other's film.
-            ->when($profileId, fn ($query) => $query->where('profile_id', $profileId))
-            ->when(! $profileId, fn ($query) => $query->where('user_id', Auth::id()))
+            ->when($profileId, fn($query) => $query->where('profile_id', $profileId))
+            ->when(! $profileId, fn($query) => $query->where('user_id', Auth::id()))
             ->where('completed', false)
             ->latest('id')
             ->first();
