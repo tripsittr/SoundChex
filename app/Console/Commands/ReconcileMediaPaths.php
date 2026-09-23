@@ -69,6 +69,14 @@ class ReconcileMediaPaths extends Command
 
             if ($apply) {
                 $item->file_path = $repair['path'];
+
+                // The stored hash described the file at the *old* path, so it
+                // is now a description of something else. Leaving it made
+                // byte-identical detection blind — two rows on one file held
+                // two different hashes and neither matched the file, so the
+                // pair was never paired and kept coming back to review (S-346).
+                $item->content_hash = null;
+
                 $item->saveQuietly();
             }
 

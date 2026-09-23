@@ -214,6 +214,13 @@ class LibraryOrganizer
         $relative = $this->toRelative($absoluteTarget);
 
         $item->file_path = $relative;
+
+        // The stored hash described the file at the old path. Clearing it means
+        // a row can never carry a hash for a file it no longer points at, which
+        // is what left byte-identical detection unable to pair two rows on one
+        // file (S-346).
+        $item->content_hash = null;
+
         $item->saveQuietly();
 
         $this->repointPeersForSharedSource($item, $storedSource, $relative);
@@ -503,6 +510,7 @@ class LibraryOrganizer
         $relative = $this->toRelative($absoluteTarget);
 
         $item->file_path = $relative;
+        $item->content_hash = null; // Describes the old path — see above (S-346).
         $item->saveQuietly();
 
         $this->repointPeersForSharedSource($item, $storedSource, $relative);
