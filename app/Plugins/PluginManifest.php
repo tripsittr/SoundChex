@@ -20,7 +20,7 @@ use App\Plugins\Exceptions\InvalidManifestException;
  *     id: string, name: string, version: string, entrypoint: string,
  *     author?: string, description?: string, minSoundChexVersion?: string,
  *     requiresPhp?: string, provides?: array<int, string>, configPage?: string,
- *     license?: string
+ *     license?: string, enabledByDefault?: bool
  * }
  */
 class PluginManifest
@@ -41,6 +41,7 @@ class PluginManifest
         public readonly ?string $configPage = null,
         public readonly ?string $license = null,
         public readonly ?string $targetApi = null,
+        public readonly bool $enabledByDefault = false,
     ) {}
 
     /**
@@ -83,6 +84,7 @@ class PluginManifest
             configPage: self::stringOrNull($data['configPage'] ?? null),
             license: self::stringOrNull($data['license'] ?? null),
             targetApi: self::stringOrNull($data['targetApi'] ?? null),
+            enabledByDefault: (bool) ($data['enabledByDefault'] ?? false),
         );
     }
 

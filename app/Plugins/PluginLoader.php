@@ -232,25 +232,34 @@ class PluginLoader
      */
     private function reconcile(PluginManifest $manifest, string $directory): void
     {
-        InstalledPlugin::query()->updateOrCreate(
-            ['plugin_id' => $manifest->id],
-            [
+        // A plugin the app itself relies on for default behaviour ships with
+        // `enabledByDefault` set — the title tidier is the app's own title
+        // cleanup, off only because S-321 made every plugin opt-in and nobody
+        // noticed the cleanup went with it (S-361). Honoured on first install
+        // only: once the row exists the operator's choice is the one that
+        // counts, so disabling it stays disabled across restarts.
+        $record = InstalledPlugin::query()->firstOrNew(['plugin_id' => $manifest->id]);
+
+        if (! $record->exists && $manifest->enabledByDefault) {
+            $record->enabled = true;
+        }
+
+        $record->fill([
+            'name' => $manifest->name,
+            'version' => $manifest->version,
+            'directory' => $directory,
+            'manifest' => [
+                'id' => $manifest->id,
                 'name' => $manifest->name,
                 'version' => $manifest->version,
-                'directory' => $directory,
-                'manifest' => [
-                    'id' => $manifest->id,
-                    'name' => $manifest->name,
-                    'version' => $manifest->version,
-                    'author' => $manifest->author,
-                    'description' => $manifest->description,
-                    'provides' => $manifest->provides,
-                    'minSoundChexVersion' => $manifest->minSoundChexVersion,
-                    'requiresPhp' => $manifest->requiresPhp,
-                    'license' => $manifest->license,
-                ],
+                'author' => $manifest->author,
+                'description' => $manifest->description,
+                'provides' => $manifest->provides,
+                'minSoundChexVersion' => $manifest->minSoundChexVersion,
+                'requiresPhp' => $manifest->requiresPhp,
+                'license' => $manifest->license,
             ],
-        );
+        ])->save();
     }
 
     /**

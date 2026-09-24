@@ -34,23 +34,62 @@ class TitleTidier
             return null;
         }
 
-        // Longest first, so a full "Artist, Feat" credit strips before the bare
-        // primary would leave "Feat - Song" behind.
         $candidates = array_values(array_unique(array_filter(
             array_map(fn ($a) => trim((string) $a), (array) $artists),
             fn (string $a) => $a !== '',
         )));
+
+        // A tagger records a collaboration however it likes: the artist field
+        // reads "$uicideboy$/Maxo Cream" while the title says "$uicideboy$,
+        // Maxo Cream - Song". Neither string matches the other, so split every
+        // credit into its individual names and offer the names back joined by
+        // each separator a tagger might have chosen (S-365). One of the
+        // spellings is the one in the title.
+        $names = [];
+
+        foreach ($candidates as $credit) {
+            foreach (preg_split('/\s*(?:\/|,|&| and | x | feat\.? | ft\.? )\s*/iu', $credit) ?: [] as $name) {
+                $name = trim((string) $name);
+
+                if ($name !== '' && ! in_array($name, $names, true)) {
+                    $names[] = $name;
+                }
+            }
+        }
+
+        $candidates = array_merge($candidates, $names);
+
+        if (count($names) > 1) {
+            // Join the names themselves, never the growing list — each glue
+            // must see the same names, not the joins made before it.
+            foreach ([', ', ' & ', ' and ', ' x ', ' / ', ' feat. ', ' ft. '] as $glue) {
+                $candidates[] = implode($glue, $names);
+            }
+        }
+
+        $candidates = array_values(array_unique($candidates));
+
+        // Longest first, so the fullest credit strips before a shorter one
+        // leaves the rest of it behind.
         usort($candidates, fn ($a, $b) => mb_strlen($b) <=> mb_strlen($a));
 
         $seps = implode('', array_map(fn ($s) => preg_quote($s, '/'), self::SEPARATORS));
 
         foreach ($candidates as $artist) {
-            $quoted = preg_quote($artist, '/');
+            // Underscores and spaces are the same separator to a tagger —
+            // "Plague_tsc" in the artist field, "Plague tsc" in the title —
+            // so treat either as matching either. preg_quote leaves a space
+            // alone, so match on the literal space, not an escaped one (S-365).
+            $quoted = str_replace(
+                ['_', ' '],
+                '[_\s]',
+                preg_quote($artist, '/'),
+            );
 
             // Prefix: "Artist - Title"
             if (preg_match('/^'.$quoted.'\s*['.$seps.']\s+(?<rest>.+)$/iu', $title, $m)) {
                 $rest = trim($m['rest']);
-                if ($rest !== '') {
+                if ($rest !== '' && ! $this->isCredit($rest, $names)) {
                     return $rest;
                 }
             }
@@ -65,5 +104,59 @@ class TitleTidier
         }
 
         return null;
+    }
+
+    /** A name reduced to its letters and digits, lowercased, for comparison. */
+    private function fold(string $value): string
+    {
+        return mb_strtolower((string) preg_replace('/[^\p{L}\p{N}]+/u', '', $value));
+    }
+
+    /**
+     * Whether what is left after a strip is just the credit again.
+     *
+     * "Adiemus - Karl Jenkins, …, Adiemus, …" is a real title followed by its
+     * artist list, and that list happens to name a band called Adiemus. The
+     * prefix therefore matches and stripping it keeps the credit and throws
+     * the title away — exactly backwards. A remainder made only of artist
+     * names is never the title, so refuse it and let the suffix rule take the
+     * line instead (S-365).
+     *
+     * @param  array<int, string>  $names  the individual artist names
+     */
+    private function isCredit(string $rest, array $names): bool
+    {
+        if ($names === []) {
+            return false;
+        }
+
+        $parts = array_filter(array_map(
+            'trim',
+            preg_split('/\s*(?:\/|,|&| and | x )\s*/iu', $rest) ?: [],
+        ));
+
+        if (count($parts) < 2) {
+            return false;
+        }
+
+        foreach ($parts as $part) {
+            $known = false;
+
+            foreach ($names as $name) {
+                // Compare on letters and digits alone: the same person is
+                // "Jody K. Jenkins" in the artist field and "Jody K Jenkins"
+                // in the title, and a full stop should not decide this.
+                if ($this->fold($part) === $this->fold($name)) {
+                    $known = true;
+                    break;
+                }
+            }
+
+            if (! $known) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
