@@ -88,6 +88,17 @@ class TitleTidierTest extends TestCase
             'artist not at an edge' => ['A Song by $uicideboy$ live', ['$uicideboy$'], null],
             'empty remainder' => ['$uicideboy$ - ', ['$uicideboy$'], null],
 
+            // The artist list names a band that is also the title. Stripping the
+            // prefix would keep the credit and throw the title away, so the
+            // remainder being nothing but artist names vetoes the strip. The
+            // tagger's "Jody K. Jenkins" against the title's "Jody K Jenkins"
+            // must still count as the same person (S-365).
+            'remainder is only the credit' => [
+                'Adiemus - Karl Jenkins, Jody K Jenkins, Adiemus, Mary Carewe',
+                ['Karl Jenkins, Jody K. Jenkins, Adiemus, Mary Carewe', 'Karl Jenkins'],
+                null,
+            ],
+
             // Splitting a credit must not make a common word strippable: "and"
             // is glue, not a name, and a title is not its own artist (S-365).
             'split name that is the whole title' => [

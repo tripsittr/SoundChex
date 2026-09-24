@@ -96,7 +96,7 @@ class TitleTidier
             // Prefix: "Artist - Title"
             if (preg_match('/^'.$quoted.'\s*['.$seps.']\s+(?<rest>.+)$/iu', $title, $m)) {
                 $rest = trim($m['rest']);
-                if ($rest !== '') {
+                if ($rest !== '' && ! $this->isCredit($rest, $names)) {
                     return $rest;
                 }
             }
@@ -111,5 +111,59 @@ class TitleTidier
         }
 
         return null;
+    }
+
+    /** A name reduced to its letters and digits, lowercased, for comparison. */
+    private function fold(string $value): string
+    {
+        return mb_strtolower((string) preg_replace('/[^\p{L}\p{N}]+/u', '', $value));
+    }
+
+    /**
+     * Whether what is left after a strip is just the credit again.
+     *
+     * "Adiemus - Karl Jenkins, …, Adiemus, …" is a real title followed by its
+     * artist list, and that list happens to name a band called Adiemus. The
+     * prefix therefore matches and stripping it keeps the credit and throws
+     * the title away — exactly backwards. A remainder made only of artist
+     * names is never the title, so refuse it and let the suffix rule take the
+     * line instead (S-365).
+     *
+     * @param  array<int, string>  $names  the individual artist names
+     */
+    private function isCredit(string $rest, array $names): bool
+    {
+        if ($names === []) {
+            return false;
+        }
+
+        $parts = array_filter(array_map(
+            'trim',
+            preg_split('/\s*(?:\/|,|&| and | x )\s*/iu', $rest) ?: [],
+        ));
+
+        if (count($parts) < 2) {
+            return false;
+        }
+
+        foreach ($parts as $part) {
+            $known = false;
+
+            foreach ($names as $name) {
+                // Compare on letters and digits alone: the same person is
+                // "Jody K. Jenkins" in the artist field and "Jody K Jenkins"
+                // in the title, and a full stop should not decide this.
+                if ($this->fold($part) === $this->fold($name)) {
+                    $known = true;
+                    break;
+                }
+            }
+
+            if (! $known) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
