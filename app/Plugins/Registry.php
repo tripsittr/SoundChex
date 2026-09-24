@@ -443,6 +443,79 @@ class Registry
     private array $migrationPaths = [];
 
     /**
+     * Render into a named slot in the user-facing player (S-318).
+     *
+     * The admin panel gets its positions from Filament (`renderHook()`); the
+     * media center has no such system, so the slots are placed deliberately in
+     * its Blade templates with `@pluginSlot('name')`. That is the point: each
+     * one is a decision about where a plugin may write, not an accident of
+     * whatever markup happened to be wrapped.
+     *
+     * The callback returns a string of HTML or a rendered view, and runs on
+     * every render of the template holding the slot — so keep it cheap.
+     *
+     * Slots available today:
+     *
+     *   `player.controls`     beside the transport in the now-playing bar
+     *   `player.meta`         under the title and artist in that bar
+     *   `album.detail`        below an album's track list
+     *   `artist.detail`       below an artist's albums
+     *   `song.row.actions`    at the end of a track row
+     *
+     * A plugin's markup cannot use the app's Tailwind classes — the app's CSS
+     * is compiled before an installed plugin exists. Ship CSS with the plugin,
+     * or use the tokens exposed as CSS custom properties. See AGENTS.md.
+     *
+     * @param  callable(mixed ...$context): string  $callback
+     */
+    public function slot(string $slot, callable $callback): static
+    {
+        $this->slots[$slot][] = [
+            'plugin' => $this->currentPlugin ?? 'unknown',
+            'callback' => $callback,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * The markup every plugin has contributed to one slot, concatenated in
+     * registration order.
+     *
+     * A plugin that throws contributes nothing there and is logged, rather
+     * than taking the page down — the same posture as every other seam.
+     */
+    public function renderSlot(string $slot, mixed ...$context): string
+    {
+        $html = '';
+
+        foreach ($this->slots[$slot] ?? [] as $entry) {
+            try {
+                $html .= (string) ($entry['callback'])(...$context);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('plugin slot failed', [
+                    'plugin' => $entry['plugin'],
+                    'slot' => $slot,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $html;
+    }
+
+    /** Whether anything is registered for a slot — so a wrapper can be skipped. */
+    public function hasSlot(string $slot): bool
+    {
+        return ! empty($this->slots[$slot]);
+    }
+
+    /**
+     * @var array<string, array<int, array{plugin: string, callback: callable}>>
+     */
+    private array $slots = [];
+
+    /**
      * Render something into the admin panel at a named point (S-316).
      *
      * Filament exposes fixed positions in its chrome — above a page's header,

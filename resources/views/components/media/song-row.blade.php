@@ -126,4 +126,9 @@
                 floor(($item->musicMetadata->duration_ms % 60000) / 1000)) }}
         </span>
     @endif
+
+    {{-- At the end of a track row: a plugin's own per-track action — a rating,
+         a share, a "why is this here" (S-318). Last, so it cannot displace the
+         duration or the menu. --}}
+    @pluginSlot('song.row.actions', $item)
 </li>

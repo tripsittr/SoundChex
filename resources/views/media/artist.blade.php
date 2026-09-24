@@ -191,5 +191,9 @@
                 @endforeach
             </ol>
         @endif
+
+        {{-- Below the albums: a plugin's own section about this artist —
+             a biography, related artists, tour dates (S-318). --}}
+        @pluginSlot('artist.detail', $artist)
     </div>
 </x-media.layout>
