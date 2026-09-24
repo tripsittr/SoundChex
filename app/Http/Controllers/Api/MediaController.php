@@ -12,6 +12,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\MediaCenterController;
 use App\Http\Resources\MediaItemResource;
 use App\Models\MediaItem;
+use App\Plugins\Registry;
 use App\Models\MediaPlay;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
@@ -190,6 +191,12 @@ class MediaController extends Controller
             ->unique('id')
             ->take(60)
             ->values();
+
+        // After de-duplication and the cap, so a plugin reorders or trims what
+        // actually ships rather than a longer list the cap would then cut
+        // differently. Returning a Collection of MediaItem is the contract
+        // (S-317).
+        $items = app(Registry::class)->apply('search.results', $items, $term);
 
         return response()->json([
             'query' => $result['query'],
