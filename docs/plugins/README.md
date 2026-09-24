@@ -295,6 +295,48 @@ The worked example is the bundled **Activity Log** plugin
 writes each event to one audit timeline, and adds a filterable **Audit Log** page
 to the admin — the platform's own auditing, written as a plugin.
 
+### Markup inside the admin panel
+
+An admin page gives you a screen of your own. A render hook puts your markup
+*inside* someone else's — above a page's header, at the end of the sidebar,
+around a table:
+
+```php
+use Filament\View\PanelsRenderHook;
+
+$registry->renderHook(
+    PanelsRenderHook::PAGE_HEADER_ACTIONS_BEFORE,
+    fn (): string => view('your-plugin::banner')->render(),
+);
+```
+
+The callback returns a string and runs on **every request that reaches that
+hook**, so keep it cheap — a database query here runs on every page load in the
+panel. If it throws, the hook renders nothing and the error is logged; it does
+not take the page down.
+
+Use the `PanelsRenderHook` constants rather than bare strings. The constant
+survives a Filament upgrade that renames a position; a string you typed does
+not.
+
+**Your markup cannot use the app's Tailwind classes.** The app's CSS is
+compiled before release, and a plugin installed from the catalogue did not
+exist then — a utility class written here simply has no rule, and nothing
+errors to tell you. Either use the classes Filament's own build provides
+(`fi-*`, and its Blade components), or ship CSS with your plugin. If the server
+bundles the Tailwind CLI, your plugin's own stylesheet is compiled when the
+plugin is enabled — write ordinary Tailwind in `resources/css/plugin.css` and
+it is built for you.
+
+### A dashboard widget
+
+```php
+$registry->widget(StorageBreakdown::class);
+```
+
+An ordinary Filament widget, registered only while your plugin is enabled —
+disabling it takes the tile off the dashboard rather than leaving a broken one.
+
 ### Filters
 
 Transform a value passing through the app — the callback receives a value and
