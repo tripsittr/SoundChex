@@ -12,6 +12,7 @@ use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Observers\MediaItemObserver;
 use App\Services\CurrentProfile;
+use App\Plugins\Registry;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
@@ -342,12 +343,17 @@ class MediaItem extends Model
      */
     public function subtitle(): ?string
     {
-        return match ($this->type) {
+        $subtitle = match ($this->type) {
             MediaItemType::Music => $this->musicMetadata?->artist,
             MediaItemType::Movie => $this->movieMetadata?->director,
             MediaItemType::Show => $this->showMetadata?->creator ?? $this->showMetadata?->network,
             MediaItemType::Book => $this->bookMetadata?->author,
         };
+
+        // The one line under a title, everywhere a row is drawn — so a plugin
+        // that wants "Artist · Album" instead of the artist alone changes it
+        // once here rather than in every view (S-317).
+        return app(Registry::class)->apply('item.subtitle', $subtitle, $this);
     }
 
     /** The release year, wherever it lives for this type. */

@@ -6,6 +6,7 @@
 namespace App\Http\Resources;
 
 use App\Models\MediaItem;
+use App\Plugins\Registry;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -32,7 +33,7 @@ class MediaItemResource extends JsonResource
         /** @var MediaItem $item */
         $item = $this->resource;
 
-        return [
+        $payload = [
             'id' => $item->id,
             'type' => $item->type->value,
             'title' => $item->title,
@@ -48,6 +49,15 @@ class MediaItemResource extends JsonResource
             'updated_at' => $item->updated_at?->toIso8601String(),
             'meta' => $this->metadata($item),
         ];
+
+        // The shape every client reads — web player, desktop and the native
+        // apps all decode this. A plugin can add a key here and have it reach
+        // all of them at once (S-317).
+        //
+        // Adding is safe; removing or retyping an existing key is not. A
+        // client that expects `title` to be a string does not survive it
+        // becoming null, and the native apps decode strictly.
+        return app(Registry::class)->apply('api.item', $payload, $item);
     }
 
     /** @return array<string, mixed> */

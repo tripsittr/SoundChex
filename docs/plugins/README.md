@@ -351,6 +351,19 @@ $registry->filter('metadata.title', function (string $title, $item) {
 | Filter | Applied to | Context |
 |---|---|---|
 | `metadata.title` | a track's final title during enrichment | the `MediaItem` |
+| `item.subtitle` | the line under a title, everywhere a row is drawn | the `MediaItem` |
+| `api.item` | the array every client decodes for an item | the `MediaItem` |
+| `search.results` | the `Collection<MediaItem>` a search answers, after de-duplication and the cap | the search term |
+
+`api.item` is the widest of these: the web player, the desktop app and the
+native apps all decode that array, so a key added there reaches every one of
+them. **Adding a key is safe; removing or retyping an existing one is not** —
+the native apps decode strictly, and a client expecting `title` to be a string
+does not survive it becoming null.
+
+`search.results` runs *after* de-duplication and the 60-item cap, so you are
+reordering or trimming what actually ships rather than a longer list the cap
+would then cut differently. Return a `Collection` of `MediaItem`.
 
 Filters chain in registration order, each seeing the previous result. A filter
 that throws is logged and skipped — it cannot break the value for others.
