@@ -147,19 +147,32 @@ class PluginInstaller
         }
 
         // The manifest may sit at the root or one level down (a zip that wraps
-        // everything in a top folder is common); take the shallowest match.
-        $index = $zip->locateName('plugin.json', ZipArchive::FL_NODIR);
-        $contents = $index !== false ? $zip->getFromIndex($index) : false;
+        // everything in a top folder is common), and a plugin may ship example
+        // or fixture plugins of its own deeper in. Take the shallowest, which
+        // is the plugin being installed.
+        //
+        // Not locateName(FL_NODIR): that returns the first match in *archive
+        // order*, so a zip listing "deep/nested/plugin.json" before
+        // "deep/plugin.json" installed the nested one (S-368).
+        $shallowest = null;
+        $depth = PHP_INT_MAX;
 
-        if ($contents === false) {
-            // Try a nested plugin.json.
-            for ($i = 0; $i < $zip->numFiles; $i++) {
-                if (str_ends_with((string) $zip->getNameIndex($i), '/plugin.json')) {
-                    $contents = $zip->getFromIndex($i);
-                    break;
-                }
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = (string) $zip->getNameIndex($i);
+
+            if ($name !== 'plugin.json' && ! str_ends_with($name, '/plugin.json')) {
+                continue;
+            }
+
+            $thisDepth = substr_count($name, '/');
+
+            if ($thisDepth < $depth) {
+                $depth = $thisDepth;
+                $shallowest = $i;
             }
         }
+
+        $contents = $shallowest !== null ? $zip->getFromIndex($shallowest) : false;
 
         $zip->close();
 
