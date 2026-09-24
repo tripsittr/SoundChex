@@ -8,23 +8,29 @@ declare(strict_types=1);
 namespace App\Policies;
 
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 use Spatie\Permission\Models\Role;
-use Illuminate\Auth\Access\HandlesAuthorization;
 
 class RolePolicy
 {
     use HandlesAuthorization;
 
+    /**
+     * A super admin bypasses every check below. Returning null rather than false
+     * for everyone else is what lets the individual methods decide — false here
+     * would deny the ability outright.
+     *
+     * The `method_exists` guard is because this is typed against the framework's
+     * base user, which has no `hasRole()` until Spatie's trait is on the model.
+     */
     public function before(AuthUser $authUser, string $ability): bool | null
     {
-        if (method_exists($authUser, 'hasRole') && $authUser->hasRole('super_admin')) {
-            return true;
-        }
-
-        return null;
+        return method_exists($authUser, 'hasRole') && $authUser->hasRole('super_admin')
+            ? true
+            : null;
     }
-    
+
     public function viewAny(AuthUser $authUser): bool
     {
         return $authUser->can('ViewAny:Role');
@@ -101,5 +107,4 @@ class RolePolicy
 
         return (string) $roleTeamId === (string) $tenantId;
     }
-
 }

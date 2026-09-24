@@ -118,6 +118,22 @@ class PluginEventSurfaceTest extends TestCase
         $this->assertNotContains('acme.custom.thing', Registry::builtInEvents());
     }
 
+    public function test_a_defined_event_keeps_who_defined_it_and_what_it_is(): void
+    {
+        // The description is the whole reason to declare an event rather than
+        // just emit one — it was accepted and documented, then dropped on the
+        // floor, so the only discoverable thing was the bare name.
+        $registry = app(Registry::class);
+        $registry->forPlugin('acme.a', function (Registry $r): void {
+            $r->defineEvent('acme.export.finished', 'An export finished');
+        });
+
+        $this->assertSame(
+            ['plugin' => 'acme.a', 'description' => 'An export finished'],
+            $registry->definedEvents()['acme.export.finished'] ?? null,
+        );
+    }
+
     public function test_emitting_with_no_subscribers_is_harmless(): void
     {
         app(Registry::class)->emit('acme.nobody.listens', 'x');

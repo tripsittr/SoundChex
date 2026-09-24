@@ -12,13 +12,14 @@ class UserPolicy
 {
     use HandlesAuthorization;
 
+    /**
+     * A super admin bypasses every check below. Returning null rather than false
+     * for everyone else is what lets the individual methods decide — false here
+     * would deny the ability outright.
+     */
     public function before(User $user, string $ability): bool | null
     {
-        if ($user->hasRole('super_admin')) {
-            return true;
-        }
-
-        return null;
+        return $user->hasRole('super_admin') ? true : null;
     }
 
     public function viewAny(User $user): bool
@@ -80,5 +81,4 @@ class UserPolicy
     {
         return false;
     }
-
 }

@@ -36,9 +36,10 @@ class PluginServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // The loader handles a missing install table itself (bundled plugins load
-        // regardless; installed ones wait for the table), so it is always safe
-        // to boot it here.
+        // The loader handles a missing install table itself — every plugin is
+        // gated on an enabled install row (S-321), so with no table it simply
+        // loads nothing — and it is therefore always safe to boot it here, even
+        // mid-migration on a fresh install.
         $loader = $this->app->make(PluginLoader::class);
         $loader->boot();
 
@@ -82,9 +83,7 @@ class PluginServiceProvider extends ServiceProvider
      */
     private function registerSlotDirective(): void
     {
-        Blade::directive('pluginSlot', function (string $expression): string {
-            return "<?php echo app(\\App\\Plugins\\Registry::class)->renderSlot({$expression}); ?>";
-        });
+        Blade::directive('pluginSlot', fn (string $expression): string => "<?php echo app(\\App\\Plugins\\Registry::class)->renderSlot({$expression}); ?>");
     }
 
     /**
@@ -139,6 +138,14 @@ class PluginServiceProvider extends ServiceProvider
                 $registrar->group($route['path']);
             } catch (\Throwable $e) {
                 report($e);
+
+                // Named, so a plugin whose routes file is broken can be found
+                // and disabled — the trace alone points only into the file.
+                Log::warning('A plugin routes file could not be loaded', [
+                    'plugin' => $route['plugin'],
+                    'path' => $route['path'],
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
     }

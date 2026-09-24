@@ -6,8 +6,10 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
+use App\Models\InstalledPlugin;
 use App\Plugins\PluginLoader;
 use App\Plugins\Registry;
+use App\Plugins\StyleCompiler;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\Actions\Action;
 use Filament\Enums\ThemeMode;
@@ -31,6 +33,7 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Vite;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
@@ -252,7 +255,7 @@ class AdminPanelProvider extends PanelProvider
     private function pluginStyleTags(): string
     {
         // The plugins table may not exist yet on a fresh install mid-migration.
-        if (! \Illuminate\Support\Facades\Schema::hasTable('installed_plugins')) {
+        if (! Schema::hasTable('installed_plugins')) {
             return '';
         }
 
@@ -262,10 +265,10 @@ class AdminPanelProvider extends PanelProvider
             return '';
         }
 
-        $compiler = app(\App\Plugins\StyleCompiler::class);
+        $compiler = app(StyleCompiler::class);
         $tags = '';
 
-        foreach (\App\Models\InstalledPlugin::query()->where('enabled', true)->get() as $plugin) {
+        foreach (InstalledPlugin::query()->where('enabled', true)->get() as $plugin) {
             $directory = $base.DIRECTORY_SEPARATOR.$plugin->directory;
 
             if ($compiler->compiledPath($directory) === null) {
@@ -275,12 +278,11 @@ class AdminPanelProvider extends PanelProvider
             // Cache-bust on the file's own mtime, so a recompiled stylesheet is
             // picked up without the user clearing anything.
             $url = route('plugin.styles', ['plugin' => $plugin->plugin_id])
-                .'?v='.filemtime($directory.'/'.\App\Plugins\StyleCompiler::OUTPUT);
+                .'?v='.filemtime($directory.'/'.StyleCompiler::OUTPUT);
 
             $tags .= '<link rel="stylesheet" href="'.e($url).'">';
         }
 
         return $tags;
     }
-
 }

@@ -130,6 +130,28 @@ class PluginCatalogTest extends TestCase
         $this->installer()->install($entry);
     }
 
+    public function test_it_refuses_a_checksum_in_an_unknown_algorithm(): void
+    {
+        // The algorithm name comes from the catalog, which is untrusted network
+        // input. hash() raises a ValueError for one PHP does not know, and a
+        // ValueError is not a PluginInstallException — so without the guard a
+        // typo'd or exotic algorithm escaped the install UI as a 500 rather
+        // than a refusal an admin can read.
+        $zip = $this->makeZip(['plugin.json' => '{}']);
+        Http::fake(['cdn.test/*' => Http::response($zip)]);
+
+        $entry = new CatalogEntry('acme.odd', 'Odd', null, null, [], [
+            'version' => '1.0.0',
+            'sourceUrl' => 'https://cdn.test/x.zip',
+            'checksum' => 'sha-256:'.str_repeat('0', 64),
+        ]);
+
+        $this->expectException(PluginInstallException::class);
+        $this->expectExceptionMessage('unknown format');
+
+        $this->installer()->install($entry);
+    }
+
     public function test_it_refuses_an_archive_that_escapes_its_directory(): void
     {
         // A zip-slip entry: a path that climbs out of the target folder.

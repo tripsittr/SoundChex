@@ -6,8 +6,10 @@
 namespace App\Providers;
 
 use App\Services\CurrentProfile;
+use Composer\CaBundle\CaBundle;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -43,8 +45,8 @@ class AppServiceProvider extends ServiceProvider
         // falls back to the pem it ships, so the same code is a no-op on
         // macOS and Linux and the fix on Windows. Applied globally because
         // every outbound call in this app goes through the Http facade.
-        \Illuminate\Support\Facades\Http::globalOptions([
-            'verify' => \Composer\CaBundle\CaBundle::getSystemCaRootBundlePath(),
+        Http::globalOptions([
+            'verify' => CaBundle::getSystemCaRootBundlePath(),
         ]);
 
         $this->enforceHttpsInProduction();
