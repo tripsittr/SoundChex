@@ -131,6 +131,34 @@ class ListPageCostTest extends TestCase
         );
     }
 
+    public function test_the_album_page_cost_does_not_grow_with_the_album(): void
+    {
+        // The real check: a bound, not a number. The page was 90 queries for
+        // 14 tracks because a stale path sent every track through its linked
+        // duplicates, repeatedly — so doubling the album doubled the cost
+        // (S-362).
+        for ($i = 1; $i <= 14; $i++) {
+            $this->track("Track {$i}", album: 'Small');
+        }
+
+        for ($i = 1; $i <= 40; $i++) {
+            $this->track("Big {$i}", album: 'Large');
+        }
+
+        $url = fn (string $album): string => '/app/album?artist='.urlencode('An Artist').'&album='.urlencode($album);
+
+        $small = $this->countQueries(fn () => $this->browse()->get($url('Small'))->assertOk());
+        $large = $this->countQueries(fn () => $this->browse()->get($url('Large'))->assertOk());
+
+        // Not equality — the two pages differ slightly in what they touch —
+        // but nearly tripling the tracks must not add queries in proportion.
+        $this->assertLessThanOrEqual(
+            $small + 2,
+            $large,
+            "A 14-track album ran {$small} queries and a 40-track album ran {$large}; the cost is growing with the album again.",
+        );
+    }
+
     public function test_an_item_page_does_not_query_per_album_track(): void
     {
         // The detail page queues the whole album behind the track being

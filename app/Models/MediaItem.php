@@ -594,6 +594,14 @@ class MediaItem extends Model
     }
 
     /**
+     * The memoised result of `readableLinkedCandidates()` for this instance.
+     *
+     * Not a relation — it is a union of three of them — so Eloquent cannot
+     * eager-load it and the guard has to live here.
+     */
+    private ?EloquentCollection $readableLinkedCandidates = null;
+
+    /**
      * Linked candidates that may hold the surviving readable copy.
      *
      * Three ways a row can be linked to the same underlying file: the original
@@ -604,6 +612,15 @@ class MediaItem extends Model
      */
     private function readableLinkedCandidates(): EloquentCollection
     {
+        // Memoised per instance: a stale path sends both the repoint attempt
+        // and the fallback through here, and the album page asks for a
+        // playback path several times per track while building its payload.
+        // Unmemoised that was six identical duplicate look-ups a track — 84
+        // queries on a 14-track album (S-362).
+        if ($this->readableLinkedCandidates !== null) {
+            return $this->readableLinkedCandidates;
+        }
+
         $candidateIds = collect();
 
         if ($this->duplicate_of_id !== null) {
@@ -618,16 +635,19 @@ class MediaItem extends Model
         }
 
         $candidateIds = $candidateIds
-            ->merge($this->duplicates()->pluck('id'))
+            // Through the relation, not a fresh query: the listing pages eager
+            // load `duplicates`, and `->duplicates()->pluck()` would ignore
+            // that and ask again once per row (S-362).
+            ->merge($this->duplicates->pluck('id'))
             ->map(fn ($id): int => (int) $id)
             ->unique()
             ->values();
 
         if ($candidateIds->isEmpty()) {
-            return new EloquentCollection;
+            return $this->readableLinkedCandidates = new EloquentCollection;
         }
 
-        return static::query()->whereIn('id', $candidateIds)->get();
+        return $this->readableLinkedCandidates = static::query()->whereIn('id', $candidateIds)->get();
     }
 
     /**
