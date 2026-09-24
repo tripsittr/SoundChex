@@ -76,24 +76,58 @@ function setupPlaylists() {
         button.disabled = true;
         button.textContent = 'Adding…';
 
+        // A track the playlist already holds. The playlist cannot list it
+        // twice, so the only thing "add again" can mean is "move it to the
+        // end" — which is what it used to do silently (S-373). Asked once for
+        // a whole album rather than once per track.
+        let moveToEnd = null;
+
+        const post = (id, move) => fetch(`/app/playlists/${playlistId}/items`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+            },
+            body: JSON.stringify({ item_id: id, move_to_end: move }),
+        });
+
         try {
             // One request per track. The endpoint appends, so order is
             // preserved, and a partial failure leaves the tracks that did
             // succeed in place rather than rolling the lot back.
+            let added = 0;
+            let skipped = 0;
+
             for (const id of items) {
-                const response = await fetch(`/app/playlists/${playlistId}/items`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
-                    },
-                    body: JSON.stringify({ item_id: id }),
-                });
+                let response = await post(id, false);
+
+                if (response.status === 409) {
+                    if (moveToEnd === null) {
+                        moveToEnd = window.confirm(
+                            items.length > 1
+                                ? 'Some of these songs are already in this playlist. Move them to the end?'
+                                : 'That song is already in this playlist. Move it to the end?',
+                        );
+                    }
+
+                    if (!moveToEnd) {
+                        skipped++;
+                        continue;
+                    }
+
+                    response = await post(id, true);
+                }
 
                 if (!response.ok) throw new Error(String(response.status));
+
+                added++;
             }
 
-            button.textContent = items.length > 1 ? `Added ${items.length}` : 'Added';
+            if (added === 0) {
+                button.textContent = skipped > 0 ? 'Already there' : 'Nothing to add';
+            } else {
+                button.textContent = added > 1 ? `Added ${added}` : 'Added';
+            }
 
             // Closing on success is the confirmation; leaving it open invites
             // a second click that would silently duplicate nothing useful.

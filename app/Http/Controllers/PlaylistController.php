@@ -187,7 +187,24 @@ class PlaylistController extends Controller
         // have been satisfied at insert time.
         abort_unless($this->gate->allows($item), 404);
 
-        // Appended, so adding never reorders what is already there.
+        // A playlist cannot hold the same track twice — the pivot's primary key
+        // is (collection_id, media_item_id) — so re-adding one rewrote its
+        // sort_order and moved it to the end, silently, which is the opposite
+        // of what the old comment here claimed. Refuse and say so; the client
+        // asks again with move_to_end when that is what the user wanted
+        // (S-373).
+        $already = $collection->mediaItems()->whereKey($item->id)->exists();
+
+        if ($already && ! $request->boolean('move_to_end')) {
+            return response()->json([
+                'added' => false,
+                'already_present' => true,
+                'count' => $collection->mediaItems()->count(),
+                'message' => 'That song is already in this playlist.',
+            ], 409);
+        }
+
+        // Appended, so a new track lands at the end rather than displacing one.
         $next = (int) $collection->mediaItems()->max('sort_order') + 1;
 
         $collection->mediaItems()->syncWithoutDetaching([
@@ -196,6 +213,8 @@ class PlaylistController extends Controller
 
         return response()->json([
             'added' => true,
+            'already_present' => $already,
+            'moved' => $already,
             'count' => $collection->mediaItems()->count(),
         ]);
     }

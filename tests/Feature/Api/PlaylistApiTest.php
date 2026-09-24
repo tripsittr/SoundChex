@@ -203,6 +203,63 @@ class PlaylistApiTest extends TestCase
         $this->assertLessThan(10, $queries, "The playlists list ran {$queries} queries; the mosaics are being fetched per playlist.");
     }
 
+    public function test_adding_a_track_that_is_already_there_is_refused(): void
+    {
+        // The pivot's primary key is (collection_id, media_item_id), so a
+        // playlist cannot hold the same track twice. Re-adding one used to
+        // rewrite its sort_order and move it to the end, silently (S-373).
+        $playlist = Collection::create(['user_id' => $this->user->id, 'name' => 'Mine']);
+        $track = $this->track('One', 1000);
+        $playlist->mediaItems()->attach($track->id, ['sort_order' => 0]);
+        $playlist->mediaItems()->attach($this->track('Two', 1000)->id, ['sort_order' => 1]);
+
+        $response = $this->asOwner()->postJson(
+            route('api.playlists.items.add', $playlist),
+            ['item_id' => $track->id],
+        );
+
+        $response->assertStatus(409)
+            ->assertJsonPath('added', false)
+            ->assertJsonPath('already_present', true);
+
+        // And it stayed where it was.
+        $this->assertSame(
+            0,
+            (int) $playlist->mediaItems()->whereKey($track->id)->first()->pivot->sort_order,
+        );
+    }
+
+    public function test_move_to_end_re_adds_a_track_that_is_already_there(): void
+    {
+        $playlist = Collection::create(['user_id' => $this->user->id, 'name' => 'Mine']);
+        $track = $this->track('One', 1000);
+        $playlist->mediaItems()->attach($track->id, ['sort_order' => 0]);
+        $playlist->mediaItems()->attach($this->track('Two', 1000)->id, ['sort_order' => 1]);
+
+        $this->asOwner()->postJson(
+            route('api.playlists.items.add', $playlist),
+            ['item_id' => $track->id, 'move_to_end' => true],
+        )->assertOk()->assertJsonPath('moved', true);
+
+        $order = $playlist->mediaItems()->orderByPivot('sort_order')->pluck('title')->all();
+
+        $this->assertSame(['Two', 'One'], $order);
+        // Moved, not duplicated.
+        $this->assertSame(2, $playlist->mediaItems()->count());
+    }
+
+    public function test_a_track_that_is_not_there_is_still_added_normally(): void
+    {
+        $playlist = Collection::create(['user_id' => $this->user->id, 'name' => 'Mine']);
+
+        $this->asOwner()->postJson(
+            route('api.playlists.items.add', $playlist),
+            ['item_id' => $this->track('One', 1000)->id],
+        )->assertOk()
+            ->assertJsonPath('added', true)
+            ->assertJsonPath('already_present', false);
+    }
+
     public function test_cover_upload_stores_and_exposes_a_url(): void
     {
         Storage::fake('public');
