@@ -152,6 +152,37 @@ class PluginCatalogTest extends TestCase
         $this->installer()->install($entry);
     }
 
+    public function test_it_installs_the_shallowest_manifest_not_the_first_one(): void
+    {
+        // A plugin that ships an example or fixture plugin of its own has two
+        // manifests. locateName(FL_NODIR) returns the first in *archive order*,
+        // so a zip listing the nested one first installed the example instead
+        // of the plugin (S-368). Ordered deliberately here: nested first.
+        $zip = $this->makeZip([
+            'porter/examples/demo/plugin.json' => json_encode([
+                'id' => 'acme.demo',
+                'name' => 'Demo',
+                'version' => '1.0.0',
+                'entrypoint' => 'Acme\\Demo\\Plugin',
+            ]),
+            'porter/plugin.json' => json_encode([
+                'id' => 'acme.porter',
+                'name' => 'Porter',
+                'version' => '1.0.0',
+                'entrypoint' => 'Acme\\Porter\\Plugin',
+            ]),
+        ]);
+
+        Http::fake(['cdn.test/*' => Http::response($zip)]);
+
+        $entry = new CatalogEntry('acme.porter', 'Porter', null, null, [], [
+            'version' => '1.0.0',
+            'sourceUrl' => 'https://cdn.test/x.zip',
+        ]);
+
+        $this->assertSame('acme.porter', $this->installer()->install($entry));
+    }
+
     public function test_it_refuses_an_archive_that_escapes_its_directory(): void
     {
         // A zip-slip entry: a path that climbs out of the target folder.
