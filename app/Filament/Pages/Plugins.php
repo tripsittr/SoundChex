@@ -43,11 +43,16 @@ class Plugins extends Page
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPuzzlePiece;
 
-    protected static string|UnitEnum|null $navigationGroup = 'System';
+    // Heads the group it manages, rather than sitting in System while the
+    // pages it installs appear elsewhere (S-364). Sorted first so "Manage" is
+    // above the plugin screens themselves.
+    protected static string|UnitEnum|null $navigationGroup = 'Plugins';
+
+    protected static ?int $navigationSort = -1;
 
     protected static ?string $title = 'Plugins';
 
-    protected static ?string $navigationLabel = 'Plugins';
+    protected static ?string $navigationLabel = 'Manage Plugins';
 
     /** @var array<int, array<string, mixed>> */
     public array $plugins = [];

@@ -17,6 +17,7 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
+use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -124,6 +125,7 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make('Media Library'),
                 NavigationGroup::make('Users & Permissions'),
                 NavigationGroup::make('Settings'),
+                NavigationGroup::make('Plugins'),
                 NavigationGroup::make('System'),
             ])
             // The media center is a separate Blade app, so Filament can't
@@ -177,9 +179,51 @@ class AdminPanelProvider extends PanelProvider
         try {
             app(PluginLoader::class)->boot();
 
-            return app(Registry::class)->adminPageClasses();
+            $pages = app(Registry::class)->adminPageClasses();
+
+            foreach ($pages as $page) {
+                $this->groupPluginPage($page);
+            }
+
+            return $pages;
         } catch (\Throwable) {
             return [];
+        }
+    }
+
+    /**
+     * Files a plugin's page under the Plugins nav group unless it asked for a
+     * different one (S-364).
+     *
+     * Left alone, plugin pages scatter: one puts itself in System next to the
+     * screens that administer the machine, another declares nothing and floats
+     * ungrouped above the whole sidebar. Neither tells an operator which parts
+     * of the panel came from a plugin.
+     *
+     * A plugin that names a group means it — the audit log genuinely belongs
+     * beside the other System screens — so only pages that named none are
+     * moved. "Named none" is not the same as "is null": every Filament page
+     * redeclares the property, so the value is what distinguishes a deliberate
+     * choice from a default left untouched.
+     *
+     * Best-effort per page. A page whose class cannot be loaded (an autoload
+     * failure in a plugin's own namespace) keeps whatever group it had rather
+     * than costing the panel its whole plugin page list.
+     */
+    private function groupPluginPage(string $page): void
+    {
+        try {
+            if (! is_subclass_of($page, Page::class)) {
+                return;
+            }
+
+            if ($page::getNavigationGroup() !== null) {
+                return;
+            }
+
+            $page::navigationGroup('Plugins');
+        } catch (\Throwable) {
+            // Leave the page where it is; a misgrouped page beats a missing one.
         }
     }
 
