@@ -9,7 +9,9 @@ use App\Enums\MediaItemType;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
 use App\Models\User;
+use App\Plugins\Registry;
 use App\Services\MusicCredits;
+use App\Services\TitleTidier;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -77,8 +79,34 @@ class EnrichmentWritesCreditsTest extends TestCase
             ->count());
     }
 
+    /**
+     * Registers the title cleanup the same way the shipped Title Tidier plugin
+     * does (S-361).
+     *
+     * The job does not tidy titles itself — it hands the title to the
+     * `metadata.title` filter chain, and the app's own cleanup is one of those
+     * filters, shipped as a bundled plugin. Plugins live in a per-user data
+     * directory outside the repo, so the loader finds nothing here; without
+     * this the chain is empty and every tidying assertion below passes
+     * vacuously on a no-op.
+     */
+    private function registerTitleTidier(): void
+    {
+        app(Registry::class)->filter(
+            'metadata.title',
+            fn (string $title, MediaItem $item): string => $item->type !== MediaItemType::Music
+                ? $title
+                : (app(TitleTidier::class)->strip($title, [
+                    $item->musicMetadata?->artist,
+                    $item->musicMetadata?->primary_artist,
+                ]) ?? $title),
+        );
+    }
+
     public function test_a_title_holding_its_artist_is_tidied_before_filing(): void
     {
+        $this->registerTitleTidier();
+
         // The case FileTagger cannot catch: the file's *tag* is
         // "Gold - Imagine Dragons", so there is no disagreement to promote
         // over. Checked at the end of enrichment instead, before filing names
@@ -94,6 +122,7 @@ class EnrichmentWritesCreditsTest extends TestCase
 
     public function test_a_hyphen_belonging_to_the_title_survives_enrichment(): void
     {
+        $this->registerTitleTidier();
         $item = $this->track('Benny Goodman');
         $item->forceFill(['title' => 'Sing - Sing - Sing'])->save();
 
@@ -105,6 +134,7 @@ class EnrichmentWritesCreditsTest extends TestCase
 
     public function test_a_title_that_is_only_an_artist_is_left_alone(): void
     {
+        $this->registerTitleTidier();
         // Stripping would leave nothing, and a track with no title is worse
         // than one with a clumsy title.
         $item = $this->track('Imagine Dragons');

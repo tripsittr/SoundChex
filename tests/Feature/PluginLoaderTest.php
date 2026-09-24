@@ -88,6 +88,59 @@ class PluginLoaderTest extends TestCase
         );
     }
 
+    /**
+     * A plugin carrying the app's own default behaviour — the Title Tidier is
+     * the app's title cleanup, shipped as a plugin — asks to start enabled
+     * (S-361). Without this, S-321's opt-in rule silently switched that
+     * cleanup off on every install.
+     */
+    public function test_a_plugin_asking_to_be_on_by_default_lands_enabled(): void
+    {
+        $this->withManifestFlag(true);
+
+        $this->loader()->discover();
+
+        $this->assertTrue(
+            (bool) InstalledPlugin::where('plugin_id', 'soundchex.example')->value('enabled'),
+        );
+    }
+
+    public function test_the_default_never_re_enables_a_plugin_someone_turned_off(): void
+    {
+        $this->withManifestFlag(true);
+
+        $this->loader()->discover();
+
+        InstalledPlugin::where('plugin_id', 'soundchex.example')
+            ->update(['enabled' => false, 'updated_at' => now()->addMinute()]);
+
+        $this->loader()->discover();
+
+        $this->assertFalse(
+            (bool) InstalledPlugin::where('plugin_id', 'soundchex.example')->value('enabled'),
+            'The manifest default is for a first install, never an override of a choice.',
+        );
+    }
+
+    /**
+     * Rewrites the fixture manifest's `enabledByDefault` for one test, putting
+     * the original back afterwards so the fixture stays as checked in.
+     */
+    private function withManifestFlag(bool $enabled): void
+    {
+        $path = base_path('tests/Fixtures/plugins/example-plugin/plugin.json');
+        $original = (string) file_get_contents($path);
+
+        $this->beforeApplicationDestroyed(
+            fn () => file_put_contents($path, $original),
+        );
+
+        $data = json_decode($original, true);
+        $data['enabledByDefault'] = $enabled;
+
+        file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
     /* ------------------------------------------------------------- boot --- */
 
     public function test_an_enabled_plugin_loads_and_registers(): void
