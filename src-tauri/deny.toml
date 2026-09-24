@@ -35,9 +35,17 @@ allow = [
 confidence-threshold = 0.9
 
 # Per-crate exceptions go here when a crate is genuinely fine but its licence id
-# is not in `allow` (e.g. a bespoke but permissive licence). Empty: the audit
-# found none needed.
-exceptions = []
+# is not in `allow` (e.g. a bespoke but permissive licence).
+exceptions = [
+    # webpki-root-certs ships Mozilla's root certificate set, which is data
+    # rather than code, under the Community Data License Agreement. CDLA
+    # Permissive 2.0 grants unrestricted use and redistribution of the data
+    # with no copyleft reaching the software that uses it, so it does not
+    # constrain distributing SoundChex under the AGPL. Scoped to this crate
+    # rather than allowed globally: a data licence is the right answer for a
+    # certificate bundle and the wrong one for a code dependency (S-365).
+    { allow = ["CDLA-Permissive-2.0"], crate = "webpki-root-certs" },
+]
 
 [bans]
 multiple-versions = "allow"
