@@ -290,6 +290,17 @@ the built-in System pages do. Ship the page's Blade view in your plugin and
 register a view namespace for it in `register()`
 (`View::addNamespace('your-plugin', __DIR__.'/../resources/views')`).
 
+Your page lands in the **Plugins** nav group, so an operator can see at a
+glance which screens came from a plugin. If yours genuinely belongs somewhere
+else — the Activity Log sits with the other System screens, because that is
+what it administers — say so and it is left alone:
+
+```php
+protected static string|UnitEnum|null $navigationGroup = 'System';
+```
+
+Leave it unset (or null) and the panel files it under Plugins for you.
+
 The worked example is the bundled **Activity Log** plugin
 (`plugins/bundled/activity-log`): it subscribes to the whole event catalogue,
 writes each event to one audit timeline, and adds a filterable **Audit Log** page
