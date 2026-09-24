@@ -243,6 +243,21 @@ class PlaylistController extends Controller
         // it from the playlist, where the per-track gate is already satisfied.
         abort_unless($this->gate->allows($item), 404);
 
+        // A playlist cannot hold the same track twice — the pivot's primary key
+        // is (collection_id, media_item_id) — so re-adding one silently
+        // rewrote its sort_order and moved it to the end. Say so instead, and
+        // let the client decide (S-373).
+        $already = $collection->mediaItems()->whereKey($item->id)->exists();
+
+        if ($already && ! $request->boolean('move_to_end')) {
+            return response()->json([
+                'added' => false,
+                'already_present' => true,
+                'count' => $collection->mediaItems()->count(),
+                'message' => 'That song is already in this playlist.',
+            ], 409);
+        }
+
         $next = (int) $collection->mediaItems()->max('sort_order') + 1;
 
         $collection->mediaItems()->syncWithoutDetaching([
@@ -251,6 +266,8 @@ class PlaylistController extends Controller
 
         return response()->json([
             'added' => true,
+            'already_present' => $already,
+            'moved' => $already,
             'count' => $collection->mediaItems()->count(),
         ]);
     }
