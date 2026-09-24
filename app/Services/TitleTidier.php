@@ -34,17 +34,11 @@ class TitleTidier
             return null;
         }
 
-        // Longest first, so a full "Artist, Feat" credit strips before the bare
-        // primary would leave "Feat - Song" behind.
         $candidates = array_values(array_unique(array_filter(
             array_map(fn ($a) => trim((string) $a), (array) $artists),
             fn (string $a) => $a !== '',
         )));
-        // A tagger that writes the whole credit into the title writes it as it
-        // reads — "A, B - Song", "A & B - Song" — which no single artist name
-        // matches. Offer those joinings too, so the combined prefix strips
-        // instead of surviving because neither name alone was the whole of it
-        // (S-365).
+
         // A tagger records a collaboration however it likes: the artist field
         // reads "$uicideboy$/Maxo Cream" while the title says "$uicideboy$,
         // Maxo Cream - Song". Neither string matches the other, so split every
@@ -84,9 +78,8 @@ class TitleTidier
         foreach ($candidates as $artist) {
             // Underscores and spaces are the same separator to a tagger —
             // "Plague_tsc" in the artist field, "Plague tsc" in the title —
-            // so treat either as matching either (S-365).
-            // preg_quote leaves a space alone, so match on the literal space
-            // rather than an escaped one.
+            // so treat either as matching either. preg_quote leaves a space
+            // alone, so match on the literal space, not an escaped one (S-365).
             $quoted = str_replace(
                 ['_', ' '],
                 '[_\s]',
