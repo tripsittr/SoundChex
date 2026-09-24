@@ -6,7 +6,6 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
-use Filament\Pages\Page;
 use App\Plugins\PluginLoader;
 use App\Plugins\Registry;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
@@ -18,6 +17,7 @@ use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationGroup;
 use Filament\Navigation\NavigationItem;
+use Filament\Pages\Page;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -206,7 +206,7 @@ class AdminPanelProvider extends PanelProvider
      * redeclares the property, so the value is what distinguishes a deliberate
      * choice from a default left untouched.
      *
-     * Best-effort per page. A page that cannot be reflected (an autoload
+     * Best-effort per page. A page whose class cannot be loaded (an autoload
      * failure in a plugin's own namespace) keeps whatever group it had rather
      * than costing the panel its whole plugin page list.
      */
