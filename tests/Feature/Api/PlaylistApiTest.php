@@ -137,6 +137,72 @@ class PlaylistApiTest extends TestCase
         $this->assertSame([$a->id], $playlist->fresh()->mediaItems()->pluck('media_items.id')->all());
     }
 
+    public function test_the_list_carries_track_covers_for_the_mosaic(): void
+    {
+        // The list endpoint sends no tracks, so without these the native app
+        // has nothing to draw and every playlist without its own cover shows a
+        // note glyph — while the detail screen, which does have the tracks,
+        // shows a mosaic. Covers appeared only inside a playlist (S-371).
+        $playlist = Collection::create(['user_id' => $this->user->id, 'name' => 'Mine']);
+
+        foreach (['One', 'Two'] as $i => $title) {
+            $track = $this->track($title, 1000);
+            $track->forceFill(['cover_image_url' => "artwork/{$title}.jpg"])->save();
+            $playlist->mediaItems()->attach($track->id, ['sort_order' => $i]);
+        }
+
+        $response = $this->asOwner()->getJson(route('api.playlists'));
+
+        $response->assertOk();
+        $this->assertCount(2, $response->json('playlists.0.mosaic'));
+    }
+
+    public function test_the_mosaic_holds_at_most_four_covers(): void
+    {
+        // A 2x2 grid needs four; sending 1,191 of them would make the app's
+        // first screen pay for the whole library.
+        $playlist = Collection::create(['user_id' => $this->user->id, 'name' => 'Mine']);
+
+        foreach (range(1, 6) as $i) {
+            $track = $this->track("Track {$i}", 1000);
+            $track->forceFill(['cover_image_url' => "artwork/{$i}.jpg"])->save();
+            $playlist->mediaItems()->attach($track->id, ['sort_order' => $i]);
+        }
+
+        $response = $this->asOwner()->getJson(route('api.playlists'));
+
+        $this->assertCount(4, $response->json('playlists.0.mosaic'));
+    }
+
+    public function test_a_playlist_with_no_covers_sends_an_empty_mosaic(): void
+    {
+        $playlist = Collection::create(['user_id' => $this->user->id, 'name' => 'Mine']);
+        $playlist->mediaItems()->attach($this->track('One', 1000)->id, ['sort_order' => 0]);
+
+        $response = $this->asOwner()->getJson(route('api.playlists'));
+
+        $this->assertSame([], $response->json('playlists.0.mosaic'));
+    }
+
+    public function test_the_list_does_not_query_once_per_playlist(): void
+    {
+        // The obvious implementation is a query per card, which makes the
+        // app's first screen cost grow with the number of playlists.
+        foreach (range(1, 5) as $i) {
+            $playlist = Collection::create(['user_id' => $this->user->id, 'name' => "List {$i}"]);
+            $track = $this->track("Track {$i}", 1000);
+            $track->forceFill(['cover_image_url' => "artwork/{$i}.jpg"])->save();
+            $playlist->mediaItems()->attach($track->id, ['sort_order' => 0]);
+        }
+
+        \Illuminate\Support\Facades\DB::enableQueryLog();
+        $this->asOwner()->getJson(route('api.playlists'))->assertOk();
+        $queries = count(\Illuminate\Support\Facades\DB::getQueryLog());
+        \Illuminate\Support\Facades\DB::disableQueryLog();
+
+        $this->assertLessThan(10, $queries, "The playlists list ran {$queries} queries; the mosaics are being fetched per playlist.");
+    }
+
     public function test_cover_upload_stores_and_exposes_a_url(): void
     {
         Storage::fake('public');

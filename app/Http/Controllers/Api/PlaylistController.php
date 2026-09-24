@@ -13,6 +13,7 @@ use App\Services\ContentGate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -31,20 +32,77 @@ class PlaylistController extends Controller
     /** The account's playlists, with their track counts and cover, for a list. */
     public function index(): JsonResponse
     {
-        $playlists = Collection::query()
+        $collections = Collection::query()
             ->where('user_id', Auth::id())
             ->withCount('mediaItems')
             ->orderBy('name')
-            ->get()
-            ->map(fn (Collection $c): array => [
-                'id' => $c->id,
-                'name' => $c->name,
-                'description' => $c->description,
-                'count' => $c->media_items_count,
-                'artwork_url' => $c->artworkUrl(),
-            ]);
+            ->get();
+
+        $mosaics = $this->mosaics($collections);
+
+        $playlists = $collections->map(fn (Collection $c): array => [
+            'id' => $c->id,
+            'name' => $c->name,
+            'description' => $c->description,
+            'count' => $c->media_items_count,
+            'artwork_url' => $c->artworkUrl(),
+            // The covers of the first few tracks, for the client to draw a
+            // mosaic when the playlist has no cover of its own (S-371). Sent
+            // from here because the list endpoint carries no tracks: without
+            // it every playlist without an uploaded cover drew a note glyph,
+            // while the detail screen — which does have the tracks — showed a
+            // mosaic, so covers appeared only inside a playlist.
+            'mosaic' => $mosaics[$c->id] ?? [],
+        ]);
 
         return response()->json(['playlists' => $playlists]);
+    }
+
+    /**
+     * Up to four track cover URLs for each playlist, keyed by playlist id.
+     *
+     * One query for the pivot rows and one for the items, then grouped in
+     * memory — a query per playlist would make the list cost grow with the
+     * number of playlists, and this endpoint is the app's first screen.
+     *
+     * @param  \Illuminate\Support\Collection<int, Collection>  $playlists
+     * @return array<int, array<int, string>>
+     */
+    private function mosaics(\Illuminate\Support\Collection $playlists): array
+    {
+        $ids = $playlists->pluck('id');
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        $rows = DB::table('collection_media_item')
+            ->whereIn('collection_id', $ids)
+            ->orderBy('sort_order')
+            ->get(['collection_id', 'media_item_id']);
+
+        $covers = MediaItem::query()
+            ->whereIn('id', $rows->pluck('media_item_id')->unique())
+            ->get()
+            ->mapWithKeys(fn (MediaItem $i) => [$i->id => $i->coverUrl()]);
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $url = $covers[$row->media_item_id] ?? null;
+
+            if ($url === null) {
+                continue;
+            }
+
+            $out[$row->collection_id] ??= [];
+
+            if (count($out[$row->collection_id]) < 4) {
+                $out[$row->collection_id][] = $url;
+            }
+        }
+
+        return $out;
     }
 
     /** One playlist and its tracks, gated per item and in playlist order. */
