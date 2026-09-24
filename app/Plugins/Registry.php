@@ -443,6 +443,93 @@ class Registry
     private array $migrationPaths = [];
 
     /**
+     * Render something into the admin panel at a named point (S-316).
+     *
+     * Filament exposes fixed positions in its chrome — above a page's header,
+     * at the end of the sidebar, before a table's rows — and this is the seam
+     * that lets a plugin put its own markup there without the panel knowing
+     * the plugin exists.
+     *
+     * The callback returns a string of HTML, or a rendered view. It is called
+     * on every request that reaches the hook, so it must be cheap: a database
+     * query here runs on every page load in the panel.
+     *
+     * Hook names come from `Filament\View\PanelsRenderHook`, e.g.
+     * `PanelsRenderHook::PAGE_HEADER_ACTIONS_BEFORE`. Passing the constant
+     * rather than a bare string is what keeps a plugin working across a
+     * Filament upgrade that renames one.
+     *
+     * A plugin's markup cannot rely on the app's Tailwind — the app's CSS is
+     * compiled before release and an installed plugin's markup did not exist
+     * then. Ship CSS with the plugin, or use the classes Filament's own build
+     * provides. See `StyleCompiler` (S-350) and AGENTS.md.
+     *
+     * @param  callable(): string  $callback
+     */
+    public function renderHook(string $hook, callable $callback): static
+    {
+        $this->renderHooks[] = [
+            'plugin' => $this->currentPlugin ?? 'unknown',
+            'hook' => $hook,
+            'callback' => $callback,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * Every render hook a plugin has registered, in registration order.
+     *
+     * @return array<int, array{plugin: string, hook: string, callback: callable}>
+     */
+    public function renderHooks(): array
+    {
+        return $this->renderHooks;
+    }
+
+    /**
+     * @var array<int, array{plugin: string, hook: string, callback: callable}>
+     */
+    private array $renderHooks = [];
+
+    /**
+     * Add a dashboard widget to the admin panel (S-316).
+     *
+     * The class is an ordinary Filament widget. Registered only while the
+     * plugin is enabled, so disabling one takes its widget off the dashboard
+     * rather than leaving a broken tile behind.
+     *
+     * @param  class-string  $widgetClass
+     */
+    public function widget(string $widgetClass): static
+    {
+        $this->widgets[] = [
+            'plugin' => $this->currentPlugin ?? 'unknown',
+            'class' => $widgetClass,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * The widget classes contributed by enabled plugins.
+     *
+     * @return array<int, class-string>
+     */
+    public function widgetClasses(): array
+    {
+        return array_values(array_map(
+            static fn (array $entry): string => $entry['class'],
+            $this->widgets,
+        ));
+    }
+
+    /**
+     * @var array<int, array{plugin: string, class: class-string}>
+     */
+    private array $widgets = [];
+
+    /**
      * Contribute a routes file so a plugin can own its own endpoints (S-314).
      *
      * The file is an ordinary Laravel routes file (`Route::get(...)`), loaded

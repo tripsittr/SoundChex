@@ -109,6 +109,10 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([
                 AccountWidget::class,
                 // FilamentInfoWidget::class,
+                // Widgets contributed by enabled plugins (S-316), handed over
+                // the same way their pages are: discovery cannot find a class
+                // that lives outside the app's namespace.
+                ...$this->pluginWidgets(),
             ])
             // Declared so the order is a decision rather than whatever order
             // the pages happen to be discovered in. System is last and holds
@@ -174,6 +178,22 @@ class AdminPanelProvider extends PanelProvider
             app(PluginLoader::class)->boot();
 
             return app(Registry::class)->adminPageClasses();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Dashboard widgets contributed by enabled plugins (S-316).
+     *
+     * @return array<int, class-string>
+     */
+    private function pluginWidgets(): array
+    {
+        try {
+            app(PluginLoader::class)->boot();
+
+            return app(Registry::class)->widgetClasses();
         } catch (\Throwable) {
             return [];
         }

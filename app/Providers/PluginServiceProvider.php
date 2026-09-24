@@ -7,6 +7,8 @@ namespace App\Providers;
 
 use App\Plugins\PluginLoader;
 use App\Plugins\Registry;
+use Filament\Support\Facades\FilamentView;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -50,13 +52,48 @@ class PluginServiceProvider extends ServiceProvider
 
         // Each plugin's serving-time boot runs once the app is handling a
         // request, kept off console and queue boots where it has no business.
-        $this->app->booted(function () use ($loader): void {
+        $this->app->booted(function () use ($loader, $registry): void {
             if ($this->app->runningInConsole()) {
                 return;
             }
 
             $loader->bootLoaded();
+
+            // After bootLoaded(), because that is when a plugin's boot() runs
+            // and registers its hooks — applying them before would apply an
+            // empty list (S-316).
+            $this->registerPluginRenderHooks($registry);
         });
+    }
+
+    /**
+     * Hand each plugin's render hooks to Filament (S-316).
+     *
+     * A hook is a named position in the panel's chrome; the plugin supplies a
+     * callback returning markup. Wrapped per hook so a plugin that throws
+     * renders nothing there rather than taking the whole page down with it —
+     * the same posture as the routes and migrations seams.
+     */
+    private function registerPluginRenderHooks(Registry $registry): void
+    {
+        foreach ($registry->renderHooks() as $entry) {
+            FilamentView::registerRenderHook(
+                $entry['hook'],
+                function () use ($entry): string {
+                    try {
+                        return (string) ($entry['callback'])();
+                    } catch (\Throwable $e) {
+                        Log::warning('plugin render hook failed', [
+                            'plugin' => $entry['plugin'],
+                            'hook' => $entry['hook'],
+                            'error' => $e->getMessage(),
+                        ]);
+
+                        return '';
+                    }
+                },
+            );
+        }
     }
 
     /**
