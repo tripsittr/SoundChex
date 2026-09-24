@@ -125,13 +125,6 @@ class PluginLoader
     }
 
     /**
-     * Reads the manifest of every plugin directory under a path, skipping any
-     * that is unreadable. Shared by installed discovery and bundled loading, so
-     * both find plugins the same way.
-     *
-     * @return array<string, PluginManifest> directory path => manifest
-     */
-    /**
      * Creates the plugins directory if it does not exist, quietly. Never throws:
      * a path that cannot be created (permissions, an unwritable data dir) leaves
      * discovery to find nothing, which is the correct degraded behaviour.
@@ -197,6 +190,12 @@ class PluginLoader
         }
     }
 
+    /**
+     * Reads the manifest of every plugin directory under a path, skipping any
+     * that is unreadable, so one malformed plugin.json costs only its own plugin.
+     *
+     * @return array<string, PluginManifest> directory path => manifest
+     */
     private function manifestsIn(mixed $path): array
     {
         if (! is_string($path) || ! is_dir($path)) {
@@ -340,6 +339,14 @@ class PluginLoader
                 $this->registry->forPlugin($entry['id'], fn (Registry $r) => $entry['plugin']->boot($r));
             } catch (\Throwable $e) {
                 report($e);
+
+                // Named, the way load() names a failed register(). report()
+                // alone leaves a trace whose frames are all in the plugin's own
+                // namespace, so the operator cannot tell which plugin to disable.
+                Log::error('A plugin failed to boot', [
+                    'plugin' => $entry['id'],
+                    'error' => $e->getMessage(),
+                ]);
             }
         }
     }

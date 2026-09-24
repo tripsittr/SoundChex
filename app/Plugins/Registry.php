@@ -46,6 +46,7 @@ use App\Events\UserSearched;
 use App\Events\WatchlistAdded;
 use App\Events\WatchlistRemoved;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The surface a plugin pushes its contributions onto (S-264).
@@ -179,9 +180,10 @@ class Registry
 
     /**
      * Events a plugin has defined and emits itself, so other plugins can
-     * discover and subscribe to them. Name => the defining plugin's id.
+     * discover and subscribe to them. Name => the defining plugin and the
+     * description it gave.
      *
-     * @var array<string, string>
+     * @var array<string, array{plugin: string, description: ?string}>
      */
     private array $pluginEvents = [];
 
@@ -224,12 +226,31 @@ class Registry
      * other plugins and the docs read (S-276). Optional — a plugin can `emit()`
      * without declaring — but declaring makes the event discoverable rather than
      * something another author has to know about by reading source.
+     *
+     * The description is kept, not just accepted: it is the whole reason an
+     * author declares rather than only emitting, and `definedEvents()` is what
+     * surfaces it to the docs and the admin UI.
      */
     public function defineEvent(string $event, ?string $description = null): static
     {
-        $this->pluginEvents[$event] = $this->currentPlugin ?? 'unknown';
+        $this->pluginEvents[$event] = [
+            'plugin' => $this->currentPlugin ?? 'unknown',
+            'description' => $description,
+        ];
 
         return $this;
+    }
+
+    /**
+     * The plugin-defined events, with who defined each and what they said it is
+     * — so the docs and the admin UI can list a plugin's own events the way they
+     * list the built-in catalogue, description included.
+     *
+     * @return array<string, array{plugin: string, description: ?string}>
+     */
+    public function definedEvents(): array
+    {
+        return $this->pluginEvents;
     }
 
     /**
@@ -443,6 +464,14 @@ class Registry
     private array $migrationPaths = [];
 
     /**
+     * Slot callbacks contributed by plugins, per slot name, in registration
+     * order.
+     *
+     * @var array<string, array<int, array{plugin: string, callback: callable}>>
+     */
+    private array $slots = [];
+
+    /**
      * Render into a named slot in the user-facing player (S-318).
      *
      * The admin panel gets its positions from Filament (`renderHook()`); the
@@ -493,7 +522,7 @@ class Registry
             try {
                 $html .= (string) ($entry['callback'])(...$context);
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('plugin slot failed', [
+                Log::warning('plugin slot failed', [
                     'plugin' => $entry['plugin'],
                     'slot' => $slot,
                     'error' => $e->getMessage(),
@@ -511,9 +540,11 @@ class Registry
     }
 
     /**
-     * @var array<string, array<int, array{plugin: string, callback: callable}>>
+     * Admin-panel render hooks contributed by plugins, in registration order.
+     *
+     * @var array<int, array{plugin: string, hook: string, callback: callable}>
      */
-    private array $slots = [];
+    private array $renderHooks = [];
 
     /**
      * Render something into the admin panel at a named point (S-316).
@@ -561,9 +592,11 @@ class Registry
     }
 
     /**
-     * @var array<int, array{plugin: string, hook: string, callback: callable}>
+     * Dashboard widget classes contributed by plugins.
+     *
+     * @var array<int, array{plugin: string, class: class-string}>
      */
-    private array $renderHooks = [];
+    private array $widgets = [];
 
     /**
      * Add a dashboard widget to the admin panel (S-316).
@@ -591,16 +624,8 @@ class Registry
      */
     public function widgetClasses(): array
     {
-        return array_values(array_map(
-            static fn (array $entry): string => $entry['class'],
-            $this->widgets,
-        ));
+        return array_column($this->widgets, 'class');
     }
-
-    /**
-     * @var array<int, array{plugin: string, class: class-string}>
-     */
-    private array $widgets = [];
 
     /**
      * Contribute a routes file so a plugin can own its own endpoints (S-314).

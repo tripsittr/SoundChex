@@ -5,8 +5,8 @@
 
 namespace App\Events;
 
+use App\Events\Concerns\PluginEvent;
 use App\Models\MediaItem;
-use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * A file has just entered the library (S-264 Phase 3).
@@ -17,7 +17,7 @@ use Illuminate\Foundation\Events\Dispatchable;
  */
 class MediaItemCatalogued
 {
-    use Dispatchable;
+    use PluginEvent;
 
     /** The stable event name plugins subscribe to. */
     public const NAME = 'media.catalogued';

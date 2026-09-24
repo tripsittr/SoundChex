@@ -108,6 +108,14 @@ class PluginInstaller
             ? explode(':', $expected, 2)
             : [strlen($expected) === 64 ? 'sha256' : 'md5', $expected];
 
+        // The algorithm name comes from the catalog, which is untrusted network
+        // input: `hash()` raises a ValueError for one PHP does not know, and that
+        // is not a PluginInstallException, so it would escape the install UI as a
+        // 500 instead of a refusal the admin can read.
+        if (! in_array($algo, hash_algos(), true)) {
+            throw new PluginInstallException("The catalog gave a checksum in an unknown format (\"{$algo}\") — refusing to install.");
+        }
+
         $actual = hash($algo, $bytes);
 
         if (! hash_equals($hash, $actual)) {
