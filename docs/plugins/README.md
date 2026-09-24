@@ -328,6 +328,35 @@ bundles the Tailwind CLI, your plugin's own stylesheet is compiled when the
 plugin is enabled — write ordinary Tailwind in `resources/css/plugin.css` and
 it is built for you.
 
+### Markup inside the player
+
+The admin panel takes its positions from Filament. The media center — the thing
+people actually listen with — has no such system, so its slots are placed by
+hand in the Blade. Each is a deliberate decision about where a plugin may
+write:
+
+```php
+$registry->slot('player.controls', fn (): string => view('your-plugin::cast')->render());
+$registry->slot('song.row.actions', fn ($item): string => "<span>{$item->id}</span>");
+```
+
+| Slot | Where | Context |
+|---|---|---|
+| `player.controls` | beside the transport in the now-playing bar | — |
+| `player.meta` | under the title and artist in that bar | — |
+| `album.detail` | below an album's track list | the album |
+| `artist.detail` | below an artist's albums | the artist name |
+| `song.row.actions` | at the end of a track row | the `MediaItem` |
+
+Two of these render **per row** — `song.row.actions` runs once for every track
+on screen, so a database query there is a query per track. Keep it to markup
+you already have.
+
+A plugin that throws contributes nothing at that slot and is logged; its
+neighbours in the same slot still render. Output is not escaped, because a slot
+exists to let you contribute markup — the same trust a plugin already has as
+code running on the server.
+
 ### A dashboard widget
 
 ```php

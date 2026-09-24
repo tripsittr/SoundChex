@@ -151,5 +151,9 @@
                 </li>
             @endforeach
         </ol>
+
+        {{-- Below the track list: a plugin's own section about this album —
+             credits, a review, a link out (S-318). --}}
+        @pluginSlot('album.detail', $album)
     </div>
 </x-media.layout>

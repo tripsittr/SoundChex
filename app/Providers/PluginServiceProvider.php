@@ -8,6 +8,7 @@ namespace App\Providers;
 use App\Plugins\PluginLoader;
 use App\Plugins\Registry;
 use Filament\Support\Facades\FilamentView;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -49,6 +50,7 @@ class PluginServiceProvider extends ServiceProvider
 
         $this->registerPluginRoutes($registry);
         $this->registerPluginMigrations($registry);
+        $this->registerSlotDirective();
 
         // Each plugin's serving-time boot runs once the app is handling a
         // request, kept off console and queue boots where it has no business.
@@ -63,6 +65,25 @@ class PluginServiceProvider extends ServiceProvider
             // and registers its hooks — applying them before would apply an
             // empty list (S-316).
             $this->registerPluginRenderHooks($registry);
+        });
+    }
+
+    /**
+     * `@pluginSlot('name', $context)` in the media center's Blade (S-318).
+     *
+     * The admin panel takes its positions from Filament; the player has no
+     * such system, so its slots are placed by hand in the templates. The
+     * directive resolves the registry at render time rather than closing over
+     * it, so a plugin enabled during this request is still seen.
+     *
+     * Output is deliberately NOT escaped: a slot exists to let a plugin
+     * contribute markup. That is the same trust already extended to a plugin's
+     * admin page and its render hooks — a plugin runs as the server.
+     */
+    private function registerSlotDirective(): void
+    {
+        Blade::directive('pluginSlot', function (string $expression): string {
+            return "<?php echo app(\\App\\Plugins\\Registry::class)->renderSlot({$expression}); ?>";
         });
     }
 

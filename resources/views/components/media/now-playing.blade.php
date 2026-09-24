@@ -34,6 +34,9 @@
             <div class="min-w-0">
                 <p id="np-title" class="truncate text-sm font-medium text-ink-100"></p>
                 <p id="np-subtitle" class="truncate text-xs text-ink-500"></p>
+                {{-- Under the title and artist: a plugin's own line about the
+                     track — a lyrics cue, a scrobble state (S-318). --}}
+                @pluginSlot('player.meta')
             </div>
         </a>
 
@@ -94,6 +97,11 @@
                    class="h-1 w-20 cursor-pointer appearance-none rounded-full bg-base-600 accent-accent"
                    aria-label="Volume">
         </div>
+
+        {{-- Beside the transport: a plugin's own control — a cast button, a
+             sleep timer. Last, so it never pushes the core controls around
+             (S-318). --}}
+        @pluginSlot('player.controls')
     </div>
 </div>
 
