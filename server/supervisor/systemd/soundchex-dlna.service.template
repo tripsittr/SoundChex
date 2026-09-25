@@ -1,0 +1,20 @@
+# SoundChex bundled server — DLNA discovery (systemd, Linux). S-7.
+#
+# Answers SSDP searches so TVs, consoles and receivers find the media server.
+# Its own process because it holds a UDP socket open on port 1900, which
+# PHP-FPM cannot do. Harmless when DLNA is switched off: the command checks
+# the setting on every loop and simply does not answer.
+[Unit]
+Description=SoundChex DLNA discovery
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{RUNTIME_DIR}}/bin/php {{APP_DIR}}/artisan dlna:serve
+WorkingDirectory={{APP_DIR}}
+Restart=always
+RestartSec=5
+{{USER_LINE}}
+
+[Install]
+WantedBy=multi-user.target

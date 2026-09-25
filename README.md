@@ -228,3 +228,23 @@ satisfies AGPL §13).
 
 Your media is not covered by any of this. SoundChex is a library for files you
 already have; it neither acquires them nor helps you to.
+
+
+---
+
+
+## AI Disclaimer
+
+SoundChex is initially build by Blaze Claeson (@tripsittr) and Claude Code. 
+Claude Code assists in the following:
+- Test writing
+- GitHub management (PRs, commits, merging, and general housekeeping tasks)
+- Code writing for Android, iOS, and various other operating systems
+- Code writing for Tauri, Rust, and cross-platform capabilities
+- Planning, document drafting, and maintaining the landing site roadmap and tracker on the backend
+
+All code is reviewed, tested, and put to use in the real world as soon as it is pushed. 
+
+This is a passion project of mine. I have attempted to build out a media server for a long time, but I was never able to get the features and support I wanted. Having learned Laravel, PHP, and various languages and frameworks around it, I decided why not have Claude build the bridge I was missing using Tauri, porting the web app to other platforms.
+
+Thank you for checking out my project. I do use this myself every day and hope you will too. Feel free to contribute, give it a star, or sponsor me to help keep this project going!

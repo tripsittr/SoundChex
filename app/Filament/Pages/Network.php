@@ -10,6 +10,10 @@ use App\Jobs\ProbeNetworkJob;
 use App\Services\NetworkAddresses;
 use BackedEnum;
 use Filament\Actions\Action;
+use App\Models\Profile;
+use Illuminate\Support\Facades\Auth;
+use App\Services\Dlna\DlnaSettings;
+use App\Services\SettingsService;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
@@ -46,9 +50,79 @@ class Network extends Page
 
     public string $newAddress = '';
 
+    /** Whether the library is advertised to the LAN over DLNA (S-7). */
+    public bool $dlnaEnabled = false;
+
+    /** Whose view of the library DLNA serves — a TV cannot say who is watching. */
+    public ?int $dlnaProfile = null;
+
+    public string $dlnaName = '';
+
     public function mount(): void
     {
         $this->results = app(NetworkAddresses::class)->probe();
+
+        $dlna = app(DlnaSettings::class);
+        $this->dlnaEnabled = $dlna->enabled();
+        $this->dlnaProfile = $dlna->profile()?->id;
+        $this->dlnaName = $dlna->friendlyName();
+    }
+
+    /**
+     * Saves the DLNA settings.
+     *
+     * Switching it on without choosing a profile is refused rather than
+     * defaulted: DLNA cannot ask who is browsing, so the profile *is* the
+     * access control, and quietly picking one would be picking who can see
+     * what.
+     */
+    public function saveDlna(): void
+    {
+        $settings = app(SettingsService::class);
+
+        if ($this->dlnaEnabled && $this->dlnaProfile === null) {
+            Notification::make()
+                ->title('Choose which profile DLNA shows')
+                ->body('A TV cannot say who is watching, so one profile stands for every device on the network.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $settings->set(DlnaSettings::ENABLED, $this->dlnaEnabled);
+        $settings->set(DlnaSettings::PROFILE, $this->dlnaProfile);
+        $settings->set(DlnaSettings::NAME, trim($this->dlnaName));
+
+        Notification::make()
+            ->title($this->dlnaEnabled ? 'Advertising on the local network' : 'No longer advertising')
+            ->body($this->dlnaEnabled
+                ? 'Devices on this network will list it within a minute or so.'
+                : 'Devices will drop it from their lists shortly.')
+            ->success()
+            ->send();
+    }
+
+    /**
+     * The profiles DLNA can be pointed at.
+     *
+     * This account's only. Profiles belong to accounts, and a server with more
+     * than one would otherwise offer another household's profiles as the face
+     * of the living-room TV.
+     */
+    public function profileOptions(): array
+    {
+        return Profile::query()
+            ->where('user_id', Auth::id())
+            ->orderByDesc('is_owner')
+            ->orderBy('name')
+            ->get()
+            ->mapWithKeys(fn (Profile $p) => [
+                $p->id => $p->max_rating !== null
+                    ? "{$p->name} (up to {$p->max_rating})"
+                    : $p->name,
+            ])
+            ->all();
     }
 
     public function retest(): void

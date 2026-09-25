@@ -18,10 +18,11 @@
         </include>
     </source>
     <php>
-        <!-- The suite needs more than PHP's 128M default: it dies partway
-             through rendering a Blade view, which reads like a broken test
-             and is not one (S-382). Set here rather than in php.ini so the
-             suite carries its own requirement and passes on a fresh machine. -->
+        <!-- The suite needs more than a stock 128M php.ini gives it: the run
+             dies part-way through with a memory exhaustion inside symfony/mime
+             rather than a test failure, which reads as a broken test rather
+             than a missing setting (S-382). Set here so the suite does not
+             depend on how the machine's PHP happens to be configured. -->
         <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>

@@ -13,7 +13,8 @@
 #   B. Run PHP's built-in server per worker (dev-grade) — not recommended.
 #
 # Until php-cgi packaging lands, this installs the pieces that DO work on Windows
-# today — the queue worker and scheduler as services using the bundled php.exe,
+# today — the queue worker, scheduler and DLNA discovery as services using the
+# bundled php.exe,
 # plus Caddy as a static file server — and prints clearly what is still missing
 # for full HTTP serving. Run in an elevated PowerShell.
 #
@@ -78,6 +79,12 @@ Install-CommandService -Name 'SoundChexQueue' -DisplayName 'SoundChex Queue Work
     -Exe $php -Arguments "`"$artisan`" queue:work --tries=1 --timeout=21900"
 Install-CommandService -Name 'SoundChexScheduler' -DisplayName 'SoundChex Scheduler' `
     -Exe $php -Arguments "`"$artisan`" schedule:work"
+
+# DLNA discovery (S-7): holds a UDP socket on port 1900 so TVs and consoles
+# find the media server. Harmless when DLNA is switched off — the command
+# checks the setting on every loop and simply does not answer.
+Install-CommandService -Name 'SoundChexDlna' -DisplayName 'SoundChex DLNA Discovery' `
+    -Exe $php -Arguments "`"$artisan`" dlna:serve"
 
 # HTTP front:
 if (Test-Path $phpCgi) {
