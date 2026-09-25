@@ -120,4 +120,68 @@ class AlbumTitleNormalizerTest extends TestCase
 
         return $item;
     }
+    /* ------------------------------------------ stylised letters (S-383) --- */
+
+    public function test_a_dollar_written_for_an_s_keys_the_same_as_the_letter(): void
+    {
+        // "$UICIDEBOY$" means an S, but punctuation stripping deleted the
+        // character outright — so the same album keyed two ways and showed
+        // twice on the artist page.
+        $normalizer = app(AlbumTitleNormalizer::class);
+
+        $this->assertSame(
+            $normalizer->canonicalKey('DirtierNastierSuicide'),
+            $normalizer->canonicalKey('DIRTIERNASTIER$UICIDE'),
+        );
+    }
+
+    public function test_albums_that_merely_share_a_stylised_family_stay_apart(): void
+    {
+        // Dirtier, Dirtiest and Dirty are three records, not one.
+        $normalizer = app(AlbumTitleNormalizer::class);
+
+        $keys = array_map(
+            fn (string $album): string => $normalizer->canonicalKey($album),
+            ['DIRTYNASTY$UICIDE', 'DIRTIERNASTIER$UICIDE', 'DIRTIESTNASTIEST$UICIDE'],
+        );
+
+        $this->assertCount(3, array_unique($keys));
+    }
+
+    /**
+     * Digits are deliberately not folded.
+     *
+     * Folding them was tried and reverted: it turns "Blink-182" into
+     * "blinki82" and "Sum 41" into "sum ai". A wrong merge hides music, while
+     * a missed one only duplicates a tile — so the cautious failure is the
+     * right one.
+     */
+    public function test_numbers_in_a_title_are_left_alone(): void
+    {
+        $normalizer = app(AlbumTitleNormalizer::class);
+
+        $this->assertNotSame(
+            $normalizer->canonicalKey('Album 3'),
+            $normalizer->canonicalKey('Album III'),
+        );
+        $this->assertSame('blink182', $normalizer->canonicalKey('Blink-182'));
+        $this->assertSame('sum 41', $normalizer->canonicalKey('Sum 41'));
+    }
+
+    public function test_a_title_that_is_only_punctuation_keeps_its_identity(): void
+    {
+        // Ed Sheeran's "=" and "+" and XXXTENTACION's "?" all strip to an
+        // empty key, which made every one of them the same album. Found in
+        // the real library while fixing the $/S collision.
+        $normalizer = app(AlbumTitleNormalizer::class);
+
+        $keys = array_map(
+            fn (string $album): string => $normalizer->canonicalKey($album),
+            ['=', '?', '+'],
+        );
+
+        $this->assertCount(3, array_unique($keys));
+        $this->assertNotContains('', $keys);
+    }
+
 }
