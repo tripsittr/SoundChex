@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SoundChex bundled server — DLNA discovery (launchd, macOS). S-7.
+  Answers SSDP searches so TVs, consoles and receivers find the media server.
+  Its own process because it holds a UDP socket open on port 1900, which
+  PHP-FPM cannot do. Harmless when DLNA is switched off: the command checks
+  the setting on every loop and simply does not answer.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.soundchex.dlna</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{RUNTIME_DIR}}/bin/php</string>
+		<string>{{APP_DIR}}/artisan</string>
+		<string>dlna:serve</string>
+	</array>
+	<key>KeepAlive</key>
+	<true/>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>{{LOG_DIR}}/dlna.log</string>
+	<key>StandardOutPath</key>
+	<string>{{LOG_DIR}}/dlna.log</string>
+	<key>WorkingDirectory</key>
+	<string>{{APP_DIR}}</string>
+</dict>
+</plist>
