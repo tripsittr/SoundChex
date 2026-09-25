@@ -6,9 +6,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Enums\MediaItemType;
 use App\Http\Resources\MediaItemResource;
 use App\Models\MediaItem;
 use App\Services\ContentGate;
+use App\Services\SmartShuffle;
 use App\Services\CurrentProfile;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -50,6 +52,37 @@ class LibraryController extends Controller
     private function profiles(): CurrentProfile
     {
         return app(CurrentProfile::class);
+    }
+
+    /**
+     * A shuffled queue of the music library (S-289).
+     *
+     * `smart=1` weights the draw by what this profile actually plays, rather
+     * than treating a library of thousands uniformly — the third state of the
+     * shuffle button. Without it, an ordinary uniform shuffle.
+     *
+     * Built here rather than on the device: the phone would have to hold the
+     * whole library and the whole play history to weight anything.
+     */
+    public function shuffle(Request $request): JsonResponse
+    {
+        $limit = min(max((int) $request->integer('limit', 200), 1), 500);
+
+        $items = $request->boolean('smart')
+            ? app(SmartShuffle::class)->queue($this->profiles()->get()?->id, $limit)
+            : $this->gate()
+                ->apply(MediaItem::query())
+                ->where('media_items.type', MediaItemType::Music)
+                ->whereNotNull('media_items.file_path')
+                ->with(['musicMetadata', 'plays'])
+                ->inRandomOrder()
+                ->limit($limit)
+                ->get();
+
+        return response()->json([
+            'items' => MediaItemResource::collection($items),
+            'smart' => $request->boolean('smart'),
+        ]);
     }
 
     /**

@@ -7,6 +7,8 @@ namespace App\Http\Controllers;
 
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
+use App\Services\CurrentProfile;
+use App\Services\SmartShuffle;
 use App\Models\Person;
 use App\Services\AlbumBrowser;
 use App\Services\ContentGate;
@@ -42,8 +44,23 @@ class AlbumController extends Controller
      * Randomised in SQL rather than by fetching and shuffling, so the database
      * does the work and only the chosen rows are hydrated.
      */
-    public function shuffleAll(): JsonResponse
+    public function shuffleAll(Request $request): JsonResponse
     {
+        // Smart shuffle weights the draw by what this profile actually plays,
+        // rather than treating a library of thousands uniformly (S-289). Asked
+        // for by the third state of the shuffle button.
+        if ($request->boolean('smart')) {
+            $items = app(SmartShuffle::class)->queue(
+                app(CurrentProfile::class)->get()?->id,
+                200,
+            );
+
+            return response()->json([
+                'queue' => $items->map(fn (MediaItem $item) => $item->playerPayload())->values(),
+                'smart' => true,
+            ]);
+        }
+
         $items = $this->gate
             ->apply(MediaItem::query())
             ->where('media_items.type', MediaItemType::Music)
