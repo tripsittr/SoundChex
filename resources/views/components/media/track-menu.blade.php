@@ -127,6 +127,24 @@
 
         @if ($single)
             <div class="my-1 border-t border-base-700"></div>
+
+            {{--
+                Reporting hides the item from the library until an admin
+                clears it (S-396), so this is not a one-tap action: the
+                handler confirms, saying exactly that, before it even asks
+                for a reason.
+            --}}
+            <button type="button"
+                    data-send-for-review="{{ $items->first()->id }}"
+                    data-title="{{ $items->first()->title }}"
+                    role="menuitem"
+                    class="track-menu-item">
+                <svg class="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Send for review
+            </button>
+
             <a href="{{ route('media.show', $items->first()) }}" role="menuitem" class="track-menu-item">
                 <svg class="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path d="M12 8h.01M11 12h1v4h1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" />

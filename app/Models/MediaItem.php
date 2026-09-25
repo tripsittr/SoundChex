@@ -10,6 +10,7 @@ use App\Enums\DuplicateStatus;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Enums\ReviewReason;
 use App\Models\Scopes\ResolvedScope;
 use App\Observers\MediaItemObserver;
 use App\Plugins\Registry;
@@ -82,6 +83,51 @@ class MediaItem extends Model
         return static::unresolved()
             ->with(is_string($with) ? func_get_args() : $with)
             ->find($this->getKey());
+    }
+
+    /**
+     * Reports raised against this item.
+     *
+     * @return HasMany<MediaItemReport, $this>
+     */
+    public function reports(): HasMany
+    {
+        return $this->hasMany(MediaItemReport::class)->latest();
+    }
+
+    /**
+     * Sends this item back for review, hiding it from the library (S-398).
+     *
+     * The hide is the point, not a side-effect: the owner's rule is that
+     * anything uncertain leaves the library until it is settled (S-396), and
+     * an item somebody has just called wrong is exactly that. The apps say so
+     * plainly and make the user confirm before the reason is even asked for,
+     * so this is never a surprise.
+     *
+     * Idempotent on the item: a second report on an already-hidden item adds
+     * the report and leaves the status alone. `reviewed_at` is cleared because
+     * an admin's earlier "I have looked at this" no longer holds once someone
+     * has said it is still wrong.
+     */
+    public function sendForReview(
+        ReviewReason $reason,
+        ?string $note = null,
+        ?int $userId = null,
+        ?int $profileId = null,
+    ): MediaItemReport {
+        $report = $this->reports()->create([
+            'reason' => $reason,
+            'note' => $note,
+            'user_id' => $userId,
+            'profile_id' => $profileId,
+        ]);
+
+        $this->forceFill([
+            'processing_status' => ProcessingStatus::NeedsReview,
+            'reviewed_at' => null,
+        ])->save();
+
+        return $report;
     }
 
     /** Whether this item is hidden from the library. */

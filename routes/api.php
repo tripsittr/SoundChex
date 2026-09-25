@@ -163,6 +163,12 @@ Route::prefix('v1')->group(function (): void {
         Route::post('/items/{item}/progress', [MediaController::class, 'saveProgress'])
             ->name('api.items.progress.save');
 
+        // "This item is wrong, and here is why" — sent from the apps, settled
+        // in the admin panel. Flagging hides the item from the library until
+        // it is (S-398).
+        Route::post('/items/{item}/review', [MediaController::class, 'sendForReview'])
+            ->name('api.items.review');
+
         // Caption tracks for a video, and one track's WebVTT content — the
         // token-authed equivalent of the web's session-only subtitle routes, so
         // the native player can list and load subtitles (S-160).

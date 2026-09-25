@@ -2,6 +2,10 @@
 // Copyright (C) 2026 SoundChex
 
 import { logFailure } from './log.js';
+// The track menu's other new entry (S-399). Wired from here rather than as
+// its own Vite entry point because this module already owns the menu and is
+// loaded wherever the menu renders.
+import { setupSendForReview } from './send-for-review.js';
 
 /**
  * Adding tracks to a playlist.
@@ -279,8 +283,12 @@ function setupPlaylists() {
     });
 }
 
-document.addEventListener('livewire:navigated', () => setupPlaylists());
+document.addEventListener('livewire:navigated', () => {
+    setupPlaylists();
+    setupSendForReview();
+});
 
 setupPlaylists();
+setupSendForReview();
 
 export { setupPlaylists };

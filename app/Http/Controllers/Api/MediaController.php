@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\ReviewReason;
 use App\Events\PlaybackCompleted;
 use App\Events\PlaybackProgress;
 use App\Events\PlaybackRecorded;
@@ -12,8 +13,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\MediaCenterController;
 use App\Http\Resources\MediaItemResource;
 use App\Models\MediaItem;
-use App\Plugins\Registry;
 use App\Models\MediaPlay;
+use App\Plugins\Registry;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
 use App\Services\LyricsService;
@@ -22,6 +23,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 
@@ -87,6 +89,40 @@ class MediaController extends Controller
             'position' => (int) ($play?->position_seconds ?? 0),
             'completed' => (bool) ($play?->completed ?? false),
         ]);
+    }
+
+    /**
+     * Sends an item back for review, with a reason (S-398).
+     *
+     * Takes an id rather than a route-model binding, because the binding is
+     * scoped and a reported item is hidden: the first report would work and
+     * every one after it would 404. Two people hitting the same broken file
+     * is exactly the case worth hearing about.
+     */
+    public function sendForReview(Request $request, int $item): JsonResponse
+    {
+        $data = $request->validate([
+            'reason' => ['required', Rule::enum(ReviewReason::class)],
+            // Long enough for a sentence about what is wrong, short enough
+            // that the column is not a dumping ground.
+            'note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $media = MediaItem::unresolved()->findOrFail($item);
+
+        $report = $media->sendForReview(
+            ReviewReason::from($data['reason']),
+            $data['note'] ?? null,
+            $request->user()?->id,
+            app(CurrentProfile::class)->id(),
+        );
+
+        return response()->json([
+            'id' => $report->id,
+            'reason' => $report->reason->value,
+            // So the client can say what just happened rather than guessing.
+            'hidden' => $media->isUnresolved(),
+        ], 201);
     }
 
     /**
