@@ -157,8 +157,11 @@ export function bindNowPlayingSheet() {
     function setModes() {
         const { ui } = current;
 
-        ui.shuffle.classList.toggle('text-accent', player.shuffle);
-        ui.shuffle.setAttribute('aria-pressed', String(player.shuffle));
+        ui.shuffle.classList.toggle('text-accent', player.shuffleMode !== 'off');
+        ui.shuffle.setAttribute('aria-pressed', String(player.shuffleMode !== 'off'));
+        // Three states here too, or the sheet and the bar disagree about what
+        // the same button is doing (S-289).
+        ui.shuffle.dataset.mode = player.shuffleMode;
 
         ui.repeat.classList.toggle('text-accent', player.repeat !== 'off');
         ui.repeat.dataset.mode = player.repeat;
