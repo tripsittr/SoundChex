@@ -16,8 +16,9 @@ schema, a search box and a player. A song, an episode and a chapter are all
 things you were part-way through, and the app treats them that way.
 
 **Metadata that fills itself in.** Watch folders are scanned, files are
-identified, and nine sources are asked in turn — TMDB, MusicBrainz, AcoustID,
-Open Library, iTunes, Spotify, OpenSubtitles and the files' own tags. Every run
+identified, and nine sources are asked in turn — TMDB (films and shows),
+MusicBrainz, AcoustID, Deezer, iTunes, Spotify, Open Library and the files' own
+tags. Subtitles come separately, from OpenSubtitles. Every run
 snapshots what it replaced, so a provider revising its own record is
 recoverable rather than merely regrettable.
 
@@ -42,16 +43,37 @@ a megabyte gzipped — so browsing, search and playback of downloaded files work
 with no network at all. Downloads survive the app closing and resume when it
 comes back.
 
+**Playing to whatever is in the room.** Adaptive HLS for anything that will not
+play directly, AirPlay from the apps, and a DLNA/UPnP server so devices with no
+SoundChex app at all — older smart TVs, consoles, network receivers — can browse
+and play the library natively. Off by default; turned on from Admin → Network.
+
+**Shuffle that has listened to you.** Smart shuffle weights the queue by what
+this profile actually plays, rather than dealing the same uniform random
+sequence every time.
+
+**Duplicates found and merged.** Two passes: byte-identical files of any type,
+then a music-content match on ISRC, MusicBrainz id, AcoustID fingerprint and
+fuzzy title. The second pass only ever proposes — merging is yours to confirm.
+
+**Plugins.** A plugin is a folder with a manifest and a class: it can hook
+events, filter what the pipeline produces, add cover sources and notification
+targets, and ship its own admin page. Installed from a catalog at runtime, so
+adding one does not mean rebuilding the server. See
+**[docs/plugins/](docs/plugins/)** and the worked examples in
+`plugins/examples/`.
+
 ---
 
 ## How it is put together
 
 |              |                                                        |
 | ------------ | ------------------------------------------------------ |
-| **Server**   | Laravel 13, PHP 8.4, SQLite                            |
+| **Server**   | Laravel 13, PHP 8.3+, SQLite                           |
 | **Admin**    | Filament 5                                             |
 | **Frontend** | Blade, Tailwind v4, Alpine, vanilla ES modules         |
-| **Apps**     | Tauri 2 — macOS, Windows, Linux, iOS                   |
+| **Apps**     | Tauri 2 — macOS, Windows, Linux                        |
+| **iOS**      | Native Swift/SwiftUI, in [SoundChexiOS][ios-repo]      |
 | **Media**    | FFmpeg for transcoding, Chromaprint for fingerprinting |
 
 SQLite rather than MySQL on purpose: one file to back up, no service to keep
@@ -65,7 +87,7 @@ offline shell live inside the binary, and those need a reinstall.
 
 ## Getting it running
 
-Requires PHP 8.4+, Node 22+, Composer, and FFmpeg on the path.
+Requires PHP 8.3+, Node 22+, Composer, and FFmpeg on the path.
 
 ```bash
 git clone https://github.com/tripsittr/SoundChex.git
@@ -126,7 +148,6 @@ login on macOS.
 ## The native apps
 
 ```bash
-npm run tauri ios build -- --export-method debugging
 npm run tauri build                    # desktop
 npm run build:server                   # the host app, with service controls
 npm run reinstall:server               # rebuild + reinstall /Applications/SoundChex Server.app
@@ -138,13 +159,17 @@ For a faster reinstall when the app is already built:
 npm run reinstall:server -- --skip-build
 ```
 
-iOS needs a paid Apple developer account for a profile that lasts a year; a
-free one expires in seven days.
+iOS is not built here. It is a native Swift app in its own repository,
+[SoundChexiOS][ios-repo], built with XcodeGen and Xcode against this server's
+JSON API. It needs a paid Apple developer account for a profile that lasts a
+year; a free one expires in seven days.
 
 Tauri builds for the platform it runs on — a Mac produces the `.dmg`, not the
 `.msi`. **[docs/BuildingOnEachPlatform.md](docs/BuildingOnEachPlatform.md)**
-covers what each target needs, and is honest about which have actually been
-built: macOS and iOS have, Windows, Linux and Android have not.
+covers what each target needs, and is honest about how far each has actually
+got: macOS is built and run daily; Windows and Linux compile in CI on every
+push to `main` but no one has yet *run* either binary on its own platform;
+Android has no Tauri project generated at all.
 
 The `.dmg` build scripts run under `CI=true` (baked into `tauri:build` and
 `build:server`). Without it, Tauri's `bundle_dmg.sh` runs AppleScript to style
@@ -172,10 +197,13 @@ one measured.
 ## Tests
 
 ```bash
-php artisan test     # 289 PHP
-npx vitest run       # 87 unit
-npx playwright test  # 282 browser, across desktop, mobile and shell
+php artisan test     # PHP
+npx vitest run       # JS unit
+npx playwright test  # browser, across desktop, mobile and shell
 ```
+
+Counts are deliberately not written down here: they were wrong by several
+hundred within a few months of being typed. Run the suite for the number.
 
 The browser tests run against an isolated database and generated media in a
 scratch directory. They never touch a real library — the bootstrap refuses to
@@ -188,8 +216,13 @@ run if its paths are not scratch paths.
 - **[AGENTS.md](AGENTS.md)** — architecture, conventions and the rules that
   matter, including the two about never committing media and verifying before
   destroying.
-- **[Documentation & Planning/Issues.md](Documentation%20&%20Planning/Issues.md)**
-  — every feature, fix and bug being tracked, and where each got to.
+- **The admin Tracker** — every feature, fix and bug for *all* SoundChex repos
+  is tracked in the landing site's admin panel ([SoundChexWebsite][web-repo] →
+  `/admin` → Tracker), not in a file here. Add one with `php artisan
+  track:issue` and move it with `php artisan track:move`, both run from that
+  repo. `Documentation & Planning/Issues.md` is now only a pointer to it.
+- **[changelog/](changelog/)** — one entry per pull request, saying what
+  changed and what is still broken.
 - **[Documentation & Planning/Status.md](Documentation%20&%20Planning/Status.md)**
   — what exists, what does not, and what is next.
 - **[docs/WorkingOnSoundChex.md](docs/WorkingOnSoundChex.md)** — what this
@@ -219,9 +252,10 @@ The application is the open-source part; any paid **SoundChex network/relay
 service** is a separate product built around it, and does not change these terms
 for the app itself.
 
-**Getting the source of a running instance.** Every SoundChex server exposes the
-complete corresponding source of the exact build it is running — see the *About*
-page in the app, which links to this repository at the running version. If you
+**Getting the source of a running instance.** The source of every build is this
+repository, linked from the app. Pinning that link to the exact running build —
+a version and an About page that names it — is not done yet (S-401); until it
+is, take the source from the commit your build was made at. If you
 modify SoundChex and host it for others, you must make your modified source
 available to those users in the same way (a link in the app or on your site
 satisfies AGPL §13).
@@ -229,22 +263,23 @@ satisfies AGPL §13).
 Your media is not covered by any of this. SoundChex is a library for files you
 already have; it neither acquires them nor helps you to.
 
-
 ---
-
 
 ## AI Disclaimer
 
-SoundChex is initially build by Blaze Claeson (@tripsittr) and Claude Code. 
+SoundChex is initially built by Blaze Claeson (@tripsittr) and Claude Code.
 Claude Code assists in the following:
 - Test writing
 - GitHub management (PRs, commits, merging, and general housekeeping tasks)
-- Code writing for Android, iOS, and various other operating systems
+- Code writing for iOS (in the separate SoundChexiOS repository) and the other desktop platforms
 - Code writing for Tauri, Rust, and cross-platform capabilities
 - Planning, document drafting, and maintaining the landing site roadmap and tracker on the backend
 
-All code is reviewed, tested, and put to use in the real world as soon as it is pushed. 
+All code is reviewed and tested before it is merged, and the macOS build is in daily use.
 
 This is a passion project of mine. I have attempted to build out a media server for a long time, but I was never able to get the features and support I wanted. Having learned Laravel, PHP, and various languages and frameworks around it, I decided why not have Claude build the bridge I was missing using Tauri, porting the web app to other platforms.
 
 Thank you for checking out my project. I do use this myself every day and hope you will too. Feel free to contribute, give it a star, or sponsor me to help keep this project going!
+
+[ios-repo]: https://github.com/tripsittr/SoundChexiOS
+[web-repo]: https://github.com/tripsittr/SoundChexWebsite

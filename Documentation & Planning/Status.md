@@ -2,10 +2,12 @@
 
 What exists, what doesn't, and what's next. This is the file to read first.
 
-**`Issues.md` is the list.** Every feature, fix and bug lives there, and a
-finished plan is deleted once its entry records what was built and what
-verified it — a plan kept after the work is done is a second, staler answer to
-a question already answered.
+**The admin Tracker is the list.** Every feature, fix and bug lives in the
+landing site's admin panel (`SoundChexWebsite` repo → `/admin` → Tracker), not
+in `Issues.md`, which is now only a pointer to it. A finished plan is deleted
+once its tracker item records what was built and what verified it — a plan kept
+after the work is done is a second, staler answer to a question already
+answered.
 
 What remains here is either an unstarted plan or reference:
 
