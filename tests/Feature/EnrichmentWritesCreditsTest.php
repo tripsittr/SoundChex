@@ -6,6 +6,7 @@
 namespace Tests\Feature;
 
 use App\Enums\MediaItemType;
+use App\Enums\ProcessingStatus;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
 use App\Models\User;
@@ -144,6 +145,46 @@ class EnrichmentWritesCreditsTest extends TestCase
             ->handle(...$this->dependencies());
 
         $this->assertNotSame('', $item->fresh()->title);
+    }
+
+    /* ------------------------------------------- missing album (S-384) --- */
+
+    public function test_a_track_with_no_album_is_sent_for_review(): void
+    {
+        // Enrichment cannot tell "a single with no album" from "an album tag
+        // we failed to read", and used to call both complete — so 83 tracks
+        // sat unflagged until a client grouped them under "Unknown album".
+        $item = $this->track('Some Artist');
+
+        app(EnrichMediaItemJob::class, ['mediaItemId' => $item->id])
+            ->handle(...$this->dependencies());
+
+        $this->assertSame(ProcessingStatus::NeedsReview, $item->fresh()->processing_status);
+    }
+
+    public function test_a_track_with_an_album_completes_normally(): void
+    {
+        $item = $this->track('Some Artist');
+        $item->musicMetadata->forceFill(['album' => 'A Record'])->save();
+
+        app(EnrichMediaItemJob::class, ['mediaItemId' => $item->id])
+            ->handle(...$this->dependencies());
+
+        $this->assertSame(ProcessingStatus::Complete, $item->fresh()->processing_status);
+    }
+
+    public function test_a_track_a_person_already_judged_is_left_alone(): void
+    {
+        // Dismissing "this really is a single" must stick, or the queue fills
+        // with the same tracks after every scan — the trap S-302 fixed for
+        // match review.
+        $item = $this->track('Some Artist');
+        $item->forceFill(['reviewed_at' => now()])->save();
+
+        app(EnrichMediaItemJob::class, ['mediaItemId' => $item->id])
+            ->handle(...$this->dependencies());
+
+        $this->assertSame(ProcessingStatus::Complete, $item->fresh()->processing_status);
     }
 
     /** @return array<int, object> */

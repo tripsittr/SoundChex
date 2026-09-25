@@ -244,9 +244,43 @@ class AlbumTitleNormalizer
      */
     private function stripToKey(string $value): string
     {
-        $value = preg_replace('/[[:punct:]]/u', '', $value) ?? $value;
+        $folded = $this->foldStylisedLetters($value);
 
-        return trim(preg_replace('/\s+/', ' ', $value) ?? $value);
+        $stripped = preg_replace('/[[:punct:]]/u', '', $folded) ?? $folded;
+        $stripped = trim(preg_replace('/\s+/', ' ', $stripped) ?? $stripped);
+
+        // A title that is *only* punctuation strips to nothing, and every such
+        // album then shares the empty key: Ed Sheeran's "=" and "+" and
+        // XXXTENTACION's "?" would collapse into one record. Keep the original
+        // when there is no letter left to key on — it is a real title, just an
+        // unusual one (S-383).
+        return $stripped !== '' ? $stripped : mb_strtolower(trim($value));
+    }
+
+    /**
+     * Turns letters written as symbols back into letters (S-383).
+     *
+     * A band that writes its name "$UICIDEBOY$" means an S, but punctuation
+     * stripping deletes the character outright — so "DIRTIERNASTIER$UICIDE"
+     * keyed as "dirtiernastieruicide" while "DirtierNastierSuicide" keyed as
+     * "dirtiernastiersuicide", and the same album showed twice on the artist
+     * page because the two keys could never meet.
+     *
+     * Currency symbols only, and deliberately nothing else. Digits were tried
+     * and reverted: folding them turns "Blink-182" into "blinki82", "Sum 41"
+     * into "sum ai" and "Album 3" into "album e", which would merge albums
+     * that are genuinely different — a worse failure than the one being
+     * fixed, because a wrong merge hides music while a missed one only
+     * duplicates a tile. `!`→i and `@`→a are out for the same reason: a stray
+     * exclamation mark is far commoner than leetspeak.
+     */
+    private function foldStylisedLetters(string $value): string
+    {
+        return strtr($value, [
+            '$' => 's',
+            '£' => 'l',
+            '€' => 'e',
+        ]);
     }
 
     /**
