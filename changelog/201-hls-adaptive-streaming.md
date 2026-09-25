@@ -55,14 +55,11 @@ twelve seconds from the tap. The frame rate is now probed.
   library would spend hours of CPU on things nobody opens.
 - `-ss` goes **before** `-i`, where seeking is near-instant rather than
   decoding everything up to that point and discarding it.
-- Session directories are not cleaned up yet — see below.
+- Finished sessions are swept hourly. Age is measured from the **newest
+  segment**, not the directory's own timestamp — that does not move as
+  segments are added, so a long film would otherwise be swept mid-playback.
 
 ## Still wrong
-
-**No cleanup of finished sessions.** Segments accumulate under
-`storage/app/private/hls` and nothing removes them. That wants a scheduled
-sweep before this is left running for long; it is the one piece I would not
-call finished.
 
 **No client uses it yet.** The endpoints answer correctly and the segmenter is
 verified end to end, but neither the web player nor iOS asks
@@ -76,9 +73,9 @@ home server, and the ladder can come later.
 
 ## Tests
 
-PHP · 29 new across three files — the policy and its address handling (13),
-the ffmpeg command shape and path guard (9), and the endpoints (7). Related
-suites 35/35.
+PHP · 32 new across three files — the policy and its address handling (13),
+the ffmpeg command shape, path guard and session sweep (12), and the endpoints
+(7). Related suites 38/38.
 
 The segmenter was verified against a real encode, which is how the frame-rate
 bug was found; the suite itself stubs ffmpeg, because a test that transcodes

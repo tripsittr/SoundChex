@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
+use App\Services\Streaming\HlsSegmenter;
 use App\Models\DeviceReport;
 use App\Models\Notification;
 use App\Services\LibrarySettings;
@@ -64,6 +65,17 @@ Schedule::command('db:backup')
 Schedule::call(fn () => Notification::prune())
     ->daily()
     ->name('prune-notifications')
+    ->withoutOverlapping();
+
+/*
+| HLS segments are written for one viewing and never read again once it ends.
+| A film is gigabytes of them, so without a sweep they accumulate until the
+| disk fills (S-29). Two hours is comfortably longer than any film, and age is
+| measured from the newest segment so a long one is not swept mid-playback.
+*/
+Schedule::call(fn () => app(HlsSegmenter::class)->sweep())
+    ->hourly()
+    ->name('sweep-hls-sessions')
     ->withoutOverlapping();
 
 /*

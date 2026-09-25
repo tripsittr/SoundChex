@@ -79,6 +79,59 @@ class HlsSegmenter
         return $session;
     }
 
+    /**
+     * Deletes sessions nothing has touched recently, returning how many went.
+     *
+     * Segments are written for one viewing and never read again once it ends,
+     * so without this they accumulate until the disk fills — a film is
+     * gigabytes of them. Age is measured from the *newest* file in a session,
+     * not the directory's own timestamp, which does not move as segments are
+     * added: a long film would otherwise be swept while still playing.
+     */
+    public function sweep(int $olderThanMinutes = 120): int
+    {
+        $root = storage_path('app/private/'.self::SESSION_ROOT);
+
+        if (! is_dir($root)) {
+            return 0;
+        }
+
+        $cutoff = time() - ($olderThanMinutes * 60);
+        $removed = 0;
+
+        foreach (glob($root.'/*', GLOB_ONLYDIR) ?: [] as $directory) {
+            if ($this->lastTouched($directory) > $cutoff) {
+                continue;
+            }
+
+            foreach (glob($directory.'/*') ?: [] as $file) {
+                @unlink($file);
+            }
+
+            if (@rmdir($directory)) {
+                $removed++;
+            }
+        }
+
+        if ($removed > 0) {
+            Log::info('HLS: swept finished sessions', ['sessions' => $removed]);
+        }
+
+        return $removed;
+    }
+
+    /** The newest modification time in a session directory. */
+    private function lastTouched(string $directory): int
+    {
+        $newest = (int) @filemtime($directory);
+
+        foreach (glob($directory.'/*') ?: [] as $file) {
+            $newest = max($newest, (int) @filemtime($file));
+        }
+
+        return $newest;
+    }
+
     /** The absolute path to a session's directory. */
     public function directoryFor(string $session): string
     {

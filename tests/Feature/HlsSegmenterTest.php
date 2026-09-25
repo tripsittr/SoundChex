@@ -122,6 +122,62 @@ class HlsSegmenterTest extends TestCase
         }
     }
 
+    /* ------------------------------------------------------------ sweep --- */
+
+    /**
+     * Builds a session directory whose newest file is this old, in minutes.
+     *
+     * Named `sessionDir`, not `session`: TestCase already has a `session()`.
+     */
+    private function sessionDir(string $name, int $ageMinutes): string
+    {
+        $directory = app(HlsSegmenter::class)->directoryFor($name);
+
+        @mkdir($directory, 0777, true);
+        file_put_contents($directory.'/index.m3u8', '#EXTM3U');
+        file_put_contents($directory.'/seg000.ts', 'bytes');
+
+        $when = time() - ($ageMinutes * 60);
+        touch($directory.'/index.m3u8', $when);
+        touch($directory.'/seg000.ts', $when);
+        touch($directory, $when);
+
+        return $directory;
+    }
+
+    public function test_it_sweeps_a_session_nothing_has_touched(): void
+    {
+        // A film is gigabytes of segments; without this they accumulate until
+        // the disk fills.
+        $old = $this->sessionDir(str_repeat('a', 32), ageMinutes: 300);
+
+        $this->assertSame(1, app(HlsSegmenter::class)->sweep(120));
+        $this->assertDirectoryDoesNotExist($old);
+    }
+
+    public function test_it_leaves_a_session_that_is_still_being_written(): void
+    {
+        // Age is measured from the newest segment, not the directory's own
+        // timestamp — which does not move as segments are added, so a long
+        // film would otherwise be swept while still playing.
+        $directory = app(HlsSegmenter::class)->directoryFor(str_repeat('b', 32));
+
+        @mkdir($directory, 0777, true);
+        file_put_contents($directory.'/index.m3u8', '#EXTM3U');
+        // The directory itself looks old; a segment written moments ago does
+        // not.
+        touch($directory, time() - 60 * 60 * 5);
+        file_put_contents($directory.'/seg999.ts', 'just written');
+
+        $this->assertSame(0, app(HlsSegmenter::class)->sweep(120));
+        $this->assertDirectoryExists($directory);
+    }
+
+    public function test_sweeping_nothing_is_not_an_error(): void
+    {
+        $this->assertSame(0, app(HlsSegmenter::class)->sweep(120));
+    }
+
     public function test_a_missing_segment_is_null_rather_than_a_path(): void
     {
         // The route turns null into a 404; returning a path to a file that is
