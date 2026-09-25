@@ -2,10 +2,12 @@
     "$schema": "https://www.schemastore.org/package.json",
     "private": true,
     "license": "AGPL-3.0-or-later",
+    "version": "0.2.0",
     "type": "module",
     "scripts": {
-        "build": "vite build && node scripts/embed-offline-shell.mjs && node scripts/build-tauri-bridge.mjs",
+        "build": "node scripts/stamp-release.mjs && vite build && node scripts/embed-offline-shell.mjs && node scripts/build-tauri-bridge.mjs",
         "dev": "vite",
+        "release": "node scripts/release.mjs",
         "test": "vitest run",
         "test:watch": "vitest",
         "test:e2e": "bash tests/e2e/bootstrap.sh && playwright test",

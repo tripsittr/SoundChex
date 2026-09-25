@@ -242,12 +242,17 @@
                     {{-- SoundChex is AGPLv3. §13 requires that anyone interacting
                          with it over a network be offered its corresponding
                          source; this is that offer, reachable from every page a
-                         network user sees. --}}
+                         network user sees.
+
+                         Goes to About rather than straight to GitHub, because
+                         the offer has to name *this build*: About knows the
+                         version and the commit, and links the source pinned to
+                         it (S-401). A bare repository link is the project, not
+                         the thing serving you. --}}
                     <div class="border-t border-base-600 py-1">
-                        <a href="https://github.com/tripsittr/SoundChex" role="menuitem"
-                           target="_blank" rel="noopener"
+                        <a href="{{ route('media.about') }}" role="menuitem"
                            class="block px-3 py-2 text-xs text-ink-500 transition hover:bg-base-700 hover:text-ink-300">
-                            Open source (AGPLv3) &mdash; source code
+                            About &mdash; version and source (AGPLv3)
                         </a>
                     </div>
 

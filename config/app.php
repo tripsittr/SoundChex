@@ -24,17 +24,39 @@ return [
     |--------------------------------------------------------------------------
     |
     | Where the served app's footer points for the project's public
-    | information — source, licence and policies. The website is not on a
-    | stable public domain yet (W-11), so these default to the public GitHub
-    | repo, which is durable; set SOUNDCHEX_WEBSITE_URL to a real domain to
-    | point the legal links there instead.
+    | information — source, licence and policies.
+    |
+    | `repository` is also the AGPL §13 source offer: an operator running a
+    | modified build must point it at *their* fork, because their users are
+    | owed their source, not ours (S-401).
     |
     */
 
     'links' => [
-        'website' => env('SOUNDCHEX_WEBSITE_URL'),
+        'website' => env('SOUNDCHEX_WEBSITE_URL', 'https://soundchex.app'),
         'repository' => env('SOUNDCHEX_REPO_URL', 'https://github.com/tripsittr/SoundChex'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | This build (S-401, S-402)
+    |--------------------------------------------------------------------------
+    |
+    | Written at build time by `scripts/stamp-release.mjs`, so a packaged app
+    | knows what it is. A checkout that was never built through that script
+    | reports a dev version, which is honest rather than misleading.
+    |
+    | `commit` is what makes the source offer *corresponding*: builds ship
+    | from `main` between releases, so two servers can report the same version
+    | and be running different code. `modified` is set when the tree was dirty
+    | at build time — a build nobody else can reproduce from a public commit.
+    |
+    */
+
+    'version' => env('APP_VERSION', '0.0.0-dev'),
+    'commit' => env('APP_COMMIT'),
+    'source_url' => env('SOUNDCHEX_REPO_URL', 'https://github.com/tripsittr/SoundChex'),
+    'source_modified' => env('APP_SOURCE_MODIFIED', false),
 
     /*
     |--------------------------------------------------------------------------

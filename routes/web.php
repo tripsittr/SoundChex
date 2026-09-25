@@ -3,15 +3,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-use App\Http\Controllers\HlsController;
-use App\Http\Controllers\DlnaController;
-use App\Http\Controllers\AnnotationController;
 use App\Http\Controllers\AlbumController;
+use App\Http\Controllers\AnnotationController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\DlnaController;
+use App\Http\Controllers\HlsController;
 use App\Http\Controllers\MediaCenterController;
 use App\Http\Controllers\PlaylistController;
-use App\Http\Controllers\ProfileSettingsController;
+use App\Http\Controllers\PluginStyleController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ProfileSettingsController;
 use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\SubtitleController;
 use App\Http\Controllers\WatchController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\WatchlistController;
 use App\Http\Middleware\EnsureDlnaEnabled;
 use App\Http\Middleware\EnsureRegistrationIsOpen;
 use App\Http\Middleware\RequireProfileUnlock;
+use App\Services\NetworkAddresses;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
 
@@ -62,7 +64,7 @@ Route::get('/', fn () => redirect()->route(
 | any business asking.
 */
 Route::get('/soundchex-addresses.json', fn () => response()
-    ->json(['addresses' => app(App\Services\NetworkAddresses::class)->all()]))
+    ->json(['addresses' => app(NetworkAddresses::class)->all()]))
     ->middleware('auth')
     ->name('addresses');
 
@@ -113,7 +115,7 @@ Route::middleware(['auth'])->group(function (): void {
     // A plugin's compiled stylesheet (S-350). The file sits in the plugin's own
     // directory under application support, which is not web-served, so it is
     // handed out here — signed in, and only for an enabled plugin.
-    Route::get('/plugin-styles/{plugin}.css', \App\Http\Controllers\PluginStyleController::class)
+    Route::get('/plugin-styles/{plugin}.css', PluginStyleController::class)
         ->where('plugin', '[A-Za-z0-9._-]+')
         ->name('plugin.styles');
 
@@ -194,6 +196,11 @@ Route::middleware(['auth'])->group(function (): void {
             // What this device is holding offline. The list itself lives in
             // the browser, so this only renders the shell.
             Route::get('/downloads', [MediaCenterController::class, 'downloads'])->name('downloads');
+
+            // What this build is, and where its source lives. The AGPL §13
+            // offer has to name the build doing the serving, not the project
+            // in general (S-401).
+            Route::get('/about', [MediaCenterController::class, 'about'])->name('about');
 
             // Settings for whoever is watching, as opposed to the admin panel's
             // server-wide configuration. Declared before the {type} wildcard, or
