@@ -42,12 +42,17 @@
 
         {{-- Transport --}}
         <div class="flex shrink-0 items-center gap-1 sm:gap-2">
+            {{-- Three states, like repeat: off, shuffle, smart shuffle. The
+                 dot marks the third, the same way repeat-one is marked, so
+                 the difference is visible without a second icon (S-289). --}}
             <button type="button" id="np-shuffle"
-                    class="hidden rounded-md p-2 text-ink-500 transition hover:text-ink-100 sm:block"
+                    data-mode="off"
+                    class="relative hidden rounded-md p-2 text-ink-500 transition hover:text-ink-100 sm:block"
                     aria-label="Shuffle">
                 <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M16 3h5v5M4 20l17-17M21 16v5h-5M15 15l6 6M4 4l5 5" />
                 </svg>
+                <span class="absolute right-1 top-1 size-1.5 rounded-full bg-accent opacity-0 [[data-mode=smart]_&]:opacity-100"></span>
             </button>
 
             <button type="button" id="np-prev"
@@ -139,15 +144,32 @@
 
         <p class="text-xs font-medium uppercase tracking-wider text-ink-500">Now playing</p>
 
-        <button type="button"
-                id="np-sheet-queue-toggle"
-                class="flex size-10 items-center justify-center rounded-full text-ink-300 transition hover:bg-base-700 hover:text-ink-100"
-                aria-label="Show queue"
-                aria-expanded="false">
-            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 6h11M4 12h11M4 18h7M17 14v6M17 20l3-2-3-2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-        </button>
+        <div class="flex items-center gap-1">
+            {{-- Lyrics (S-301). Hidden until the track has some, so the bar
+                 does not offer a button that opens an empty panel. --}}
+            <button type="button"
+                    id="np-sheet-lyrics-toggle"
+                    class="flex size-10 items-center justify-center rounded-full text-ink-300 transition hover:bg-base-700 hover:text-ink-100"
+                    aria-label="Show lyrics"
+                    aria-expanded="false"
+                    hidden>
+                <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 18V5l12-2v13" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="6" cy="18" r="3" />
+                    <circle cx="18" cy="16" r="3" />
+                </svg>
+            </button>
+
+            <button type="button"
+                    id="np-sheet-queue-toggle"
+                    class="flex size-10 items-center justify-center rounded-full text-ink-300 transition hover:bg-base-700 hover:text-ink-100"
+                    aria-label="Show queue"
+                    aria-expanded="false">
+                <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 6h11M4 12h11M4 18h7M17 14v6M17 20l3-2-3-2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+        </div>
     </div>
 
     {{-- Artwork and the queue occupy the same space; the toggle swaps them. --}}
@@ -165,6 +187,15 @@
                 Queue
             </p>
             <ol id="np-sheet-queue" class="space-y-1 pb-4"></ol>
+        </div>
+
+        {{-- Lyrics. Scrolled programmatically when synced, so it keeps its own
+             scroll container rather than riding the sheet's (S-301). --}}
+        <div id="np-sheet-lyrics-pane" class="h-full overflow-y-auto px-6" hidden>
+            <p class="px-1 pb-2 pt-1 text-xs font-medium uppercase tracking-wider text-ink-500">
+                Lyrics
+            </p>
+            <div id="np-sheet-lyrics" class="space-y-3 pb-24 text-lg leading-relaxed"></div>
         </div>
     </div>
 
@@ -236,11 +267,14 @@
 
         <div class="flex items-center justify-between">
             <button type="button" id="np-sheet-shuffle"
-                    class="flex size-11 items-center justify-center rounded-full text-ink-400 transition hover:text-ink-100"
+                    data-mode="off"
+                    class="relative flex size-11 items-center justify-center rounded-full text-ink-400 transition hover:text-ink-100"
                     aria-label="Shuffle" aria-pressed="false">
                 <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
+                {{-- Marks smart shuffle, matching the bar (S-289). --}}
+                <span class="absolute right-2 top-2 size-1.5 rounded-full bg-accent opacity-0 [[data-mode=smart]_&]:opacity-100"></span>
             </button>
 
             <button type="button" id="np-sheet-prev"

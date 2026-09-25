@@ -389,6 +389,31 @@ class MediaItem extends Model
      * Storing an absolute URL for local art would bake one hostname into the
      * database and break every other way of reaching the server.
      */
+    /**
+     * The title as a filename a `Content-Disposition` header can carry.
+     *
+     * Symfony refuses a filename containing `/` or `\` outright — it throws
+     * rather than escaping — so a track called "AM/PM" made `response()->file()`
+     * raise a 500 before a single byte was sent, and every client reported it
+     * as simply not playing (S-393). 33 tracks in one real library were
+     * affected.
+     *
+     * Separators become a dash rather than being dropped: "AM/PM" reads as
+     * "AM-PM", where "AMPM" reads as a typo. A title that sanitises to nothing
+     * falls back to the id, because an empty filename is its own kind of
+     * broken.
+     */
+    public function downloadFilename(): string
+    {
+        $title = str_replace(['/', '\\'], '-', (string) $this->title);
+
+        // Control characters would break the header in a different way; the
+        // header is assembled from a value this server does not control.
+        $title = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $title));
+
+        return $title !== '' ? $title : 'media-'.$this->id;
+    }
+
     public function coverUrl(): ?string
     {
         $value = $this->cover_image_url;

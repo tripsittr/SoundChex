@@ -138,6 +138,9 @@ Route::prefix('v1')->group(function (): void {
 
         // The catalogue. Both go through ContentGate — see LibraryController.
         Route::get('/library', [LibraryController::class, 'index'])->name('api.library');
+        // Shuffle built server-side: the phone would need the whole library
+        // and the whole play history to weight anything (S-289).
+        Route::get('/library/shuffle', [LibraryController::class, 'shuffle'])->name('api.library.shuffle');
 
         // What has happened since this device last asked.
         Route::get('/notifications', [NotificationController::class, 'index'])

@@ -78,6 +78,7 @@ class EnrichMediaItemJob implements ShouldQueue
             $this->writeCredits($item);
             $this->tidyTitle($item);
             $this->normalizeAlbum($item);
+            $this->flagMissingAlbum($item);
             $this->embedCover($item);
             $this->refreshAvailability($item);
             $this->fileIntoLibrary($item, $organizer);
@@ -268,6 +269,55 @@ class EnrichMediaItemJob implements ShouldQueue
                 $meta->forceFill(['album' => $canonical])->saveQuietly();
             }
         } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    /**
+     * Sends a music track with no album to the review queue (S-384).
+     *
+     * Enrichment cannot tell "a single with no album" from "an album tag we
+     * failed to read", and it used to call both complete — so 83 tracks sat
+     * unflagged until a client grouped them under "Unknown album", which is
+     * where the problem got noticed rather than where it happened.
+     *
+     * A person can tell the two apart in a second, so ask. Dismissing one
+     * stamps `reviewed_at`, and that is checked here so a later re-enrichment
+     * does not drag it back — the same trap S-302 fixed for match review.
+     *
+     * Runs after `normalizeAlbum()`, which is what would have filled the album
+     * in if anything could.
+     */
+    private function flagMissingAlbum(MediaItem $item): void
+    {
+        if ($item->type !== MediaItemType::Music) {
+            return;
+        }
+
+        try {
+            $item->refresh()->load('musicMetadata');
+
+            // Already judged by a person: their answer stands, either way.
+            if ($item->reviewed_at !== null) {
+                return;
+            }
+
+            if (filled($item->musicMetadata?->album)) {
+                return;
+            }
+
+            // Already flagged, for this or another reason — re-flagging would
+            // fire the event again on every scan.
+            if ($item->processing_status === ProcessingStatus::NeedsReview) {
+                return;
+            }
+
+            $item->update(['processing_status' => ProcessingStatus::NeedsReview]);
+
+            MediaItemReviewFlagged::dispatch($item, 'missing-album');
+        } catch (\Throwable $e) {
+            // The metadata is saved either way; a flag that failed to set is
+            // not worth failing the run over.
             report($e);
         }
     }

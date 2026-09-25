@@ -3,8 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
-use App\Http\Middleware\EnsureDlnaEnabled;
+use App\Http\Controllers\HlsController;
 use App\Http\Controllers\DlnaController;
 use App\Http\Controllers\AnnotationController;
 use App\Http\Controllers\AlbumController;
@@ -17,8 +16,10 @@ use App\Http\Controllers\ReaderController;
 use App\Http\Controllers\SubtitleController;
 use App\Http\Controllers\WatchController;
 use App\Http\Controllers\WatchlistController;
+use App\Http\Middleware\EnsureDlnaEnabled;
 use App\Http\Middleware\EnsureRegistrationIsOpen;
 use App\Http\Middleware\RequireProfileUnlock;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
 
 // The front door. Laravel's welcome page advertised the framework and told a
@@ -268,6 +269,22 @@ Route::middleware(['auth'])->group(function (): void {
                 ->name('read.annotations.update');
             Route::delete('/read/{item}/annotations/{annotation}', [AnnotationController::class, 'destroy'])
                 ->name('read.annotations.destroy');
+            // Lyrics for the player panel. A session route rather than the
+            // API one, which needs a token the web player does not have.
+            Route::get('/item/{item}/lyrics', [MediaCenterController::class, 'lyrics'])
+                ->name('lyrics');
+
+            // Adaptive streaming (S-29). `decide` answers how to play an
+            // item for this caller; the other two serve the stream when the
+            // answer is "transcode".
+            Route::get('/item/{item}/playback', [HlsController::class, 'decide'])
+                ->name('hls.decide');
+            Route::get('/item/{item}/hls.m3u8', [HlsController::class, 'playlist'])
+                ->name('hls.playlist');
+            Route::get('/hls/{session}/{file}', [HlsController::class, 'segment'])
+                ->where(['session' => '[a-f0-9]{32}', 'file' => '[A-Za-z0-9._-]+'])
+                ->name('hls.segment');
+
             Route::get('/item/{item}/stream', [MediaCenterController::class, 'stream'])
                 ->middleware('throttle:stream')
                 ->name('stream');

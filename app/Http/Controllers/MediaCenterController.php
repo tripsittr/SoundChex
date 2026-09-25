@@ -13,6 +13,7 @@ use App\Events\UserSearched;
 use App\Models\MediaItem;
 use App\Models\MediaPlay;
 use App\Services\ContentGate;
+use App\Services\LyricsService;
 use App\Services\CurrentProfile;
 use App\Services\MediaBrowser;
 use App\Services\SearchService;
@@ -236,6 +237,29 @@ class MediaCenterController extends Controller
      * Media lives on the private disk with no public URL, so playback is
      * proxied through here behind the auth middleware.
      */
+    /**
+     * The lyrics for a track, for the player's lyrics panel (S-301).
+     *
+     * The same payload the app gets from `/api/v1/items/{item}/lyrics`, but
+     * reachable with a session rather than a token — the web player has no
+     * token, so it cannot call the API route at all.
+     *
+     * `{ lyrics, synced }`, either of which may be null: a track with no words
+     * is a normal answer, not an error, and the panel says so rather than
+     * looking broken.
+     */
+    public function lyrics(MediaItem $item, LyricsService $lyrics): JsonResponse
+    {
+        abort_unless(app(ContentGate::class)->allows($item), 404);
+
+        $payload = $lyrics->lyricsPayloadFor($item);
+
+        return response()->json([
+            'lyrics' => $payload['plain'],
+            'synced' => $payload['synced'],
+        ]);
+    }
+
     public function stream(MediaItem $item): BinaryFileResponse
     {
         // The bytes themselves, so a capped title can't be fetched directly.
@@ -262,7 +286,10 @@ class MediaCenterController extends Controller
         return response()->file($path, [
             'Content-Disposition' => (new ResponseHeaderBag)->makeDisposition(
                 ResponseHeaderBag::DISPOSITION_INLINE,
-                (string) $item->title,
+                // Sanitised: Symfony throws on a filename containing a
+                // slash, so a title like "AM/PM" made this 500 before a byte
+                // was sent (S-393).
+                $item->downloadFilename(),
                 'media',
             ),
         ]);

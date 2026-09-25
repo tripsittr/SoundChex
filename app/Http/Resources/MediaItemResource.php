@@ -7,6 +7,7 @@ namespace App\Http\Resources;
 
 use App\Models\MediaItem;
 use App\Plugins\Registry;
+use App\Services\CurrentProfile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -47,6 +48,11 @@ class MediaItemResource extends JsonResource
             'wishlist' => (bool) $item->wishlist,
             'user_rating' => $item->user_rating,
             'updated_at' => $item->updated_at?->toIso8601String(),
+            // When this profile last played it, for a "recently played" sort
+            // (S-391). Null for something never played. Read from the loaded
+            // relation rather than queried, so a list of 200 does not become
+            // 200 queries — callers that want this eager-load `plays`.
+            'last_played_at' => $this->lastPlayedAt($item),
             'meta' => $this->metadata($item),
         ];
 
@@ -61,6 +67,32 @@ class MediaItemResource extends JsonResource
     }
 
     /** @return array<string, mixed> */
+    /**
+     * The newest play by the current profile, or null.
+     *
+     * Taken from the already-loaded `plays` relation. Falling back to a query
+     * here would be a query per row on every listing that includes this.
+     */
+    private function lastPlayedAt(MediaItem $item): ?string
+    {
+        if (! $item->relationLoaded('plays')) {
+            return null;
+        }
+
+        $profileId = app(CurrentProfile::class)->id();
+
+        // No profile resolved means no answer — never "every profile's plays".
+        // Two people share a login, and falling back to the unfiltered set
+        // would report someone else's listening as this profile's.
+        if ($profileId === null) {
+            return null;
+        }
+
+        return $item->plays
+            ->where('profile_id', $profileId)
+            ->max('created_at')?->toIso8601String();
+    }
+
     private function metadata(MediaItem $item): array
     {
         return match ($item->type->value) {

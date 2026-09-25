@@ -231,7 +231,14 @@ function bindNowPlaying() {
     });
 
     player.on('modechange', () => {
-        current.ui.shuffle.classList.toggle('text-accent', player.shuffle);
+        current.ui.shuffle.classList.toggle('text-accent', player.shuffleMode !== 'off');
+        // The dot distinguishes smart from ordinary shuffle, the same way
+        // repeat-one is distinguished from repeat-all (S-289).
+        current.ui.shuffle.dataset.mode = player.shuffleMode;
+        current.ui.shuffle.setAttribute(
+            'aria-label',
+            { off: 'Shuffle', on: 'Shuffle on — press for smart shuffle', smart: 'Smart shuffle on' }[player.shuffleMode],
+        );
         current.ui.repeat.classList.toggle('text-accent', player.repeat !== 'off');
         // A small badge is the clearest way to distinguish repeat-one from
         // repeat-all without a second icon.
