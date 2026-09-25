@@ -265,6 +265,11 @@ Route::middleware(['auth'])->group(function (): void {
                 ->name('read.annotations.update');
             Route::delete('/read/{item}/annotations/{annotation}', [AnnotationController::class, 'destroy'])
                 ->name('read.annotations.destroy');
+            // Lyrics for the player panel. A session route rather than the
+            // API one, which needs a token the web player does not have.
+            Route::get('/item/{item}/lyrics', [MediaCenterController::class, 'lyrics'])
+                ->name('lyrics');
+
             Route::get('/item/{item}/stream', [MediaCenterController::class, 'stream'])
                 ->middleware('throttle:stream')
                 ->name('stream');

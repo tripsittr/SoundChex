@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
+import { currentLine, fetchLyrics, parseLrc } from './lyrics.js';
 import { formatTime } from './player.js';
 
 /**
@@ -56,6 +57,9 @@ export function bindNowPlayingSheet() {
         queuePane: document.getElementById('np-sheet-queue-pane'),
         queueList: document.getElementById('np-sheet-queue'),
         queueToggle: document.getElementById('np-sheet-queue-toggle'),
+        lyricsPane: document.getElementById('np-sheet-lyrics-pane'),
+        lyricsBody: document.getElementById('np-sheet-lyrics'),
+        lyricsToggle: document.getElementById('np-sheet-lyrics-toggle'),
         close: document.getElementById('np-sheet-close'),
         artwork: document.getElementById('np-sheet-artwork'),
         artworkFallback: document.getElementById('np-sheet-artwork-fallback'),
@@ -77,6 +81,13 @@ export function bindNowPlayingSheet() {
     };
 
     current.ui = ui;
+
+    // On `current`, not a module-level variable: the sheet is rebound on every
+    // SPA navigation, and a fresh variable would forget which track's lyrics
+    // are loaded and refetch them on each page change (S-301).
+    current.lyrics ??= { lines: [], plain: null, itemId: null, index: -1 };
+
+    const lyrics = current.lyrics;
 
     const ICON_PLAY = 'M8 5v14l11-7z';
     const ICON_PAUSE = 'M6 5h4v14H6zM14 5h4v14h-4z';
@@ -211,14 +222,31 @@ export function bindNowPlayingSheet() {
         });
     }
 
-    function showQueue(show) {
+    /**
+     * Shows one of the three panes: artwork, queue or lyrics (S-301).
+     *
+     * One function rather than a toggle each, so opening lyrics closes the
+     * queue without either knowing about the other — two independent toggles
+     * would eventually show both at once.
+     */
+    function showPane(pane) {
         const { ui } = current;
 
-        ui.artPane.hidden = show;
-        ui.queuePane.hidden = !show;
-        ui.queueToggle.setAttribute('aria-expanded', String(show));
-        ui.queueToggle.setAttribute('aria-label', show ? 'Show artwork' : 'Show queue');
-        ui.queueToggle.classList.toggle('text-accent', show);
+        ui.artPane.hidden = pane !== 'art';
+        ui.queuePane.hidden = pane !== 'queue';
+        ui.lyricsPane.hidden = pane !== 'lyrics';
+
+        ui.queueToggle.setAttribute('aria-expanded', String(pane === 'queue'));
+        ui.queueToggle.setAttribute('aria-label', pane === 'queue' ? 'Show artwork' : 'Show queue');
+        ui.queueToggle.classList.toggle('text-accent', pane === 'queue');
+
+        ui.lyricsToggle.setAttribute('aria-expanded', String(pane === 'lyrics'));
+        ui.lyricsToggle.setAttribute('aria-label', pane === 'lyrics' ? 'Show artwork' : 'Show lyrics');
+        ui.lyricsToggle.classList.toggle('text-accent', pane === 'lyrics');
+
+        // Scrolling to the current line needs the pane laid out; it has no
+        // height while hidden, so the first scroll must wait for this.
+        if (pane === 'lyrics') scrollToCurrentLine(true);
     }
 
     /**
@@ -272,7 +300,11 @@ export function bindNowPlayingSheet() {
     });
 
     ui.queueToggle.addEventListener('click', () => {
-        showQueue(current.ui.queuePane.hidden);
+        showPane(current.ui.queuePane.hidden ? 'queue' : 'art');
+    });
+
+    ui.lyricsToggle.addEventListener('click', () => {
+        showPane(current.ui.lyricsPane.hidden ? 'lyrics' : 'art');
     });
 
     ui.seek.addEventListener('click', (event) => {
@@ -294,6 +326,127 @@ export function bindNowPlayingSheet() {
         player.play([...player.queue], index);
     });
 
+    /* ------------------------------------------------------------ lyrics */
+
+    /**
+     * Loads the current track's lyrics and builds the panel (S-301).
+     *
+     * The toggle stays hidden until there is something to show: a button that
+     * opens an empty panel is worse than no button. A request for a track with
+     * no lyrics is a normal answer, not a failure.
+     */
+    async function loadLyrics() {
+        const { ui } = current;
+        const item = player.queue[player.index];
+
+        Object.assign(lyrics, { lines: [], plain: null, itemId: item?.id ?? null, index: -1 });
+        ui.lyricsBody.replaceChildren();
+        ui.lyricsToggle.hidden = true;
+
+        // Lyrics belong to a track, not to the sheet — and the sheet outlives
+        // any one track.
+        if (!item) return;
+
+        const payload = await fetchLyrics(item.id);
+
+        // Track changed while the request was in flight: this answer is for
+        // something that is no longer playing.
+        if (lyrics.itemId !== item.id) return;
+
+        if (!payload?.lyrics && !payload?.synced) return;
+
+        lyrics.lines = parseLrc(payload.synced);
+        lyrics.plain = payload.lyrics ?? null;
+
+        if (lyrics.lines.length > 0) {
+            renderSyncedLyrics();
+        } else if (lyrics.plain) {
+            renderPlainLyrics();
+        } else {
+            return;
+        }
+
+        ui.lyricsToggle.hidden = false;
+    }
+
+    function renderSyncedLyrics() {
+        const { ui } = current;
+
+        ui.lyricsBody.replaceChildren(...lyrics.lines.map((line, index) => {
+            // A button, not a div: clicking seeks, and that should be
+            // reachable by keyboard like every other control here.
+            const node = document.createElement('button');
+
+            node.type = 'button';
+            node.dataset.line = String(index);
+            node.className = 'block w-full text-left text-ink-500 transition-colors duration-200';
+            // An empty LRC line is a musical gap; keep its height so the
+            // spacing matches the song rather than closing up.
+            node.textContent = line.text || '\u00a0';
+            node.addEventListener('click', () => player.seek(line.time));
+
+            return node;
+        }));
+    }
+
+    function renderPlainLyrics() {
+        const { ui } = current;
+
+        ui.lyricsBody.replaceChildren(...lyrics.plain.split(/\r?\n/).map((text) => {
+            const node = document.createElement('p');
+
+            node.className = 'text-ink-300';
+            node.textContent = text || '\u00a0';
+
+            return node;
+        }));
+    }
+
+    /** Highlights the line for the current position, and keeps it in view. */
+    function syncLyrics(position) {
+        if (lyrics.lines.length === 0) return;
+
+        const index = currentLine(lyrics.lines, position);
+
+        if (index === lyrics.index) return;
+
+        lyrics.index = index;
+
+        const nodes = current.ui.lyricsBody.children;
+
+        for (let i = 0; i < nodes.length; i++) {
+            const active = i === index;
+
+            nodes[i].classList.toggle('text-ink-100', active);
+            nodes[i].classList.toggle('font-semibold', active);
+            nodes[i].classList.toggle('text-ink-500', !active);
+        }
+
+        scrollToCurrentLine(false);
+    }
+
+    /**
+     * Centres the highlighted line.
+     *
+     * Only while the pane is visible: scrollTo on a hidden element does
+     * nothing, and the position is then wrong when it is finally shown — hence
+     * the call from showPane as well.
+     */
+    function scrollToCurrentLine(immediate) {
+        const { ui } = current;
+
+        if (ui.lyricsPane.hidden || lyrics.index < 0) return;
+
+        const node = ui.lyricsBody.children[lyrics.index];
+
+        if (!node) return;
+
+        node.scrollIntoView({
+            block: 'center',
+            behavior: immediate ? 'auto' : 'smooth',
+        });
+    }
+
     /* -------------------------------------- player events keep it in sync */
 
     player.on('trackchange', () => {
@@ -301,11 +454,19 @@ export function bindNowPlayingSheet() {
             paint();
             renderQueue();
         }
+
+        // Loaded regardless of whether the sheet is open: the toggle's
+        // visibility is part of the sheet's state, and finding out only when
+        // the sheet opens means a button that appears a moment late.
+        loadLyrics();
     });
 
     player.on('playstate', (playing) => setPlaying(playing));
     player.on('time', ({ current: at, duration }) => {
-        if (isOpen()) setTime(at, duration);
+        if (isOpen()) {
+            setTime(at, duration);
+            syncLyrics(at);
+        }
     });
     player.on('modechange', () => {
         setModes();

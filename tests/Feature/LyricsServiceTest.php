@@ -84,6 +84,43 @@ class LyricsServiceTest extends TestCase
      *
      * @return array{0: MediaItem, 1: string}
      */
+    /* ------------------------------------------------- the web route --- */
+
+    public function test_the_web_route_serves_lyrics_to_a_signed_in_listener(): void
+    {
+        // The player has a session, not a token, so it cannot call the API
+        // route at all — hence a second one (S-301).
+        [$item, $dir] = $this->trackWithFile('song.mp3');
+        file_put_contents($dir.'/song.lrc', "[00:12.00] First line\n[00:15.50] Second line\n");
+
+        $this->actingAs($item->user);
+
+        $this->getJson(route('media.lyrics', $item))
+            ->assertOk()
+            ->assertJsonStructure(['lyrics', 'synced']);
+    }
+
+    public function test_the_web_route_is_closed_to_a_stranger(): void
+    {
+        [$item] = $this->trackWithFile('song.mp3');
+
+        $this->getJson(route('media.lyrics', $item))->assertRedirect();
+    }
+
+    public function test_a_track_with_no_lyrics_answers_with_nulls_rather_than_an_error(): void
+    {
+        // A song with no words is a normal answer; the panel hides its own
+        // button rather than showing an error.
+        [$item] = $this->trackWithFile('song.mp3');
+
+        $this->actingAs($item->user);
+
+        $this->getJson(route('media.lyrics', $item))
+            ->assertOk()
+            ->assertJsonPath('lyrics', null)
+            ->assertJsonPath('synced', null);
+    }
+
     private function trackWithFile(string $name): array
     {
         $dir = sys_get_temp_dir().'/lyrics-test-'.uniqid();
