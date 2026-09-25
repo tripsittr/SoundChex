@@ -113,4 +113,59 @@
         </p>
     </x-filament::section>
 
+    {{-- DLNA (S-7). Unlike AirPlay there is no per-device picker: the server
+         either advertises itself to the whole network or it does not, so the
+         choice here is the only control there is. --}}
+    <x-filament::section>
+        <x-slot name="heading">Share on the local network (DLNA)</x-slot>
+        <x-slot name="description">
+            Lets TVs, games consoles and network receivers browse the library
+            without a SoundChex app. They find it on their own — there is no
+            pairing and no password, because the protocol has none.
+        </x-slot>
+
+        <div class="space-y-4">
+            <label class="flex items-start gap-3">
+                <input type="checkbox" wire:model="dlnaEnabled"
+                       class="mt-1 rounded border-gray-300 text-primary-600 dark:border-white/20 dark:bg-white/5">
+                <span>
+                    <span class="block text-sm font-medium text-gray-950 dark:text-white">
+                        Advertise this server
+                    </span>
+                    <span class="block text-sm text-gray-500 dark:text-gray-400">
+                        Anything on this Wi-Fi will see it. Never reachable from
+                        the internet — discovery does not leave the network, and
+                        the server refuses non-local requests.
+                    </span>
+                </span>
+            </label>
+
+            <div class="space-y-1.5">
+                <label class="text-sm font-medium text-gray-950 dark:text-white">Show the library as</label>
+                <x-filament::input.wrapper>
+                    <x-filament::input.select wire:model="dlnaProfile">
+                        <option value="">Choose a profile…</option>
+                        @foreach ($this->profileOptions() as $id => $label)
+                            <option value="{{ $id }}">{{ $label }}</option>
+                        @endforeach
+                    </x-filament::input.select>
+                </x-filament::input.wrapper>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    A television cannot say who is watching, so one profile
+                    stands for every device. Point it at a rating-capped profile
+                    and the cap holds on the living-room TV.
+                </p>
+            </div>
+
+            <div class="space-y-1.5">
+                <label class="text-sm font-medium text-gray-950 dark:text-white">Name shown on devices</label>
+                <x-filament::input.wrapper>
+                    <x-filament::input type="text" wire:model="dlnaName" maxlength="60" placeholder="SoundChex" />
+                </x-filament::input.wrapper>
+            </div>
+
+            <x-filament::button wire:click="saveDlna">Save</x-filament::button>
+        </div>
+    </x-filament::section>
+
 </x-filament-panels::page>
