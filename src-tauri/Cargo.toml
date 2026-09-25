@@ -1,6 +1,6 @@
 [package]
 name = "soundchex"
-version = "0.1.0"
+version = "0.2.0"
 description = "SoundChex desktop and mobile client"
 license = "AGPL-3.0-or-later"
 edition = "2021"

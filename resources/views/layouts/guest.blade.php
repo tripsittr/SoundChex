@@ -118,11 +118,15 @@
         {{ $slot }}
 
         {{-- AGPLv3 §13: the source offer must reach network users, including on
-             the pages they see before signing in. --}}
+             the pages they see before signing in. Pinned to this build's
+             commit where there is one — the offer is of the source that
+             corresponds to what is serving you, not of the project at large
+             (S-401). The About page is behind auth, so the link goes straight
+             to the source here. --}}
         <p class="mt-8 text-center text-xs text-ink-500">
-            <a href="https://github.com/tripsittr/SoundChex" target="_blank" rel="noopener"
+            <a href="{{ \App\Support\AppRelease::sourceUrl() }}" target="_blank" rel="noopener"
                class="transition hover:text-ink-300">
-                SoundChex is open source (AGPLv3)
+                SoundChex {{ \App\Support\AppRelease::version() }} &mdash; open source (AGPLv3)
             </a>
         </p>
     </div>

@@ -13,8 +13,8 @@ use App\Events\UserSearched;
 use App\Models\MediaItem;
 use App\Models\MediaPlay;
 use App\Services\ContentGate;
-use App\Services\LyricsService;
 use App\Services\CurrentProfile;
+use App\Services\LyricsService;
 use App\Services\MediaBrowser;
 use App\Services\SearchService;
 use Illuminate\Http\JsonResponse;
@@ -465,6 +465,22 @@ class MediaCenterController extends Controller
     public function downloads(): View
     {
         return view('media.downloads', [
+            'counts' => $this->browser->counts(),
+        ]);
+    }
+
+    /**
+     * What this build is, and where its source lives (S-401).
+     *
+     * The AGPL §13 offer has to name the build doing the serving. A link to
+     * `main` is not the corresponding source of a server running a commit
+     * from three weeks ago, and it is certainly not the source of a modified
+     * one — so this page states the version, the commit, and whether the
+     * build was made from a clean tree.
+     */
+    public function about(): View
+    {
+        return view('media.about', [
             'counts' => $this->browser->counts(),
         ]);
     }

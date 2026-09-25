@@ -223,6 +223,9 @@ run if its paths are not scratch paths.
   repo. `Documentation & Planning/Issues.md` is now only a pointer to it.
 - **[changelog/](changelog/)** — one entry per pull request, saying what
   changed and what is still broken.
+- **[docs/Versioning.md](docs/Versioning.md)** — SemVer with a named minor.
+  Film terms here, music terms on the phone, and why every build carries the
+  commit it came from.
 - **[Documentation & Planning/Status.md](Documentation%20&%20Planning/Status.md)**
   — what exists, what does not, and what is next.
 - **[docs/WorkingOnSoundChex.md](docs/WorkingOnSoundChex.md)** — what this
@@ -252,10 +255,11 @@ The application is the open-source part; any paid **SoundChex network/relay
 service** is a separate product built around it, and does not change these terms
 for the app itself.
 
-**Getting the source of a running instance.** The source of every build is this
-repository, linked from the app. Pinning that link to the exact running build —
-a version and an About page that names it — is not done yet (S-401); until it
-is, take the source from the commit your build was made at. If you
+**Getting the source of a running instance.** Every build is stamped with its
+version and the commit it was built from, and the *About* page in the app links
+the source pinned to that commit — not to `main`, which is a different tree by
+the time you read this. A build made from a modified working tree says so, and
+its operator should point `SOUNDCHEX_REPO_URL` at their own repository. If you
 modify SoundChex and host it for others, you must make your modified source
 available to those users in the same way (a link in the app or on your site
 satisfies AGPL §13).
