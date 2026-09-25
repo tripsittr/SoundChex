@@ -72,9 +72,22 @@ class ContentGate
      */
     public function apply(Builder $query): Builder
     {
-        $query = $this->withoutMergedDuplicates($query);
+        return $this->applyFor($query, $this->profiles->get());
+    }
 
-        $profile = $this->profiles->get();
+    /**
+     * The same gate, for a profile named explicitly rather than resolved from
+     * the session.
+     *
+     * The DLNA server has no session and no way to ask who is browsing, so it
+     * is configured with one profile and every device on the LAN sees that
+     * profile's view (S-7). It must use *this* logic rather than its own copy:
+     * a second implementation of a rating cap is a cap that silently stops
+     * matching the first.
+     */
+    public function applyFor(Builder $query, ?Profile $profile): Builder
+    {
+        $query = $this->withoutMergedDuplicates($query);
 
         if ($profile?->max_rating === null) {
             return $query;
