@@ -40,8 +40,8 @@ class ServerHealthController extends Controller
             'scheduler_running' => $this->schedulerIsRunning(),
 
             'library' => [
-                'items' => MediaItem::count(),
-                'pending' => MediaItem::where('processing_status', 'pending')->count(),
+                'items' => MediaItem::unresolved()->count(),
+                'pending' => MediaItem::unresolved()->where('processing_status', 'pending')->count(),
             ],
 
             'addresses' => app(NetworkAddresses::class)->all(),

@@ -8,12 +8,14 @@ namespace App\Filament\Widgets\Statistics;
 use App\Enums\MediaItemType;
 use App\Filament\Pages\MusicStatisticsPage;
 use App\Models\MediaItem;
+use App\Models\Profile;
 use App\Services\LibraryStatistics;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * The most-played items, with their artwork.
@@ -78,13 +80,13 @@ class TopItemsTable extends TableWidget
         $seconds = $rows->pluck('seconds', 'id');
 
         return $table
-            ->heading('Top ' . \Illuminate\Support\Str::plural(strtolower($labels['item'])))
+            ->heading('Top '.Str::plural(strtolower($labels['item'])))
             ->description($this->windowLabel())
             ->query(
                 // Ordered by the play ranking rather than by anything on the
                 // row: `whereIn` returns them in id order otherwise, which is
                 // arbitrary and makes the table disagree with its own heading.
-                MediaItem::query()
+                MediaItem::unresolved()
                     ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata'])
                     ->whereIn('id', $rows->pluck('id')->all()),
             )
@@ -136,10 +138,14 @@ class TopItemsTable extends TableWidget
                     ->state(function (MediaItem $record) use ($seconds): string {
                         $value = (int) ($seconds[$record->id] ?? 0);
 
-                        if ($value <= 0) return '—';
-                        if ($value < 3600) return floor($value / 60) . 'm';
+                        if ($value <= 0) {
+                            return '—';
+                        }
+                        if ($value < 3600) {
+                            return floor($value / 60).'m';
+                        }
 
-                        return number_format($value / 3600, 1) . 'h';
+                        return number_format($value / 3600, 1).'h';
                     }),
             ])
             ->emptyStateHeading('Nothing played in this period')
@@ -151,13 +157,13 @@ class TopItemsTable extends TableWidget
     {
         $period = match ($this->range) {
             'all' => 'All time',
-            default => 'Last ' . $this->range . ' days',
+            default => 'Last '.$this->range.' days',
         };
 
         $who = $this->profileId === ''
             ? 'everyone'
-            : (\App\Models\Profile::find((int) $this->profileId)?->name ?? 'everyone');
+            : (Profile::find((int) $this->profileId)?->name ?? 'everyone');
 
-        return $period . ' · ' . $who . ' · by plays';
+        return $period.' · '.$who.' · by plays';
     }
 }

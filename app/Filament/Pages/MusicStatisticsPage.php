@@ -7,6 +7,7 @@ namespace App\Filament\Pages;
 
 use App\Enums\MediaItemType;
 use App\Filament\Concerns\RestrictsToAdmins;
+use App\Models\MediaItem;
 use App\Services\LibraryStatistics;
 use BackedEnum;
 use Filament\Pages\Page;
@@ -106,7 +107,7 @@ class MusicStatisticsPage extends Page
      */
     public function tabs(): array
     {
-        $counts = \App\Models\MediaItem::query()
+        $counts = MediaItem::unresolved()
             ->selectRaw('type, count(*) as total')
             ->groupBy('type')
             ->pluck('total', 'type')

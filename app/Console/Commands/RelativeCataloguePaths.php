@@ -29,7 +29,7 @@ class RelativeCataloguePaths extends Command
 
     public function handle(TransferReceiver $receiver): int
     {
-        $unreadable = MediaItem::query()
+        $unreadable = MediaItem::unresolved()
             ->whereNotNull('file_path')
             ->get(['id', 'type', 'title', 'file_path'])
             ->filter(fn (MediaItem $item) => $item->absoluteFilePath() === null);
@@ -40,7 +40,7 @@ class RelativeCataloguePaths extends Command
             return self::SUCCESS;
         }
 
-        $this->line($unreadable->count() . ' catalogued item(s) resolve to nothing here. For example:');
+        $this->line($unreadable->count().' catalogued item(s) resolve to nothing here. For example:');
         $this->newLine();
 
         $this->table(
@@ -62,7 +62,7 @@ class RelativeCataloguePaths extends Command
         $changed = $receiver->makeCataloguePathsRelative();
 
         $this->newLine();
-        $this->info($changed . ' path(s) rewritten.');
+        $this->info($changed.' path(s) rewritten.');
         $this->line('Anything still unreadable is a file that is genuinely not here yet.');
 
         return self::SUCCESS;

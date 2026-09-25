@@ -3,7 +3,6 @@
 @php
     $subtitle = $item->subtitle();
     $year = $item->year();
-    $needsReview = in_array($item->processing_status?->value, ['needs_review', 'failed'], true);
 @endphp
 
 <a href="{{ route('media.show', $item) }}"
@@ -51,12 +50,6 @@
                 <path d="M8 5v14l11-7z" />
             </svg>
         </button>
-    @endif
-
-    @if ($needsReview)
-        <span class="absolute right-1.5 top-1.5 rounded bg-amber-500/90 px-1.5 py-0.5 text-[0.625rem] font-bold uppercase tracking-wide text-black">
-            Review
-        </span>
     @endif
 
     @if ($item->wishlist && ! $item->owned)

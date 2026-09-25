@@ -34,7 +34,7 @@ class ReconcileMediaPaths extends Command
 
         $this->buildLiveIndex();
 
-        $rows = MediaItem::query()
+        $rows = MediaItem::unresolved()
             ->whereNotNull('file_path')
             ->with(['duplicateOf:id,file_path'])
             ->orderBy('id')
@@ -52,6 +52,7 @@ class ReconcileMediaPaths extends Command
 
             if ($absolute !== null && is_file($absolute)) {
                 $alreadyValid++;
+
                 continue;
             }
 
@@ -64,6 +65,7 @@ class ReconcileMediaPaths extends Command
                     'stored_path' => (string) $item->file_path,
                     'reason' => 'no surviving match',
                 ];
+
                 continue;
             }
 
@@ -93,9 +95,9 @@ class ReconcileMediaPaths extends Command
             count($unresolved),
         ));
 
-        $this->line('Scanned: ' . $scanned);
-        $this->line('Already valid: ' . $alreadyValid);
-        $this->line('Unresolved report: ' . $reportPath);
+        $this->line('Scanned: '.$scanned);
+        $this->line('Already valid: '.$alreadyValid);
+        $this->line('Unresolved report: '.$reportPath);
 
         if (! $apply) {
             $this->comment('Dry run only. Re-run with --apply to write corrections.');
@@ -111,7 +113,7 @@ class ReconcileMediaPaths extends Command
     {
         $this->liveByDirAndTitle = [];
 
-        $rows = MediaItem::query()
+        $rows = MediaItem::unresolved()
             ->whereNotNull('file_path')
             ->orderBy('id')
             ->get(['id', 'title', 'file_path']);
@@ -182,7 +184,7 @@ class ReconcileMediaPaths extends Command
 
         $files = array_values(array_filter(
             scandir($directory) ?: [],
-            fn (string $name): bool => $name !== '.' && $name !== '..' && is_file($directory . DIRECTORY_SEPARATOR . $name),
+            fn (string $name): bool => $name !== '.' && $name !== '..' && is_file($directory.DIRECTORY_SEPARATOR.$name),
         ));
 
         if ($files === []) {
@@ -217,7 +219,7 @@ class ReconcileMediaPaths extends Command
         }
 
         return [
-            'path' => $relativeDirectory . '/' . $matches[0],
+            'path' => $relativeDirectory.'/'.$matches[0],
             'id' => 0,
         ];
     }
@@ -226,7 +228,7 @@ class ReconcileMediaPaths extends Command
     {
         $directory = $this->toStoredDirectory($stored) ?? $this->normalizePath(dirname($stored));
 
-        return $directory . '|' . mb_strtolower(trim($title));
+        return $directory.'|'.mb_strtolower(trim($title));
     }
 
     private function normalizeStem(string $stem): string
@@ -284,7 +286,7 @@ class ReconcileMediaPaths extends Command
             if (! is_dir($directory)) {
                 @mkdir($directory, 0775, true);
             }
-            $path = $directory . '/missing-media-' . now()->format('Ymd-His') . '.csv';
+            $path = $directory.'/missing-media-'.now()->format('Ymd-His').'.csv';
         }
 
         $handle = fopen($path, 'wb');
@@ -307,7 +309,7 @@ class ReconcileMediaPaths extends Command
     private function expandPath(string $path): string
     {
         if (str_starts_with($path, '~/')) {
-            return rtrim((string) getenv('HOME'), '/') . substr($path, 1);
+            return rtrim((string) getenv('HOME'), '/').substr($path, 1);
         }
 
         return $path;

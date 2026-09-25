@@ -63,7 +63,7 @@ class MusicTable
                 TextColumn::make('musicMetadata.key')
                     ->label('Key')
                     ->formatStateUsing(fn (?string $state, MediaItem $record): string => trim(
-                        (string) $state . ' ' . ($record->musicMetadata?->scale === 'minor' ? 'm' : '')
+                        (string) $state.' '.($record->musicMetadata?->scale === 'minor' ? 'm' : '')
                     ))
                     ->toggleable(),
 
@@ -86,7 +86,7 @@ class MusicTable
 
                 TextColumn::make('user_rating')
                     ->label('Rating')
-                    ->formatStateUsing(fn (?int $state): string => $state ? $state . '/10' : '—')
+                    ->formatStateUsing(fn (?int $state): string => $state ? $state.'/10' : '—')
                     ->sortable()
                     ->toggleable(),
             ])
@@ -119,7 +119,7 @@ class MusicTable
                     ->columns(2)
                     ->query(function (Builder $query, array $data): Builder {
                         $from = $data['bpm_from'] ?? null;
-                        $to   = $data['bpm_to'] ?? null;
+                        $to = $data['bpm_to'] ?? null;
 
                         if (blank($from) && blank($to)) {
                             return $query;
@@ -127,23 +127,23 @@ class MusicTable
 
                         return $query->whereHas('musicMetadata', function (Builder $m) use ($from, $to) {
                             $m->when(filled($from), fn (Builder $q) => $q->where('bpm', '>=', (float) $from))
-                              ->when(filled($to), fn (Builder $q) => $q->where('bpm', '<=', (float) $to));
+                                ->when(filled($to), fn (Builder $q) => $q->where('bpm', '<=', (float) $to));
                         });
                     })
                     ->indicateUsing(function (array $data): array {
                         $from = $data['bpm_from'] ?? null;
-                        $to   = $data['bpm_to'] ?? null;
+                        $to = $data['bpm_to'] ?? null;
 
                         if (blank($from) && blank($to)) {
                             return [];
                         }
 
-                        return ['BPM ' . ($from ?: '0') . '–' . ($to ?: '∞')];
+                        return ['BPM '.($from ?: '0').'–'.($to ?: '∞')];
                     }),
 
                 SelectFilter::make('genre')
                     ->label('Genre')
-                    ->options(fn (): array => MediaItem::query()
+                    ->options(fn (): array => MediaItem::unresolved()
                         ->whereHas('tags', fn (Builder $q) => $q->where('type', 'genre'))
                         ->with('tags')
                         ->get()
@@ -194,7 +194,7 @@ class MusicTable
                             });
 
                             Notification::make()
-                                ->title($records->count() . ' items queued for re-enrichment')
+                                ->title($records->count().' items queued for re-enrichment')
                                 ->success()
                                 ->send();
                         })

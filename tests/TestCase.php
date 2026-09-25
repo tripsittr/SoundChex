@@ -5,6 +5,8 @@
 
 namespace Tests;
 
+use App\Enums\ProcessingStatus;
+use App\Models\MediaItem;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -34,6 +36,24 @@ abstract class TestCase extends BaseTestCase
         // reaching out. A silent real request would make the suite flaky and
         // could burn a rate limit.
         Http::preventStrayRequests();
+
+        // An item created without a status takes the column default,
+        // `pending` — which the library now hides as "not certain yet"
+        // (S-396). In production nothing stays pending: the scanner sets it,
+        // enrichment moves it to complete, needs_review or failed. In a test
+        // there is no enrichment, so 100-odd fixtures across the suite would
+        // silently become invisible and every assertion about them would fail
+        // for a reason that has nothing to do with what the test is checking.
+        //
+        // So a test fixture is complete unless it says otherwise, and the
+        // tests that care about an unresolved item set the status explicitly
+        // — which reads better anyway: the status is stated where it matters
+        // instead of inherited from a column default.
+        MediaItem::creating(function (MediaItem $item): void {
+            if ($item->getAttribute('processing_status') === null) {
+                $item->setAttribute('processing_status', ProcessingStatus::Complete);
+            }
+        });
     }
 
     /**
@@ -45,7 +65,7 @@ abstract class TestCase extends BaseTestCase
      */
     protected function fixture(string $relativePath, ?string $contents = null): string
     {
-        Storage::disk('local')->put($relativePath, $contents ?? 'fixture:' . $relativePath);
+        Storage::disk('local')->put($relativePath, $contents ?? 'fixture:'.$relativePath);
 
         return Storage::disk('local')->path($relativePath);
     }

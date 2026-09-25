@@ -6,9 +6,11 @@
 namespace App\Filament\Widgets;
 
 use App\Enums\MediaItemType;
+use App\Filament\Pages\Dashboard;
 use App\Models\MediaItem;
 use Filament\Support\RawJs;
 use Filament\Widgets\ChartWidget;
+use Illuminate\Support\Collection;
 
 /**
  * Genre distribution, filterable per media type.
@@ -18,7 +20,6 @@ use Filament\Widgets\ChartWidget;
  */
 class GenreSplit extends ChartWidget
 {
-
     /**
      * Widgets are renderable independently of the page that hosts them, so
      * this repeats the dashboard's gate rather than relying on it. Without it
@@ -27,8 +28,9 @@ class GenreSplit extends ChartWidget
      */
     public static function canView(): bool
     {
-        return \App\Filament\Pages\Dashboard::canAccess();
+        return Dashboard::canAccess();
     }
+
     protected ?string $heading = 'Genre split';
 
     protected static ?int $sort = 0;
@@ -44,7 +46,7 @@ class GenreSplit extends ChartWidget
 
     protected function getFilters(): ?array
     {
-        $available = MediaItem::query()
+        $available = MediaItem::unresolved()
             ->distinct()
             ->pluck('type')
             ->map(fn ($type) => $type instanceof MediaItemType ? $type->value : (string) $type)
@@ -97,11 +99,11 @@ class GenreSplit extends ChartWidget
     }
 
     /**
-     * @return \Illuminate\Support\Collection<int, object>
+     * @return Collection<int, object>
      */
     private function genreCounts()
     {
-        return MediaItem::query()
+        return MediaItem::unresolved()
             ->join('media_tags', 'media_tags.media_item_id', '=', 'media_items.id')
             ->where('media_tags.type', 'genre')
             ->when(

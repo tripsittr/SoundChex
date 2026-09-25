@@ -29,7 +29,7 @@ class OrganizeLibrary extends Command
     {
         $dryRun = ! $this->option('move');
 
-        $query = MediaItem::query()
+        $query = MediaItem::unresolved()
             ->where('type', MediaItemType::Music)
             ->whereNotNull('file_path')
             ->with('musicMetadata');
@@ -79,21 +79,21 @@ class OrganizeLibrary extends Command
                 continue;
             }
 
-            $this->line(($dryRun ? '  would move → ' : '  moved → ') . $target);
+            $this->line(($dryRun ? '  would move → ' : '  moved → ').$target);
             $moved++;
         }
 
         $this->newLine();
 
         if ($dryRun) {
-            $this->info($moved . ' ' . str('file')->plural($moved) . ' would be moved');
+            $this->info($moved.' '.str('file')->plural($moved).' would be moved');
             $this->comment('Re-run with --move to apply.');
         } else {
-            $this->info($moved . ' ' . str('file')->plural($moved) . ' moved');
+            $this->info($moved.' '.str('file')->plural($moved).' moved');
         }
 
         if ($skipped > 0) {
-            $this->comment($skipped . ' waiting — no artist/album yet, or already filed');
+            $this->comment($skipped.' waiting — no artist/album yet, or already filed');
         }
 
         $this->reportFailures($failed, $organizer);
@@ -106,7 +106,7 @@ class OrganizeLibrary extends Command
     /**
      * Names every item that passed its checks and still didn't move.
      *
-     * @param array<int, MediaItem> $failed
+     * @param  array<int, MediaItem>  $failed
      */
     private function reportFailures(array $failed, LibraryOrganizer $organizer): void
     {
@@ -115,13 +115,13 @@ class OrganizeLibrary extends Command
         }
 
         $this->newLine();
-        $this->error(count($failed) . ' could not be filed:');
+        $this->error(count($failed).' could not be filed:');
 
         foreach ($failed as $item) {
-            $this->line('  • ' . $item->title);
-            $this->line('      from: ' . ($item->absoluteFilePath() ?? $item->file_path));
-            $this->line('      to:   ' . ($organizer->targetPath($item) ?? '(no target)'));
-            $this->line('      why:  ' . $this->diagnose($item, $organizer));
+            $this->line('  • '.$item->title);
+            $this->line('      from: '.($item->absoluteFilePath() ?? $item->file_path));
+            $this->line('      to:   '.($organizer->targetPath($item) ?? '(no target)'));
+            $this->line('      why:  '.$this->diagnose($item, $organizer));
         }
     }
 
@@ -148,11 +148,11 @@ class OrganizeLibrary extends Command
         $directory = dirname(Storage::path($target));
 
         if (! is_dir($directory) && ! is_writable(dirname($directory))) {
-            return 'cannot create ' . $directory . ' (permission denied)';
+            return 'cannot create '.$directory.' (permission denied)';
         }
 
         if (is_dir($directory) && ! is_writable($directory)) {
-            return $directory . ' is not writable';
+            return $directory.' is not writable';
         }
 
         if (! is_readable($source)) {

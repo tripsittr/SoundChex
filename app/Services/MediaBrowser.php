@@ -52,12 +52,12 @@ class MediaBrowser
     {
         $rows = [
             [
-                'key'   => 'recent',
+                'key' => 'recent',
                 'title' => 'Recently Added',
                 'items' => $this->recentlyAdded($type),
             ],
             [
-                'key'   => 'top-rated',
+                'key' => 'top-rated',
                 'title' => 'Your Highest Rated',
                 'items' => $this->base($type)
                     ->whereNotNull('user_rating')
@@ -66,17 +66,9 @@ class MediaBrowser
                     ->get(),
             ],
             [
-                'key'   => 'wishlist',
+                'key' => 'wishlist',
                 'title' => 'Wishlist',
                 'items' => $this->base($type)->where('wishlist', true)->limit(self::ROW_LIMIT)->get(),
-            ],
-            [
-                'key'   => 'needs-review',
-                'title' => 'Needs Review',
-                'items' => $this->base($type)
-                    ->whereIn('processing_status', ['needs_review', 'failed'])
-                    ->limit(self::ROW_LIMIT)
-                    ->get(),
             ],
         ];
 
@@ -111,7 +103,7 @@ class MediaBrowser
             ->pluck('genre');
 
         return $genres->map(fn (string $genre) => [
-            'key'   => 'genre-' . str($genre)->slug(),
+            'key' => 'genre-'.str($genre)->slug(),
             'title' => $genre,
             'items' => $this->base($type)
                 ->whereHas('tags', fn (Builder $q) => $q->where('type', 'genre')->where('value', $genre))
@@ -146,7 +138,7 @@ class MediaBrowser
                 ->where('percent', '>', 0))
             ->with(['bookMetadata', 'tags'])
             ->join('reading_progress', 'reading_progress.media_item_id', '=', 'media_items.id')
-            ->where('reading_progress.' . $viewer['column'], $viewer['id'])
+            ->where('reading_progress.'.$viewer['column'], $viewer['id'])
             ->orderByDesc('reading_progress.updated_at')
             ->select('media_items.*')
             ->limit($limit)
@@ -229,7 +221,7 @@ class MediaBrowser
             ->whereIn('type', [MediaItemType::Movie, MediaItemType::Show])
             ->whereNotNull('file_path')
             ->join('media_plays', 'media_plays.media_item_id', '=', 'media_items.id')
-            ->where('media_plays.' . $viewer['column'], $viewer['id'])
+            ->where('media_plays.'.$viewer['column'], $viewer['id'])
             ->where('media_plays.completed', false)
             // A minute in is enough to mean the film was actually started.
             ->where('media_plays.position_seconds', '>', 60)
@@ -261,7 +253,7 @@ class MediaBrowser
     /**
      * Paginated grid for "view all" browsing, with optional filters.
      *
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function grid(MediaItemType|array $type, array $filters = [], int $perPage = 48)
     {
@@ -422,8 +414,8 @@ class MediaBrowser
             $relations[] = match ($type) {
                 MediaItemType::Music => 'musicMetadata',
                 MediaItemType::Movie => 'movieMetadata',
-                MediaItemType::Show  => 'showMetadata',
-                MediaItemType::Book  => 'bookMetadata',
+                MediaItemType::Show => 'showMetadata',
+                MediaItemType::Book => 'bookMetadata',
             };
         }
 

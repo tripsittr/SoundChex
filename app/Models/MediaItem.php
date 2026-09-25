@@ -10,22 +10,87 @@ use App\Enums\DuplicateStatus;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
+use App\Models\Scopes\ResolvedScope;
 use App\Observers\MediaItemObserver;
-use App\Services\CurrentProfile;
 use App\Plugins\Registry;
+use App\Services\CurrentProfile;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use Illuminate\Database\Eloquent\Attributes\ScopedBy;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
 #[ObservedBy(MediaItemObserver::class)]
+#[ScopedBy(ResolvedScope::class)]
 class MediaItem extends Model
 {
+    /**
+     * Every item, including the ones the library is hiding (S-396).
+     *
+     * For the admin panel, the maintenance commands and jobs, the transfer
+     * endpoints and the health counts — everything whose job is to *find* the
+     * unresolved items rather than to present a library. Reads as an
+     * intention: `MediaItem::unresolved()` at a call site says "yes, I meant
+     * to see these".
+     */
+    public static function unresolved(): Builder
+    {
+        return static::query()->withoutGlobalScope(ResolvedScope::class);
+    }
+
+    /**
+     * Re-reads this row, hidden or not.
+     *
+     * `refresh()` and `fresh()` go through a scoped query, so an item the
+     * library is hiding cannot re-read itself — and enrichment does exactly
+     * that, eight times, on an item it has just set to `processing`. Without
+     * this the pipeline throws on every item it touches.
+     */
+    public function refresh(): static
+    {
+        if (! $this->exists) {
+            return $this;
+        }
+
+        $this->setRawAttributes(
+            static::unresolved()->findOrFail($this->getKey())->attributes,
+        );
+
+        $this->load(collect($this->relations)->reject(
+            fn ($relation) => $relation instanceof Pivot,
+        )->keys()->all());
+
+        $this->syncOriginal();
+
+        return $this;
+    }
+
+    /** As `refresh()`: a hidden item must still be able to re-read itself. */
+    public function fresh($with = []): ?static
+    {
+        if (! $this->exists) {
+            return null;
+        }
+
+        return static::unresolved()
+            ->with(is_string($with) ? func_get_args() : $with)
+            ->find($this->getKey());
+    }
+
+    /** Whether this item is hidden from the library. */
+    public function isUnresolved(): bool
+    {
+        return $this->processing_status !== ProcessingStatus::Complete
+            || (bool) $this->file_missing;
+    }
+
     /**
      * A specific reason a source flagged this item for review, carried from the
      * source to the pipeline's report within one enrichment run.
@@ -53,6 +118,8 @@ class MediaItem extends Model
         'transcode_status',
         'transcode_percent',
         'processing_status',
+        'file_missing',
+        'file_missing_at',
         'reviewed_at',
         'match_confidence',
         'matched_by',
@@ -69,6 +136,8 @@ class MediaItem extends Model
     protected $casts = [
         'type' => MediaItemType::class,
         'processing_status' => ProcessingStatus::class,
+        'file_missing' => 'boolean',
+        'file_missing_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'match_confidence' => MatchConfidence::class,
         'duplicate_status' => DuplicateStatus::class,
@@ -429,7 +498,7 @@ class MediaItem extends Model
         // Path segments may contain spaces and commas from artist/album names.
         $encoded = implode('/', array_map('rawurlencode', explode('/', ltrim($value, '/'))));
 
-        return url('storage/' . $encoded);
+        return url('storage/'.$encoded);
     }
 
     /**
@@ -453,6 +522,25 @@ class MediaItem extends Model
         $path = Storage::path($this->file_path);
 
         return is_readable($path) ? $path : null;
+    }
+
+    /**
+     * Where the item's file is *supposed* to be, readable or not.
+     *
+     * `absoluteFilePath()` answers null when the file cannot be read, which
+     * makes it useless for the one question the missing-file sweep needs to
+     * ask: given that this file is gone, was its whole volume gone too, or
+     * just the file? That needs the intended location (S-389).
+     */
+    public function expectedFilePath(): ?string
+    {
+        if (blank($this->file_path)) {
+            return null;
+        }
+
+        return $this->isAbsolutePath($this->file_path)
+            ? $this->file_path
+            : Storage::path($this->file_path);
     }
 
     /**

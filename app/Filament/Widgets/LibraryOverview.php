@@ -37,7 +37,7 @@ class LibraryOverview extends StatsOverviewWidget
 
     protected function getStats(): array
     {
-        $counts = MediaItem::query()
+        $counts = MediaItem::unresolved()
             ->selectRaw('type, count(*) as total')
             ->groupBy('type')
             ->pluck('total', 'type')
@@ -45,7 +45,7 @@ class LibraryOverview extends StatsOverviewWidget
 
         $total = array_sum($counts);
 
-        $needsAttention = MediaItem::query()
+        $needsAttention = MediaItem::unresolved()
             ->whereIn('processing_status', [
                 ProcessingStatus::NeedsReview->value,
                 ProcessingStatus::Failed->value,
@@ -117,7 +117,7 @@ class LibraryOverview extends StatsOverviewWidget
     private function estimate(): array
     {
         return Cache::remember('library_size_estimate', now()->addHour(), function (): array {
-            $files = MediaItem::query()->whereNotNull('file_path')->count();
+            $files = MediaItem::unresolved()->whereNotNull('file_path')->count();
 
             if ($files === 0) {
                 return ['bytes' => 0, 'files' => 0];
@@ -127,12 +127,12 @@ class LibraryOverview extends StatsOverviewWidget
             // before the column existed have null and are sampled below, so the
             // figure is exact once `library:backfill-sizes` has run and only
             // approximate for the shrinking set that has not been read yet.
-            $storedBytes = (int) MediaItem::query()
+            $storedBytes = (int) MediaItem::unresolved()
                 ->whereNotNull('file_path')
                 ->whereNotNull('file_size')
                 ->sum('file_size');
 
-            $unsized = MediaItem::query()
+            $unsized = MediaItem::unresolved()
                 ->whereNotNull('file_path')
                 ->whereNull('file_size')
                 ->count();
@@ -148,7 +148,7 @@ class LibraryOverview extends StatsOverviewWidget
             $seen = 0;
             $sampledBytes = 0;
 
-            $sample = MediaItem::query()
+            $sample = MediaItem::unresolved()
                 ->whereNotNull('file_path')
                 ->whereNull('file_size')
                 ->inRandomOrder()

@@ -41,7 +41,7 @@ class SourceController extends Controller
         $page = max(1, (int) $request->integer('page', 1));
         $perPage = 500;
 
-        $query = MediaItem::query()
+        $query = MediaItem::unresolved()
             ->whereNotNull('file_path')
             ->orderBy('id');
 

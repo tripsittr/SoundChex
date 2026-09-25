@@ -111,11 +111,6 @@
                                 <span class="rounded-full bg-sky-500/20 px-2 py-0.5 text-xs text-sky-300">Wishlist</span>
                             @endif
 
-                            @if (in_array($item->processing_status?->value, ['needs_review', 'failed'], true))
-                                <span class="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">
-                                    {{ $item->processing_status->label() }}
-                                </span>
-                            @endif
                         </div>
 
                         @if ($genres->isNotEmpty())

@@ -38,7 +38,7 @@ class TidyExistingTitles extends Command
         /** @var array<int, array{id: int, from: string, to: string}> $changes */
         $changes = [];
 
-        MediaItem::query()
+        MediaItem::unresolved()
             ->with('musicMetadata')
             ->where('type', 'music')
             ->when($limit > 0, fn ($q) => $q->limit($limit))
@@ -85,7 +85,7 @@ class TidyExistingTitles extends Command
         // fresh edit — observers would re-file and re-enrich a whole library
         // for a change that only tidies text.
         foreach ($changes as $change) {
-            MediaItem::query()
+            MediaItem::unresolved()
                 ->whereKey($change['id'])
                 ->first()
                 ?->forceFill(['title' => $change['to']])

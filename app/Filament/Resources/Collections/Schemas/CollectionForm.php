@@ -49,9 +49,9 @@ class CollectionForm
                                 '%s %s%s',
                                 $record->typeGlyph(),
                                 $record->title,
-                                $record->subtitle() ? ' — ' . $record->subtitle() : '',
+                                $record->subtitle() ? ' — '.$record->subtitle() : '',
                             ))
-                            ->getSearchResultsUsing(fn (string $search): array => MediaItem::query()
+                            ->getSearchResultsUsing(fn (string $search): array => MediaItem::unresolved()
                                 ->where('title', 'like', "%{$search}%")
                                 ->orWhereHas('musicMetadata', fn (Builder $q) => $q
                                     ->where('artist', 'like', "%{$search}%"))
@@ -63,7 +63,7 @@ class CollectionForm
                                         '%s %s%s',
                                         $item->typeGlyph(),
                                         $item->title,
-                                        $item->subtitle() ? ' — ' . $item->subtitle() : '',
+                                        $item->subtitle() ? ' — '.$item->subtitle() : '',
                                     ),
                                 ])
                                 ->all())

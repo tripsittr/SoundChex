@@ -38,7 +38,7 @@ class ReenrichMusic extends Command
 
     public function handle(MetadataPipeline $pipeline): int
     {
-        $query = MediaItem::query()
+        $query = MediaItem::unresolved()
             ->where('type', MediaItemType::Music)
             ->orderByDesc('id');
 

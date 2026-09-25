@@ -73,7 +73,7 @@ class LibraryScanner
         // Keyed on the resolved absolute path, not the stored string: uploads
         // store a disk-relative path while the importer stores an absolute
         // one, so comparing raw strings lets the same file be catalogued twice.
-        $known = MediaItem::query()
+        $known = MediaItem::unresolved()
             ->where(fn ($query) => $query->whereNotNull('file_path')->orWhereNotNull('converted_path'))
             ->get(['id', 'file_path', 'converted_path'])
             ->flatMap(fn (MediaItem $item) => array_filter([
@@ -158,11 +158,109 @@ class LibraryScanner
         }
 
         if (! $dryRun) {
+            $result['missing'] = $this->sweepMissingFiles();
             $this->announceScan($result);
             ScanFinished::dispatch($result);
         }
 
         return $result;
+    }
+
+    /**
+     * Marks catalogued items whose file has gone from disk, and unmarks the
+     * ones that have come back (S-389, S-396).
+     *
+     * Two rows on a real library pointed at files that were no longer there.
+     * The row looked healthy — path set, not a duplicate, processing complete
+     * — so the item listed and queued normally and then failed at the moment
+     * of playing, which is the worst place to find out.
+     *
+     * The flag is written here rather than checked on read because whether a
+     * file exists is a disk question, and a disk question cannot be asked in
+     * SQL. Nothing is deleted: a file restored from a backup, or a drive that
+     * was unmounted during the last scan, clears the flag on the next one.
+     *
+     * That last case is why the sweep is deliberately cautious about volumes:
+     * see `folderIsReachable()`.
+     *
+     * @return int how many items are currently marked missing
+     */
+    private function sweepMissingFiles(): int
+    {
+        $missing = 0;
+
+        MediaItem::unresolved()
+            ->whereNotNull('file_path')
+            ->select(['id', 'file_path', 'converted_path', 'file_missing'])
+            ->chunkById(500, function ($items) use (&$missing): void {
+                foreach ($items as $item) {
+                    $gone = ! $item->hasReadableFile();
+
+                    if ($gone && ! $this->rootIsReachable($item)) {
+                        // The whole volume is absent — an unplugged drive, a
+                        // network share that did not mount. Marking every
+                        // item on it missing would empty the library over a
+                        // cable, and the next scan would have to undo it all.
+                        continue;
+                    }
+
+                    if ($gone) {
+                        $missing++;
+                    }
+
+                    if ($gone === (bool) $item->file_missing) {
+                        continue;
+                    }
+
+                    $item->forceFill([
+                        'file_missing' => $gone,
+                        'file_missing_at' => $gone ? now() : null,
+                    ])->saveQuietly();
+                }
+            });
+
+        return $missing;
+    }
+
+    /**
+     * Whether the volume an item lives on is present at all.
+     *
+     * Distinguishes "this one file was deleted" from "the drive is not
+     * plugged in". The test is the nearest existing ancestor directory: if
+     * the item's folder is there but the file is not, the file is genuinely
+     * gone; if nothing up the tree exists, the storage is absent and the
+     * sweep should keep its hands off.
+     */
+    private function rootIsReachable(MediaItem $item): bool
+    {
+        // The *expected* path, not the resolved one: `absoluteFilePath()`
+        // returns null precisely when the file is unreadable, which is every
+        // row this sweep is about.
+        $path = $item->expectedFilePath();
+
+        if (! is_string($path) || $path === '') {
+            return true;
+        }
+
+        foreach ($this->resolveFolders(null) as $folder) {
+            if (str_starts_with($path, $folder) && is_dir($folder)) {
+                return true;
+            }
+        }
+
+        // Not under a configured library folder — walk up to the first
+        // directory that exists and take that as the answer.
+        $directory = dirname($path);
+
+        while ($directory !== '' && $directory !== '/' && $directory !== '.') {
+            if (is_dir($directory)) {
+                return true;
+            }
+
+            $directory = dirname($directory);
+        }
+
+        return false;
     }
 
     /**
@@ -208,7 +306,11 @@ class LibraryScanner
     private function attachToSeries(MediaItem $episode, string $seriesTitle, ?int $userId): void
     {
         try {
-            $series = MediaItem::firstOrCreate(
+            // Unscoped: a series row is created `pending` and the library
+            // hides it until enrichment completes (S-396). A scoped lookup
+            // would never find the one it just made, so every episode would
+            // create another series row.
+            $series = MediaItem::unresolved()->firstOrCreate(
                 [
                     'type' => MediaItemType::Show,
                     'title' => $seriesTitle,
@@ -279,7 +381,7 @@ class LibraryScanner
 
         // Same path-keyed lookup the scan uses, so running this twice does not
         // produce two rows for one file.
-        $known = MediaItem::query()
+        $known = MediaItem::unresolved()
             ->whereNotNull('file_path')
             ->get(['id', 'file_path'])
             ->mapWithKeys(fn (MediaItem $item) => [
@@ -349,7 +451,7 @@ class LibraryScanner
      * between them and had already started to drift.
      *
      * @return array{type: MediaItemType, title: string, marker: array<string, mixed>|null, seed: array<string, mixed>}|null
-     *                                                  null when the file is not media, or carries no usable title.
+     *                                                                                                                       null when the file is not media, or carries no usable title.
      */
     private function classify(SplFileInfo $file, string $path): ?array
     {

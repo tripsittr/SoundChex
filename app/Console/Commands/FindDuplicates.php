@@ -31,7 +31,7 @@ class FindDuplicates extends Command
     public function handle(DuplicateDetector $detector): int
     {
         if ($this->option('rehash')) {
-            MediaItem::query()->whereNotNull('content_hash')
+            MediaItem::unresolved()->whereNotNull('content_hash')
                 ->update(['content_hash' => null]);
         }
 
@@ -41,7 +41,7 @@ class FindDuplicates extends Command
             $this->comment('Cleared '.$cleared.' stale '.str('flag')->plural($cleared).' with no original.');
         }
 
-        $items = MediaItem::query()
+        $items = MediaItem::unresolved()
             ->whereNotNull('file_path')
             ->orderBy('id')
             ->get();
@@ -75,7 +75,7 @@ class FindDuplicates extends Command
             $this->comment($unhashable.' could not be hashed (missing, unreadable, or over the size limit)');
         }
 
-        $pending = MediaItem::where('duplicate_status', DuplicateStatus::Pending)->count();
+        $pending = MediaItem::unresolved()->where('duplicate_status', DuplicateStatus::Pending)->count();
 
         if ($pending === 0) {
             $this->info('No duplicates pending review.');
@@ -98,7 +98,7 @@ class FindDuplicates extends Command
 
     private function listPending(): void
     {
-        $rows = MediaItem::query()
+        $rows = MediaItem::unresolved()
             ->where('duplicate_status', DuplicateStatus::Pending)
             ->with('duplicateOf')
             ->take(20)
@@ -116,7 +116,7 @@ class FindDuplicates extends Command
 
     private function mergeAll(DuplicateDetector $detector): int
     {
-        $pending = MediaItem::where('duplicate_status', DuplicateStatus::Pending)->get();
+        $pending = MediaItem::unresolved()->where('duplicate_status', DuplicateStatus::Pending)->get();
 
         $merged = 0;
         $refused = 0;

@@ -38,7 +38,7 @@ class RepairTitles extends Command
         $apply = (bool) $this->option('apply');
         $limit = $this->option('limit') === null ? null : max(1, (int) $this->option('limit'));
 
-        $items = MediaItem::query()
+        $items = MediaItem::unresolved()
             ->where('type', MediaItemType::Music)
             ->whereNotNull('file_path')
             ->with('musicMetadata')
@@ -128,7 +128,7 @@ class RepairTitles extends Command
         }
 
         foreach ([' - ', ' — ', ' – '] as $separator) {
-            if (str_ends_with($item->title, $separator . $artist)) {
+            if (str_ends_with($item->title, $separator.$artist)) {
                 return true;
             }
         }

@@ -45,8 +45,8 @@ class LibraryCsvTest extends TestCase
         CSV);
 
         $this->assertSame(1, $result['imported']);
-        $this->assertSame('Backrooms', MediaItem::first()->title);
-        $this->assertSame(MediaItemType::Movie, MediaItem::first()->type);
+        $this->assertSame('Backrooms', MediaItem::unresolved()->first()->title);
+        $this->assertSame(MediaItemType::Movie, MediaItem::unresolved()->first()->type);
     }
 
     public function test_column_order_does_not_matter(): void
@@ -59,7 +59,7 @@ class LibraryCsvTest extends TestCase
         CSV);
 
         $this->assertSame(1, $result['imported']);
-        $this->assertSame('A film', MediaItem::first()->notes);
+        $this->assertSame('A film', MediaItem::unresolved()->first()->notes);
     }
 
     public function test_headers_are_matched_case_insensitively(): void
@@ -103,7 +103,7 @@ class LibraryCsvTest extends TestCase
 
         $this->assertSame(0, $second['imported']);
         $this->assertSame(1, $second['skipped']);
-        $this->assertSame(1, MediaItem::count());
+        $this->assertSame(1, MediaItem::unresolved()->count());
     }
 
     public function test_the_duplicate_check_ignores_case(): void
@@ -136,7 +136,7 @@ class LibraryCsvTest extends TestCase
 
     public function test_an_unreadable_path_reports_an_error(): void
     {
-        $result = $this->csv->import('/tmp/does-not-exist-' . uniqid() . '.csv', $this->user->id);
+        $result = $this->csv->import('/tmp/does-not-exist-'.uniqid().'.csv', $this->user->id);
 
         $this->assertSame(0, $result['imported']);
         $this->assertNotEmpty($result['errors']);
@@ -147,7 +147,7 @@ class LibraryCsvTest extends TestCase
         $result = $this->import('title,type');
 
         $this->assertSame(0, $result['imported']);
-        $this->assertSame(0, MediaItem::count());
+        $this->assertSame(0, MediaItem::unresolved()->count());
     }
 
     /* ---------------------------------------------------------- export --- */

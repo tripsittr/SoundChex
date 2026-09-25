@@ -9,7 +9,6 @@ use App\Enums\MediaItemType;
 use App\Enums\MediaTagSource;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
-use Illuminate\Support\LazyCollection;
 
 /**
  * CSV export and import for the whole library.
@@ -49,7 +48,7 @@ class LibraryCsv
     {
         yield self::COLUMNS;
 
-        $query = MediaItem::query()
+        $query = MediaItem::unresolved()
             ->with(['tags', 'musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata'])
             ->when($type, fn ($q) => $q->where('type', $type))
             ->orderBy('type')
@@ -67,45 +66,45 @@ class LibraryCsv
     {
         $music = $item->musicMetadata;
         $movie = $item->movieMetadata;
-        $show  = $item->showMetadata;
-        $book  = $item->bookMetadata;
+        $show = $item->showMetadata;
+        $book = $item->bookMetadata;
 
         $values = [
-            'type'            => $item->type->value,
-            'title'           => $item->title,
-            'year'            => $item->year(),
-            'owned'           => $item->owned ? '1' : '0',
-            'wishlist'        => $item->wishlist ? '1' : '0',
-            'user_rating'     => $item->user_rating,
-            'genres'          => $item->tags->where('type', 'genre')->pluck('value')->implode('; '),
-            'notes'           => $item->notes,
+            'type' => $item->type->value,
+            'title' => $item->title,
+            'year' => $item->year(),
+            'owned' => $item->owned ? '1' : '0',
+            'wishlist' => $item->wishlist ? '1' : '0',
+            'user_rating' => $item->user_rating,
+            'genres' => $item->tags->where('type', 'genre')->pluck('value')->implode('; '),
+            'notes' => $item->notes,
 
-            'artist'          => $music?->artist,
-            'album'           => $music?->album,
-            'track_number'    => $music?->track_number,
-            'label'           => $music?->label,
-            'bpm'             => $music?->bpm,
-            'key'             => $music?->key,
-            'scale'           => $music?->scale,
-            'isrc'            => $music?->isrc,
+            'artist' => $music?->artist,
+            'album' => $music?->album,
+            'track_number' => $music?->track_number,
+            'label' => $music?->label,
+            'bpm' => $music?->bpm,
+            'key' => $music?->key,
+            'scale' => $music?->scale,
+            'isrc' => $music?->isrc,
 
-            'director'        => $movie?->director,
-            'studio'          => $movie?->studio,
+            'director' => $movie?->director,
+            'studio' => $movie?->studio,
             'runtime_minutes' => $movie?->runtime_minutes,
-            'imdb_id'         => $movie?->imdb_id,
-            'tmdb_id'         => $movie?->tmdb_id ?? $show?->tmdb_id,
+            'imdb_id' => $movie?->imdb_id,
+            'tmdb_id' => $movie?->tmdb_id ?? $show?->tmdb_id,
 
-            'creator'         => $show?->creator,
-            'network'         => $show?->network,
-            'season_count'    => $show?->season_count,
-            'episode_count'   => $show?->episode_count,
-            'status'          => $show?->status,
+            'creator' => $show?->creator,
+            'network' => $show?->network,
+            'season_count' => $show?->season_count,
+            'episode_count' => $show?->episode_count,
+            'status' => $show?->status,
 
-            'author'          => $book?->author,
-            'publisher'       => $book?->publisher,
-            'pages'           => $book?->pages,
-            'isbn_13'         => $book?->isbn_13,
-            'series_name'     => $book?->series_name,
+            'author' => $book?->author,
+            'publisher' => $book?->publisher,
+            'pages' => $book?->pages,
+            'isbn_13' => $book?->isbn_13,
+            'series_name' => $book?->series_name,
             'series_position' => $book?->series_position,
         ];
 
@@ -177,7 +176,7 @@ class LibraryCsv
             }
 
             // Re-importing an export shouldn't duplicate the library.
-            $exists = MediaItem::query()
+            $exists = MediaItem::unresolved()
                 ->where('type', $type)
                 ->whereRaw('lower(title) = ?', [mb_strtolower($title)])
                 ->exists();
@@ -189,13 +188,13 @@ class LibraryCsv
             }
 
             $item = MediaItem::create([
-                'user_id'           => $userId,
-                'type'              => $type,
-                'title'             => $title,
-                'notes'             => $get('notes'),
-                'owned'             => $this->boolean($get('owned'), default: true),
-                'wishlist'          => $this->boolean($get('wishlist'), default: false),
-                'user_rating'       => $this->integer($get('user_rating')),
+                'user_id' => $userId,
+                'type' => $type,
+                'title' => $title,
+                'notes' => $get('notes'),
+                'owned' => $this->boolean($get('owned'), default: true),
+                'wishlist' => $this->boolean($get('wishlist'), default: false),
+                'user_rating' => $this->integer($get('user_rating')),
                 'processing_status' => ProcessingStatus::Pending,
             ]);
 
@@ -215,8 +214,8 @@ class LibraryCsv
     }
 
     /**
-     * @param array<int, string|null> $row
-     * @param array<string, int> $index
+     * @param  array<int, string|null>  $row
+     * @param  array<string, int>  $index
      */
     private function cell(array $row, array $index, string $column): ?string
     {
@@ -237,41 +236,41 @@ class LibraryCsv
 
         $attributes = match ($type) {
             MediaItemType::Music => [
-                'artist'       => $get('artist'),
-                'album'        => $get('album'),
+                'artist' => $get('artist'),
+                'album' => $get('album'),
                 'track_number' => $this->integer($get('track_number')),
-                'label'        => $get('label'),
-                'bpm'          => $get('bpm') !== null ? (float) $get('bpm') : null,
-                'key'          => $get('key'),
-                'scale'        => $get('scale'),
-                'isrc'         => $get('isrc'),
+                'label' => $get('label'),
+                'bpm' => $get('bpm') !== null ? (float) $get('bpm') : null,
+                'key' => $get('key'),
+                'scale' => $get('scale'),
+                'isrc' => $get('isrc'),
                 'release_year' => $year,
             ],
             MediaItemType::Movie => [
-                'director'        => $get('director'),
-                'studio'          => $get('studio'),
+                'director' => $get('director'),
+                'studio' => $get('studio'),
                 'runtime_minutes' => $this->integer($get('runtime_minutes')),
-                'imdb_id'         => $get('imdb_id'),
-                'tmdb_id'         => $this->integer($get('tmdb_id')),
-                'release_year'    => $year,
+                'imdb_id' => $get('imdb_id'),
+                'tmdb_id' => $this->integer($get('tmdb_id')),
+                'release_year' => $year,
             ],
             MediaItemType::Show => [
-                'creator'        => $get('creator'),
-                'network'        => $get('network'),
-                'season_count'   => $this->integer($get('season_count')),
-                'episode_count'  => $this->integer($get('episode_count')),
-                'status'         => $get('status'),
-                'tmdb_id'        => $this->integer($get('tmdb_id')),
+                'creator' => $get('creator'),
+                'network' => $get('network'),
+                'season_count' => $this->integer($get('season_count')),
+                'episode_count' => $this->integer($get('episode_count')),
+                'status' => $get('status'),
+                'tmdb_id' => $this->integer($get('tmdb_id')),
                 'first_air_year' => $year,
             ],
             MediaItemType::Book => [
-                'author'          => $get('author'),
-                'publisher'       => $get('publisher'),
-                'pages'           => $this->integer($get('pages')),
-                'isbn_13'         => $get('isbn_13'),
-                'series_name'     => $get('series_name'),
+                'author' => $get('author'),
+                'publisher' => $get('publisher'),
+                'pages' => $this->integer($get('pages')),
+                'isbn_13' => $get('isbn_13'),
+                'series_name' => $get('series_name'),
                 'series_position' => $this->integer($get('series_position')),
-                'publish_year'    => $year,
+                'publish_year' => $year,
             ],
         };
 
@@ -295,8 +294,8 @@ class LibraryCsv
             }
 
             $item->tags()->create([
-                'type'   => 'genre',
-                'value'  => $value,
+                'type' => 'genre',
+                'value' => $value,
                 'source' => MediaTagSource::Manual,
             ]);
         }

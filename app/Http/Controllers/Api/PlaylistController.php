@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\MediaItemResource;
 use App\Models\Collection;
 use App\Models\MediaItem;
+use App\Models\Scopes\ResolvedScope;
 use App\Services\ContentGate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -120,12 +121,28 @@ class PlaylistController extends Controller
         // a capped profile's total reflects only the tracks it can actually play.
         $durationMs = $tracks->sum(fn (MediaItem $t): int => (int) ($t->musicMetadata?->duration_ms ?? 0));
 
+        // Tracks the playlist holds that the library is currently hiding —
+        // awaiting review, or their file is missing (S-396). Reported as a
+        // count so the client can say "1 track unavailable" rather than just
+        // showing eleven of twelve: a rating cap is permanent and silence
+        // suits it, but an unresolved track is *temporarily* absent and a
+        // gap with no explanation reads as data loss.
+        //
+        // Counted off the pivot rather than the relation: the relation carries
+        // the same global scope that hid the tracks, so comparing it with
+        // `$tracks` would always give zero. The pivot is the only place that
+        // still knows how many tracks the playlist was built with.
+        $unavailable = $collection->mediaItems()
+            ->withoutGlobalScope(ResolvedScope::class)
+            ->count() - $tracks->count();
+
         return response()->json([
             'id' => $collection->id,
             'name' => $collection->name,
             'description' => $collection->description,
             'artwork_url' => $collection->artworkUrl(),
             'count' => $tracks->count(),
+            'unavailable_count' => max(0, $unavailable),
             'duration_ms' => $durationMs,
             'items' => MediaItemResource::collection($tracks),
         ]);

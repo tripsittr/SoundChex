@@ -31,7 +31,7 @@ class DetectDuplicatesJob implements ShouldQueue
         // review list and are judged afresh below rather than lingering.
         $detector->clearOrphans();
 
-        MediaItem::query()
+        MediaItem::unresolved()
             ->whereNotNull('file_path')
             // Rows the user already decided on are left alone; re-flagging a
             // pair they chose to keep would refill the review list.

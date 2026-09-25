@@ -30,7 +30,7 @@ class ImportLibrary extends Command
         $path = $this->expandPath($this->argument('path'));
 
         if (! is_readable($path)) {
-            $this->error('Not a readable file: ' . $path);
+            $this->error('Not a readable file: '.$path);
 
             return self::FAILURE;
         }
@@ -47,25 +47,25 @@ class ImportLibrary extends Command
         // alone so an import never re-runs the pipeline over the whole library.
         $highestBefore = MediaItem::max('id') ?? 0;
 
-        $this->info('Importing ' . basename($path) . '…');
+        $this->info('Importing '.basename($path).'…');
 
         $result = $csv->import($path, $userId);
 
         $this->newLine();
-        $this->info($result['imported'] . ' imported');
+        $this->info($result['imported'].' imported');
 
         if ($result['skipped'] > 0) {
-            $this->comment($result['skipped'] . ' skipped (already present or invalid)');
+            $this->comment($result['skipped'].' skipped (already present or invalid)');
         }
 
         foreach ($result['errors'] as $error) {
-            $this->warn('  ' . $error);
+            $this->warn('  '.$error);
         }
 
         if (! $this->option('no-enrich') && $result['imported'] > 0) {
             $queued = 0;
 
-            MediaItem::where('id', '>', $highestBefore)
+            MediaItem::unresolved()->where('id', '>', $highestBefore)
                 ->pluck('id')
                 ->each(function (int $id) use (&$queued): void {
                     EnrichMediaItemJob::dispatch($id);
@@ -73,7 +73,7 @@ class ImportLibrary extends Command
                 });
 
             $this->newLine();
-            $this->comment($queued . ' queued for enrichment. Run `php artisan queue:work` if no worker is running.');
+            $this->comment($queued.' queued for enrichment. Run `php artisan queue:work` if no worker is running.');
         }
 
         return self::SUCCESS;
@@ -82,7 +82,7 @@ class ImportLibrary extends Command
     private function expandPath(string $path): string
     {
         if (str_starts_with($path, '~/')) {
-            return rtrim((string) getenv('HOME'), '/') . substr($path, 1);
+            return rtrim((string) getenv('HOME'), '/').substr($path, 1);
         }
 
         return $path;
