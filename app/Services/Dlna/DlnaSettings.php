@@ -28,6 +28,8 @@ class DlnaSettings
 
     public const NAME = 'dlna.friendly_name';
 
+    public const UUID = 'dlna.uuid';
+
     public function __construct(private SettingsService $settings) {}
 
     /** Whether to advertise on the LAN at all. */
@@ -62,6 +64,28 @@ class DlnaSettings
         $name = (string) $this->settings->get(self::NAME, '');
 
         return $name !== '' ? $name : 'SoundChex';
+    }
+
+    /**
+     * The device's stable UDN.
+     *
+     * Generated once and kept. A UDN that changed on restart would make every
+     * client re-add the server as a *new* device each time it booted, leaving
+     * the TV's list full of ghosts that no longer answer.
+     */
+    public function uuid(): string
+    {
+        $stored = $this->settings->get(self::UUID);
+
+        if (filled($stored)) {
+            return (string) $stored;
+        }
+
+        $uuid = (string) \Illuminate\Support\Str::uuid();
+
+        $this->settings->set(self::UUID, $uuid);
+
+        return $uuid;
     }
 
     /**

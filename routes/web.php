@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use App\Http\Middleware\EnsureDlnaEnabled;
+use App\Http\Controllers\DlnaController;
 use App\Http\Controllers\AnnotationController;
 use App\Http\Controllers\AlbumController;
 use App\Http\Controllers\AuthController;
@@ -279,3 +282,26 @@ Route::middleware(['auth'])->group(function (): void {
             Route::get('/{type}', [MediaCenterController::class, 'browse'])->name('browse');
         });
 });
+
+/*
+|--------------------------------------------------------------------------
+| DLNA / UPnP (S-7)
+|--------------------------------------------------------------------------
+|
+| Unauthenticated by protocol — a television cannot log in — so these sit
+| outside every auth group and are guarded by EnsureDlnaEnabled instead:
+| switched on in Settings, and called from the local network. Off by default.
+|
+| No CSRF: a SOAP control request from a TV carries no token and never will.
+| These routes are read-only, so there is nothing for a forged request to do
+| that browsing the same library would not.
+*/
+Route::middleware(EnsureDlnaEnabled::class)
+    ->prefix('dlna')
+    ->withoutMiddleware([VerifyCsrfToken::class])
+    ->group(function (): void {
+        Route::get('/device.xml', [DlnaController::class, 'description'])->name('dlna.description');
+        Route::get('/content-directory.xml', [DlnaController::class, 'serviceDescription'])->name('dlna.scpd');
+        Route::post('/control', [DlnaController::class, 'control'])->name('dlna.control');
+        Route::get('/media/{id}', [DlnaController::class, 'media'])->whereNumber('id')->name('dlna.media');
+    });
