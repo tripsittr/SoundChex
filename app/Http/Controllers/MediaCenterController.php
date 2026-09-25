@@ -286,7 +286,10 @@ class MediaCenterController extends Controller
         return response()->file($path, [
             'Content-Disposition' => (new ResponseHeaderBag)->makeDisposition(
                 ResponseHeaderBag::DISPOSITION_INLINE,
-                (string) $item->title,
+                // Sanitised: Symfony throws on a filename containing a
+                // slash, so a title like "AM/PM" made this 500 before a byte
+                // was sent (S-393).
+                $item->downloadFilename(),
                 'media',
             ),
         ]);
