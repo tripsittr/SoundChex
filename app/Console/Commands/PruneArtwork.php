@@ -42,7 +42,7 @@ class PruneArtwork extends Command
 
         // Every locally-extracted cover path, as stored. Remote URLs are
         // ignored: they point at somebody else's server and own no file here.
-        $referenced = MediaItem::query()
+        $referenced = MediaItem::unresolved()
             ->whereNotNull('cover_image_url')
             ->pluck('cover_image_url')
             ->reject(fn (string $path) => str_starts_with($path, 'http'))
@@ -60,7 +60,7 @@ class PruneArtwork extends Command
             return self::FAILURE;
         }
 
-        $files = (new Finder())->files()->in($root);
+        $files = (new Finder)->files()->in($root);
 
         $orphans = [];
         $bytes = 0;
@@ -83,7 +83,7 @@ class PruneArtwork extends Command
         }
 
         foreach (array_slice($orphans, 0, 10) as $path) {
-            $this->line('  - ' . str_replace($root . '/', '', $path));
+            $this->line('  - '.str_replace($root.'/', '', $path));
         }
 
         if (count($orphans) > 10) {
@@ -120,7 +120,7 @@ class PruneArtwork extends Command
     private function humanBytes(int $bytes): string
     {
         return $bytes >= 1_048_576
-            ? round($bytes / 1_048_576, 1) . ' MB'
-            : round($bytes / 1024) . ' KB';
+            ? round($bytes / 1_048_576, 1).' MB'
+            : round($bytes / 1024).' KB';
     }
 }

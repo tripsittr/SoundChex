@@ -6,7 +6,9 @@
 namespace App\Filament\Resources\Concerns;
 
 use App\Enums\MediaItemType;
+use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
+use App\Models\Scopes\ResolvedScope;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -29,8 +31,8 @@ trait IsMediaTypeResource
         return match (static::mediaType()) {
             MediaItemType::Music => 'musicMetadata',
             MediaItemType::Movie => 'movieMetadata',
-            MediaItemType::Show  => 'showMetadata',
-            MediaItemType::Book  => 'bookMetadata',
+            MediaItemType::Show => 'showMetadata',
+            MediaItemType::Book => 'bookMetadata',
         };
     }
 
@@ -40,7 +42,10 @@ trait IsMediaTypeResource
      */
     public static function getEloquentQuery(): Builder
     {
+        // The admin panel's job is to *find* the unresolved items, so it
+        // opts out of the library's hide-what-is-uncertain scope (S-396).
         return parent::getEloquentQuery()
+            ->withoutGlobalScope(ResolvedScope::class)
             ->where('type', static::mediaType())
             ->with(static::metadataRelation());
     }
@@ -64,21 +69,21 @@ trait IsMediaTypeResource
     {
         return array_filter([
             'Detail' => $record->subtitle(),
-            'Year'   => $record->year(),
+            'Year' => $record->year(),
         ]);
     }
 
     /**
      * Applies the type, owner, and pending status to a newly created record.
      *
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
     public static function prepareCreateData(array $data, ?int $userId): array
     {
         $data['type'] = static::mediaType();
         $data['user_id'] = $userId;
-        $data['processing_status'] = \App\Enums\ProcessingStatus::Pending;
+        $data['processing_status'] = ProcessingStatus::Pending;
 
         return $data;
     }
@@ -89,8 +94,8 @@ trait IsMediaTypeResource
      * The metadata row must exist before enrichment runs — every source writes
      * into it rather than creating it.
      *
-     * @param array<string, mixed> $data
-     * @param array<string, mixed> $metadata
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $metadata
      */
     public static function createWithMetadata(array $data, array $metadata): MediaItem
     {

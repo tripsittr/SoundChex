@@ -25,7 +25,7 @@ class BackfillFileSizes extends Command
 
     public function handle(): int
     {
-        $query = MediaItem::query()->whereNotNull('file_path');
+        $query = MediaItem::unresolved()->whereNotNull('file_path');
 
         if (! $this->option('all')) {
             $query->whereNull('file_size');

@@ -18,6 +18,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
+use Filament\Tables\Columns\Column;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -39,7 +40,7 @@ trait BuildsMediaTable
     use HasMetadataHistory;
 
     /**
-     * @param array<int, \Filament\Tables\Columns\Column> $extraColumns
+     * @param  array<int, Column>  $extraColumns
      */
     protected static function baseTable(Table $table, array $extraColumns = [], string $placeholder = '🎬'): Table
     {
@@ -55,7 +56,7 @@ trait BuildsMediaTable
                     ->label('')
                     ->square()
                     ->defaultImageUrl(fn (): string => 'https://placehold.co/72x108/1f2937/6b7280?text='
-                        . rawurlencode($placeholder)),
+                        .rawurlencode($placeholder)),
 
                 TextColumn::make('title')
                     ->searchable()
@@ -77,7 +78,6 @@ trait BuildsMediaTable
                     ->formatStateUsing(fn (ProcessingStatus $state): string => $state->label())
                     ->color(fn (ProcessingStatus $state): string => $state->color()),
 
-
                 IconColumn::make('owned')
                     ->label('Owned')
                     ->boolean()
@@ -85,7 +85,7 @@ trait BuildsMediaTable
 
                 TextColumn::make('user_rating')
                     ->label('Rating')
-                    ->formatStateUsing(fn (?int $state): string => $state ? $state . '/10' : '—')
+                    ->formatStateUsing(fn (?int $state): string => $state ? $state.'/10' : '—')
                     ->sortable()
                     ->toggleable(),
             ])
@@ -117,7 +117,7 @@ trait BuildsMediaTable
                     // percentage on the control you pressed is where you look
                     // for it.
                     ->label(fn (MediaItem $record): string => match ($record->transcode_status) {
-                        'running' => 'Converting ' . $record->transcode_percent . '%',
+                        'running' => 'Converting '.$record->transcode_percent.'%',
                         'pending' => 'Queued…',
                         'failed' => 'Convert failed — retry',
                         default => 'Convert for web',
@@ -195,7 +195,7 @@ trait BuildsMediaTable
                             });
 
                             Notification::make()
-                                ->title($records->count() . ' items queued for re-enrichment')
+                                ->title($records->count().' items queued for re-enrichment')
                                 ->success()
                                 ->send();
                         })
@@ -223,7 +223,7 @@ trait BuildsMediaTable
     {
         return Action::make('importSubtitles')
             ->label(fn (MediaItem $record): string => ($count = $record->subtitles()->count()) > 0
-                ? $count . ' ' . str('subtitle')->plural($count)
+                ? $count.' '.str('subtitle')->plural($count)
                 : 'Find subtitles')
             ->icon('heroicon-o-chat-bubble-bottom-center-text')
             ->color('gray')
@@ -246,7 +246,7 @@ trait BuildsMediaTable
 
                 Notification::make()
                     ->title($total > 0
-                        ? $total . ' ' . str('track')->plural($total) . ' imported'
+                        ? $total.' '.str('track')->plural($total).' imported'
                         : 'No subtitles found in this file')
                     ->body($total > 0
                         ? 'Choose them from the captions menu while watching.'
@@ -281,7 +281,7 @@ trait BuildsMediaTable
             return false;
         }
 
-        return MediaItem::query()
+        return MediaItem::unresolved()
             ->where('type', static::mediaType())
             ->whereIn('transcode_status', ['pending', 'running'])
             ->exists();
@@ -310,7 +310,7 @@ trait BuildsMediaTable
      */
     protected static function availableGenres(): array
     {
-        return MediaItem::query()
+        return MediaItem::unresolved()
             ->where('media_items.type', static::mediaType())
             ->join('media_tags', 'media_tags.media_item_id', '=', 'media_items.id')
             ->where('media_tags.type', 'genre')

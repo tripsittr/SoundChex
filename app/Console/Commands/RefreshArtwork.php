@@ -156,7 +156,7 @@ class RefreshArtwork extends Command
      */
     private function eligibleTracks(string $scope): Collection
     {
-        $query = MediaItem::query()
+        $query = MediaItem::unresolved()
             ->where('type', MediaItemType::Music)
             ->where(fn ($q) => $q
                 ->whereNull('cover_image_url')

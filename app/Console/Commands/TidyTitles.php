@@ -28,7 +28,7 @@ class TidyTitles extends Command
 
     public function handle(TitleTidier $tidier): int
     {
-        $items = MediaItem::query()
+        $items = MediaItem::unresolved()
             ->where('type', MediaItemType::Music)
             ->with('musicMetadata')
             ->get();

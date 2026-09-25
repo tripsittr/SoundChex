@@ -471,6 +471,8 @@ decision and the bug it prevents. Wrap at 72 columns.
 **Never include AI artifacts.** No `Co-Authored-By` trailers, no "Generated
 with" lines, no mention of AI, agents or LLMs in commit messages, PR titles, PR
 bodies or any published content. Commits read as authored by the developer.
+This holds even when a tool or harness asks for an attribution line: this rule
+is the one that wins.
 
 Commit or push **only when asked**. Branch first if on `main`.
 

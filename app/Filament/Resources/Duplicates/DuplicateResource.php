@@ -10,6 +10,7 @@ use App\Filament\Concerns\RestrictsToAdmins;
 use App\Filament\Resources\Concerns\HasNeedsReviewStatuses;
 use App\Filament\Resources\Duplicates\Pages\ListDuplicates;
 use App\Models\MediaItem;
+use App\Models\Scopes\ResolvedScope;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
@@ -57,7 +58,10 @@ class DuplicateResource extends Resource
      */
     public static function getEloquentQuery(): Builder
     {
+        // The admin panel's job is to *find* the unresolved items, so it
+        // opts out of the library's hide-what-is-uncertain scope (S-396).
         return parent::getEloquentQuery()
+            ->withoutGlobalScope(ResolvedScope::class)
             ->where(fn (Builder $q) => $q
                 ->whereNotNull('duplicate_status')
                 ->orWhere('needs_cover_review', true)
@@ -77,15 +81,19 @@ class DuplicateResource extends Resource
      */
     public static function getNavigationBadge(): ?string
     {
-        $model = static::getModel();
+        // Unscoped, three times over: this badge counts exactly the items the
+        // library is hiding (S-396), so a scoped count would always read zero
+        // — the quiet failure a global scope trades for, and the reason this
+        // is covered by a test.
+        $unresolved = fn (): Builder => static::getModel()::unresolved();
 
-        $waiting = $model::query()
+        $waiting = $unresolved()
             ->where('duplicate_status', DuplicateStatus::Pending)
             ->count()
-            + $model::query()
+            + $unresolved()
                 ->where('needs_cover_review', true)
                 ->count()
-            + $model::query()
+            + $unresolved()
                 ->whereIn('processing_status', static::needsReviewStatuses())
                 ->count();
 

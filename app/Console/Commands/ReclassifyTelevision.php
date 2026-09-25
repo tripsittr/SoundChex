@@ -36,7 +36,7 @@ class ReclassifyTelevision extends Command
     {
         $apply = (bool) $this->option('apply');
 
-        $wrong = MediaItem::query()
+        $wrong = MediaItem::unresolved()
             ->where('type', MediaItemType::Movie)
             ->whereNotNull('file_path')
             ->get()
@@ -54,7 +54,7 @@ class ReclassifyTelevision extends Command
             return self::SUCCESS;
         }
 
-        $this->line($wrong->count() . ' item(s) catalogued as films are television:');
+        $this->line($wrong->count().' item(s) catalogued as films are television:');
         $this->newLine();
 
         $rows = [];
@@ -99,7 +99,7 @@ class ReclassifyTelevision extends Command
         ]);
 
         $this->newLine();
-        $this->info($wrong->count() . ' item(s) reclassified.');
+        $this->info($wrong->count().' item(s) reclassified.');
 
         // Left to the scan rather than done here: attaching an episode to its
         // series creates rows, and one deliberate act per run is enough.
@@ -121,7 +121,7 @@ class ReclassifyTelevision extends Command
     {
         $probe = app(ContainerProbe::class);
 
-        $films = MediaItem::query()
+        $films = MediaItem::unresolved()
             ->where('type', MediaItemType::Movie)
             ->whereNotNull('file_path')
             ->get();
@@ -155,8 +155,8 @@ class ReclassifyTelevision extends Command
 
         if ($unknown > 0) {
             $this->newLine();
-            $this->warn($unknown . ' film(s) could not be checked — the file is not on this machine, '
-                . 'or ffprobe could not read it. Left alone.');
+            $this->warn($unknown.' film(s) could not be checked — the file is not on this machine, '
+                .'or ffprobe could not read it. Left alone.');
         }
 
         if ($audio === []) {
@@ -166,7 +166,7 @@ class ReclassifyTelevision extends Command
         }
 
         $this->newLine();
-        $this->line(count($audio) . ' film(s) hold no video and are music:');
+        $this->line(count($audio).' film(s) hold no video and are music:');
 
         $this->table(
             ['id', 'title', 'file'],
@@ -192,7 +192,7 @@ class ReclassifyTelevision extends Command
             'ids' => array_map(fn (MediaItem $i) => $i->id, $audio),
         ]);
 
-        $this->info(count($audio) . ' recatalogued as music.');
+        $this->info(count($audio).' recatalogued as music.');
     }
 
     /** The filename is the only signal; the stored path may be absolute. */

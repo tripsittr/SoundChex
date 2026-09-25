@@ -136,7 +136,7 @@ class DuplicateDetector
      */
     public function clearOrphans(): int
     {
-        return MediaItem::query()
+        return MediaItem::unresolved()
             ->where('duplicate_status', DuplicateStatus::Pending)
             ->whereNull('duplicate_of_id')
             ->update([
@@ -223,7 +223,7 @@ class DuplicateDetector
             return null;
         }
 
-        $candidates = MediaItem::query()
+        $candidates = MediaItem::unresolved()
             ->where('content_hash', $hash)
             ->where('id', '!=', $item->id)
             // Same type only: a cover image and an audio file could in
@@ -358,7 +358,7 @@ class DuplicateDetector
      */
     private function musicCandidates(MediaItem $item): Builder
     {
-        return MediaItem::query()
+        return MediaItem::unresolved()
             ->where('id', '!=', $item->id)
             ->where('type', MediaItemType::Music)
             ->whereNull('duplicate_of_id')

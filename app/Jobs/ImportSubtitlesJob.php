@@ -41,7 +41,7 @@ class ImportSubtitlesJob implements ShouldQueue
             return;
         }
 
-        $item = MediaItem::find($this->mediaItemId);
+        $item = MediaItem::unresolved()->find($this->mediaItemId);
 
         if ($item === null) {
             return;

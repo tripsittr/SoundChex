@@ -38,7 +38,7 @@ class RepairCorruptTitles extends Command
         // Every text column, not just `title`. The bug was in a shared helper,
         // so assuming it only reached one column is how the second one gets
         // missed — and it costs one pass to be sure.
-        $broken = MediaItem::query()
+        $broken = MediaItem::unresolved()
             ->get()
             ->map(fn (MediaItem $item): array => [
                 'item' => $item,
@@ -70,7 +70,7 @@ class RepairCorruptTitles extends Command
             // the trim never touched. Anything else corrupt is reported and
             // left alone rather than guessed at.
             if ($row['columns'] !== ['title']) {
-                $this->warn("#{$item->id} corrupt in " . implode(', ', $row['columns']) . ' — not repairable from a filename');
+                $this->warn("#{$item->id} corrupt in ".implode(', ', $row['columns']).' — not repairable from a filename');
                 $stuck++;
 
                 continue;
@@ -85,7 +85,7 @@ class RepairCorruptTitles extends Command
                 continue;
             }
 
-            $this->line("#{$item->id}  " . $this->readable($item->title) . '  ->  ' . $derived);
+            $this->line("#{$item->id}  ".$this->readable($item->title).'  ->  '.$derived);
 
             if ($apply) {
                 $item->forceFill(['title' => $derived])->save();
@@ -96,8 +96,8 @@ class RepairCorruptTitles extends Command
 
         $this->newLine();
         $this->info($apply
-            ? "Repaired {$repaired} titles." . ($stuck > 0 ? " {$stuck} left alone." : '')
-            : "{$repaired} would be repaired." . ($stuck > 0 ? " {$stuck} would be left alone." : ''));
+            ? "Repaired {$repaired} titles.".($stuck > 0 ? " {$stuck} left alone." : '')
+            : "{$repaired} would be repaired.".($stuck > 0 ? " {$stuck} would be left alone." : ''));
 
         return self::SUCCESS;
     }
@@ -141,6 +141,6 @@ class RepairCorruptTitles extends Command
     /** Corrupt bytes cannot be printed, so show what they are instead. */
     private function readable(string $value): string
     {
-        return '0x' . bin2hex(mb_substr($value, 0, 1, '8bit')) . substr($value, 1, 28);
+        return '0x'.bin2hex(mb_substr($value, 0, 1, '8bit')).substr($value, 1, 28);
     }
 }

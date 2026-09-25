@@ -6,6 +6,7 @@
 namespace App\Filament\Widgets;
 
 use App\Enums\ProcessingStatus;
+use App\Filament\Pages\Dashboard;
 use App\Models\MediaItem;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -18,7 +19,6 @@ use Filament\Widgets\TableWidget;
  */
 class RecentActivity extends TableWidget
 {
-
     /**
      * Widgets are renderable independently of the page that hosts them, so
      * this repeats the dashboard's gate rather than relying on it. Without it
@@ -27,8 +27,9 @@ class RecentActivity extends TableWidget
      */
     public static function canView(): bool
     {
-        return \App\Filament\Pages\Dashboard::canAccess();
+        return Dashboard::canAccess();
     }
+
     protected static ?int $sort = 1;
 
     protected int|string|array $columnSpan = 'full';
@@ -38,7 +39,7 @@ class RecentActivity extends TableWidget
         return $table
             ->heading('Recently added')
             ->query(
-                MediaItem::query()
+                MediaItem::unresolved()
                     ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata'])
                     ->withCount('plays')
                     ->latest()

@@ -42,7 +42,12 @@ class EnrichMediaItemJob implements ShouldQueue
         LibraryOrganizer $organizer,
         MetadataHistory $history,
     ): void {
-        $item = MediaItem::with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata'])
+        // Unscoped: enrichment's whole job is to resolve items the library is
+        // hiding — a freshly scanned `pending` row, or one sent back for
+        // review (S-396). A scoped lookup here would mean the pipeline could
+        // never reach the items that need it most.
+        $item = MediaItem::unresolved()
+            ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata'])
             ->findOrFail($this->mediaItemId);
 
         $item->update(['processing_status' => ProcessingStatus::Processing]);
@@ -401,7 +406,7 @@ class EnrichMediaItemJob implements ShouldQueue
 
     public function failed(\Throwable $exception): void
     {
-        MediaItem::where('id', $this->mediaItemId)
+        MediaItem::unresolved()->where('id', $this->mediaItemId)
             ->update(['processing_status' => ProcessingStatus::Failed->value]);
     }
 }

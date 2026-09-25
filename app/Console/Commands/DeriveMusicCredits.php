@@ -31,7 +31,7 @@ class DeriveMusicCredits extends Command
 
     public function handle(MusicCredits $credits): int
     {
-        $query = MediaItem::query()
+        $query = MediaItem::unresolved()
             ->where('type', MediaItemType::Music)
             ->whereHas('musicMetadata', fn ($q) => $q
                 ->whereNotNull('artist')

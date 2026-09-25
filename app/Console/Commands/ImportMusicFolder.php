@@ -46,7 +46,7 @@ class ImportMusicFolder extends Command
         $path = realpath($this->argument('path'));
 
         if ($path === false || ! is_dir($path)) {
-            $this->error('Not a readable directory: ' . $this->argument('path'));
+            $this->error('Not a readable directory: '.$this->argument('path'));
 
             return self::FAILURE;
         }
@@ -54,16 +54,16 @@ class ImportMusicFolder extends Command
         $files = $this->findAudioFiles($path);
 
         if (empty($files)) {
-            $this->warn('No audio files found in ' . $path);
+            $this->warn('No audio files found in '.$path);
 
             return self::SUCCESS;
         }
 
-        $this->info(count($files) . ' audio ' . str('file')->plural(count($files)) . ' found in ' . $path);
+        $this->info(count($files).' audio '.str('file')->plural(count($files)).' found in '.$path);
 
         if ($this->option('dry-run')) {
             foreach ($files as $file) {
-                $this->line('  ' . $file->getFilename());
+                $this->line('  '.$file->getFilename());
             }
 
             $this->newLine();
@@ -99,7 +99,7 @@ class ImportMusicFolder extends Command
             }
 
             // Re-running the import shouldn't duplicate the library.
-            if (MediaItem::where('file_path', $storedPath)->exists()) {
+            if (MediaItem::unresolved()->where('file_path', $storedPath)->exists()) {
                 $skipped++;
                 $progress->advance();
 
@@ -110,7 +110,7 @@ class ImportMusicFolder extends Command
                 'user_id' => $userId,
                 'type' => MediaItemType::Music,
                 // FileTagger promotes the real title once tags are read.
-                'title' => $file->getBasename('.' . $file->getExtension()),
+                'title' => $file->getBasename('.'.$file->getExtension()),
                 'file_path' => $storedPath,
                 'processing_status' => ProcessingStatus::Pending,
                 'owned' => true,
@@ -130,7 +130,7 @@ class ImportMusicFolder extends Command
         $progress->finish();
         $this->newLine(2);
 
-        $this->info("Imported {$imported} " . str('track')->plural($imported));
+        $this->info("Imported {$imported} ".str('track')->plural($imported));
 
         if ($skipped > 0) {
             $this->comment("Skipped {$skipped} (already in library or unreadable)");
@@ -149,7 +149,7 @@ class ImportMusicFolder extends Command
      */
     private function findAudioFiles(string $path): array
     {
-        $finder = (new Finder())
+        $finder = (new Finder)
             ->files()
             ->in($path)
             ->followLinks()
@@ -183,7 +183,7 @@ class ImportMusicFolder extends Command
 
         // Prefix keeps same-named files from different folders from colliding.
         $target = trim((string) config('library.inbox', 'media/unsorted'), '/')
-            . '/' . Str::random(8) . '-' . $file->getFilename();
+            .'/'.Str::random(8).'-'.$file->getFilename();
 
         Storage::put($target, $stream);
 
@@ -212,7 +212,7 @@ class ImportMusicFolder extends Command
 
         // A file already inside the storage disk is addressed relative to it,
         // so the normal Storage::get()/response() paths keep working.
-        if ($root !== false && str_starts_with($real, $root . DIRECTORY_SEPARATOR)) {
+        if ($root !== false && str_starts_with($real, $root.DIRECTORY_SEPARATOR)) {
             return ltrim(substr($real, strlen($root)), DIRECTORY_SEPARATOR);
         }
 

@@ -37,7 +37,7 @@ class ExtractBookAssetsJob implements ShouldQueue
 
     public function handle(PdfAssetExtractor $extractor, BookSearch $search): void
     {
-        $item = MediaItem::find($this->mediaItemId);
+        $item = MediaItem::unresolved()->find($this->mediaItemId);
 
         if ($item === null) {
             return;

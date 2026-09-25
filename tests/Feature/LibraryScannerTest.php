@@ -9,6 +9,7 @@ use App\Enums\MediaItemType;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
 use App\Models\MetadataVersion;
+use App\Models\Scopes\ResolvedScope;
 use App\Models\User;
 use App\Services\LibraryScanner;
 use App\Services\SettingsService;
@@ -69,7 +70,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan();
 
-        $item = MediaItem::firstOrFail();
+        $item = MediaItem::unresolved()->firstOrFail();
 
         $intake = MetadataVersion::where('media_item_id', $item->id)
             ->where('reason', MetadataVersion::REASON_IMPORT)
@@ -91,7 +92,7 @@ class LibraryScannerTest extends TestCase
         $this->scanner->scan();
         $this->scanner->scan();
 
-        $item = MediaItem::firstOrFail();
+        $item = MediaItem::unresolved()->firstOrFail();
 
         $this->assertSame(
             1,
@@ -116,7 +117,7 @@ class LibraryScannerTest extends TestCase
 
         $this->assertSame(
             1,
-            MediaItem::where('title', 'like', '%Jackass%')->count(),
+            MediaItem::unresolved()->where('title', 'like', '%Jackass%')->count(),
             'The same file was catalogued more than once.',
         );
     }
@@ -129,7 +130,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan();
 
-        $item = MediaItem::where('title', 'like', '%Backrooms%')->firstOrFail();
+        $item = MediaItem::unresolved()->where('title', 'like', '%Backrooms%')->firstOrFail();
 
         $item->forceFill([
             'file_path' => str_replace('/', '\\', (string) $item->file_path),
@@ -137,7 +138,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan();
 
-        $this->assertSame(1, MediaItem::where('title', 'like', '%Backrooms%')->count());
+        $this->assertSame(1, MediaItem::unresolved()->where('title', 'like', '%Backrooms%')->count());
     }
 
     public function test_an_mp4_holding_only_audio_is_music_not_a_film(): void
@@ -155,7 +156,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan();
 
-        $item = MediaItem::where('title', 'like', '%Lights Out%')->first();
+        $item = MediaItem::unresolved()->where('title', 'like', '%Lights Out%')->first();
 
         $this->assertNotNull($item);
         $this->assertSame(MediaItemType::Music, $item->type);
@@ -178,7 +179,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan();
 
-        $item = MediaItem::where('title', 'like', '%Backrooms%')->first();
+        $item = MediaItem::unresolved()->where('title', 'like', '%Backrooms%')->first();
 
         $this->assertNotNull($item);
         $this->assertSame(MediaItemType::Movie, $item->type);
@@ -197,7 +198,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan();
 
-        $item = MediaItem::where('title', 'like', '%Elf%')->first();
+        $item = MediaItem::unresolved()->where('title', 'like', '%Elf%')->first();
 
         $this->assertNotNull($item);
         $this->assertSame(MediaItemType::Movie, $item->type);
@@ -213,7 +214,7 @@ class LibraryScannerTest extends TestCase
 
         // The year is kept: it is what identifies the film to a metadata
         // source, and two films share a title often enough to matter.
-        $this->assertSame('Backrooms 2026', MediaItem::first()->title);
+        $this->assertSame('Backrooms 2026', MediaItem::unresolved()->first()->title);
     }
 
     public function test_it_strips_release_tags_from_the_title(): void
@@ -224,8 +225,8 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan(enrich: false);
 
-        $this->assertStringNotContainsString('2160p', MediaItem::first()->title);
-        $this->assertStringNotContainsString('NTb', MediaItem::first()->title);
+        $this->assertStringNotContainsString('2160p', MediaItem::unresolved()->first()->title);
+        $this->assertStringNotContainsString('NTb', MediaItem::unresolved()->first()->title);
     }
 
     public function test_an_episode_is_classified_as_a_show_not_a_movie(): void
@@ -236,7 +237,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan(enrich: false);
 
-        $episode = MediaItem::where('type', MediaItemType::Show)->first();
+        $episode = MediaItem::unresolved()->where('type', MediaItemType::Show)->first();
 
         $this->assertNotNull($episode);
         $this->assertSame(1, $episode->showMetadata->season_number);
@@ -251,12 +252,20 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan(enrich: false);
 
-        $parents = MediaItem::whereNull('parent_id')
+        $parents = MediaItem::unresolved()->whereNull('parent_id')
             ->where('type', MediaItemType::Show)
             ->get();
 
         $this->assertCount(1, $parents);
-        $this->assertCount(2, $parents->first()->episodes);
+
+        // Unscoped: the scanner catalogues episodes as `pending`, and the
+        // library hides those until enrichment finishes (S-396). This test is
+        // about how the scanner files them, not about what the library shows.
+        $episodes = $parents->first()->episodes()
+            ->withoutGlobalScope(ResolvedScope::class)
+            ->get();
+
+        $this->assertCount(2, $episodes);
     }
 
     public function test_a_film_with_a_year_is_not_read_as_an_episode(): void
@@ -266,7 +275,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan(enrich: false);
 
-        $this->assertSame(MediaItemType::Movie, MediaItem::first()->type);
+        $this->assertSame(MediaItemType::Movie, MediaItem::unresolved()->first()->type);
     }
 
     public function test_it_seeds_a_book_author_from_the_filename(): void
@@ -278,7 +287,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan(enrich: false);
 
-        $this->assertSame('J.R.R. Tolkien', MediaItem::first()->bookMetadata->author);
+        $this->assertSame('J.R.R. Tolkien', MediaItem::unresolved()->first()->bookMetadata->author);
     }
 
     /* --------------------------------------------------------- refusals -- */
@@ -295,7 +304,7 @@ class LibraryScannerTest extends TestCase
 
         $this->assertSame(0, $result['imported']);
         $this->assertSame(1, $result['unsettled']);
-        $this->assertSame(0, MediaItem::count());
+        $this->assertSame(0, MediaItem::unresolved()->count());
     }
 
     public function test_it_does_not_catalogue_the_same_file_twice(): void
@@ -306,7 +315,7 @@ class LibraryScannerTest extends TestCase
         $second = $this->scanner->scan(enrich: false);
 
         $this->assertSame(0, $second['imported']);
-        $this->assertSame(1, MediaItem::count());
+        $this->assertSame(1, MediaItem::unresolved()->count());
     }
 
     public function test_a_stored_relative_path_still_counts_as_known(): void
@@ -327,7 +336,7 @@ class LibraryScannerTest extends TestCase
         $result = $this->scanner->scan(enrich: false);
 
         $this->assertSame(0, $result['imported']);
-        $this->assertSame(1, MediaItem::count());
+        $this->assertSame(1, MediaItem::unresolved()->count());
     }
 
     public function test_a_converted_copy_is_not_catalogued_as_its_own_film(): void
@@ -359,7 +368,7 @@ class LibraryScannerTest extends TestCase
 
         $this->scanner->scan(enrich: false);
 
-        $this->assertSame(1, MediaItem::count());
+        $this->assertSame(1, MediaItem::unresolved()->count());
     }
 
     public function test_a_dry_run_catalogues_nothing(): void
@@ -369,7 +378,7 @@ class LibraryScannerTest extends TestCase
         $result = $this->scanner->scan(dryRun: true, enrich: false);
 
         $this->assertSame(1, $result['imported']);
-        $this->assertSame(0, MediaItem::count());
+        $this->assertSame(0, MediaItem::unresolved()->count());
     }
 
     public function test_scanning_no_folders_is_a_no_op(): void
@@ -379,7 +388,7 @@ class LibraryScannerTest extends TestCase
         $result = $this->scanner->scan(enrich: false);
 
         $this->assertSame(0, $result['folders']);
-        $this->assertSame(0, MediaItem::count());
+        $this->assertSame(0, MediaItem::unresolved()->count());
     }
 
     /* ------------------------------------------------------ enrichment --- */

@@ -116,7 +116,7 @@ class LibraryOrganizer
         $actual = pathinfo($source, PATHINFO_FILENAME);
 
         return strcasecmp(pathinfo($source, PATHINFO_EXTENSION), $extension) === 0
-            && preg_match('/^' . preg_quote($base, '/') . ' \(\d+\)$/', $actual) === 1;
+            && preg_match('/^'.preg_quote($base, '/').' \(\d+\)$/', $actual) === 1;
     }
 
     /**
@@ -253,7 +253,7 @@ class LibraryOrganizer
             return null;
         }
 
-        $typeFolder = config('library.type_folders.' . $item->type->value)
+        $typeFolder = config('library.type_folders.'.$item->type->value)
             ?? ucfirst($item->type->value);
 
         return implode('/', [
@@ -272,13 +272,13 @@ class LibraryOrganizer
     private function segmentsFor(MediaItem $item, string $extension): ?array
     {
         $title = $this->segment($item->title) ?? 'Untitled';
-        $suffix = $extension !== '' ? '.' . $extension : '';
+        $suffix = $extension !== '' ? '.'.$extension : '';
 
         return match ($item->type) {
             MediaItemType::Music => $this->musicSegments($item, $title, $suffix),
             MediaItemType::Movie => $this->movieSegments($item, $title, $suffix),
-            MediaItemType::Show  => $this->showSegments($item, $title, $suffix),
-            MediaItemType::Book  => $this->bookSegments($item, $title, $suffix),
+            MediaItemType::Show => $this->showSegments($item, $title, $suffix),
+            MediaItemType::Book => $this->bookSegments($item, $title, $suffix),
         };
     }
 
@@ -302,7 +302,7 @@ class LibraryOrganizer
         // A zero-padded track number keeps an album in playing order when the
         // folder is browsed or copied to a device.
         $track = $meta?->track_number
-            ? str_pad((string) $meta->track_number, 2, '0', STR_PAD_LEFT) . ' '
+            ? str_pad((string) $meta->track_number, 2, '0', STR_PAD_LEFT).' '
             : '';
 
         // The artist is already the folder, so repeating it in the filename
@@ -314,7 +314,7 @@ class LibraryOrganizer
         // Stripped here as well as fixed at the source, because a title that
         // arrives in that shape from anywhere should not be written to disk in
         // it.
-        return [$artist, $album, $track . $this->withoutArtist($title, $meta?->artist) . $suffix];
+        return [$artist, $album, $track.$this->withoutArtist($title, $meta?->artist).$suffix];
     }
 
     /**
@@ -332,7 +332,7 @@ class LibraryOrganizer
         }
 
         foreach ([' - ', ' — ', ' – '] as $separator) {
-            $suffix = $separator . $artist;
+            $suffix = $separator.$artist;
 
             if (str_ends_with($title, $suffix)) {
                 $stripped = trim(mb_substr($title, 0, -mb_strlen($suffix)));
@@ -359,9 +359,9 @@ class LibraryOrganizer
 
         // "Title (Year)" is the convention Plex, Jellyfin, and Emby all expect,
         // so the same tree stays readable by other tools.
-        $folder = $this->segment($item->title . ' (' . $year . ')') ?? $title;
+        $folder = $this->segment($item->title.' ('.$year.')') ?? $title;
 
-        return [$folder, $folder . $suffix];
+        return [$folder, $folder.$suffix];
     }
 
     /**
@@ -401,20 +401,20 @@ class LibraryOrganizer
         // numbers sort lexically and interleave the season.
         $code = sprintf('S%02dE%02d', $season, $episode);
 
-        $name = $series . ' - ' . $code;
+        $name = $series.' - '.$code;
 
         // The episode title is appended when known, since "S01E02" alone tells
         // you nothing when browsing the folder directly.
         $episodeTitle = $this->segment($meta?->episode_title);
 
         if ($episodeTitle !== null && $episodeTitle !== $series) {
-            $name .= ' - ' . $episodeTitle;
+            $name .= ' - '.$episodeTitle;
         }
 
         return [
             $series,
             sprintf('Season %02d', $season),
-            $name . $suffix,
+            $name.$suffix,
         ];
     }
 
@@ -429,7 +429,7 @@ class LibraryOrganizer
             return null;
         }
 
-        return [$author, $title . $suffix];
+        return [$author, $title.$suffix];
     }
 
     /**
@@ -462,7 +462,7 @@ class LibraryOrganizer
     private function expandPath(string $path): string
     {
         if (str_starts_with($path, '~/')) {
-            return rtrim((string) getenv('HOME'), '/') . substr($path, 1);
+            return rtrim((string) getenv('HOME'), '/').substr($path, 1);
         }
 
         return $path;
@@ -558,7 +558,7 @@ class LibraryOrganizer
             return;
         }
 
-        MediaItem::query()
+        MediaItem::unresolved()
             ->where('id', '!=', $item->id)
             ->where('file_path', $from)
             ->update(['file_path' => $to]);
@@ -573,7 +573,7 @@ class LibraryOrganizer
         $root = realpath(Storage::path(''));
         $real = realpath($absolute) ?: $absolute;
 
-        if ($root !== false && str_starts_with($real, $root . DIRECTORY_SEPARATOR)) {
+        if ($root !== false && str_starts_with($real, $root.DIRECTORY_SEPARATOR)) {
             $relative = ltrim(substr($real, strlen($root)), DIRECTORY_SEPARATOR);
 
             // Forward slashes, whatever the platform. `realpath()` hands back
@@ -629,7 +629,7 @@ class LibraryOrganizer
                 return;
             }
 
-            @unlink($real . '/.DS_Store');
+            @unlink($real.'/.DS_Store');
 
             if (! @rmdir($real)) {
                 return;

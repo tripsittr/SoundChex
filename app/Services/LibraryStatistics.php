@@ -6,6 +6,7 @@
 namespace App\Services;
 
 use App\Enums\MediaItemType;
+use App\Models\MediaItem;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -181,7 +182,7 @@ class LibraryStatistics
         // inner join silently dropped every film that enrichment had not
         // reached, which reads as a smaller library rather than a gap.
         $base = DB::table('media_items')
-            ->leftJoin($shape['table'], $shape['table'] . '.media_item_id', '=', 'media_items.id')
+            ->leftJoin($shape['table'], $shape['table'].'.media_item_id', '=', 'media_items.id')
             ->where('media_items.type', $this->type->value);
 
         $seconds = 0;
@@ -271,7 +272,7 @@ class LibraryStatistics
             : 'media_items.id';
 
         $rows = $this->plays($from, $to, $profileId)
-            ->leftJoin($shape['table'], $shape['table'] . '.media_item_id', '=', 'media_items.id')
+            ->leftJoin($shape['table'], $shape['table'].'.media_item_id', '=', 'media_items.id')
             ->selectRaw("{$id} as id")
             ->selectRaw("{$shape['primary']} as grouping")
             ->selectRaw('COUNT(*) as plays')
@@ -307,7 +308,7 @@ class LibraryStatistics
         $shape = $this->shape();
 
         return $this->plays($from, $to, $profileId)
-            ->join($shape['table'], $shape['table'] . '.media_item_id', '=', 'media_items.id')
+            ->join($shape['table'], $shape['table'].'.media_item_id', '=', 'media_items.id')
             ->whereNotNull(DB::raw($shape['primary']))
             ->whereRaw("{$shape['primary']} != ''")
             ->selectRaw("{$shape['primary']} as grouping")
@@ -439,9 +440,9 @@ class LibraryStatistics
         // Through the type's own metadata table, joined back to media_items so
         // one type's plays cannot count another's groupings.
         $playedPrimary = (int) DB::table($shape['table'])
-            ->join('media_items', 'media_items.id', '=', $shape['table'] . '.media_item_id')
+            ->join('media_items', 'media_items.id', '=', $shape['table'].'.media_item_id')
             ->where('media_items.type', $this->type->value)
-            ->whereIn($shape['table'] . '.media_item_id', $played)
+            ->whereIn($shape['table'].'.media_item_id', $played)
             ->whereNotNull(DB::raw($shape['primary']))
             ->whereRaw("{$shape['primary']} != ''")
             ->distinct()
@@ -483,9 +484,9 @@ class LibraryStatistics
 
         return $this->plays($from, $to, $profileId)
             ->joinSub($firsts, 'firsts', 'firsts.media_item_id', '=', 'media_plays.media_item_id')
-            ->selectRaw("date(media_plays.created_at) as day")
-            ->selectRaw("SUM(CASE WHEN media_plays.created_at = firsts.first_at THEN 1 ELSE 0 END) as discovered")
-            ->selectRaw("SUM(CASE WHEN media_plays.created_at > firsts.first_at THEN 1 ELSE 0 END) as repeated")
+            ->selectRaw('date(media_plays.created_at) as day')
+            ->selectRaw('SUM(CASE WHEN media_plays.created_at = firsts.first_at THEN 1 ELSE 0 END) as discovered')
+            ->selectRaw('SUM(CASE WHEN media_plays.created_at > firsts.first_at THEN 1 ELSE 0 END) as repeated')
             ->groupBy('day')
             ->orderBy('day')
             ->get();
@@ -568,7 +569,7 @@ class LibraryStatistics
         // importer keeps absolute ones — and `absoluteFilePath()` is the only
         // thing that knows which is which. Reading the column directly found
         // zero files, because most of them are relative.
-        $items = \App\Models\MediaItem::query()
+        $items = MediaItem::unresolved()
             ->where('type', $this->type)
             ->whereNotNull('file_path')
             ->inRandomOrder()
@@ -581,11 +582,15 @@ class LibraryStatistics
         foreach ($items as $item) {
             $path = $item->absoluteFilePath();
 
-            if ($path === null || ! is_file($path)) continue;
+            if ($path === null || ! is_file($path)) {
+                continue;
+            }
 
             $size = @filesize($path);
 
-            if ($size === false) continue;
+            if ($size === false) {
+                continue;
+            }
 
             $seen++;
             $bytes += $size;
@@ -594,7 +599,7 @@ class LibraryStatistics
         $average = $seen > 0 ? (int) round($bytes / $seen) : 0;
 
         $artists = DB::table('media_items')
-            ->leftJoin($shape['table'], $shape['table'] . '.media_item_id', '=', 'media_items.id')
+            ->leftJoin($shape['table'], $shape['table'].'.media_item_id', '=', 'media_items.id')
             ->where('media_items.type', $this->type->value)
             ->selectRaw("{$primary} as artist")
             ->selectRaw('COUNT(*) as tracks')

@@ -41,7 +41,7 @@ class RefetchCoversJob implements ShouldQueue
 
     public function handle(CoverArtFetcher $fetcher, DuplicateDetector $detector): void
     {
-        MediaItem::query()
+        MediaItem::unresolved()
             ->whereIn('id', $this->itemIds)
             ->where('needs_cover_review', true)
             ->with('musicMetadata')

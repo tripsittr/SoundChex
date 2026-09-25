@@ -8,6 +8,8 @@ namespace App\Services;
 use App\Models\MediaItem;
 use App\Models\Transfer;
 use App\Models\TransferItem;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -59,7 +61,7 @@ class TransferReceiver
             if (! $response->successful()) {
                 $this->failTransfer(
                     $transfer,
-                    'The server refused the request (' . $response->status() . ').',
+                    'The server refused the request ('.$response->status().').',
                 );
 
                 return false;
@@ -101,24 +103,24 @@ class TransferReceiver
             || str_contains($message, 'certificate verify failed')
             || str_contains($message, 'error 60')) {
             return 'This machine could not verify that server\'s certificate. '
-                . 'The certificate may be expired or self-signed, a clock may be '
-                . 'wrong on either end, or a proxy is intercepting TLS.';
+                .'The certificate may be expired or self-signed, a clock may be '
+                .'wrong on either end, or a proxy is intercepting TLS.';
         }
 
         if (str_contains($message, 'Could not resolve host')) {
             return 'That address does not resolve. Check the name, and that this '
-                . 'machine is on the same tailnet.';
+                .'machine is on the same tailnet.';
         }
 
         if (str_contains($message, 'Connection refused')
             || str_contains($message, 'Failed to connect')) {
             return 'That server refused the connection. Check it is running and '
-                . 'that the address includes the right port.';
+                .'that the address includes the right port.';
         }
 
         if (str_contains($message, 'Operation timed out') || str_contains($message, 'timed out')) {
             return 'That server did not answer in time. It may be asleep, or the '
-                . 'address may be reaching something else.';
+                .'address may be reaching something else.';
         }
 
         // Not a network problem at all, and it reads like one. On Windows a
@@ -128,11 +130,11 @@ class TransferReceiver
         if (str_contains($message, 'Permission denied')
             || str_contains($message, 'Failed to open stream')) {
             return 'This machine could not write the file it downloads into. '
-                . 'Something is still holding the previous one open — restart '
-                . 'the queue worker, then try again.';
+                .'Something is still holding the previous one open — restart '
+                .'the queue worker, then try again.';
         }
 
-        return 'Could not reach that server: ' . $message;
+        return 'Could not reach that server: '.$message;
     }
 
     /**
@@ -186,8 +188,8 @@ class TransferReceiver
             if (! $told) {
                 $this->noteError(
                     $transfer,
-                    'Cancelled here, but that server answered ' . $response->status()
-                    . ' and may still hold the request open.',
+                    'Cancelled here, but that server answered '.$response->status()
+                    .' and may still hold the request open.',
                 );
 
                 Log::warning('A cancelled transfer could not be called off at the source', [
@@ -201,7 +203,7 @@ class TransferReceiver
         } catch (\Throwable $e) {
             $this->noteError(
                 $transfer,
-                'Cancelled here, but that server could not be told: ' . $this->explain($e),
+                'Cancelled here, but that server could not be told: '.$this->explain($e),
             );
 
             Log::warning('A cancelled transfer could not be called off at the source', [
@@ -231,9 +233,9 @@ class TransferReceiver
 
         $this->failTransfer(
             $transfer,
-            'That server answered ' . $status . ' — the transfer is no longer approved. '
-            . 'Tokens last four hours, so it has most likely expired. Ask again and approve '
-            . 'it on that machine; what has already copied is kept.',
+            'That server answered '.$status.' — the transfer is no longer approved. '
+            .'Tokens last four hours, so it has most likely expired. Ask again and approve '
+            .'it on that machine; what has already copied is kept.',
         );
 
         Log::warning('A transfer lost its authorisation part way through', [
@@ -288,7 +290,7 @@ class TransferReceiver
     {
         try {
             $response = $this->http()->acceptJson()->timeout(15)->get(
-                $this->url($transfer, 'transfer/requests/' . $transfer->remote_request_id),
+                $this->url($transfer, 'transfer/requests/'.$transfer->remote_request_id),
                 // Without this the source returns state only. A request made
                 // before claims existed has none, and is answered as before.
                 $transfer->claim !== null ? ['claim' => $transfer->claim] : [],
@@ -304,7 +306,7 @@ class TransferReceiver
             }
 
             if (in_array($state, ['denied', 'expired', 'revoked'], true)) {
-                $this->failTransfer($transfer, 'The other server ' . $state . ' this transfer.');
+                $this->failTransfer($transfer, 'The other server '.$state.' this transfer.');
             }
 
             return $state;
@@ -503,7 +505,7 @@ class TransferReceiver
             'attempts' => $item->attempts + 1,
         ])->save();
 
-        $temporary = $destination . '.part';
+        $temporary = $destination.'.part';
 
         if (! is_dir(dirname($destination)) && ! @mkdir(dirname($destination), 0775, true)) {
             $item->markFailed('Could not create the folder for it.');
@@ -530,10 +532,10 @@ class TransferReceiver
                 ->withHeaders($from > 0 ? ['Range' => "bytes={$from}-"] : [])
                 ->timeout(600)
                 ->sink($from > 0 ? fopen($temporary, 'ab') : $temporary)
-                ->get($this->url($transfer, 'transfer/file/' . $item->remote_id));
+                ->get($this->url($transfer, 'transfer/file/'.$item->remote_id));
 
             if (! $response->successful() && $response->status() !== 206) {
-                $item->markFailed('The server answered ' . $response->status() . '.');
+                $item->markFailed('The server answered '.$response->status().'.');
 
                 // 401 and 403 are not about this file. The token has expired —
                 // they last four hours from approval — or the transfer was
@@ -610,8 +612,8 @@ class TransferReceiver
             if (! $response->successful()) {
                 $this->noteError(
                     $transfer,
-                    'The catalogue could not be read (' . $response->status() . ').'
-                    . $this->reasonFrom($temporary),
+                    'The catalogue could not be read ('.$response->status().').'
+                    .$this->reasonFrom($temporary),
                 );
 
                 Log::error('A catalogue transfer failed', [
@@ -629,7 +631,7 @@ class TransferReceiver
                 return false;
             }
         } catch (\Throwable $e) {
-            $this->noteError($transfer, 'The catalogue transfer failed: ' . $this->explain($e));
+            $this->noteError($transfer, 'The catalogue transfer failed: '.$this->explain($e));
 
             Log::error('A catalogue transfer failed', [
                 'transfer' => $transfer->id,
@@ -680,7 +682,7 @@ class TransferReceiver
     {
         $changed = 0;
 
-        MediaItem::query()
+        MediaItem::unresolved()
             ->whereNotNull('file_path')
             ->select(['id', 'file_path'])
             ->chunkById(500, function ($items) use (&$changed): void {
@@ -734,7 +736,7 @@ class TransferReceiver
      * Anything already occupying those ids came from the source and is its
      * own record of its own transfers, so ours replaces it.
      *
-     * @param array{transfer: array<string, mixed>, items: array<int, array<string, mixed>>} $record
+     * @param  array{transfer: array<string, mixed>, items: array<int, array<string, mixed>>}  $record
      */
     private function restoreRecord(array $record): void
     {
@@ -781,7 +783,7 @@ class TransferReceiver
      */
     public function archivePath(Transfer $transfer): string
     {
-        return storage_path('app/transfer-' . $transfer->id . '-incoming.sqlite.gz');
+        return storage_path('app/transfer-'.$transfer->id.'-incoming.sqlite.gz');
     }
 
     /**
@@ -792,7 +794,7 @@ class TransferReceiver
      * still in scope, and on Windows that is the difference between a working
      * transfer and a permission error that survives it.
      */
-    private function releaseSink(\Illuminate\Http\Client\Response $response): void
+    private function releaseSink(Response $response): void
     {
         try {
             $response->toPsrResponse()->getBody()->close();
@@ -846,7 +848,7 @@ class TransferReceiver
             return '';
         }
 
-        return ' The server said: ' . trim(preg_replace('/\s+/', ' ', $message));
+        return ' The server said: '.trim(preg_replace('/\s+/', ' ', $message));
     }
 
     /**
@@ -873,7 +875,7 @@ class TransferReceiver
     private function truncate(string $message): string
     {
         return mb_strlen($message) > 255
-            ? mb_substr($message, 0, 252) . '...'
+            ? mb_substr($message, 0, 252).'...'
             : $message;
     }
 
@@ -893,7 +895,7 @@ class TransferReceiver
             return false;
         }
 
-        $staged = $target . '.incoming';
+        $staged = $target.'.incoming';
 
         $in = gzopen($archive, 'rb');
         $out = fopen($staged, 'wb');
@@ -930,8 +932,8 @@ class TransferReceiver
             $this->noteError(
                 $transfer,
                 'The catalogue arrived but could not be put in place. Something else '
-                . 'still has the database open — stop the app and the queue worker, '
-                . 'then resume. It is kept at ' . basename($staged) . '.',
+                .'still has the database open — stop the app and the queue worker, '
+                .'then resume. It is kept at '.basename($staged).'.',
             );
 
             Log::error('A catalogue could not be put in place', [
@@ -949,8 +951,8 @@ class TransferReceiver
         // database's pending writes beside a fresh file is not something to
         // rely on being ignored.
         foreach (['-wal', '-shm'] as $sidecar) {
-            if (is_file($target . $sidecar)) {
-                @unlink($target . $sidecar);
+            if (is_file($target.$sidecar)) {
+                @unlink($target.$sidecar);
             }
         }
 
@@ -1096,7 +1098,7 @@ class TransferReceiver
             return null;
         }
 
-        $path = $directory . '/before-transfer-' . now()->format('Y-m-d_His') . '.sqlite';
+        $path = $directory.'/before-transfer-'.now()->format('Y-m-d_His').'.sqlite';
 
         // Folded in before copying. In WAL mode recent writes live in
         // `database.sqlite-wal` rather than the file being copied — 4.3 MB of
@@ -1129,7 +1131,7 @@ class TransferReceiver
      */
     private function databaseFile(): ?string
     {
-        $path = config('database.connections.' . config('database.default') . '.database');
+        $path = config('database.connections.'.config('database.default').'.database');
 
         if (! is_string($path) || $path === ':memory:' || $path === '') {
             return null;
@@ -1201,7 +1203,7 @@ class TransferReceiver
     }
 
     /** @param array<string, mixed> $query */
-    private function get(Transfer $transfer, string $path, array $query = []): ?\Illuminate\Http\Client\Response
+    private function get(Transfer $transfer, string $path, array $query = []): ?Response
     {
         try {
             $response = $this->http()->withToken($transfer->token)
@@ -1214,7 +1216,7 @@ class TransferReceiver
 
                 $this->noteError(
                     $transfer,
-                    $path . ' answered ' . $response->status() . '.' . $this->quoteServer($reason),
+                    $path.' answered '.$response->status().'.'.$this->quoteServer($reason),
                 );
 
                 Log::warning('A transfer request was refused', [
@@ -1243,7 +1245,7 @@ class TransferReceiver
 
     private function url(Transfer $transfer, string $path): string
     {
-        return rtrim($transfer->source_url, '/') . '/api/v1/' . $path;
+        return rtrim($transfer->source_url, '/').'/api/v1/'.$path;
     }
 
     /**
@@ -1270,7 +1272,7 @@ class TransferReceiver
      * binary, force that bundle so transfer requests do not fail with
      * "unable to get local issuer certificate".
      */
-    private function http(): \Illuminate\Http\Client\PendingRequest
+    private function http(): PendingRequest
     {
         $ca = $this->caBundlePath();
 
@@ -1286,7 +1288,7 @@ class TransferReceiver
             return $configured;
         }
 
-        $nextToPhp = dirname(PHP_BINARY) . DIRECTORY_SEPARATOR . 'cacert.pem';
+        $nextToPhp = dirname(PHP_BINARY).DIRECTORY_SEPARATOR.'cacert.pem';
         if (is_file($nextToPhp)) {
             return $nextToPhp;
         }

@@ -5,15 +5,15 @@
 
 namespace App\Filament\Resources\Music;
 
-use App\Filament\Concerns\RestrictsToAdmins;
-
 use App\Enums\MediaItemType;
+use App\Filament\Concerns\RestrictsToAdmins;
 use App\Filament\Resources\Music\Pages\CreateMusic;
 use App\Filament\Resources\Music\Pages\EditMusic;
 use App\Filament\Resources\Music\Pages\ListMusic;
 use App\Filament\Resources\Music\Schemas\MusicForm;
 use App\Filament\Resources\Music\Tables\MusicTable;
 use App\Models\MediaItem;
+use App\Models\Scopes\ResolvedScope;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
@@ -51,7 +51,10 @@ class MusicResource extends Resource
      */
     public static function getEloquentQuery(): Builder
     {
+        // The admin panel's job is to *find* the unresolved items, so it
+        // opts out of the library's hide-what-is-uncertain scope (S-396).
         return parent::getEloquentQuery()
+            ->withoutGlobalScope(ResolvedScope::class)
             ->where('type', MediaItemType::Music)
             ->with('musicMetadata');
     }
@@ -75,7 +78,7 @@ class MusicResource extends Resource
     {
         return array_filter([
             'Artist' => $record->musicMetadata?->artist,
-            'Album'  => $record->musicMetadata?->album,
+            'Album' => $record->musicMetadata?->album,
         ]);
     }
 
@@ -87,9 +90,9 @@ class MusicResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => ListMusic::route('/'),
+            'index' => ListMusic::route('/'),
             'create' => CreateMusic::route('/create'),
-            'edit'   => EditMusic::route('/{record}/edit'),
+            'edit' => EditMusic::route('/{record}/edit'),
         ];
     }
 }

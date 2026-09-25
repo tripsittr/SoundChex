@@ -46,7 +46,7 @@ class ExtractBookContentJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(BookTextExtractor $extractor): void
     {
-        $item = MediaItem::find($this->mediaItemId);
+        $item = MediaItem::unresolved()->find($this->mediaItemId);
 
         if ($item === null) {
             return;
