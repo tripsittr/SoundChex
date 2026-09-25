@@ -133,7 +133,12 @@ class NetworkAddresses
      * reach: a VPN adapter, a virtual switch and a disconnected ethernet port
      * all have addresses that would be advertised and never answer.
      */
-    private function lanAddress(): ?string
+    /**
+     * Public so the DLNA server can advertise it (S-7): SSDP has to tell
+     * devices which address to come back to, and picking the wrong one of a
+     * machine's several addresses advertises a server that never answers.
+     */
+    public function lanAddress(): ?string
     {
         if (PHP_OS_FAMILY === 'Windows') {
             // PowerShell rather than ipconfig: parsing ipconfig's output means

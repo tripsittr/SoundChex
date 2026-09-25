@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SoundChex bundled server — install the supervised services (S-151 Step 4).
 #
-# Installs Caddy + php-fpm + queue + scheduler as OS services that (a) run the
+# Installs Caddy + php-fpm + queue + scheduler + DLNA discovery as OS services that (a) run the
 # BUNDLED binaries by relative path (no Herd, no system PHP) and (b) start at
 # boot and restart on crash. macOS -> launchd, Linux -> systemd. Windows has its
 # own script (server/supervisor/windows/), since it needs a different serving
@@ -104,7 +104,7 @@ fill() {  # fill a supervisor template's {{...}} placeholders
 
 if [ "$OS" = "Darwin" ]; then
   AGENTS="$HOME/Library/LaunchAgents"; mkdir -p "$AGENTS"
-  for svc in fpm caddy queue scheduler; do
+  for svc in fpm caddy queue scheduler dlna; do
     label="com.soundchex.$svc"
     target="$AGENTS/$label.plist"
     fill "$HERE/supervisor/launchd/$label.plist.template" > "$target"
@@ -121,13 +121,13 @@ else
     UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"; CTL=(systemctl --user)
     mkdir -p "$UNIT_DIR"
   fi
-  for svc in fpm caddy queue scheduler; do
+  for svc in fpm caddy queue scheduler dlna; do
     unit="soundchex-$svc.service"
     fill "$HERE/supervisor/systemd/$unit.template" > "$UNIT_DIR/$unit"
     echo "wrote $UNIT_DIR/$unit"
   done
   "${CTL[@]}" daemon-reload
-  for svc in fpm caddy queue scheduler; do
+  for svc in fpm caddy queue scheduler dlna; do
     "${CTL[@]}" enable --now "soundchex-$svc.service" || true
   done
   echo "Linux services installed (systemd). Listening on $LISTEN."
