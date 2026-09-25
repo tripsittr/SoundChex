@@ -122,4 +122,58 @@ class HeaderInjectionTest extends TestCase
 
         $this->assertStringContainsString('Stressed', $disposition);
     }
+    /* --------------------------------------- a slash in a title (S-393) --- */
+
+    /**
+     * Builds a track with an awkward title and returns its stream response.
+     */
+    private function streamTitled(string $title): \Illuminate\Testing\TestResponse
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('media/track.mp3', 'not really audio');
+
+        $item = MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => $title,
+            'file_path' => Storage::disk('local')->path('media/track.mp3'),
+            'owned' => true,
+        ]);
+
+        return $this->actAsOwner()->get("/app/item/{$item->id}/stream");
+    }
+
+    public function test_a_slash_in_a_title_does_not_break_the_stream(): void
+    {
+        // Symfony refuses a filename containing a slash — it throws rather
+        // than escaping — so "AM/PM" returned a 500 before a byte was sent and
+        // every client reported the track as simply not playing. 33 tracks in
+        // one real library were affected.
+        $this->streamTitled('AM/PM')->assertOk();
+    }
+
+    public function test_a_backslash_in_a_title_does_not_break_the_stream(): void
+    {
+        $this->streamTitled('AC\\DC Tribute')->assertOk();
+    }
+
+    public function test_the_filename_keeps_the_title_readable(): void
+    {
+        // A separator becomes a dash rather than vanishing: "AM-PM" reads as
+        // the track, where "AMPM" reads as a typo.
+        $disposition = (string) $this->streamTitled('AM/PM')
+            ->headers->get('Content-Disposition');
+
+        $this->assertStringContainsString('AM-PM', $disposition);
+    }
+
+    public function test_a_title_that_sanitises_to_nothing_still_has_a_filename(): void
+    {
+        // An empty filename is its own kind of broken.
+        $disposition = (string) $this->streamTitled('///')
+            ->headers->get('Content-Disposition');
+
+        $this->assertStringContainsString('filename', $disposition);
+    }
+
 }
