@@ -65,8 +65,14 @@ class DuplicateResource extends Resource
             ->where(fn (Builder $q) => $q
                 ->whereNotNull('duplicate_status')
                 ->orWhere('needs_cover_review', true)
-                ->orWhereIn('processing_status', static::needsReviewStatuses()))
-            ->with('duplicateOf');
+                ->orWhereIn('processing_status', static::needsReviewStatuses())
+                // Anything a person reported from an app, still open (S-398).
+                ->orWhereHas('reports', fn (Builder $r): Builder => $r
+                    ->whereNull('resolved_at')
+                    ->whereNull('dismissed_at')))
+            // reports eager-loaded because the Reported column reads them per
+            // row — one query for the page instead of one per item (S-398).
+            ->with(['duplicateOf', 'reports']);
     }
 
     public static function table(Table $table): Table

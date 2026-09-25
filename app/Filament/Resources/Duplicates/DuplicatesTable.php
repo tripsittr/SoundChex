@@ -9,6 +9,7 @@ use App\Enums\ProcessingStatus;
 use App\Jobs\EnrichMediaItemJob;
 use App\Jobs\RefetchCoversJob;
 use App\Models\MediaItem;
+use App\Models\MediaItemReport;
 use App\Services\DuplicateDetector;
 use App\Services\Metadata\CoverArtFetcher;
 use Filament\Actions\Action;
@@ -214,6 +215,26 @@ class DuplicatesTable
                 // one info icon that summarises on hover and details on click,
                 // rather than a column and an action doing the same job twice.
 
+                // What a person said was wrong, when they sent it here from an
+                // app (S-398). Not toggleable-off by default: a human took the
+                // trouble to report this, which outranks anything the scanner
+                // guessed, and their note is usually the fastest route to the
+                // actual problem.
+                TextColumn::make('openReports')
+                    ->label('Reported')
+                    ->badge()
+                    ->placeholder('—')
+                    ->state(fn (MediaItem $record): array => $record->reports
+                        ->filter(fn (MediaItemReport $r): bool => $r->isOpen())
+                        ->map(fn (MediaItemReport $r): string => $r->reason->label())
+                        ->unique()
+                        ->values()
+                        ->all())
+                    ->color('warning')
+                    ->description(fn (MediaItem $record): ?string => $record->reports
+                        ->first(fn (MediaItemReport $r): bool => $r->isOpen() && filled($r->note))
+                        ?->note),
+
                 TextColumn::make('match_confidence')
                     ->label('Confidence')
                     ->badge()
@@ -383,6 +404,17 @@ class DuplicatesTable
             'processing_status' => ProcessingStatus::Complete,
             'reviewed_at' => now(),
         ])->saveQuietly();
+
+        // Close anything a person reported against it (S-398). Without this
+        // the item returns to the library while its report stays open, so the
+        // screen keeps showing an item that has already been dealt with — and
+        // the next query that looks for open reports pulls it straight back.
+        $record->reports()->open()->update([
+            'resolved_at' => now(),
+            'dismissed_at' => null,
+        ]);
+
+        $record->unsetRelation('reports');
     }
 
     /** The stored one-line reason, or a sensible fallback from the confidence. */
