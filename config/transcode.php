@@ -123,4 +123,42 @@ return [
     */
 
     'timeout_seconds' => (int) env('TRANSCODE_TIMEOUT', 21600),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Adaptive streaming (HLS)
+    |--------------------------------------------------------------------------
+    |
+    | Direct play is always better when it works: no CPU cost, no quality loss,
+    | and seeking is a range request rather than a segment fetch. So these
+    | settings decide *when transcoding is warranted*, not whether HLS exists.
+    |
+    | `mode` is the debugging override — `auto` decides per request, while
+    | `never` and `always` pin it. "Why is this transcoding?" is the question
+    | this feature generates, and being able to force either answer is how it
+    | gets answered.
+    |
+    */
+
+    'hls' => [
+        'mode' => env('TRANSCODE_HLS_MODE', 'auto'),
+
+        // The ceiling for playback from outside the house. A 1080p remux over
+        // a hotel connection buffers forever; 720p is watchable on anything
+        // that is not a television. 0 disables the cap.
+        'max_remote_height' => (int) env('TRANSCODE_MAX_REMOTE_HEIGHT', 720),
+
+        // Bitrate ceiling for a remote stream, matched to the height above.
+        'remote_bitrate' => env('TRANSCODE_REMOTE_BITRATE', '2500k'),
+
+        // A tailnet is not the LAN, but it is usually a direct encrypted path
+        // between two machines in the same house — transcoding a remux for a
+        // device one room away pays CPU for nothing.
+        'tailnet_is_local' => (bool) env('TRANSCODE_TAILNET_IS_LOCAL', true),
+
+        // Segment length. Short segments start faster and adapt sooner;
+        // longer ones compress better and cost fewer requests. Six seconds is
+        // what Apple's own guidance recommends.
+        'segment_seconds' => (int) env('TRANSCODE_SEGMENT_SECONDS', 6),
+    ],
 ];
