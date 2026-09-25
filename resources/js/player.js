@@ -82,6 +82,8 @@ export default class MediaPlayer {
         this.index = -1;
         this.repeat = 'off'; // off | all | one
         this.shuffle = false;
+        /** 'off' | 'on' | 'smart' — the third state is S-289. */
+        this.shuffleMode = 'off';
 
         // A live blob URL holds its whole file in memory, so exactly one is
         // kept and it is revoked before the next track loads.
@@ -100,7 +102,9 @@ export default class MediaPlayer {
         const prefs = this.loadPrefs();
         this.el.volume = prefs.volume;
         this.repeat = prefs.repeat;
-        this.shuffle = prefs.shuffle;
+        // A stored boolean predates the three-state button; treat true as 'on'.
+        this.shuffleMode = prefs.shuffleMode ?? (prefs.shuffle ? 'on' : 'off');
+        this.shuffle = this.shuffleMode !== 'off';
 
         this.bindElement();
         this.restoreSession();
@@ -312,12 +316,37 @@ export default class MediaPlayer {
         this.emit('modechange');
     }
 
-    toggleShuffle() {
-        this.shuffle = !this.shuffle;
+    /**
+     * Cycles shuffle: off → on → smart → off (S-289).
+     *
+     * Smart shuffle is a third state of the same button rather than a separate
+     * control, so the three live where one already did and nothing new has to
+     * be found on the bar.
+     *
+     * It asks the server for a queue weighted by what this profile plays,
+     * because weighting it here would mean the browser holding the whole
+     * library and the whole play history. Until that arrives the current
+     * queue stays exactly as it is — a button that empties the player while
+     * a request is in flight is worse than one that takes a moment.
+     */
+    async toggleShuffle() {
+        this.shuffleMode = { off: 'on', on: 'smart', smart: 'off' }[this.shuffleMode] ?? 'on';
+
+        // Kept in step for anything still reading the old boolean.
+        this.shuffle = this.shuffleMode !== 'off';
 
         const playing = this.current();
 
-        if (this.shuffle) {
+        if (this.shuffleMode === 'smart') {
+            this.savePrefs();
+            this.emit('modechange');
+
+            await this.loadSmartQueue();
+
+            return;
+        }
+
+        if (this.shuffleMode === 'on') {
             this.queue = this.shuffled(this.originalQueue, this.index);
             this.index = 0;
         } else {
@@ -328,6 +357,47 @@ export default class MediaPlayer {
 
         this.savePrefs();
         this.emit('modechange');
+        this.emit('queuechange');
+    }
+
+    /**
+     * Replaces the queue with a server-weighted one, keeping what is playing.
+     *
+     * A failure leaves the queue alone and falls back to ordinary shuffle:
+     * the listener pressed a button and something should happen, and silently
+     * staying in "smart" while behaving uniformly would be a lie.
+     */
+    async loadSmartQueue() {
+        const playing = this.current();
+
+        try {
+            const response = await fetch('/app/shuffle?smart=1', {
+                headers: { Accept: 'application/json' },
+            });
+
+            if (!response.ok) throw new Error(String(response.status));
+
+            const { queue } = await response.json();
+
+            if (!queue?.length) throw new Error('empty');
+
+            // What is playing stays playing and stays first; the weighted
+            // queue follows it.
+            const rest = queue.filter((item) => item.id !== playing?.id);
+
+            this.queue = playing ? [playing, ...rest] : rest;
+            this.originalQueue = [...this.queue];
+            this.index = 0;
+        } catch (error) {
+            logFailure('player:smart-shuffle:failed', error);
+
+            this.shuffleMode = 'on';
+            this.queue = this.shuffled(this.originalQueue, this.index);
+            this.index = 0;
+            this.savePrefs();
+            this.emit('modechange');
+        }
+
         this.emit('queuechange');
     }
 
@@ -663,7 +733,7 @@ export default class MediaPlayer {
     }
 
     loadPrefs() {
-        const defaults = { volume: 1, repeat: 'off', shuffle: false };
+        const defaults = { volume: 1, repeat: 'off', shuffle: false, shuffleMode: null };
 
         try {
             return { ...defaults, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') };
@@ -678,6 +748,7 @@ export default class MediaPlayer {
                 volume: this.el.volume,
                 repeat: this.repeat,
                 shuffle: this.shuffle,
+                shuffleMode: this.shuffleMode,
             }));
         } catch {
             // Private browsing blocks storage; settings just won't persist.
