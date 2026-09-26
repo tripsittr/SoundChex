@@ -172,6 +172,11 @@ Route::prefix('v1')->group(function (): void {
         // "This item is wrong, and here is why" — sent from the apps, settled
         // in the admin panel. Flagging hides the item from the library until
         // it is (S-398).
+        // Cast, crew and tags — deliberately not in the library sync, which
+        // every device mirrors in full (S-412).
+        Route::get('/items/{item}/details', [MediaController::class, 'details'])
+            ->name('api.items.details');
+
         Route::post('/items/{item}/review', [MediaController::class, 'sendForReview'])
             ->name('api.items.review');
 

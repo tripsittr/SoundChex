@@ -119,11 +119,21 @@ class MediaItemResource extends JsonResource
                 'release_year' => $item->musicMetadata?->release_year,
             ], fn ($value) => $value !== null),
 
+            // Films and shows carried four fields each while the database held
+            // sixteen — so the apps could show a year and a runtime and
+            // nothing that makes a film worth choosing (S-412).
             'movie' => array_filter([
                 'release_year' => $item->movieMetadata?->release_year,
                 'mpaa_rating' => $item->movieMetadata?->mpaa_rating,
                 'runtime_minutes' => $item->movieMetadata?->runtime_minutes,
                 'director' => $item->movieMetadata?->director,
+                'tagline' => $item->movieMetadata?->tagline,
+                'studio' => $item->movieMetadata?->studio,
+                'language' => $item->movieMetadata?->language,
+                'country' => $item->movieMetadata?->country,
+                'imdb_rating' => $item->movieMetadata?->imdb_rating,
+                'rt_score' => $item->movieMetadata?->rt_score,
+                'imdb_id' => $item->movieMetadata?->imdb_id,
             ], fn ($value) => $value !== null),
 
             'show' => array_filter([
@@ -131,6 +141,14 @@ class MediaItemResource extends JsonResource
                 'episode_number' => $item->showMetadata?->episode_number,
                 'episode_title' => $item->showMetadata?->episode_title,
                 'content_rating' => $item->showMetadata?->content_rating,
+                'creator' => $item->showMetadata?->creator,
+                'network' => $item->showMetadata?->network,
+                'first_air_year' => $item->showMetadata?->first_air_year,
+                'last_air_year' => $item->showMetadata?->last_air_year,
+                'season_count' => $item->showMetadata?->season_count,
+                'episode_count' => $item->showMetadata?->episode_count,
+                'status' => $item->showMetadata?->status,
+                'episode_air_date' => $item->showMetadata?->episode_air_date,
             ], fn ($value) => $value !== null),
 
             'book' => array_filter([
