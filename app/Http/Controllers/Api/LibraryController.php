@@ -5,13 +5,14 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
 use App\Enums\MediaItemType;
+use App\Http\Controllers\Controller;
 use App\Http\Resources\MediaItemResource;
 use App\Models\MediaItem;
 use App\Services\ContentGate;
-use App\Services\SmartShuffle;
 use App\Services\CurrentProfile;
+use App\Services\MediaBrowser;
+use App\Services\SmartShuffle;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -64,6 +65,36 @@ class LibraryController extends Controller
      * Built here rather than on the device: the phone would have to hold the
      * whole library and the whole play history to weight anything.
      */
+    /**
+     * What the person has started and not finished (S-414).
+     *
+     * The web home has had this for a long time — it is the row that makes a
+     * home page feel like *yours* rather than a catalogue — but it was never
+     * exposed to the apps, so the phone's home page could only ever show
+     * "recently added" and one row per type.
+     *
+     * Built here rather than on the device because resume position lives in
+     * `media_plays` and the library mirror does not carry it. Sending every
+     * play row to every device to let it work this out itself would be a lot
+     * of history for one row.
+     *
+     * Films, shows and books in one response: the home page wants one
+     * "continue" shelf, not three, and the client should not have to make
+     * three calls to build it.
+     */
+    public function continueItems(Request $request, MediaBrowser $browser): JsonResponse
+    {
+        $limit = (int) min(50, max(1, (int) $request->integer('limit', 20)));
+
+        $watching = $browser->continueWatching($limit);
+        $reading = $browser->continueReading($limit);
+
+        return response()->json([
+            'watching' => MediaItemResource::collection($watching),
+            'reading' => MediaItemResource::collection($reading),
+        ]);
+    }
+
     public function shuffle(Request $request): JsonResponse
     {
         $limit = min(max((int) $request->integer('limit', 200), 1), 500);
