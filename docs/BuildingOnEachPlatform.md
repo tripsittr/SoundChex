@@ -30,7 +30,7 @@ They are tracked separately below because they are at different stages.
 | --- | --- | --- |
 | **macOS** (arm64, x86_64) | yes | Full runtime + php-fpm + Caddy + GPL ffmpeg; verified locally |
 | **Linux** (x86_64, aarch64) | yes | Static musl build, runs on Debian/Ubuntu/Alpine/Fedora |
-| **Windows** (x86_64) | yes (CLI) | `php.exe` builds; no php-fpm SAPI on Windows, so the HTTP front needs php-cgi (a follow-up) |
+| **Windows** (x86_64) | yes | `php.exe` for artisan/queue/scheduler, plus **FrankenPHP** as the HTTP front — one binary that is both web server and PHP, since Windows has no php-fpm SAPI (S-418). Built in CI; **not yet run on a Windows machine.** |
 | **Android** | n/a | The server does not run on Android |
 
 So the *server runtime* builds for every desktop OS in CI, and now so does the

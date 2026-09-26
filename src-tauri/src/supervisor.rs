@@ -30,9 +30,20 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// The processes, in start order (php-fpm before caddy so the proxy target
-/// exists when Caddy binds).
-const PROCESSES: [&str; 4] = ["php-fpm", "caddy", "queue", "scheduler"];
+/// The processes, in start order.
+///
+/// Two shapes, because PHP ships no php-fpm SAPI on Windows and the
+/// Caddy-proxies-to-fpm arrangement simply cannot be built there (S-418):
+///
+///   - POSIX:   php-fpm, then caddy (the proxy target must exist before Caddy
+///              binds), then the queue worker and scheduler.
+///   - Windows: frankenphp, which is the web server and PHP in one binary, so
+///              there is no proxy and nothing to order it against.
+#[cfg(not(windows))]
+const PROCESSES: &[&str] = &["php-fpm", "caddy", "queue", "scheduler"];
+
+#[cfg(windows)]
+const PROCESSES: &[&str] = &["frankenphp", "queue", "scheduler"];
 
 /// Where the bundled binaries and the app live. Resolved once at start.
 #[derive(Clone)]
@@ -210,6 +221,22 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
                 .arg("--nodaemonize");
             c
         }
+        // Windows: one binary that serves HTTP and executes PHP itself, so
+        // it takes the Caddyfile's job as well as php-fpm's (S-418).
+        //
+        // `php-server` is FrankenPHP's batteries-included mode: it serves a
+        // document root and runs PHP in one process. The working directory is
+        // set to the app root below, and `--root` points at `public/` — the
+        // only directory a web server should be able to reach.
+        "frankenphp" => {
+            let mut c = Command::new(layout.exe("frankenphp"));
+            c.arg("php-server")
+                .arg("--root")
+                .arg(layout.app_dir.join("public"))
+                .arg("--listen")
+                .arg(&layout.listen);
+            c
+        }
         "caddy" => {
             let mut c = Command::new(layout.exe("caddy"));
             c.arg("run")
@@ -252,6 +279,14 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
 /// templates, substituting placeholders, so a fresh install has valid config.
 fn render_config(layout: &Layout) -> Result<(), String> {
     std::fs::create_dir_all(&layout.run_dir).map_err(|e| e.to_string())?;
+
+    // Windows serves through FrankenPHP, which needs neither of these: it is
+    // the web server and PHP in one, configured by its arguments rather than
+    // a Caddyfile and an fpm pool (S-418). Demanding the templates here would
+    // fail the start before anything ran.
+    if cfg!(windows) {
+        return Ok(());
+    }
 
     let templates = layout.app_dir.join("server").join("templates");
     let caddy_tpl = read_template(&templates.join("Caddyfile"))?;
