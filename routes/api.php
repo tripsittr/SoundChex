@@ -140,6 +140,12 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/library', [LibraryController::class, 'index'])->name('api.library');
         // Shuffle built server-side: the phone would need the whole library
         // and the whole play history to weight anything (S-289).
+        // What you started and did not finish — films, shows and books in one
+        // response, because the home page wants one shelf and not three
+        // round trips to build it (S-414).
+        Route::get('/library/continue', [LibraryController::class, 'continueItems'])
+            ->name('api.library.continue');
+
         Route::get('/library/shuffle', [LibraryController::class, 'shuffle'])->name('api.library.shuffle');
 
         // What has happened since this device last asked.
