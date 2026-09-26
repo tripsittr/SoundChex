@@ -138,6 +138,86 @@ fn server_stop(sup: tauri::State<'_, supervisor::Supervisor>) -> Result<(), Stri
     sup.stop()
 }
 
+/// Makes the Server app start with Windows, so the library survives a reboot
+/// (S-419).
+///
+/// macOS has launchd agents for this; Windows had nothing, so a server there
+/// stopped at the first restart and stayed stopped. A Run-key entry rather
+/// than a true service: a service runs without a desktop session and cannot
+/// show the window this app *is*, whereas the Run key starts it at login with
+/// the user's own permissions — which is what a self-hosted library on a
+/// personal machine actually wants.
+#[cfg(all(desktop, target_os = "windows"))]
+#[tauri::command]
+fn autostart_set(enabled: bool) -> Result<(), String> {
+    use std::process::Command;
+
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("cannot find this executable: {e}"))?;
+
+    let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+
+    let output = if enabled {
+        Command::new("reg")
+            .args(["add", key, "/v", "SoundChex", "/t", "REG_SZ", "/d"])
+            .arg(exe)
+            .arg("/f")
+            .output()
+    } else {
+        // /f so removing an entry that is not there is not an error — the
+        // caller asked for "off", and off is the result either way.
+        Command::new("reg")
+            .args(["delete", key, "/v", "SoundChex", "/f"])
+            .output()
+    };
+
+    match output {
+        Ok(result) if result.status.success() => Ok(()),
+        Ok(result) => {
+            let message = String::from_utf8_lossy(&result.stderr);
+
+            // Deleting something absent reports failure; that is the desired
+            // state, so it is not an error worth surfacing.
+            if !enabled && message.contains("unable to find") {
+                return Ok(());
+            }
+
+            Err(format!("registry update failed: {}", message.trim()))
+        }
+        Err(e) => Err(format!("could not run reg: {e}")),
+    }
+}
+
+/// Starting with the machine is Windows-only; macOS uses launchd agents and
+/// Linux has no equivalent wired up yet. The stubs keep one handler list.
+#[cfg(all(desktop, not(target_os = "windows")))]
+#[tauri::command]
+fn autostart_set(_enabled: bool) -> Result<(), String> {
+    Err("starting with the machine is only supported on Windows".into())
+}
+
+#[cfg(all(desktop, not(target_os = "windows")))]
+#[tauri::command]
+fn autostart_enabled() -> bool {
+    false
+}
+
+/// Whether the Server app is set to start with Windows.
+#[cfg(all(desktop, target_os = "windows"))]
+#[tauri::command]
+fn autostart_enabled() -> bool {
+    std::process::Command::new("reg")
+        .args([
+            "query",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+            "/v",
+            "SoundChex",
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// What the supervised stack is doing.
 #[cfg(desktop)]
 #[tauri::command]
@@ -619,7 +699,14 @@ pub fn run() {
             service_running,
             server_start,
             server_stop,
-            server_status
+            server_status,
+            // Windows only, but registered unconditionally: a second
+            // `invoke_handler` call REPLACES the first rather than adding to
+            // it, so branching here would have silently unregistered every
+            // command above on Windows. The stubs below keep the signature
+            // identical on other platforms.
+            autostart_set,
+            autostart_enabled
         ]);
 
     // Mobile: free_space plus the native media store (Step 2 of the offline
@@ -907,12 +994,27 @@ fn handle_menu_event(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
 /// so the logs live here, which is precisely why they are hard to find.
 #[cfg(desktop)]
 fn logs_directory() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
+    // Windows has no HOME and no ~/.local. Reading HOME there produced an
+    // empty string and a relative path, so logs landed wherever the process
+    // happened to be started from — and "Open logs" opened nothing (S-419).
+    #[cfg(target_os = "windows")]
+    {
+        let base = std::env::var("LOCALAPPDATA")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_default();
 
-    if cfg!(target_os = "macos") {
-        std::path::PathBuf::from(home).join("Library/Logs/SoundChex")
-    } else {
-        std::path::PathBuf::from(home).join(".local/share/soundchex/logs")
+        return std::path::PathBuf::from(base).join("SoundChex").join("logs");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+
+        if cfg!(target_os = "macos") {
+            std::path::PathBuf::from(home).join("Library/Logs/SoundChex")
+        } else {
+            std::path::PathBuf::from(home).join(".local/share/soundchex/logs")
+        }
     }
 }
 

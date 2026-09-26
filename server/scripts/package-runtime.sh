@@ -46,6 +46,41 @@ if [ "$PHP_BIN" != "$FPM_BIN" ]; then
 fi
 chmod +x "$STAGE/bin/php${EXE}" "$STAGE/bin/php-fpm${EXE}" 2>/dev/null || true
 
+# --- FrankenPHP (Windows only) --------------------------------------------
+# Windows has no php-fpm, so the Caddy -> fpm shape cannot be built there.
+# FrankenPHP is a single binary that is both the web server and PHP, which is
+# what the Windows bundle serves with instead (S-418). POSIX keeps php-fpm,
+# which works and is verified.
+if [ "$OS" = "windows" ]; then
+  # Pinned, not "latest": a build that silently changes its own runtime is
+  # not reproducible. Ships as a zip, unlike the POSIX binaries.
+  FRANKEN_VERSION="${FRANKEN_VERSION:-1.12.7}"
+  FRANKEN_TMP="$(mktemp -d)"
+  echo "    fetching frankenphp ${FRANKEN_VERSION} (windows-x86_64)"
+  curl -fsSL -o "$FRANKEN_TMP/frankenphp.zip" \
+    "https://github.com/php/frankenphp/releases/download/v${FRANKEN_VERSION}/frankenphp-windows-x86_64.zip"
+  unzip -q -o "$FRANKEN_TMP/frankenphp.zip" -d "$FRANKEN_TMP"
+
+  # The archive's layout has changed between releases, so find the binary
+  # rather than assuming where it sits.
+  FRANKEN_EXE="$(find "$FRANKEN_TMP" -name 'frankenphp*.exe' -type f | head -n 1)"
+
+  if [ -z "$FRANKEN_EXE" ]; then
+    echo "no frankenphp.exe inside the downloaded archive" >&2
+    exit 1
+  fi
+
+  cp "$FRANKEN_EXE" "$STAGE/bin/frankenphp.exe"
+  rm -rf "$FRANKEN_TMP"
+
+  # A zero-byte or HTML error page from a moved release would otherwise ship
+  # as a "binary" and fail at first launch with nothing to explain it.
+  if [ ! -s "$STAGE/bin/frankenphp.exe" ]; then
+    echo "frankenphp download failed or was empty" >&2
+    exit 1
+  fi
+fi
+
 # --- CA bundle beside php (load-bearing convention) -----------------------
 echo "    fetching cacert.pem"
 curl -fsSL -o "$STAGE/bin/cacert.pem" https://curl.se/ca/cacert.pem
