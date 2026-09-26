@@ -92,6 +92,40 @@ class MediaController extends Controller
     }
 
     /**
+     * Everything about one item that the library sync deliberately omits
+     * (S-412).
+     *
+     * Cast and crew especially: 8,323 items in a real library carry credits,
+     * and putting them in the mirror would mean every device downloading every
+     * actor of every film to show a handful on one screen. So the sync stays
+     * lean and this fills in when a detail page is actually opened.
+     */
+    public function details(MediaItem $item): JsonResponse
+    {
+        abort_unless(app(ContentGate::class)->allows($item), 404);
+
+        $item->load(['people' => fn ($q) => $q->orderByPivot('sort_order')]);
+
+        // Cast and crew split apart rather than sent as one list with a role
+        // on each: a detail page shows them under separate headings, and
+        // every client would otherwise write the same partitioning code.
+        $people = $item->people->map(fn ($person): array => array_filter([
+            'id' => $person->id,
+            'name' => $person->name,
+            'role' => $person->pivot->role,
+            'character' => $person->pivot->character,
+            'headshot' => $person->headshot_url,
+        ], fn ($value) => $value !== null));
+
+        return response()->json([
+            'id' => $item->id,
+            'cast' => $people->where('role', 'actor')->values(),
+            'crew' => $people->where('role', '!=', 'actor')->values(),
+            'tags' => $item->tags()->pluck('name')->values(),
+        ]);
+    }
+
+    /**
      * Sends an item back for review, with a reason (S-398).
      *
      * Takes an id rather than a route-model binding, because the binding is
