@@ -662,9 +662,8 @@ pub fn run() {
         // page's buttons for Radarr, Sonarr and Lidarr.
         .plugin(tauri_plugin_opener::init());
 
-    // The mobile build injects the Tauri bridge into every frame. Desktop windows
-    // come from the Tauri config; creating one here would duplicate the default
-    // `main` window and panic at startup.
+    // The mobile build injects the Tauri bridge into every frame, so its window
+    // has to be built here rather than declared in the config.
     #[cfg(mobile)]
     let builder = builder.setup(|app| {
         use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -673,6 +672,49 @@ pub fn run() {
             .title("SoundChex")
             .initialization_script_for_all_frames(TAURI_BRIDGE)
             .build()?;
+
+        Ok(())
+    });
+
+    // Desktop builds its window here too, and must.
+    //
+    // This used to be an `app.windows` entry in `tauri.conf.json`. Adding the
+    // bridge injection for mobile (`ab536b1`) meant creating `main` in Rust,
+    // and a config window plus a programmatic one of the same label is a
+    // duplicate that panics — so the config entry was removed. It was the only
+    // thing creating a window on desktop, and the creation that replaced it is
+    // `#[cfg(mobile)]`.
+    //
+    // The result was an app with no window on Windows, macOS and Linux alike:
+    // the process starts, the WebView2/WebKit helpers appear at 0x0, nothing is
+    // shown and nothing is logged, because nothing failed. Restoring it as a
+    // config entry would fix desktop and reintroduce the mobile panic; the
+    // `cfg` split is what lets both be true at once.
+    //
+    // Values are the ones the deleted config carried, so this is a restoration
+    // rather than a redesign. No bridge injection here: desktop never had it,
+    // and `withGlobalTauri` already supplies the global on a local page.
+    //
+    // Conditional, and that part is load-bearing. The Server app builds with
+    // `--config src-tauri/tauri.server.conf.json`, which *does* declare a
+    // window — unlabelled, so Tauri calls it `main`. Creating one here
+    // unconditionally would collide with it and panic before anything is shown,
+    // which in a packaged build is an exit with no message at all. So this
+    // fills the gap only when the config left one.
+    #[cfg(desktop)]
+    let builder = builder.setup(|app| {
+        use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+        if app.get_webview_window("main").is_none() {
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("SoundChex")
+                .inner_size(1280.0, 820.0)
+                .min_inner_size(380.0, 560.0)
+                .resizable(true)
+                .fullscreen(false)
+                .theme(Some(tauri::Theme::Dark))
+                .build()?;
+        }
 
         Ok(())
     });
