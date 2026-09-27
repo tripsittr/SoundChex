@@ -124,6 +124,10 @@ gh run watch $(gh run list --limit 1 --json databaseId -q '.[0].databaseId')
 
 ## Things that have actually gone wrong
 
+- **A release job with no `permissions: contents: write`.** Every platform
+  builds, then the upload 403s with "Resource not accessible by integration" —
+  which reads like a broken action rather than a missing permission. The tag
+  is left published with no release behind it (S-421).
 - **A dead updater endpoint** baked into every binary (S-421).
 - **A 222 MB artifact that cannot be downloaded** to check — the packaging
   script now prints its own manifest and fails on a missing binary (S-420).
