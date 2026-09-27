@@ -224,6 +224,32 @@ if [ "$OS" != "windows" ]; then
   echo "    all required extensions present"
 fi
 
+# --- what actually got packaged -------------------------------------------
+# Printed so a CI log answers "is the runtime complete?" on its own. Without
+# it the only way to check was downloading the archive — 222 MB for Windows,
+# which times out often enough to be no check at all (S-420).
+echo "==> bundled binaries"
+for f in "$STAGE"/bin/*; do
+  [ -f "$f" ] || continue
+  printf '    %-18s %s\n' "$(basename "$f")" "$(du -h "$f" | cut -f1)"
+done
+
+# The server cannot serve without these, and a missing one is a broken
+# release rather than a warning worth scrolling past.
+REQUIRED="php${EXE}"
+if [ "$OS" = "windows" ]; then
+  REQUIRED="$REQUIRED frankenphp.exe"
+else
+  REQUIRED="$REQUIRED php-fpm caddy"
+fi
+
+for required in $REQUIRED; do
+  if [ ! -s "$STAGE/bin/$required" ]; then
+    echo "missing or empty: bin/$required" >&2
+    exit 1
+  fi
+done
+
 # --- archive --------------------------------------------------------------
 echo "==> archiving"
 ARCHIVE="${NAME}.tar.gz"; [ "$OS" = "windows" ] && ARCHIVE="${NAME}.zip"
