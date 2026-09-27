@@ -10,11 +10,19 @@ BUNDLE="${1:?usage: stage-server-runtime.sh <unpacked-runtime-bundle-dir>}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$HERE/src-tauri/runtime"
 
-[ -x "$BUNDLE/bin/php-fpm" ] || { echo "not a runtime bundle (no bin/php-fpm): $BUNDLE" >&2; exit 1; }
+# A Windows bundle has no php-fpm -- PHP ships no such SAPI there, and
+# frankenphp.exe does both jobs (S-418). Accept either shape rather than
+# rejecting the Windows bundle as "not a runtime bundle".
+if [ ! -x "$BUNDLE/bin/php-fpm" ] && [ ! -f "$BUNDLE/bin/frankenphp.exe" ]; then
+  echo "not a runtime bundle (no bin/php-fpm, no bin/frankenphp.exe): $BUNDLE" >&2
+  exit 1
+fi
 
 rm -rf "$DEST"
 mkdir -p "$DEST/bin" "$DEST/templates"
-cp "$BUNDLE/bin/"* "$DEST/bin/"
+# Recursive: the Windows bundle keeps its dynamic extensions in bin/ext, and a
+# flat copy silently left every one of them behind.
+cp -R "$BUNDLE/bin/." "$DEST/bin/"
 cp "$HERE/server/templates/Caddyfile" "$HERE/server/templates/php-fpm.conf" "$DEST/templates/"
 echo "staged runtime into $DEST"
 ls "$DEST/bin"

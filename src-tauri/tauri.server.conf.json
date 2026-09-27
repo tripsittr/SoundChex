@@ -16,8 +16,8 @@
   },
   "bundle": {
     "resources": {
-      "runtime/bin/*": "runtime/bin/",
-      "runtime/templates/*": "runtime/templates/"
+      "runtime/bin": "runtime/bin/",
+      "runtime/templates": "runtime/templates/"
     }
   }
 }

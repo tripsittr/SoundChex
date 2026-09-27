@@ -272,6 +272,16 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
     cmd.env("SOUNDCHEX_LISTEN", &layout.listen);
     cmd.env("SOUNDCHEX_RUN", &layout.run_dir);
     cmd.env("SOUNDCHEX_LOG", layout.run_dir.join("caddy-access.log"));
+
+    // Where render_windows_php_ini put the ini. PHP has no other way to find
+    // it: the install directory is read-only, so it cannot sit beside the
+    // binary. Set on Windows only — POSIX ships a static PHP that needs none,
+    // and pointing it at a file that is never written would change a platform
+    // that already works.
+    if cfg!(windows) {
+        cmd.env("PHPRC", layout.run_dir.join("php.ini"));
+    }
+
     cmd.spawn()
 }
 
@@ -280,12 +290,12 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
 fn render_config(layout: &Layout) -> Result<(), String> {
     std::fs::create_dir_all(&layout.run_dir).map_err(|e| e.to_string())?;
 
-    // Windows serves through FrankenPHP, which needs neither of these: it is
-    // the web server and PHP in one, configured by its arguments rather than
-    // a Caddyfile and an fpm pool (S-418). Demanding the templates here would
-    // fail the start before anything ran.
+    // Windows serves through FrankenPHP, which needs neither the Caddyfile nor
+    // an fpm pool: it is the web server and PHP in one, configured by its
+    // arguments rather than by those files (S-418). It does need a php.ini,
+    // which is the one piece of config Windows does not get for free.
     if cfg!(windows) {
-        return Ok(());
+        return render_windows_php_ini(layout);
     }
 
     let templates = layout.app_dir.join("server").join("templates");
@@ -313,6 +323,66 @@ fn render_config(layout: &Layout) -> Result<(), String> {
     std::fs::write(layout.run_dir.join("Caddyfile"), caddy).map_err(|e| e.to_string())?;
     std::fs::write(layout.run_dir.join("php-fpm.conf"), fpm).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Write a `php.ini` for the bundled Windows runtime.
+///
+/// FrankenPHP's Windows build is a stock *dynamic* PHP: its extensions are
+/// DLLs in `bin/ext` that load only if an ini says so. Nothing wrote one, so
+/// `extension_dir` kept its compiled-in default of `C:\php\ext`, no dynamic
+/// extension loaded, and every request that reached the database failed with
+/// "could not find driver" — which is every request, since the session, cache
+/// and queue all live in SQLite.
+///
+/// Generated at start rather than shipped in the bundle because the path is
+/// only known once installed: an ini written at build time carries the build
+/// machine's directories, and the install directory is not writable anyway.
+/// `spawn` points PHP at this file with `PHPRC`.
+///
+/// POSIX does not come here — its PHP is a static build from static-php-cli
+/// with the extensions compiled in, and needs no ini at all.
+fn render_windows_php_ini(layout: &Layout) -> Result<(), String> {
+    // Naming a statically built-in extension is a warning PHP prints and
+    // continues past; omitting a needed dynamic one is fatal at the first
+    // query. So this lists everything the app requires and tolerates overlap.
+    const EXTENSIONS: &[&str] = &[
+        "curl",
+        "exif",
+        "fileinfo",
+        "gd",
+        "intl",
+        "mbstring",
+        "openssl",
+        "pdo_sqlite",
+        "sodium",
+        "sqlite3",
+        "zip",
+    ];
+
+    let mut ini = String::from(
+        "; Written by SoundChex Server each time it starts. Edits are lost.\n\n",
+    );
+
+    ini.push_str(&format!(
+        "extension_dir = \"{}\"\n",
+        layout.bin_dir.join("ext").display()
+    ));
+
+    for extension in EXTENSIONS {
+        ini.push_str(&format!("extension = {extension}\n"));
+    }
+
+    // The CA bundle sits beside the binaries by convention (package-runtime.sh
+    // puts it there). Without it every outbound HTTPS call fails verification,
+    // which on this app means artwork and metadata silently stop arriving.
+    let cacert = layout.bin_dir.join("cacert.pem");
+
+    if cacert.exists() {
+        ini.push_str(&format!("\ncurl.cainfo = \"{}\"\n", cacert.display()));
+        ini.push_str(&format!("openssl.cafile = \"{}\"\n", cacert.display()));
+    }
+
+    std::fs::write(layout.run_dir.join("php.ini"), ini).map_err(|e| e.to_string())
 }
 
 fn read_template(path: &Path) -> Result<String, String> {
