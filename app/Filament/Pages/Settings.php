@@ -103,7 +103,12 @@ class Settings extends Page
 
         $defaults = [
             'app_name' => config('app.name'),
-            'allow_registration' => true,
+            // Closed until someone chooses otherwise. This was `true`, which
+            // quietly defeated the `?? false` in EnsureRegistrationIsOpen and
+            // left sign-up open on every install that had never saved the
+            // setting. First-run is handled there by the absence of any user,
+            // not by this default.
+            'allow_registration' => false,
             'require_email_verification' => false,
         ];
 

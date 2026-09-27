@@ -30,8 +30,12 @@
                 </form>
                 @else
                 <a href="{{ route('login') }}" class="text-gray-700 hover:text-gray-900">Login</a>
-                <a href="{{ route('register') }}"
-                    class="rounded-md bg-amber-500 px-3 py-1.5 text-white hover:bg-amber-600">Register</a>
+                {{-- Guarded like the one on the login page: the route 404s when
+                     sign-up is closed, and that is now the default. --}}
+                @if (\App\Http\Middleware\EnsureRegistrationIsOpen::isOpen())
+                    <a href="{{ route('register') }}"
+                        class="rounded-md bg-amber-500 px-3 py-1.5 text-white hover:bg-amber-600">Register</a>
+                @endif
                 @endauth
             </nav>
         </div>
