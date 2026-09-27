@@ -281,8 +281,6 @@ Claude Code assists in the following:
 
 All code is reviewed and tested before it is merged, and the macOS build is in daily use.
 
-This is a passion project of mine. I have attempted to build out a media server for a long time, but I was never able to get the features and support I wanted. Having learned Laravel, PHP, and various languages and frameworks around it, I decided why not have Claude build the bridge I was missing using Tauri, porting the web app to other platforms.
-
 Thank you for checking out my project. I do use this myself every day and hope you will too. Feel free to contribute, give it a star, or sponsor me to help keep this project going!
 
 [ios-repo]: https://github.com/tripsittr/SoundChexiOS
