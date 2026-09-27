@@ -21,6 +21,9 @@ on:
     branches: [main]
     tags:
       - 'client-v*'
+    # `paths` applies to branch pushes only — a tag push carrying none of
+    # these would otherwise build nothing, and the release job would have no
+    # artifacts to publish (S-421).
     paths:
       - 'src-tauri/**'
       - 'package.json'
@@ -102,3 +105,33 @@ jobs:
           path: |
             src-tauri/target/release/bundle/**/*
           if-no-files-found: warn
+
+  # Publishes the installers a `client-v*` tag was cut for.
+  #
+  # Marked a pre-release when the tag carries a suffix — `client-v0.2.0-beta.1`
+  # is a pre-release, `client-v0.2.0` is not. GitHub then keeps it off the
+  # "Latest" badge that the download page's releases/latest link follows, so a
+  # beta cannot be handed to someone who only wanted the stable build.
+  release:
+    if: startsWith(github.ref, 'refs/tags/client-v')
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+
+      # Tauri writes each bundle into its own directory (msi/, dmg/, deb/) and
+      # the artifact download flattens those into one tree, so collect the
+      # installers by extension rather than by a path that differs per OS.
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p upload
+          find dist -type f \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) -exec cp {} upload/ \;
+          ls -la upload
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: upload/*
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true

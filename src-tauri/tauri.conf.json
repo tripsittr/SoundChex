@@ -49,8 +49,9 @@
   },
   "plugins": {
     "updater": {
+      "_comment": "GitHub releases, not a server: an endpoint pointing at the maintainer's laptop only works while that laptop is awake and on the user's tailnet, and the old one named a machine that no longer exists (S-421). `releases/latest` deliberately skips pre-releases, so a beta never offers itself to someone running the stable build. First-time installers come from the website; this is upgrades only. NOTE: the updater refuses an update whose minisign signature is missing, and nothing generates one yet — so this endpoint is correct but not yet functional end to end.",
       "endpoints": [
-        "https://macbookair.tail7e590c.ts.net/api/v1/updates/{{target}}/{{arch}}/{{current_version}}"
+        "https://github.com/tripsittr/SoundChex/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYyODJBNzYyMzRCMEQxMDcKUldRSDBiQTBZcWVDWXRQUjhXeWFpTEFFbVZtZCtNOXk2SzNxVk5xLzBXc1JrRDV1RHFacVhWdTMK",
       "windows": {
