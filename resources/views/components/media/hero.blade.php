@@ -40,7 +40,7 @@
 
             <div class="min-w-0 flex-1">
                 @if ($eyebrow)
-                    <p class="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-accent">
+                    <p class="mb-2 text-xs font-bold uppercase tracking-[0.2em] text-accent-text">
                         {{ $eyebrow }}
                     </p>
                 @endif

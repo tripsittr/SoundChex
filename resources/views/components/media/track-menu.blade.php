@@ -49,6 +49,7 @@
         ? 'flex size-8 shrink-0 cursor-pointer list-none items-center justify-center rounded text-ink-500 opacity-0 transition hover:bg-base-700 hover:text-ink-100 focus:opacity-100 group-hover:opacity-100'
         : 'inline-flex cursor-pointer list-none items-center gap-2 rounded-full border border-base-500 px-4 py-2.5 text-sm font-medium text-ink-200 transition hover:border-ink-500 hover:text-ink-100' }}"
              aria-haspopup="menu"
+             aria-expanded="false"
              aria-label="More options{{ $label ? ' for ' . $label : '' }}">
         {{-- The meatball. Three dots is the near-universal signal for "more". --}}
         <svg class="size-4 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">

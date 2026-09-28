@@ -80,7 +80,7 @@
                     </div>
 
                     <div class="min-w-0 flex-1">
-                        <p class="mb-1.5 text-xs font-bold uppercase tracking-[0.2em] text-accent">
+                        <p class="mb-1.5 text-xs font-bold uppercase tracking-[0.2em] text-accent-text">
                             {{ $item->type->label() }}
                         </p>
 

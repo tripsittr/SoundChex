@@ -27,10 +27,13 @@
 
     --color-ink-100: var(--sc-ink-100);
     --color-ink-300: var(--sc-ink-300);
+    --color-ink-400: var(--sc-ink-400);
     --color-ink-500: var(--sc-ink-500);
 
     --color-accent: var(--sc-accent);
     --color-accent-hot: var(--sc-accent-hot);
+    /* For words, not fills — see tokens.css (S-442). */
+    --color-accent-text: var(--sc-accent-text);
 
     --ease-out-soft: var(--sc-ease-out-soft);
 }

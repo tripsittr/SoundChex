@@ -45,7 +45,7 @@
         <p class="mt-2 text-sm leading-relaxed text-ink-300">
             SoundChex is free software under the
             <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener"
-               class="text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">AGPL-3.0-or-later</a>.
+               class="text-accent-text underline decoration-accent/40 underline-offset-2 hover:decoration-accent">AGPL-3.0-or-later</a>.
             Section&nbsp;13 says that anyone who uses this server over a network
             must be offered the source of the build they are using &mdash; not
             the project in general, but this one.

@@ -22,10 +22,22 @@
 
     --sc-ink-100: #f4f4f5;
     --sc-ink-300: #b8b8c0;
+    /* Referenced by the media center before it existed, so that text fell
+       back to whatever it inherited (S-442). Midway between 300 and 500;
+       7.03:1 at worst, comfortably past AA. */
+    --sc-ink-400: #a1a1ab;
     --sc-ink-500: #8a8a96;
 
     --sc-accent: #e11d3a;
     --sc-accent-hot: #ff2a4a;
+
+    /* The accent, for TEXT. The accent itself measures 4.23:1 on base-900 and
+       3.80:1 on base-700 — under the 4.5:1 that body text needs, though fine
+       for the borders, fills and large type it is mostly used for. This is
+       the same hue lifted until it clears 4.5:1 on every surface it sits on
+       (4.78:1 at worst, on base-700). Use it wherever the accent carries
+       words (S-442). */
+    --sc-accent-text: #ff2343;
 
     --sc-ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
 }
