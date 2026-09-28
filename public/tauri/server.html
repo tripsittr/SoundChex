@@ -198,7 +198,7 @@
                     <span class="row__hint">Serves the library to every device.</span>
                 </span>
                 <span class="state">
-                    <span class="dot" data-state="unknown" data-dot="serve"></span>
+                    <span class="dot" data-state="unknown" data-dot="serve" aria-hidden="true"></span>
                     <span data-label="serve">Checking…</span>
                     <button type="button" data-start="serve" hidden>Start</button>
                 </span>
@@ -210,7 +210,7 @@
                     <span class="row__hint">Identifies new media, imports subtitles, transcodes.</span>
                 </span>
                 <span class="state">
-                    <span class="dot" data-state="unknown" data-dot="queue"></span>
+                    <span class="dot" data-state="unknown" data-dot="queue" aria-hidden="true"></span>
                     <span data-label="queue">Checking…</span>
                     <button type="button" data-start="queue" hidden>Start</button>
                 </span>
@@ -222,7 +222,7 @@
                     <span class="row__hint">Scans watched folders and backs up nightly.</span>
                 </span>
                 <span class="state">
-                    <span class="dot" data-state="unknown" data-dot="scheduler"></span>
+                    <span class="dot" data-state="unknown" data-dot="scheduler" aria-hidden="true"></span>
                     <span data-label="scheduler">Checking…</span>
                     <button type="button" data-start="scheduler" hidden>Start</button>
                 </span>
@@ -234,7 +234,7 @@
                 <button type="button" id="recheck">Recheck</button>
             </div>
 
-            <p id="status" data-error="false"></p>
+            <p id="status" data-error="false" role="status" aria-live="polite"></p>
         </div>
 
         <div class="card">
@@ -309,6 +309,10 @@
         const status = (message, isError = false) => {
             const el = document.getElementById('status');
 
+            // An error interrupts; ordinary progress waits its turn. The line
+            // is already a live region, so this only chooses how insistent it
+            // is (S-441).
+            el.setAttribute('aria-live', isError ? 'assertive' : 'polite');
             el.textContent = message;
             el.dataset.error = String(isError);
         };

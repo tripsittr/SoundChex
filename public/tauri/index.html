@@ -314,6 +314,9 @@
 
         if (!el) return;
 
+        // "Could not reach that server" should interrupt; "Connecting…"
+        // should not (S-441).
+        el.setAttribute('aria-live', isError ? 'assertive' : 'polite');
         el.textContent = message;
         el.dataset.error = String(isError);
     };
