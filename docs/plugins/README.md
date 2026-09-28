@@ -339,6 +339,55 @@ bundles the Tailwind CLI, your plugin's own stylesheet is compiled when the
 plugin is enabled — write ordinary Tailwind in `resources/css/plugin.css` and
 it is built for you.
 
+#### Colour it with the host's tokens, not your own hex values
+
+Shipping your own CSS solves *whether* a rule exists. It does not solve
+matching the app, and a plugin that hard-codes `#e11d3a` is wrong the moment
+the palette moves or the user picks another accent.
+
+SoundChex publishes its palette as CSS custom properties on `:root`. They are
+in the admin panel's compiled stylesheet, so they are already in scope on any
+page your plugin renders there — no import, no build step, nothing to declare:
+
+```css
+.myplugin-card {
+    background: var(--sc-base-800);
+    color: var(--sc-ink-100);
+    border: 1px solid var(--sc-base-600);
+}
+
+.myplugin-card__cta {
+    background: var(--sc-accent);
+    transition: transform .2s var(--sc-ease-out-soft);
+}
+```
+
+| Token | What it is |
+|---|---|
+| `--sc-base-900` | The page behind everything. Near-black, slightly blue |
+| `--sc-base-800` | Cards, popovers, nav fill |
+| `--sc-base-700` | Placeholders, hover fills |
+| `--sc-base-600` | Borders and dividers |
+| `--sc-base-500` | Subtle borders |
+| `--sc-ink-100` | Primary text |
+| `--sc-ink-300` | Secondary text |
+| `--sc-ink-500` | Muted text, inactive states |
+| `--sc-accent` | The accent. **User-configurable — never assume its value** |
+| `--sc-accent-hot` | The accent, lifted, for hover |
+| `--sc-ease-out-soft` | The app's easing curve |
+
+Two rules worth following:
+
+- **Never hard-code the accent.** It is a user setting. A plugin that paints
+  its own red is the one thing on the page that ignores what the person chose.
+- **Check contrast if you put text on the accent.** It has to clear 4.5:1 for
+  body text, and since the user picks it you cannot verify that once and move
+  on. Prefer `--sc-ink-100` on a `--sc-base-*` surface where you can.
+
+Prefix your class names (`.myplugin-*`). The stylesheet is loaded on a page
+you share with the panel and with other plugins, and nothing namespaces it
+for you.
+
 ### Markup inside the player
 
 The admin panel takes its positions from Filament. The media center — the thing

@@ -5,6 +5,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\Plugins;
 use App\Models\InstalledPlugin;
 use App\Models\User;
 use App\Plugins\StyleCompiler;
@@ -141,6 +142,29 @@ class PluginStyleCompilerTest extends TestCase
         );
     }
 
+    /**
+     * The configured binary must actually resolve to a file.
+     *
+     * This is the failure that hid for weeks (S-349). The fallback was a bare
+     * `tailwindcss` on PATH, described in the config as "how a development
+     * machine without the bundle still works" — but Tailwind v4 ships no
+     * global binary, it is an npm package. So on a dev checkout the name
+     * resolved to nothing, every plugin silently skipped compilation, and the
+     * only symptom was CSS that never changed. Nothing errored, because a
+     * missing CLI is deliberately not an error.
+     */
+    public function test_the_configured_binary_resolves_on_this_machine(): void
+    {
+        $binary = (string) config('plugin-styles.binary');
+
+        $this->assertTrue(
+            is_file($binary),
+            "The Tailwind CLI did not resolve to a file: {$binary}. A bare name "
+            .'means nothing was found, and plugin styles will skip in silence. '
+            .'Run `npm install` — @tailwindcss/cli is a dev dependency.',
+        );
+    }
+
     public function test_clearing_removes_the_compiled_stylesheet(): void
     {
         @mkdir($this->pluginDirectory.'/dist', 0o775, true);
@@ -216,7 +240,7 @@ class PluginStyleCompilerTest extends TestCase
             'manifest' => '{}',
         ]);
 
-        $page = new \App\Filament\Pages\Plugins;
+        $page = new Plugins;
 
         $path = new \ReflectionMethod($page, 'pluginPath');
         $path->setAccessible(true);
@@ -246,7 +270,7 @@ class PluginStyleCompilerTest extends TestCase
             'manifest' => '{}',
         ]);
 
-        $page = new \App\Filament\Pages\Plugins;
+        $page = new Plugins;
         $path = new \ReflectionMethod($page, 'pluginPath');
         $path->setAccessible(true);
 
