@@ -30,12 +30,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # No Intel macOS. `macos-13` was the last GitHub-hosted x86_64 image
+        # and it is gone: every run of this workflow since it was written sat
+        # 24 hours waiting for a runner that never came, was cancelled at the
+        # limit, and took the release job down with it — which is why no
+        # server release has ever published.
+        #
+        # Apple Silicon has been the only Mac sold since 2023 and an Intel Mac
+        # can run the aarch64 build under Rosetta 2. If an Intel build is
+        # wanted later it needs a self-hosted runner.
         include:
           - { os: ubuntu-latest,    spc_os: linux,   arch: x86_64,  spc_bin: spc-linux-x86_64 }
           - { os: ubuntu-24.04-arm, spc_os: linux,   arch: aarch64, spc_bin: spc-linux-aarch64 }
           - { os: macos-latest,     spc_os: macos,   arch: aarch64, spc_bin: spc-macos-aarch64 }
-          - { os: macos-13,         spc_os: macos,   arch: x86_64,  spc_bin: spc-macos-x86_64 }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     name: ${{ matrix.spc_os }}-${{ matrix.arch }}
     defaults:
       run:
@@ -112,6 +121,7 @@ jobs:
   # "Visual Studio not installed". Revisit when spc supports VS 18.
   build-windows:
     runs-on: windows-2022
+    timeout-minutes: 60
     name: windows-x86_64
     env:
       # EXTENSIONS minus gmp (spc can't compile it on Windows yet) and pcntl
@@ -183,6 +193,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/server-v')
     needs: [build, build-windows]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true }
