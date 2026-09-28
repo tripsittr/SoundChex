@@ -75,6 +75,11 @@ fn start_service(key: String, repo: String) -> Result<String, String> {
 #[cfg(desktop)]
 mod supervisor;
 
+/// Unpacks the bundled application on first run, so an installed Server app
+/// has something to serve without a checkout beside it.
+#[cfg(desktop)]
+mod provision;
+
 /// Resolve the bundled runtime layout from the app's resource dir.
 ///
 /// Tauri unpacks `bundle.resources` under the resource directory, so the runtime
@@ -96,20 +101,30 @@ fn resolve_layout(app: &tauri::AppHandle, listen: String) -> Result<supervisor::
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| resource_dir.join("runtime").join("bin"));
 
-    // The app root: packaged, the resource dir holds artisan; in dev, the repo.
-    let app_dir = if resource_dir.join("artisan").exists() {
-        resource_dir.clone()
-    } else {
-        std::env::var("SOUNDCHEX_APP_DIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| resource_dir.clone())
-    };
-
-    let run_dir = app
+    let data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("no app data dir: {e}"))?
-        .join("server");
+        .map_err(|e| format!("no app data dir: {e}"))?;
+
+    // The app root, in order of preference: a checkout sitting in the resource
+    // dir; an explicit override; the copy unpacked from the bundled payload; and
+    // failing all of those, the resource dir, which is what a bundle with no
+    // payload has always used.
+    //
+    // The override still beats the payload on purpose. A machine already serving
+    // a library out of a checkout keeps doing so after an upgrade, rather than
+    // silently starting a second, empty one.
+    let app_dir = if resource_dir.join("artisan").exists() {
+        resource_dir.clone()
+    } else if let Ok(dir) = std::env::var("SOUNDCHEX_APP_DIR") {
+        std::path::PathBuf::from(dir)
+    } else if provision::payload(&resource_dir).is_some() {
+        data_dir.join("app")
+    } else {
+        resource_dir.clone()
+    };
+
+    let run_dir = data_dir.join("server");
 
     Ok(supervisor::Layout {
         bin_dir,
@@ -128,6 +143,27 @@ fn server_start(
     listen: Option<String>,
 ) -> Result<(), String> {
     let layout = resolve_layout(&app, listen.unwrap_or_else(|| ":8000".into()))?;
+
+    // First run unpacks the application, writes an .env and migrates, which is
+    // slow enough to be felt — tens of seconds for 33,000 files. Every start
+    // after that compares one hash and moves on. It happens here rather than at
+    // launch so a user who never starts the server never pays for it.
+    {
+        use tauri::Manager;
+
+        let resource_dir = app
+            .path()
+            .resource_dir()
+            .map_err(|e| format!("no resource dir: {e}"))?;
+
+        provision::ensure(
+            &resource_dir,
+            &layout.app_dir,
+            &layout.bin_dir,
+            &layout.run_dir,
+        )?;
+    }
+
     sup.start(layout)
 }
 

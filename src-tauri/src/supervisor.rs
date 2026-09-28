@@ -295,7 +295,7 @@ fn render_config(layout: &Layout) -> Result<(), String> {
     // arguments rather than by those files (S-418). It does need a php.ini,
     // which is the one piece of config Windows does not get for free.
     if cfg!(windows) {
-        return render_windows_php_ini(layout);
+        return write_windows_php_ini(&layout.bin_dir, &layout.run_dir).map(|_| ());
     }
 
     let templates = layout.app_dir.join("server").join("templates");
@@ -337,11 +337,13 @@ fn render_config(layout: &Layout) -> Result<(), String> {
 /// Generated at start rather than shipped in the bundle because the path is
 /// only known once installed: an ini written at build time carries the build
 /// machine's directories, and the install directory is not writable anyway.
-/// `spawn` points PHP at this file with `PHPRC`.
+/// `spawn` points PHP at the returned path with `PHPRC`, and so does
+/// first-run provisioning, whose `artisan migrate` needs `pdo_sqlite` just as
+/// much as a request does.
 ///
 /// POSIX does not come here — its PHP is a static build from static-php-cli
 /// with the extensions compiled in, and needs no ini at all.
-fn render_windows_php_ini(layout: &Layout) -> Result<(), String> {
+pub fn write_windows_php_ini(bin_dir: &Path, dir: &Path) -> Result<PathBuf, String> {
     // Naming a statically built-in extension is a warning PHP prints and
     // continues past; omitting a needed dynamic one is fatal at the first
     // query. So this lists everything the app requires and tolerates overlap.
@@ -365,7 +367,7 @@ fn render_windows_php_ini(layout: &Layout) -> Result<(), String> {
 
     ini.push_str(&format!(
         "extension_dir = \"{}\"\n",
-        layout.bin_dir.join("ext").display()
+        bin_dir.join("ext").display()
     ));
 
     for extension in EXTENSIONS {
@@ -375,14 +377,20 @@ fn render_windows_php_ini(layout: &Layout) -> Result<(), String> {
     // The CA bundle sits beside the binaries by convention (package-runtime.sh
     // puts it there). Without it every outbound HTTPS call fails verification,
     // which on this app means artwork and metadata silently stop arriving.
-    let cacert = layout.bin_dir.join("cacert.pem");
+    let cacert = bin_dir.join("cacert.pem");
 
     if cacert.exists() {
         ini.push_str(&format!("\ncurl.cainfo = \"{}\"\n", cacert.display()));
         ini.push_str(&format!("openssl.cafile = \"{}\"\n", cacert.display()));
     }
 
-    std::fs::write(layout.run_dir.join("php.ini"), ini).map_err(|e| e.to_string())
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+
+    let path = dir.join("php.ini");
+
+    std::fs::write(&path, ini).map_err(|e| e.to_string())?;
+
+    Ok(path)
 }
 
 fn read_template(path: &Path) -> Result<String, String> {
