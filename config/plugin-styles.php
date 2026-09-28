@@ -19,7 +19,22 @@
 $bundledBinary = static function (string $name): string {
     $beside = dirname(PHP_BINARY).DIRECTORY_SEPARATOR.$name.(PHP_OS_FAMILY === 'Windows' ? '.exe' : '');
 
-    return is_file($beside) ? $beside : $name;
+    if (is_file($beside)) {
+        return $beside;
+    }
+
+    // A development checkout has no bundled runtime. Tailwind v4 ships no
+    // global binary either — it is an npm package — so falling through to a
+    // bare `tailwindcss` on PATH found nothing, and compilation skipped in
+    // silence: plugins kept whatever CSS they shipped and nobody was told
+    // why (S-349). Look where npm actually puts it.
+    $local = base_path('node_modules/.bin/'.$name.(PHP_OS_FAMILY === 'Windows' ? '.cmd' : ''));
+
+    if (is_file($local)) {
+        return $local;
+    }
+
+    return $name;
 };
 
 return [
