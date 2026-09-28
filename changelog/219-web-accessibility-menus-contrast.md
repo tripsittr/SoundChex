@@ -54,6 +54,29 @@ same hue lifted until it clears 4.5:1 on every surface (4.78:1 at worst).
 The two thresholds are different — 3:1 for large text and UI shapes, 4.5:1 for
 body — and conflating them is how this goes wrong in both directions.
 
+## Focus, in and out of dialogs
+
+`role="dialog"` with `aria-modal="true"` claims the rest of the page is
+unavailable. Visually it is — there is a backdrop. Focus did not know that.
+
+The **remove-all confirmation** left focus on the button behind it, Tab walked
+out through the backdrop into a page the person could not see, and closing
+dropped focus to the body. It now traps Tab, opens on **Cancel** rather than
+Remove (this deletes every download on the device; the keyboard should not
+land on the destructive button), and returns focus to the trigger on close.
+
+The **now-playing sheet** was half right already: it applies `inert` when
+hidden, which is the better answer than a trap and keeps focus out of a
+dialog that is off-screen. But nothing moved focus *into* it on open, so a
+screen reader stayed on the bar behind an open full-screen dialog. It now
+focuses Close — the way out, and the control someone needs to find first —
+and restores focus on the way back.
+
+`focus-trap.js` is deliberately small. `inert` on the rest of the page would
+be tidier, but these dialogs are siblings deep in the layout rather than
+children of `<body>`, so there is no single subtree to mark.
+
 ## Still open on S-442
 
-Focus management inside modals, and the Filament admin surfaces.
+The Filament admin surfaces, which come with their own framework-level
+behaviour and are worth auditing separately.
