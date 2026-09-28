@@ -44,3 +44,17 @@ accident for weeks.
 
 The same timeout went on `build-client.yml`, which has no Intel entry and is
 otherwise unaffected.
+
+## Follow-up: the server published as a full release
+
+The first successful run exposed a second gap. `build-client.yml` marks a
+`-beta` tag as a pre-release; `build-server.yml` never set the flag at all —
+it had never reached the release step, so nothing had revealed it.
+
+So `server-v0.2.0-beta.1` published as a *full* release while the client of
+the same version showed as a beta. That matters beyond tidiness: the
+`releases/latest` endpoint skips pre-releases, so anything reading it would
+have been handed a beta server as the current version.
+
+Corrected on the published release, and the workflow now derives the flag from
+the tag name the way the client does.

@@ -199,6 +199,12 @@ jobs:
         with: { path: dist, merge-multiple: true }
       - uses: softprops/action-gh-release@v2
         with:
+          # A tag carrying -beta/-alpha/-rc marks the release as a
+          # pre-release, the way the client workflow already does. Without
+          # this the server published as a full release while the client of
+          # the same version showed as a beta, and `releases/latest` — which
+          # skips pre-releases — would have offered a beta server as current.
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-rc') }}
           files: |
             dist/soundchex-server-*.tar.gz
             dist/soundchex-server-*.zip
