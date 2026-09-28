@@ -119,6 +119,15 @@ class MediaController extends Controller
 
         return response()->json([
             'id' => $item->id,
+            // The synopsis (S-412). It lives on `notes`, which the admin
+            // labels "Overview" and enrichment fills from TMDB when it is
+            // empty — so an owner's own words win over the scraped ones.
+            //
+            // Sent here rather than on the catalogue row: a paragraph per
+            // item across thousands of items is a payload every device
+            // mirrors in full, and this endpoint is already fetched by the
+            // one page that shows it.
+            'overview' => $item->notes,
             'cast' => $people->where('role', 'actor')->values(),
             'crew' => $people->where('role', '!=', 'actor')->values(),
             'tags' => $item->tags()->pluck('name')->values(),
