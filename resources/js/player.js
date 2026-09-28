@@ -769,3 +769,28 @@ export function formatTime(seconds) {
         ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
         : `${minutes}:${String(secs).padStart(2, '0')}`;
 }
+
+/**
+ * The same duration, said aloud (S-442).
+ *
+ * `formatTime` produces "3:07", which a screen reader reads as a clock time —
+ * "three oh seven" — rather than a length. Anything announced through ARIA
+ * needs the words, so `aria-valuetext` uses this while the visible label keeps
+ * the compact form.
+ */
+export function spokenTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0 seconds';
+
+    const total = Math.floor(seconds);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+
+    const parts = [];
+
+    if (hours > 0) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+    if (minutes > 0) parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
+    if (secs > 0 || parts.length === 0) parts.push(`${secs} second${secs === 1 ? '' : 's'}`);
+
+    return parts.join(' ');
+}

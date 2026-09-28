@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-import MediaPlayer, { formatTime } from './player.js';
+import MediaPlayer, { formatTime, spokenTime } from './player.js';
 
 /**
  * The persistent now-playing bar.
@@ -182,6 +182,7 @@ function bindNowPlaying() {
         next: document.getElementById('np-next'),
         shuffle: document.getElementById('np-shuffle'),
         repeat: document.getElementById('np-repeat'),
+        announce: document.getElementById('np-announce'),
         seek: document.getElementById('np-seek'),
         played: document.getElementById('np-played'),
         current: document.getElementById('np-current'),
@@ -204,6 +205,17 @@ function bindNowPlaying() {
 
         current.ui.title.textContent = item.title ?? '';
         current.ui.subtitle.textContent = item.subtitle ?? '';
+
+        // Say what changed (S-442). Sighted, the title simply becomes a
+        // different title; without the screen there is no signal that the
+        // queue moved on at all. Only on a track change — not on the restore
+        // path below, which runs on every page load and would announce
+        // something nobody did.
+        if (current.ui.announce) {
+            current.ui.announce.textContent = [item.title, item.subtitle]
+                .filter(Boolean)
+                .join(' — ');
+        }
 
         if (item.artwork) {
             current.ui.artwork.src = item.artwork;
@@ -228,6 +240,15 @@ function bindNowPlaying() {
         current.ui.played.style.width = `${fraction}%`;
         current.ui.current.textContent = formatTime(at);
         current.ui.duration.textContent = formatTime(duration);
+
+        // The width is the sighted half of this. Without the value a screen
+        // reader announces "Seek, slider" and no position at all (S-442).
+        // Spoken as durations, because "3:07" is read as a clock time.
+        current.ui.seek.setAttribute('aria-valuenow', String(Math.round(fraction)));
+        current.ui.seek.setAttribute(
+            'aria-valuetext',
+            `${spokenTime(at)} of ${spokenTime(duration)}`,
+        );
     });
 
     player.on('modechange', () => {
@@ -257,6 +278,40 @@ function bindNowPlaying() {
     ui.seek.addEventListener('click', (event) => {
         const { left, width } = ui.seek.getBoundingClientRect();
         player.seekFraction((event.clientX - left) / width);
+    });
+
+    // And by keyboard, which a slider is required to support and this one did
+    // not: it was reachable only with a pointer (S-442). The keys are the ones
+    // the ARIA practices specify, so they are what someone will already try.
+    ui.seek.addEventListener('keydown', (event) => {
+        const duration = player.el.duration;
+
+        if (!duration || Number.isNaN(duration)) {
+            return;
+        }
+
+        const step = event.shiftKey ? 60 : 5;
+        const at = player.el.currentTime;
+
+        const target = {
+            ArrowRight: () => at + step,
+            ArrowUp: () => at + step,
+            ArrowLeft: () => at - step,
+            ArrowDown: () => at - step,
+            PageUp: () => at + 60,
+            PageDown: () => at - 60,
+            Home: () => 0,
+            End: () => duration,
+        }[event.key];
+
+        if (!target) {
+            return;
+        }
+
+        // The arrow keys scroll the page otherwise, which is the opposite of
+        // what someone focused on a slider means by pressing them.
+        event.preventDefault();
+        player.seekFraction(Math.min(Math.max(target(), 0), duration) / duration);
     });
 
     ui.volume.addEventListener('input', (event) => {

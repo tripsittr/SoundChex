@@ -11,10 +11,19 @@
      class="fixed inset-x-0 bottom-0 z-40 translate-y-full border-t border-base-600/60 bg-base-800/95 backdrop-blur-md transition-transform duration-300">
 
     {{-- Seek bar spans the full width, sitting on the bar's top edge. --}}
+    {{-- A role="slider" with no value and no tab stop is worse than no role
+         at all: a screen reader announces a slider, reads no position from
+         it, and the keyboard cannot reach it (S-442). The value is kept
+         current by now-playing.js as the track plays. --}}
     <div id="np-seek"
          class="group absolute inset-x-0 -top-1 h-3 cursor-pointer"
          role="slider"
-         aria-label="Seek">
+         tabindex="0"
+         aria-label="Seek"
+         aria-valuemin="0"
+         aria-valuemax="100"
+         aria-valuenow="0"
+         aria-valuetext="0 seconds of 0 seconds">
         <div class="absolute inset-x-0 top-1 h-1 bg-base-600">
             <div id="np-played" class="h-full bg-accent transition-[width] duration-150" style="width: 0"></div>
         </div>
@@ -32,6 +41,13 @@
                  class="hidden size-11 shrink-0 rounded object-cover sm:size-12">
 
             <div class="min-w-0">
+                {{-- What changed, announced once (S-442). A screen reader user
+                     gets no signal when the queue moves on: the title simply
+                     becomes a different title. The live region is separate and
+                     visually hidden rather than wrapped around the title,
+                     because the title's container also holds the elapsed time
+                     and would re-announce every second. --}}
+                <p id="np-announce" class="sr-only" role="status" aria-live="polite"></p>
                 <p id="np-title" class="truncate text-sm font-medium text-ink-100"></p>
                 <p id="np-subtitle" class="truncate text-xs text-ink-500"></p>
                 {{-- Under the title and artist: a plugin's own line about the
@@ -254,7 +270,10 @@
 
         {{-- A tall hit area around a thin track: thumbs are imprecise, but a
              chunky bar looks clumsy. --}}
-        <div id="np-sheet-seek" class="group relative -mx-1 cursor-pointer px-1 py-3" role="slider" aria-label="Seek">
+        <div id="np-sheet-seek" class="group relative -mx-1 cursor-pointer px-1 py-3"
+             role="slider" tabindex="0" aria-label="Seek"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+             aria-valuetext="0 seconds of 0 seconds">
             <div class="h-1 rounded-full bg-base-600">
                 <div id="np-sheet-played" class="h-full rounded-full bg-accent" style="width: 0"></div>
             </div>
