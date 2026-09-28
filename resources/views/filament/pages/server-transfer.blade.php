@@ -49,8 +49,8 @@
             </div>
 
             <div class="mt-4">
-                <label class="block text-sm font-medium">Your password, to approve</label>
-                <input type="password" wire:model="password"
+                <label for="transfer-approve-password" class="block text-sm font-medium">Your password, to approve</label>
+                <input type="password" id="transfer-approve-password" wire:model="password"
                        class="mt-1 w-full max-w-xs rounded-lg border-gray-300 dark:border-white/10 dark:bg-white/5"
                        autocomplete="current-password">
             </div>
@@ -122,8 +122,8 @@
 
         <div class="space-y-4">
             <div>
-                <label class="block text-sm font-medium">Its address</label>
-                <input type="url" wire:model="sourceUrl"
+                <label for="transfer-source-url" class="block text-sm font-medium">Its address</label>
+                <input type="url" id="transfer-source-url" wire:model="sourceUrl"
                        placeholder="https://macbookair.tail7e590c.ts.net"
                        class="mt-1 w-full rounded-lg border-gray-300 dark:border-white/10 dark:bg-white/5">
             </div>
@@ -151,8 +151,8 @@
             </div>
 
             <div>
-                <label class="block text-sm font-medium">Your password</label>
-                <input type="password" wire:model="password"
+                <label for="transfer-request-password" class="block text-sm font-medium">Your password</label>
+                <input type="password" id="transfer-request-password" wire:model="password"
                        class="mt-1 w-full max-w-xs rounded-lg border-gray-300 dark:border-white/10 dark:bg-white/5"
                        autocomplete="current-password">
             </div>
