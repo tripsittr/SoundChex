@@ -135,34 +135,63 @@ fn resolve_layout(app: &tauri::AppHandle, listen: String) -> Result<supervisor::
 }
 
 /// Start the bundled server stack (Server app).
+///
+/// Asynchronous because of what happens first: on a new install, provisioning
+/// unpacks the bundled application, writes an `.env` and migrates, which takes
+/// tens of seconds. Held on the calling thread that blocked the webview, so the
+/// window showed "Starting…" and nothing else for long enough that closing it
+/// was the reasonable thing to do — which left a half-unpacked directory and
+/// started over on the next launch. The work now runs on a blocking thread and
+/// reports progress as it goes.
+///
+/// It happens here rather than at launch so someone who never starts the server
+/// never waits for it.
 #[cfg(desktop)]
 #[tauri::command]
-fn server_start(
+async fn server_start(
     app: tauri::AppHandle,
     sup: tauri::State<'_, supervisor::Supervisor>,
     listen: Option<String>,
 ) -> Result<(), String> {
+    use tauri::{Emitter, Manager};
+
     let layout = resolve_layout(&app, listen.unwrap_or_else(|| ":8000".into()))?;
 
-    // First run unpacks the application, writes an .env and migrates, which is
-    // slow enough to be felt — tens of seconds for 33,000 files. Every start
-    // after that compares one hash and moves on. It happens here rather than at
-    // launch so a user who never starts the server never pays for it.
-    {
-        use tauri::Manager;
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("no resource dir: {e}"))?;
 
-        let resource_dir = app
-            .path()
-            .resource_dir()
-            .map_err(|e| format!("no resource dir: {e}"))?;
+    let emitter = app.clone();
+    let staged = layout.clone();
 
+    tauri::async_runtime::spawn_blocking(move || {
         provision::ensure(
             &resource_dir,
-            &layout.app_dir,
-            &layout.bin_dir,
-            &layout.run_dir,
-        )?;
-    }
+            &staged.app_dir,
+            &staged.bin_dir,
+            &staged.run_dir,
+            &|progress| {
+                let payload = match progress {
+                    provision::Progress::Unpacking { done, total } => serde_json::json!({
+                        "stage": "unpacking",
+                        "done": done,
+                        "total": total,
+                    }),
+                    provision::Progress::Step(label) => serde_json::json!({
+                        "stage": "step",
+                        "label": label,
+                    }),
+                };
+
+                // Ignored: a window that has gone away is not a reason to abandon
+                // an unpack half finished.
+                let _ = emitter.emit("server-provision", payload);
+            },
+        )
+    })
+    .await
+    .map_err(|e| format!("provisioning thread failed: {e}"))??;
 
     sup.start(layout)
 }

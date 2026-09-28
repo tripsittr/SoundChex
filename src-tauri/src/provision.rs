@@ -24,6 +24,14 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// What provisioning is doing, reported to the UI as it goes.
+pub enum Progress<'a> {
+    /// Unpacking: how many of the payload's entries are done.
+    Unpacking { done: usize, total: usize },
+    /// A named step with no useful proportion to report.
+    Step(&'a str),
+}
+
 /// The bundled payload and the id naming its exact contents, if this build has
 /// them. A build without them is a pre-payload bundle: provisioning is skipped
 /// and its behaviour is unchanged.
@@ -44,11 +52,17 @@ pub fn payload(resource_dir: &Path) -> Option<(PathBuf, PathBuf)> {
 ///
 /// Safe to call on every start — the expensive step is guarded by the payload
 /// id, so a second start does the cheap checks and stops.
+///
+/// `progress` is called as the work advances. It is not decoration: unpacking
+/// takes tens of seconds, and the first version reported nothing at all, so the
+/// window sat on "Starting…" long enough to look hung. Closing it there left a
+/// half-unpacked directory and no explanation.
 pub fn ensure(
     resource_dir: &Path,
     app_dir: &Path,
     bin_dir: &Path,
     run_dir: &Path,
+    progress: &dyn Fn(Progress),
 ) -> Result<(), String> {
     let Some((archive, id_file)) = payload(resource_dir) else {
         return Ok(());
@@ -68,12 +82,30 @@ pub fn ensure(
     let php = Php::new(bin_dir, run_dir)?;
 
     if have != want {
-        unpack(&archive, app_dir)?;
+        // Resuming and upgrading look the same on disk — a directory holding some
+        // of the right files — but must behave differently. An interrupted
+        // attempt at *this* payload can keep what it already wrote; an upgrade
+        // must replace everything, including a file whose size did not change.
+        // So the payload being attempted is recorded before the work starts.
+        let attempt = app_dir.join(".soundchex-payload-partial");
+
+        let resuming = std::fs::read_to_string(&attempt)
+            .map(|previous| previous.trim() == want)
+            .unwrap_or(false);
+
+        std::fs::create_dir_all(app_dir)
+            .map_err(|e| format!("cannot create {}: {e}", app_dir.display()))?;
+        std::fs::write(&attempt, format!("{want}\n"))
+            .map_err(|e| format!("cannot record the attempt: {e}"))?;
+
+        unpack(&archive, app_dir, progress, resuming)?;
 
         // Written only after a complete unpack, so an interrupted one is retried
         // rather than mistaken for a finished install.
         std::fs::write(&marker, format!("{want}\n"))
             .map_err(|e| format!("cannot record the payload id: {e}"))?;
+
+        let _ = std::fs::remove_file(&attempt);
     }
 
     writable_dirs(app_dir)?;
@@ -82,11 +114,15 @@ pub fn ensure(
         // The previous version's compiled config, routes and views describe code
         // that has just been replaced, and Laravel would go on using them.
         // Advisory: there is nothing to clear on a first install.
+        progress(Progress::Step("Clearing caches from the previous version"));
         let _ = php.artisan(app_dir, &["optimize:clear"]);
     }
 
+    progress(Progress::Step("Writing configuration"));
     environment(app_dir)?;
     key(&php, app_dir)?;
+
+    progress(Progress::Step("Preparing the database"));
     database(&php, app_dir)?;
     public_storage_link(&php, app_dir)?;
 
@@ -159,10 +195,24 @@ impl Php {
     }
 }
 
-/// Extract the payload over `app_dir`, leaving anything not in the archive
-/// alone — which is how `storage/`, the SQLite file and `.env` survive an
-/// upgrade. Files the archive does contain are replaced.
-fn unpack(archive: &Path, app_dir: &Path) -> Result<(), String> {
+/// Extract the payload over `app_dir`. Anything not in the archive is left
+/// alone, which is how `storage/`, the SQLite file and `.env` survive an
+/// upgrade.
+///
+///
+/// With `resuming`, an entry already on disk at the archive's own size is left
+/// alone — it was written by an earlier attempt at this same payload, so it is
+/// already correct, and skipping it turns a restarted unpack into seconds.
+///
+/// Without it, every entry is rewritten. That is what an upgrade needs: a file
+/// whose contents changed but whose size did not is otherwise never replaced,
+/// and the new version quietly runs some of the old code.
+fn unpack(
+    archive: &Path,
+    app_dir: &Path,
+    progress: &dyn Fn(Progress),
+    resuming: bool,
+) -> Result<(), String> {
     let file =
         std::fs::File::open(archive).map_err(|e| format!("cannot open the payload: {e}"))?;
 
@@ -172,7 +222,14 @@ fn unpack(archive: &Path, app_dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(app_dir)
         .map_err(|e| format!("cannot create {}: {e}", app_dir.display()))?;
 
-    for i in 0..zip.len() {
+    let total = zip.len();
+
+    for i in 0..total {
+        // Often enough to look alive, rarely enough not to flood the webview.
+        if i % 200 == 0 {
+            progress(Progress::Unpacking { done: i, total });
+        }
+
         let mut entry = zip
             .by_index(i)
             .map_err(|e| format!("cannot read payload entry {i}: {e}"))?;
@@ -189,6 +246,14 @@ fn unpack(archive: &Path, app_dir: &Path) -> Result<(), String> {
             std::fs::create_dir_all(&target)
                 .map_err(|e| format!("cannot create {}: {e}", target.display()))?;
             continue;
+        }
+
+        if resuming {
+            if let Ok(existing) = std::fs::metadata(&target) {
+                if existing.is_file() && existing.len() == entry.size() {
+                    continue;
+                }
+            }
         }
 
         if let Some(parent) = target.parent() {
@@ -215,6 +280,8 @@ fn unpack(archive: &Path, app_dir: &Path) -> Result<(), String> {
             }
         }
     }
+
+    progress(Progress::Unpacking { done: total, total });
 
     Ok(())
 }
@@ -434,7 +501,7 @@ mod tests {
         let archive = zip_with(&dir, &[("artisan", "#!/usr/bin/env php"), ("app/Models/User.php", "<?php")]);
         let app = dir.join("app-dir");
 
-        unpack(&archive, &app).unwrap();
+        unpack(&archive, &app, &|_| {}, false).unwrap();
 
         assert_eq!(std::fs::read_to_string(app.join("artisan")).unwrap(), "#!/usr/bin/env php");
         assert_eq!(std::fs::read_to_string(app.join("app/Models/User.php")).unwrap(), "<?php");
@@ -457,7 +524,7 @@ mod tests {
 
         let archive = zip_with(&dir, &[("artisan", "new"), ("app/New.php", "<?php")]);
 
-        unpack(&archive, &app).unwrap();
+        unpack(&archive, &app, &|_| {}, false).unwrap();
 
         assert_eq!(std::fs::read_to_string(app.join("artisan")).unwrap(), "new");
         assert_eq!(std::fs::read_to_string(app.join("database/database.sqlite")).unwrap(), "the library");
@@ -473,7 +540,7 @@ mod tests {
         let archive = zip_with(&dir, &[("../escaped.txt", "should never be written")]);
         let app = dir.join("app-dir");
 
-        let error = unpack(&archive, &app).unwrap_err();
+        let error = unpack(&archive, &app, &|_| {}, false).unwrap_err();
 
         assert!(error.contains("unsafe path"), "unexpected error: {error}");
         assert!(!dir.join("escaped.txt").exists(), "the entry escaped the app dir");
@@ -550,6 +617,69 @@ mod tests {
         }
     }
 
+    /// An upgrade must replace a file whose contents changed but whose size did
+    /// not. The resumability shortcut originally skipped exactly this case, and
+    /// `unpack_leaves_state_that_is_not_in_the_payload` caught it: three bytes
+    /// of old code survived an unpack that was supposed to replace them.
+    #[test]
+    fn unpack_replaces_a_same_size_file_when_not_resuming() {
+        let dir = scratch("same-size");
+        let app = dir.join("app-dir");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(app.join("artisan"), "old").unwrap();
+
+        let archive = zip_with(&dir, &[("artisan", "new")]);
+
+        unpack(&archive, &app, &|_| {}, false).unwrap();
+
+        assert_eq!(std::fs::read_to_string(app.join("artisan")).unwrap(), "new");
+    }
+
+    /// Resuming the same payload keeps what an earlier attempt already wrote,
+    /// which is what makes a restarted first run quick instead of starting over.
+    #[test]
+    fn unpack_keeps_a_same_size_file_when_resuming() {
+        let dir = scratch("resume");
+        let app = dir.join("app-dir");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(app.join("artisan"), "old").unwrap();
+
+        let archive = zip_with(&dir, &[("artisan", "new")]);
+
+        unpack(&archive, &app, &|_| {}, true).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(app.join("artisan")).unwrap(),
+            "old",
+            "a resume should not rewrite what is already the right size"
+        );
+    }
+
+    /// Progress has to reach the end, or a UI driven by it stops short of 100%
+    /// and looks stuck at the moment it actually finished.
+    #[test]
+    fn unpack_reports_progress_through_to_the_total() {
+        use std::cell::RefCell;
+
+        let dir = scratch("progress");
+        let app = dir.join("app-dir");
+        let archive = zip_with(&dir, &[("a.php", "1"), ("b.php", "2"), ("c.php", "3")]);
+
+        let seen = RefCell::new(Vec::new());
+
+        unpack(&archive, &app, &|progress| {
+            if let Progress::Unpacking { done, total } = progress {
+                seen.borrow_mut().push((done, total));
+            }
+        }, false)
+        .unwrap();
+
+        let seen = seen.into_inner();
+
+        assert_eq!(seen.first(), Some(&(0usize, 3usize)), "{seen:?}");
+        assert_eq!(seen.last(), Some(&(3usize, 3usize)), "{seen:?}");
+    }
+
     /// A build with no payload is a pre-payload bundle, and provisioning must do
     /// nothing at all rather than fail.
     #[test]
@@ -557,7 +687,7 @@ mod tests {
         let resources = scratch("no-payload");
         let app = scratch("no-payload-app");
 
-        ensure(&resources, &app, &resources, &resources).unwrap();
+        ensure(&resources, &app, &resources, &resources, &|_| {}).unwrap();
 
         assert!(payload(&resources).is_none());
         assert!(!app.join("artisan").exists());

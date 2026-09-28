@@ -263,6 +263,43 @@
         const ORIGIN = 'http://127.0.0.1:8000';
 
         const invoke = (command, args) => window.__TAURI__?.core?.invoke?.(command, args);
+        const listen = (event, handler) => window.__TAURI__?.event?.listen?.(event, handler);
+
+        /**
+         * Show what first-run provisioning is doing.
+         *
+         * A new install unpacks the bundled application before it can serve
+         * anything -- thousands of files, tens of seconds. With nothing on screen
+         * but "Starting...", the only sensible reading is that it has hung, and
+         * closing the window leaves the unpack half done.
+         */
+        function watchProvisioning() {
+            if (!listen) {
+                return;
+            }
+
+            listen('server-provision', ({ payload }) => {
+                if (!payload) {
+                    return;
+                }
+
+                if (payload.stage === 'unpacking') {
+                    const percent = payload.total
+                        ? Math.floor((payload.done / payload.total) * 100)
+                        : 0;
+
+                    // Said explicitly, because it only happens once and a first
+                    // run that looks stuck is the thing this avoids.
+                    status(`Setting up for the first time — unpacking the library server, ${percent}% (${payload.done} of ${payload.total} files). This happens once.`);
+
+                    return;
+                }
+
+                if (payload.stage === 'step' && payload.label) {
+                    status(`${payload.label}…`);
+                }
+            });
+        }
 
         /**
          * Starts the bundled runtime that ships inside the SoundChex Server app.
@@ -286,6 +323,8 @@
             }
 
             try {
+                watchProvisioning();
+
                 await invoke('server_start');
                 status('Started. Waiting for it to answer…');
 

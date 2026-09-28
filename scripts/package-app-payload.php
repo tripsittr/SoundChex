@@ -65,6 +65,12 @@ $excludePatterns = [
     '#^public/storage(/|$)#',   // a symlink to storage/app/public, remade at run time
     '#^public/hot$#',           // vite dev server marker
     '#(^|/)tests(/|$)#',
+
+    // A vendor inside vendor is never something Composer produces -- it is a
+    // stray copy. One of these went unnoticed here and doubled the payload:
+    // 16,223 extra files, which doubled the first-run unpack the user waits
+    // through. Excluded rather than trusted, and reported below.
+    '#^vendor/vendor(/|$)#',
 ];
 
 function excluded(string $relative, array $patterns): bool
@@ -137,6 +143,12 @@ foreach ($files as $relative) {
 
 if (is_dir($root.'/vendor/phpunit')) {
     fwrite(STDERR, "warning: vendor/ contains dev dependencies; a release should run composer install --no-dev\n");
+}
+
+// Excluded above, but say so: it is invisible in a file count and the checkout
+// it sits in is probably wrong in other ways too.
+if (is_dir($root.'/vendor/vendor')) {
+    fwrite(STDERR, "warning: vendor/vendor exists and was excluded -- a stray copy of vendor/, safe to delete\n");
 }
 
 @unlink($out);
