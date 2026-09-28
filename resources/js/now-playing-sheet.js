@@ -2,7 +2,7 @@
 // Copyright (C) 2026 SoundChex
 
 import { currentLine, fetchLyrics, parseLrc } from './lyrics.js';
-import { formatTime } from './player.js';
+import { formatTime, spokenTime } from './player.js';
 
 /**
  * The full-screen player.
@@ -163,6 +163,10 @@ export function bindNowPlayingSheet() {
         ui.played.style.width = `${fraction}%`;
         ui.currentTime.textContent = formatTime(at);
         ui.duration.textContent = formatTime(duration);
+
+        // The announced position, which the width alone does not give (S-442).
+        ui.seek.setAttribute('aria-valuenow', String(Math.round(fraction)));
+        ui.seek.setAttribute('aria-valuetext', `${spokenTime(at)} of ${spokenTime(duration)}`);
     }
 
     function setModes() {
@@ -311,6 +315,37 @@ export function bindNowPlayingSheet() {
         const { left, width } = current.ui.seek.getBoundingClientRect();
 
         player.seekFraction((event.clientX - left) / width);
+    });
+
+    // The same keyboard handling as the docked bar: a slider that only a
+    // pointer can reach is not a slider (S-442).
+    ui.seek.addEventListener('keydown', (event) => {
+        const duration = player.el.duration;
+
+        if (!duration || Number.isNaN(duration)) {
+            return;
+        }
+
+        const step = event.shiftKey ? 60 : 5;
+        const at = player.el.currentTime;
+
+        const target = {
+            ArrowRight: () => at + step,
+            ArrowUp: () => at + step,
+            ArrowLeft: () => at - step,
+            ArrowDown: () => at - step,
+            PageUp: () => at + 60,
+            PageDown: () => at - 60,
+            Home: () => 0,
+            End: () => duration,
+        }[event.key];
+
+        if (!target) {
+            return;
+        }
+
+        event.preventDefault();
+        player.seekFraction(Math.min(Math.max(target(), 0), duration) / duration);
     });
 
     // Delegated, because the rows are rebuilt whenever the queue changes.

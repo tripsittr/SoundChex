@@ -11,10 +11,19 @@
      class="fixed inset-x-0 bottom-0 z-40 translate-y-full border-t border-base-600/60 bg-base-800/95 backdrop-blur-md transition-transform duration-300">
 
     {{-- Seek bar spans the full width, sitting on the bar's top edge. --}}
+    {{-- A role="slider" with no value and no tab stop is worse than no role
+         at all: a screen reader announces a slider, reads no position from
+         it, and the keyboard cannot reach it (S-442). The value is kept
+         current by now-playing.js as the track plays. --}}
     <div id="np-seek"
          class="group absolute inset-x-0 -top-1 h-3 cursor-pointer"
          role="slider"
-         aria-label="Seek">
+         tabindex="0"
+         aria-label="Seek"
+         aria-valuemin="0"
+         aria-valuemax="100"
+         aria-valuenow="0"
+         aria-valuetext="0 seconds of 0 seconds">
         <div class="absolute inset-x-0 top-1 h-1 bg-base-600">
             <div id="np-played" class="h-full bg-accent transition-[width] duration-150" style="width: 0"></div>
         </div>
@@ -254,7 +263,10 @@
 
         {{-- A tall hit area around a thin track: thumbs are imprecise, but a
              chunky bar looks clumsy. --}}
-        <div id="np-sheet-seek" class="group relative -mx-1 cursor-pointer px-1 py-3" role="slider" aria-label="Seek">
+        <div id="np-sheet-seek" class="group relative -mx-1 cursor-pointer px-1 py-3"
+             role="slider" tabindex="0" aria-label="Seek"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+             aria-valuetext="0 seconds of 0 seconds">
             <div class="h-1 rounded-full bg-base-600">
                 <div id="np-sheet-played" class="h-full rounded-full bg-accent" style="width: 0"></div>
             </div>
