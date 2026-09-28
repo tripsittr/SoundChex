@@ -94,8 +94,14 @@ export function bindNowPlayingSheet() {
 
     /* ------------------------------------------------------------ opening */
 
+    // Where focus was before the sheet went up, so closing it returns there
+    // rather than dropping to the top of the page (S-442).
+    let returnFocusTo = null;
+
     function open() {
         const sheet = current.ui.sheet;
+
+        returnFocusTo = document.activeElement;
 
         sheet.classList.remove('translate-y-full');
         sheet.setAttribute('aria-hidden', 'false');
@@ -106,6 +112,12 @@ export function bindNowPlayingSheet() {
 
         paint();
         renderQueue();
+
+        // `inert` keeps focus out of the page behind, but nothing puts it
+        // *into* the sheet — so without this a screen reader stays on the bar
+        // behind an open full-screen dialog. Close first: it is the way out,
+        // and the one control someone needs to find immediately.
+        current.ui.close?.focus();
     }
 
     function close() {
@@ -118,6 +130,15 @@ export function bindNowPlayingSheet() {
         sheet.setAttribute('inert', '');
 
         document.body.style.overflow = '';
+
+        // Back where they were. `inert` is applied above, so focus has to
+        // leave the sheet anyway — the browser would otherwise drop it on the
+        // body.
+        if (returnFocusTo instanceof HTMLElement && document.contains(returnFocusTo)) {
+            returnFocusTo.focus();
+        }
+
+        returnFocusTo = null;
     }
 
     const isOpen = () => !current.ui.sheet.classList.contains('translate-y-full');

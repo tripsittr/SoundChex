@@ -8,6 +8,7 @@ import { watchForNotifications } from './notifications.js';
 import * as downloadQueue from './download-queue.js';
 import { bindDownloadQueueUi } from './download-queue-ui.js';
 import { setupDownloadedFilter } from './downloaded-filter.js';
+import { bindMenuKeyboard } from './menu-keyboard.js';
 import {
     paintIconDownloadStates,
     setupBatchDownload,
@@ -142,6 +143,11 @@ function bindPageScripts() {
     setupIconDownloads();
     setupBatchDownloads();
     bindDownloadQueueUi();
+
+    // Arrow keys inside the kebab menus, and an aria-expanded that tells the
+    // truth (S-442). Delegated from the document, so it survives every
+    // repaint rather than being rebound per menu.
+    bindMenuKeyboard();
 
     // A queue interrupted by a tunnel or by closing the app.
     resumeDownloads();

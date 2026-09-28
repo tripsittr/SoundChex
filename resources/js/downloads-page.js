@@ -2,6 +2,7 @@
 // Copyright (C) 2026 SoundChex
 
 import { list, remove } from './offline/storage.js';
+import { trapFocus } from './focus-trap.js';
 import { formatBytes, storageEstimate } from './downloads.js';
 
 /**
@@ -41,9 +42,16 @@ if (root) {
 
         if (!trigger || !confirmDialog || !accept) return;
 
+        // Set while the dialog is open; calling it releases the trap and puts
+        // focus back on the button that opened it (S-442).
+        let release = null;
+
         const close = () => {
             confirmDialog.classList.add('hidden');
             confirmDialog.classList.remove('flex');
+
+            release?.();
+            release = null;
         };
 
         trigger.addEventListener('click', async () => {
@@ -60,6 +68,11 @@ if (root) {
 
             confirmDialog.classList.remove('hidden');
             confirmDialog.classList.add('flex');
+
+            // Cancel first, not Remove: this deletes every download on the
+            // device, and the keyboard should not land on the destructive
+            // button.
+            release = trapFocus(confirmDialog, { initial: cancel ?? undefined });
         });
 
         cancel?.addEventListener('click', close);
