@@ -43,6 +43,54 @@ class MediaDetailsApiTest extends TestCase
         ]);
     }
 
+    public function test_it_returns_the_overview(): void
+    {
+        $film = $this->film();
+        $film->forceFill(['notes' => 'A strange doorway appears in a basement.'])->saveQuietly();
+
+        $response = $this->actingAs($this->user)->getJson("/api/v1/items/{$film->id}/details");
+
+        $response->assertOk();
+        $response->assertJsonPath('overview', 'A strange doorway appears in a basement.');
+    }
+
+    /**
+     * An item nobody has described, and that enrichment has not reached, has
+     * no overview. The key is still present so a client does not have to
+     * distinguish "absent" from "empty" (S-412).
+     */
+    public function test_an_item_with_no_overview_returns_null(): void
+    {
+        $film = $this->film();
+
+        $response = $this->actingAs($this->user)->getJson("/api/v1/items/{$film->id}/details");
+
+        $response->assertOk();
+        $response->assertJsonPath('overview', null);
+    }
+
+    /**
+     * The overview is deliberately absent from the catalogue row.
+     *
+     * A synopsis is a paragraph, and the library payload is mirrored in full
+     * by every device — thousands of paragraphs to show one at a time. It
+     * belongs on the endpoint the detail page already calls.
+     */
+    public function test_the_overview_is_not_in_the_library_payload(): void
+    {
+        $film = $this->film();
+        $film->forceFill(['notes' => 'A strange doorway appears in a basement.'])->saveQuietly();
+
+        $response = $this->actingAs($this->user)->getJson('/api/v1/library');
+
+        $response->assertOk();
+        $this->assertStringNotContainsString(
+            'strange doorway',
+            $response->getContent(),
+            'the synopsis must not ride along in the catalogue sync',
+        );
+    }
+
     public function test_it_splits_cast_from_crew(): void
     {
         $film = $this->film();
