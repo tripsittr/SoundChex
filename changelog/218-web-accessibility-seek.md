@@ -39,6 +39,17 @@ minute, PageUp/PageDown for a minute, Home and End for the ends.
 `preventDefault` on the handled keys, since arrows otherwise scroll the page —
 the opposite of what someone focused on a slider means.
 
+## Track changes are announced
+
+When the queue moved on, nothing said so. Sighted, the title becomes a
+different title; without the screen there was no signal at all. A visually
+hidden `role="status"` region now carries the new track and artist.
+
+It is a separate element rather than a live region wrapped around the title,
+because that container also holds the elapsed time — which would re-announce
+every second. And it fires only on a real track change, not on the restore
+path that runs at every page load, which would announce something nobody did.
+
 ## Not done yet
 
 This is the player only. Still open under S-442: the library and admin

@@ -182,6 +182,7 @@ function bindNowPlaying() {
         next: document.getElementById('np-next'),
         shuffle: document.getElementById('np-shuffle'),
         repeat: document.getElementById('np-repeat'),
+        announce: document.getElementById('np-announce'),
         seek: document.getElementById('np-seek'),
         played: document.getElementById('np-played'),
         current: document.getElementById('np-current'),
@@ -204,6 +205,17 @@ function bindNowPlaying() {
 
         current.ui.title.textContent = item.title ?? '';
         current.ui.subtitle.textContent = item.subtitle ?? '';
+
+        // Say what changed (S-442). Sighted, the title simply becomes a
+        // different title; without the screen there is no signal that the
+        // queue moved on at all. Only on a track change — not on the restore
+        // path below, which runs on every page load and would announce
+        // something nobody did.
+        if (current.ui.announce) {
+            current.ui.announce.textContent = [item.title, item.subtitle]
+                .filter(Boolean)
+                .join(' — ');
+        }
 
         if (item.artwork) {
             current.ui.artwork.src = item.artwork;

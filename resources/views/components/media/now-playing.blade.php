@@ -41,6 +41,13 @@
                  class="hidden size-11 shrink-0 rounded object-cover sm:size-12">
 
             <div class="min-w-0">
+                {{-- What changed, announced once (S-442). A screen reader user
+                     gets no signal when the queue moves on: the title simply
+                     becomes a different title. The live region is separate and
+                     visually hidden rather than wrapped around the title,
+                     because the title's container also holds the elapsed time
+                     and would re-announce every second. --}}
+                <p id="np-announce" class="sr-only" role="status" aria-live="polite"></p>
                 <p id="np-title" class="truncate text-sm font-medium text-ink-100"></p>
                 <p id="np-subtitle" class="truncate text-xs text-ink-500"></p>
                 {{-- Under the title and artist: a plugin's own line about the
