@@ -99,6 +99,57 @@ Installer 112 MB, installed 238 MB. Eight Rust tests cover unpacking (including
 an archive entry that tries to escape the app directory), `.env` writing and the
 no-payload case; two PHP tests cover `.env.example`.
 
+## The one that actually stopped it
+
+With everything above in place the server still would not start, and the
+reason was a single prefix.
+
+`AppHandle::path().resource_dir()` returns a Windows *verbatim* path on this
+platform, \\?\C:\... — correct for Rust's own file APIs, and wrong the
+moment the string is handed to another program. It went straight into the
+generated `php.ini`:
+
+```ini
+extension_dir = "\\?\C:\Temp\scx3\runtime\bin\ext"
+```
+
+PHP does not understand that prefix, and its ini parser ate one backslash on
+the way in, so it looked for \?\C:\..., found nothing, and loaded **no
+dynamic extension at all**. `migrate` then failed with "could not find driver"
+— the same symptom as having no ini, arrived at from the opposite direction.
+
+Every hand-run verification of this had passed, because every one of them
+wrote the ini itself with a plain path. The code could never have worked.
+
+Paths are now normalised where the resource directory is first resolved, and
+ini values are written with forward slashes, which Windows PHP accepts and
+which no ini escaping can corrupt. Four tests cover it, UNC shares included.
+
+`optimize:clear` also no longer runs on a first install: there is nothing to
+clear and no database yet, so it logged a failure that read like the cause of
+everything after it.
+
+## Confirmed running
+
+Installed from the built `.exe`, launched, and watched:
+
+```
+t+ 5s  files=2,959
+t+15s  files=16,834
+t+20s  files=17,163   database created (598 KB, migrations run)
+t+25s  port 8000 listening
+
+frankenphp php-server --root public --listen :8000
+artisan queue:work / schedule:work / schedule:run / network:probe
+
+GET http://127.0.0.1:8000/      302 -> /login
+GET http://192.168.1.156:8000/  302 -> /login   (from the LAN address)
+GET /register                   200
+```
+
+Serving the unpacked copy in the app data directory, with `SOUNDCHEX_APP_DIR`
+unset -- so nothing on the machine but the installer was involved.
+
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of

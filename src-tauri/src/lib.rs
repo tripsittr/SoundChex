@@ -90,10 +90,14 @@ mod provision;
 fn resolve_layout(app: &tauri::AppHandle, listen: String) -> Result<supervisor::Layout, String> {
     use tauri::Manager;
 
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("no resource dir: {e}"))?;
+    // Normalised once, here, because everything below is derived from it and
+    // some of it is handed to other programs. Tauri returns a verbatim
+    // (`\\?\`) path on Windows, which PHP does not understand.
+    let resource_dir = supervisor::plain(
+        app.path()
+            .resource_dir()
+            .map_err(|e| format!("no resource dir: {e}"))?,
+    );
 
     // The bundled runtime lives under resources/runtime/bin; in dev, fall back to
     // a RUNTIME_DIR env pointing at a locally-built bundle.
@@ -157,10 +161,11 @@ async fn server_start(
 
     let layout = resolve_layout(&app, listen.unwrap_or_else(|| ":8000".into()))?;
 
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("no resource dir: {e}"))?;
+    let resource_dir = supervisor::plain(
+        app.path()
+            .resource_dir()
+            .map_err(|e| format!("no resource dir: {e}"))?,
+    );
 
     let emitter = app.clone();
     let staged = layout.clone();

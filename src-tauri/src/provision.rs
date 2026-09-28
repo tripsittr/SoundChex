@@ -110,7 +110,10 @@ pub fn ensure(
 
     writable_dirs(app_dir)?;
 
-    if have != want && app_dir.join("artisan").is_file() {
+    // Only on a genuine upgrade. On a first install there is nothing to clear
+    // and no database yet, so this ran before one existed and logged a failure
+    // that looked like the cause of everything after it.
+    if !have.is_empty() && have != want && app_dir.join("artisan").is_file() {
         // The previous version's compiled config, routes and views describe code
         // that has just been replaced, and Laravel would go on using them.
         // Advisory: there is nothing to clear on a first install.

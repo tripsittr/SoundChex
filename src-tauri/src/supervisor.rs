@@ -325,6 +325,35 @@ fn render_config(layout: &Layout) -> Result<(), String> {
     Ok(())
 }
 
+/// Strip Windows' extended-length prefix from a path.
+///
+/// `AppHandle::path().resource_dir()` hands back a verbatim path -- `\\?\C:\...`
+/// -- which is fine for Rust's own file APIs and wrong for anything that passes
+/// the string to another program. PHP could not read an `extension_dir` written
+/// that way: it looked for `\?\C:\...`, found nothing, loaded no extension at
+/// all, and every database call failed with "could not find driver".
+pub fn plain(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) => PathBuf::from(rest),
+        None => path.clone(),
+    }
+}
+
+/// A path as PHP's ini parser will read it.
+///
+/// Forward slashes, which Windows PHP accepts, because a double-quoted ini value
+/// processes `\\` and `\"` -- so a native path is altered on the way in and a
+/// path ending in a separator would swallow the closing quote.
+fn ini_path(path: &Path) -> String {
+    plain(path.to_path_buf()).to_string_lossy().replace('\\', "/")
+}
+
 /// Write a `php.ini` for the bundled Windows runtime.
 ///
 /// FrankenPHP's Windows build is a stock *dynamic* PHP: its extensions are
@@ -367,7 +396,7 @@ pub fn write_windows_php_ini(bin_dir: &Path, dir: &Path) -> Result<PathBuf, Stri
 
     ini.push_str(&format!(
         "extension_dir = \"{}\"\n",
-        bin_dir.join("ext").display()
+        ini_path(&bin_dir.join("ext"))
     ));
 
     for extension in EXTENSIONS {
@@ -380,8 +409,8 @@ pub fn write_windows_php_ini(bin_dir: &Path, dir: &Path) -> Result<PathBuf, Stri
     let cacert = bin_dir.join("cacert.pem");
 
     if cacert.exists() {
-        ini.push_str(&format!("\ncurl.cainfo = \"{}\"\n", cacert.display()));
-        ini.push_str(&format!("openssl.cafile = \"{}\"\n", cacert.display()));
+        ini.push_str(&format!("\ncurl.cainfo = \"{}\"\n", ini_path(&cacert)));
+        ini.push_str(&format!("openssl.cafile = \"{}\"\n", ini_path(&cacert)));
     }
 
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -412,4 +441,40 @@ fn fpm_identity() -> (String, String) {
 
 fn lock_err<T>(_: T) -> String {
     "supervisor lock poisoned".into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bug this exists to stop coming back: a verbatim resource path written
+    /// into php.ini made PHP load no extensions, so every request died with
+    /// "could not find driver" and nothing said why.
+    #[test]
+    fn ini_path_drops_the_verbatim_prefix_and_uses_forward_slashes() {
+        let path = PathBuf::from(r"\\?\C:\Temp\scx\runtime\bin\ext");
+
+        assert_eq!(ini_path(&path), "C:/Temp/scx/runtime/bin/ext");
+    }
+
+    #[test]
+    fn ini_path_leaves_an_ordinary_path_alone_but_for_separators() {
+        let path = PathBuf::from(r"C:\Users\Someone Else\ext");
+
+        assert_eq!(ini_path(&path), "C:/Users/Someone Else/ext");
+    }
+
+    #[test]
+    fn plain_keeps_a_unc_share_reachable() {
+        let path = PathBuf::from(r"\\?\UNC\server\share\bin");
+
+        assert_eq!(plain(path), PathBuf::from(r"\\server\share\bin"));
+    }
+
+    #[test]
+    fn plain_is_a_no_op_on_a_normal_path() {
+        let path = PathBuf::from(r"C:\Temp\bin");
+
+        assert_eq!(plain(path.clone()), path);
+    }
 }
