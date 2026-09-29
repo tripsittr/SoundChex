@@ -150,6 +150,34 @@ GET /register                   200
 Serving the unpacked copy in the app data directory, with `SOUNDCHEX_APP_DIR`
 unset -- so nothing on the machine but the installer was involved.
 
+## The admin panel was redirecting to a port with no TLS on it
+
+With the server running, opening it reported an insecure connection. `/admin`
+answered `302 https://127.0.0.1:8000/admin/login` — https, against a bundled
+server that speaks only http, so the handshake failed and the panel could not be
+reached at all. The app navigates straight there once the server is up, so it is
+the first thing anyone sees.
+
+`AppServiceProvider` forces https when `APP_ENV=production`, which is correct
+and deliberate: this server can be put on the public internet through a tunnel.
+`SetAppUrl` is what keeps that honest, resetting the scheme and host to whatever
+the request actually arrived on. But it is prepended to the `web` and `api`
+groups, and Filament's panel declares its own middleware stack — so `/admin`
+never got it, and the forced https stood unopposed.
+
+Provisioning setting `APP_ENV=production` is what exposed this. A checkout runs
+as `local`, so the forcing never fired and the gap was invisible.
+
+The panel now runs `SetAppUrl` first, like every other route. Two tests: an http
+request must not be redirected to https, and a request forwarded as https by a
+relay must keep it — the tunnelled case the forcing exists for. The first fails
+without the fix, with exactly the observed redirect.
+
+Verified on the installed app: `/admin` and the LAN address both redirect on
+http now, and `/admin/login` renders. That run was also an upgrade — a new
+payload id, so every file was rewritten — and the database survived it, grown
+from 598 KB to 647 KB, with `APP_KEY` intact.
+
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of

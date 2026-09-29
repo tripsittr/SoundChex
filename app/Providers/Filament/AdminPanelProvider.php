@@ -6,6 +6,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
+use App\Http\Middleware\SetAppUrl;
 use App\Models\InstalledPlugin;
 use App\Plugins\PluginLoader;
 use App\Plugins\Registry;
@@ -147,6 +148,16 @@ class AdminPanelProvider extends PanelProvider
                     ->url(fn (): string => route('media.home')),
             ])
             ->middleware([
+                // First, so every URL this panel generates matches the address
+                // the request came in on. The panel declares its own stack
+                // rather than using the `web` group, so it did not inherit this
+                // the way every other route did — and `AppServiceProvider`
+                // forces https in production, which made `/admin` redirect to
+                // https on a bundled server that only speaks http. The browser
+                // reported it as an insecure connection; the panel was simply
+                // unreachable. Behind the relay the forwarded scheme is still
+                // honoured, so a tunnelled server keeps its https.
+                SetAppUrl::class,
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
