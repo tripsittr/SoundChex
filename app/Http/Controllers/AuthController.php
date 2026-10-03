@@ -15,8 +15,19 @@ use Spatie\Permission\Models\Role;
 
 class AuthController extends Controller
 {
-    public function showLogin(): View
+    /**
+     * A server with no accounts has nothing to sign in to.
+     *
+     * Sending someone to a login form on a fresh install is a dead end: there
+     * are no credentials to type and nothing on the page says so. Until an
+     * account exists, this is the registration form instead.
+     */
+    public function showLogin(): View|RedirectResponse
     {
+        if ($this->isFirstAccount()) {
+            return redirect()->route('register');
+        }
+
         return view('auth.login');
     }
 
@@ -76,7 +87,11 @@ class AuthController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect()->route('media.home');
+        // The owner of a brand-new library has nothing to look at yet — no
+        // media, no profiles — so the useful first screen is the one where they
+        // set a profile up. Everyone joining an existing library goes to the
+        // library, which is what they came for.
+        return redirect()->route($isFirstAccount ? 'profiles.index' : 'media.home');
     }
 
     public function logout(Request $request): RedirectResponse

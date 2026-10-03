@@ -178,6 +178,36 @@ http now, and `/admin/login` renders. That run was also an upgrade — a new
 payload id, so every file was rewritten — and the database survived it, grown
 from 598 KB to 647 KB, with `APP_KEY` intact.
 
+## A fresh install opens on registration, not a login form
+
+The first thing a new install showed was a login page. There are no credentials
+to type on a server with no accounts, and nothing on the page said so — the only
+way forward was knowing to type `/register` by hand.
+
+Until an account exists, every entrance is registration now:
+
+- `/` sends a guest to `register` rather than `login`.
+- `/login` redirects to `register`, so the dead end cannot be reached at all.
+- `/soundchex.json` reports `setup_required`, and the desktop app opens there
+  instead of `/admin` — which would have bounced to a Filament login form with
+  the same problem.
+- The first account lands on **profiles** after registering, not the media
+  centre. A brand-new library has no media and no profile; profiles is the one
+  screen with something to do. Everyone joining an existing library still goes
+  straight to the library.
+
+`setup_required` is sent to loopback callers only. The endpoint is public and
+sends `Access-Control-Allow-Origin: *`, and "nobody owns this library yet" is
+exactly what a network scan would like to find, since the first account is the
+one that gets the keys.
+
+Four existing tests encoded the old behaviour and were updated rather than
+deleted: two needed an account to exist before a login page means anything, one
+now covers somebody joining an existing library, and root's test asserts both
+states instead of the one a seeded database happened to be in.
+
+Verified on the installed app by screenshot: it opens on **Create your account**.
+
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of

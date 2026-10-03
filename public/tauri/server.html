@@ -366,15 +366,39 @@
          * The identity endpoint rather than any old route: something else on port 8000
          * would otherwise read as a healthy SoundChex.
          */
-        async function checkServer() {
+        /**
+         * The server's own identity document, or null when it is not answering.
+         *
+         * Returns the body rather than a boolean: it carries `setup_required`,
+         * which decides where the window goes.
+         */
+        async function serverIdentity() {
             try {
                 const response = await fetch(`${ORIGIN}/soundchex.json`, { cache: 'no-store' });
                 const body = response.ok ? await response.json() : null;
 
-                return body?.app === 'soundchex';
+                return body?.app === 'soundchex' ? body : null;
             } catch {
-                return false;
+                return null;
             }
+        }
+
+        async function checkServer() {
+            return (await serverIdentity()) !== null;
+        }
+
+        /**
+         * Where an answering server should open.
+         *
+         * With no account yet, registration — the admin panel would bounce to a
+         * login form that cannot be satisfied, which is where a fresh install
+         * used to land. `setup_required` is only sent to loopback callers, and
+         * its absence means "do not know", so the panel stays the default.
+         */
+        function entryPoint(identity) {
+            return identity?.setup_required === true
+                ? `${ORIGIN}/register`
+                : `${ORIGIN}/admin`;
         }
 
         async function refresh() {
@@ -462,8 +486,10 @@
          * which is the one case this page exists for.
          */
         async function openOrExplain() {
-            if (await checkServer()) {
-                window.location.replace(`${ORIGIN}/admin`);
+            const identity = await serverIdentity();
+
+            if (identity) {
+                window.location.replace(entryPoint(identity));
 
                 return;
             }
@@ -479,8 +505,10 @@
         // Kept checking, so starting the server elsewhere brings this window back to
         // the panel without anyone having to reopen it.
         setInterval(async () => {
-            if (await checkServer()) {
-                window.location.replace(`${ORIGIN}/admin`);
+            const identity = await serverIdentity();
+
+            if (identity) {
+                window.location.replace(entryPoint(identity));
 
                 return;
             }
