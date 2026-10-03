@@ -266,6 +266,7 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
             ))
         }
     };
+    hide_console(&mut cmd);
     cmd.current_dir(&layout.app_dir);
     cmd.env("SOUNDCHEX_ROOT", layout.app_dir.join("public"));
     cmd.env("SOUNDCHEX_FPM", "127.0.0.1:9100");
@@ -323,6 +324,32 @@ fn render_config(layout: &Layout) -> Result<(), String> {
     std::fs::write(layout.run_dir.join("Caddyfile"), caddy).map_err(|e| e.to_string())?;
     std::fs::write(layout.run_dir.join("php-fpm.conf"), fpm).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Keep a spawned process from opening a console window.
+///
+/// Windows gives a console to any child of a GUI process that does not say
+/// otherwise, so starting the server put a black window on screen for
+/// frankenphp, for each of the two workers, and for every artisan command
+/// provisioning ran. They outlive nothing and close nothing: they sit there for
+/// as long as the server is up, which is the point of a background service.
+///
+/// Nothing on POSIX, which has no such notion.
+pub fn hide_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        // CREATE_NO_WINDOW. Not pulled from winapi for one constant.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
 }
 
 /// Strip Windows' extended-length prefix from a path.
@@ -403,6 +430,32 @@ pub fn write_windows_php_ini(bin_dir: &Path, dir: &Path) -> Result<PathBuf, Stri
         ini.push_str(&format!("extension = {extension}\n"));
     }
 
+    // Sized for media. Without any ini at all Windows used PHP's own defaults —
+    // 2M per file, 8M per request — which stops a film before it starts.
+    //
+    // `post_max_size = 0` is PHP's documented "no limit". `BulkUpload` reads
+    // both of these back through `ini_get` to decide what it will accept, and
+    // treats 0 as unlimited, so the upload form follows this file rather than
+    // needing its own number.
+    //
+    // PHP buffers an entire upload into `upload_tmp_dir` before any code runs,
+    // so this needs as much free space as the largest file. It is put beside
+    // the server's other working files to be findable and clearable, rather
+    // than left in the system temp directory where nobody would look.
+    ini.push_str("\nupload_max_filesize = 512G\n");
+    ini.push_str("post_max_size = 0\n");
+    ini.push_str("memory_limit = 1G\n");
+    ini.push_str("max_file_uploads = 500\n");
+
+    // An upload of several gigabytes takes longer than any default allows.
+    // `max_input_time` governs reading the body, which is where the time goes.
+    ini.push_str("max_input_time = -1\n");
+    ini.push_str("max_execution_time = 0\n");
+
+    let uploads = dir.join("uploads");
+    let _ = std::fs::create_dir_all(&uploads);
+    ini.push_str(&format!("upload_tmp_dir = \"{}\"\n", ini_path(&uploads)));
+
     // The CA bundle sits beside the binaries by convention (package-runtime.sh
     // puts it there). Without it every outbound HTTPS call fails verification,
     // which on this app means artwork and metadata silently stop arriving.
@@ -450,6 +503,25 @@ mod tests {
     /// The bug this exists to stop coming back: a verbatim resource path written
     /// into php.ini made PHP load no extensions, so every request died with
     /// "could not find driver" and nothing said why.
+    /// Windows had no ini at all, so it used PHP's 2M-per-file default. This
+    /// server takes multi-gigabyte media.
+    #[test]
+    fn the_generated_ini_allows_large_uploads() {
+        let dir = std::env::temp_dir().join(format!("scx-ini-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+
+        let path = write_windows_php_ini(&dir.join("bin"), &dir).unwrap();
+        let ini = std::fs::read_to_string(path).unwrap();
+
+        assert!(ini.contains("upload_max_filesize = 512G"), "{ini}");
+        // PHP's documented "no limit", which BulkUpload reads back as unlimited.
+        assert!(ini.contains("post_max_size = 0"), "{ini}");
+        assert!(ini.contains("max_input_time = -1"), "{ini}");
+        assert!(ini.contains("upload_tmp_dir"), "{ini}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn ini_path_drops_the_verbatim_prefix_and_uses_forward_slashes() {
         let path = PathBuf::from(r"\\?\C:\Temp\scx\runtime\bin\ext");

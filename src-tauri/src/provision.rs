@@ -173,6 +173,7 @@ impl Php {
 
         command.arg(app_dir.join("artisan")).args(args);
         command.current_dir(app_dir);
+        crate::supervisor::hide_console(&mut command);
 
         if let Some(ini) = &self.ini {
             command.env("PHPRC", ini);
@@ -443,12 +444,18 @@ fn public_storage_link(php: &Php, app_dir: &Path) -> Result<(), String> {
     let target = app_dir.join("storage").join("app").join("public");
 
     if cfg!(windows) {
-        let status = Command::new("cmd")
+        let mut command = Command::new("cmd");
+
+        command
             .arg("/C")
             .arg("mklink")
             .arg("/J")
             .arg(&link)
-            .arg(&target)
+            .arg(&target);
+
+        crate::supervisor::hide_console(&mut command);
+
+        let status = command
             .status()
             .map_err(|e| format!("cannot run mklink: {e}"))?;
 
