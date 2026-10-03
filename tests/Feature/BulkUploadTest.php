@@ -52,7 +52,7 @@ class BulkUploadTest extends TestCase
     {
         $this->assertTrue(
             $this->passes(UploadedFile::fake()->create($name, 64, $mime)),
-            $name . ' should be accepted',
+            $name.' should be accepted',
         );
     }
 
@@ -75,8 +75,48 @@ class BulkUploadTest extends TestCase
         // would sit in the inbox forever.
         $this->assertFalse(
             $this->passes(UploadedFile::fake()->create($name, 64, 'application/octet-stream')),
-            $name . ' should be refused',
+            $name.' should be refused',
         );
+    }
+
+    /** @return array<string, array{0: string}> */
+    public static function browserReportedTypes(): array
+    {
+        return [
+            // The one that broke it. The browser does not sniff the file; on
+            // Windows it reads the registry, and the registry calls .avi
+            // `video/avi`. The picker listed only the IANA name, so every .avi
+            // was refused before a byte was sent — with "Expects audio/mpeg,
+            // audio/flac, …" and no hint that the name was the problem.
+            'avi, as Windows reports it' => ['video/avi'],
+            'avi, as IANA names it' => ['video/x-msvideo'],
+            // .mpg had no entry of any kind.
+            'mpg' => ['video/mpeg'],
+            'mp4' => ['video/mp4'],
+            'mkv' => ['video/x-matroska'],
+            'm4a' => ['audio/mp4'],
+            'mp3' => ['audio/mpeg'],
+            'a type the browser cannot name' => ['application/octet-stream'],
+            'epub' => ['application/epub+zip'],
+        ];
+    }
+
+    /**
+     * The picker must accept whatever name the browser puts on a file, because
+     * that name varies by machine. The filename is what actually decides, via
+     * the `extensions:` rule above.
+     */
+    #[DataProvider('browserReportedTypes')]
+    public function test_the_picker_accepts_the_type_the_browser_reports(string $mime): void
+    {
+        $accepted = $this->staticValue('acceptedFileTypes');
+
+        // How both FilePond and Laravel's `mimetypes` rule match: an exact
+        // entry, or a `type/*` wildcard.
+        $matches = in_array($mime, $accepted, true)
+            || in_array(explode('/', $mime)[0].'/*', $accepted, true);
+
+        $this->assertTrue($matches, "The picker refuses {$mime} before the file is sent.");
     }
 
     public function test_the_picker_list_and_the_validation_list_agree(): void
@@ -109,7 +149,7 @@ class BulkUploadTest extends TestCase
     {
         return Validator::make(
             ['file' => $file],
-            ['file' => 'extensions:' . implode(',', $this->staticValue('acceptedBareExtensions'))],
+            ['file' => 'extensions:'.implode(',', $this->staticValue('acceptedBareExtensions'))],
         )->passes();
     }
 

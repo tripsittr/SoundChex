@@ -60,6 +60,43 @@ class LibraryScannerTest extends TestCase
         app(SettingsService::class)->set('library_settle_seconds', 0);
     }
 
+    /* -------------------------------------------------- what gets swept -- */
+
+    /**
+     * With no watch folder set, the storage disk is still somewhere to scan.
+     *
+     * The "Scan for new files" button used to read `library.watch_folders`
+     * itself, and refuse with "Set LIBRARY_WATCH_FOLDERS in .env" when it was
+     * empty -- which is the normal state for a bundled server, where uploads
+     * land on the storage disk instead. It did nothing while thousands of files
+     * sat in the inbox. It asks the scanner now, and this is the answer it
+     * relies on.
+     */
+    public function test_it_sweeps_storage_when_no_watch_folder_is_configured(): void
+    {
+        config()->set('library.watch_folders', []);
+        app(SettingsService::class)->set('library_scan_storage', true);
+
+        $result = $this->scanner->scan(dryRun: true, enrich: false);
+
+        $this->assertGreaterThan(
+            0,
+            $result['folders'],
+            'The storage disk should be scanned even with no watch folder set.',
+        );
+    }
+
+    public function test_it_has_nowhere_to_scan_with_no_watch_folder_and_no_storage_sweep(): void
+    {
+        config()->set('library.watch_folders', []);
+        app(SettingsService::class)->set('library_scan_storage', false);
+
+        $result = $this->scanner->scan(dryRun: true, enrich: false);
+
+        // The only case where the button should say so.
+        $this->assertSame(0, $result['folders']);
+    }
+
     /* ------------------------------------------------------ cataloguing -- */
 
     public function test_it_records_an_intake_snapshot_of_the_arrival_state(): void
