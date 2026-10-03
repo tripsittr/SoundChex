@@ -148,3 +148,8 @@ Thumbs.db
 /src-tauri/target
 /src-tauri/gen
 /src-tauri/runtime/
+
+# Built by scripts/package-app-payload.php for the Server app bundle: the
+# application packed as one resource. Derived from the checkout, never edited.
+src-tauri/app-payload.zip
+src-tauri/app-payload.id

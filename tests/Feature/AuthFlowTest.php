@@ -15,11 +15,21 @@ class AuthFlowTest extends TestCase
 
     public function test_login_page_renders(): void
     {
+        // An account has to exist for a login form to mean anything. Without
+        // one the server sends you to registration instead, which is the whole
+        // point of that redirect — see FirstRunEntryTest.
+        User::factory()->create();
+
         $this->get('/login')->assertOk();
     }
 
     public function test_user_can_register_and_lands_in_the_media_center(): void
     {
+        // Somebody joining a library that already exists. The *first* account
+        // lands on profiles instead, because a brand-new library has nothing to
+        // show yet — FirstRunEntryTest covers that.
+        User::factory()->create();
+
         $response = $this->post('/register', [
             'name' => 'New User',
             'email' => 'new@example.com',

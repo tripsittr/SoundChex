@@ -5,6 +5,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -19,6 +20,10 @@ class AgplSourceOfferTest extends TestCase
 
     public function test_the_login_page_offers_the_source_code(): void
     {
+        // The login page only exists once the server has an account; before
+        // that it redirects to registration (FirstRunEntryTest).
+        User::factory()->create();
+
         $this->get(route('login'))
             ->assertOk()
             ->assertSee('github.com/tripsittr/SoundChex')
