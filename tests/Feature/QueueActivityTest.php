@@ -7,6 +7,7 @@ namespace Tests\Feature;
 
 use App\Enums\MediaItemType;
 use App\Filament\Resources\Movies\Pages\ListMovies;
+use App\Filament\Widgets\QueueActivity;
 use App\Jobs\DetectDuplicatesJob;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
@@ -16,6 +17,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use Livewire\Livewire;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -51,6 +53,54 @@ class QueueActivityTest extends TestCase
         ], $overrides));
     }
 
+    private function failedRow(string $displayName, string $exception): void
+    {
+        DB::table('failed_jobs')->insert([
+            'uuid' => (string) Str::uuid(),
+            'connection' => 'database',
+            'queue' => 'default',
+            'payload' => json_encode(['displayName' => $displayName]),
+            'exception' => $exception."
+#0 ...",
+            'failed_at' => now(),
+        ]);
+    }
+
+    /**
+     * The widget shipped with a Blade parse error and nothing noticed, because
+     * every test here called the inspector and none of them rendered the view.
+     * The dashboard said "There was an error while attempting to load this
+     * page" and the reason was in the log. This renders it, both ways: with a
+     * queue and without one, since the two take different branches.
+     */
+    public function test_the_widget_renders_with_an_empty_queue(): void
+    {
+        $this->actingAs($this->user);
+
+        Livewire::test(QueueActivity::class)
+            ->assertOk()
+            ->assertSee('Background work')
+            ->assertSee('The queue is empty')
+            ->assertDontSee('@if');
+    }
+
+    public function test_the_widget_renders_with_pending_and_failed_work(): void
+    {
+        $this->queueRow('App\Jobs\EnrichMediaItemJob');
+        $this->failedRow('App\Jobs\EnrichMediaItemJob', 'database is locked');
+
+        $this->actingAs($this->user);
+
+        Livewire::test(QueueActivity::class)
+            ->assertOk()
+            ->assertSee('waiting')
+            ->assertSee('failed')
+            ->assertSee('EnrichMediaItemJob')
+            // The stray endif came from an @if that stayed literal text; if it
+            // ever does again, the directive itself reaches the page.
+            ->assertDontSee('@if')
+            ->assertDontSee('@endif');
+    }
     public function test_it_groups_pending_jobs_by_kind(): void
     {
         $this->queueRow('App\Jobs\EnrichMediaItemJob');
