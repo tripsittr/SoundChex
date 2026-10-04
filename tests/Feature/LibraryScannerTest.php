@@ -97,6 +97,46 @@ class LibraryScannerTest extends TestCase
         $this->assertSame(0, $result['folders']);
     }
 
+    /**
+     * A scan must survive a directory it cannot descend into.
+     *
+     * The organizer moves files out of the inbox the whole time a scan is
+     * reading it, so an album folder empties and is pruned mid-walk. Finder
+     * then threw AccessDeniedException from RecursiveDirectoryIterator and the
+     * whole scan died -- the "Scan for new files" button reported only that the
+     * page had failed, having catalogued nothing.
+     *
+     * An unreadable directory reaches the same code path as a vanished one and
+     * is the half that can be set up deterministically.
+     */
+    public function test_a_scan_survives_a_directory_it_cannot_descend_into(): void
+    {
+        if (chr(92) === DIRECTORY_SEPARATOR) {
+            $this->markTestSkipped('chmod does not remove read access on Windows.');
+        }
+
+        $reachable = $this->watched.'/reachable.mp3';
+        file_put_contents($reachable, 'x');
+
+        $blocked = $this->watched.'/blocked';
+        mkdir($blocked, 0755, true);
+        file_put_contents($blocked.'/hidden.mp3', 'x');
+        chmod($blocked, 0000);
+
+        try {
+            $result = $this->scanner->scan(enrich: false);
+
+            $this->assertGreaterThanOrEqual(
+                1,
+                $result['imported'],
+                'The readable file should still be catalogued.',
+            );
+        } finally {
+            // Restore so the directory can be cleaned up.
+            chmod($blocked, 0755);
+        }
+    }
+
     /* ------------------------------------------------------ cataloguing -- */
 
     public function test_it_records_an_intake_snapshot_of_the_arrival_state(): void

@@ -129,6 +129,18 @@ pub fn ensure(
     database(&php, app_dir)?;
     public_storage_link(&php, app_dir)?;
 
+    // Compile every Blade template up front.
+    //
+    // Laravel otherwise compiles a view the first time it is rendered, writing
+    // it through a temp file and a rename -- which Windows refuses when two
+    // requests compile the same view at once, and the page fails to load with
+    // nothing to explain it. Precompiling means no view is ever written during
+    // a request.
+    //
+    // Advisory: a template that will not compile should surface when it is
+    // rendered, not stop the server starting.
+    let _ = php.artisan(app_dir, &["view:cache"]);
+
     // Sets APP_URL to an address of this machine, so links the server generates
     // work from another device on the network instead of pointing at localhost.
     // Advisory: a server that cannot guess its own address still serves.

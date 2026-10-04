@@ -88,21 +88,42 @@ class EnvironmentFile
                 }
             }
 
-            // Atomic replace: write a sibling temp file and rename it over the
-            // original. rename() is atomic on the same filesystem, so a
-            // concurrent reader sees either the old or the new file, never a
-            // partial one. The lock above still serialises writers.
-            $temp = tempnam(dirname($this->path()), '.env');
+            // Windows cannot rename over a file this process holds open, and
+            // the lock above means it always does. So every write failed with
+            // "Access is denied (code: 5)" and left its temp file behind — one
+            // per attempt, each a complete copy of .env including APP_KEY.
+            // `server:detect-address` runs on a schedule, so they accumulated:
+            // 164 of them on one install, none of them ignored by git.
+            //
+            // The content is assembled in full first either way, so the write
+            // below is a single truncate-and-put of a finished buffer. That is
+            // not atomic the way a rename is, but the alternative on this
+            // platform is a write that never succeeds at all.
+            if (PHP_OS_FAMILY === 'Windows') {
+                rewind($handle);
 
-            if ($temp === false || file_put_contents($temp, $contents) === false) {
-                throw new \RuntimeException('Could not write the .env file.');
-            }
+                if (! ftruncate($handle, 0) || fwrite($handle, $contents) === false) {
+                    throw new \RuntimeException('Could not write the .env file.');
+                }
 
-            chmod($temp, 0644);
+                fflush($handle);
+            } else {
+                // Atomic replace: write a sibling temp file and rename it over
+                // the original. rename() is atomic on the same filesystem, so a
+                // concurrent reader sees either the old or the new file, never a
+                // partial one. The lock above still serialises writers.
+                $temp = tempnam(dirname($this->path()), '.env');
 
-            if (! rename($temp, $this->path())) {
-                @unlink($temp);
-                throw new \RuntimeException('Could not replace the .env file.');
+                if ($temp === false || file_put_contents($temp, $contents) === false) {
+                    throw new \RuntimeException('Could not write the .env file.');
+                }
+
+                chmod($temp, 0644);
+
+                if (! rename($temp, $this->path())) {
+                    @unlink($temp);
+                    throw new \RuntimeException('Could not replace the .env file.');
+                }
             }
         } finally {
             flock($handle, LOCK_UN);

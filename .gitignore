@@ -153,3 +153,8 @@ Thumbs.db
 # application packed as one resource. Derived from the checkout, never edited.
 src-tauri/app-payload.zip
 src-tauri/app-payload.id
+
+# Temp files left behind by an interrupted .env write. Each is a complete
+# copy of .env, APP_KEY included, so an untracked one must never be
+# stageable by `git add -A`.
+.en*.tmp

@@ -402,8 +402,20 @@ class FileTagger implements MetadataSource
     {
         $clean = trim(preg_replace('/[\/\\\\:*?"<>|]+/', '-', (string) $value));
         $clean = ltrim($clean, '.');
+        $clean = Str::limit($clean, 80, '');
 
-        return $clean !== '' ? Str::limit($clean, 80, '') : $fallback;
+        // Windows refuses a name ending in a dot or a space. "R.E.M." and
+        // "Out Of Time (U.S. Version)." both failed with UnableToCreateDirectory
+        // and their covers were never written — on Windows only, which is how it
+        // went unnoticed. `LibraryOrganizer::segment` has always done this; this
+        // one did not, so the library filed those albums while their artwork
+        // could not be saved beside them.
+        //
+        // After the truncation above, not before: a cut at 80 characters can
+        // land on a dot and put one back.
+        $clean = rtrim($clean, ". \t");
+
+        return $clean !== '' ? $clean : $fallback;
     }
 
     /**
