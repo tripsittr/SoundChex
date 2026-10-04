@@ -317,18 +317,46 @@ than repeating it, because a number copied into a test asserts only that someone
 once copied it correctly. A second test refuses any job whose declared timeout
 reaches `retry_after`.
 
-**`database is locked`, four times.** Two queue workers were running. A clean
-quit kills the children, but that runs on the watcher thread, so force-killing
-or crashing the app took the thread with it and left `queue:work` and
-`schedule:work` behind; the next launch started a second pair, and both wrote to
-one SQLite file. The children are now assigned to a Windows job object with
-`KILL_ON_JOB_CLOSE`, which moves the guarantee into the kernel: the job's last
-handle closes when the app exits by any route, and everything in it is
-terminated. POSIX is untouched — there the equivalent is a process group, and
-that stack works.
+**`database is locked`, repeatedly — and not for the reason it looked like.**
+Two queue workers were indeed running, orphaned: a clean quit kills the
+children, but on the watcher thread, so force-killing or crashing the app took
+the thread with it and the next launch started a second pair against one SQLite
+file. They are now assigned to a Windows job object with `KILL_ON_JOB_CLOSE`,
+which moves the guarantee into the kernel — the last handle closes when the app
+exits by any route and everything in it is terminated. POSIX is untouched;
+there the equivalent is a process group, and that stack works. Strays from
+before this change are not adopted retroactively, but a fresh launch cannot
+create more.
 
-Strays from before this change are not adopted retroactively; a reboot or a
-manual kill clears them, and a fresh launch cannot create more.
+That was not the cause, though. Locks kept failing after the second worker was
+gone, so the stack trace was worth reading rather than assuming, and it pointed
+inside Laravel:
+
+    DatabaseQueue::pop()
+      Connection::transaction()
+        markJobAsReserved()
+          update "jobs" set reserved_at = ...   <- BUSY
+
+`transaction_mode` was `DEFERRED`, the Laravel skeleton's default. A deferred
+transaction takes no lock at BEGIN: the SELECT fixes a read snapshot, and the
+UPDATE then asks to become a writer. If anything committed in between, that
+snapshot is stale and SQLite refuses the upgrade *at once* — waiting cannot make
+an already-taken read valid, so `busy_timeout` is never consulted. That is why
+two minutes of configured patience bought nothing, and why this looked
+unexplainable: the setting meant to cover it could not apply.
+
+`IMMEDIATE` takes the write lock at BEGIN, before reading. There is no upgrade,
+so there is nothing to refuse, and a contended lock finally becomes something
+`busy_timeout` can wait out. Write transactions serialise as a result; for one
+machine's media server that is the right trade, and a transaction that waits is
+better than a job that dies.
+
+`SqliteTransactionModeTest` drives sqlite directly rather than through the
+framework, because the framework would only show the setting being passed along.
+It reproduces the failure — a deferred reader-then-writer losing its upgrade —
+and asserts it fails in under a second with a two-second timeout available,
+which is the evidence that `busy_timeout` was never in play. The second test
+runs the same sequence as `IMMEDIATE` and watches it finish.
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of
