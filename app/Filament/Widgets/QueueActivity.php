@@ -8,7 +8,12 @@ namespace App\Filament\Widgets;
 use App\Filament\Pages\Dashboard;
 use App\Services\QueueInspector;
 use App\Services\ScheduleInspector;
+use Filament\Actions\Action;
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Concerns\InteractsWithSchemas;
+use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Widgets\Widget;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
@@ -24,8 +29,13 @@ use Illuminate\Support\Facades\Artisan;
  *
  * Refreshes on a timer because the interesting state is the one that changes.
  */
-class QueueActivity extends Widget
+class QueueActivity extends Widget implements HasActions, HasSchemas
 {
+    use InteractsWithActions;
+    // An action's modal is built as a schema, so the component needs both
+    // halves; with only the actions trait it fails looking for schema state.
+    use InteractsWithSchemas;
+
     protected string $view = 'filament.widgets.queue-activity';
 
     protected static ?int $sort = 5;
@@ -93,6 +103,32 @@ class QueueActivity extends Widget
     public function scheduled(): Collection
     {
         return app(ScheduleInspector::class)->all();
+    }
+
+    /**
+     * What one kind of job is actually doing, behind its row.
+     *
+     * The table can say six thousand jobs are waiting. It cannot say which
+     * file the worker has open, or why the last hundred came back needing
+     * review — and that is the question the table provokes. The log holds the
+     * answer and lived in a 7 MB file on the server, which is not a reasonable
+     * place to send someone running this on their own machine.
+     *
+     * Built per job kind only when asked. The table itself is polled every ten
+     * seconds and has to stay cheap.
+     */
+    public function inspectAction(): Action
+    {
+        return Action::make('inspect')
+            ->modalHeading(fn (array $arguments): string => (string) ($arguments['job'] ?? 'Job'))
+            ->modalDescription('What the worker has in hand, what is next, and what the log says about it.')
+            ->modalContent(fn (array $arguments) => view('filament.widgets.queue-job-detail', [
+                'detail' => app(QueueInspector::class)->detail((string) ($arguments['job'] ?? '')),
+            ]))
+            ->modalWidth('5xl')
+            // Nothing to submit; this only reports.
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Close');
     }
 
     /**

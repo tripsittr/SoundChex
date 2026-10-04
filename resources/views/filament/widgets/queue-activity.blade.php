@@ -63,7 +63,17 @@
                     <tbody class="divide-y divide-gray-100 dark:divide-white/5">
                         @foreach ($pending as $row)
                             <tr>
-                                <td class="py-2 pr-4 font-medium text-gray-900 dark:text-white">{{ $row['job'] }}</td>
+                                <td class="py-2 pr-4 font-medium">
+                                    {{-- The row's own name opens it: the detail is about this job,
+                                         so there is nothing else for a separate button to mean. --}}
+                                    <button
+                                        type="button"
+                                        wire:click="mountAction('inspect', { job: @js($row['job']) })"
+                                        class="text-primary-600 hover:underline dark:text-primary-400"
+                                    >
+                                        {{ $row['job'] }}
+                                    </button>
+                                </td>
                                 <td class="py-2 pr-4 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ number_format($row['queued']) }}</td>
                                 <td class="py-2 pr-4 text-right tabular-nums">
                                     @if ($row['running'] > 0)
@@ -97,7 +107,15 @@
                     <tbody class="divide-y divide-gray-100 dark:divide-white/5">
                         @foreach ($failed as $row)
                             <tr>
-                                <td class="py-2 pr-4 align-top font-medium text-gray-900 dark:text-white">{{ $row['job'] }}</td>
+                                <td class="py-2 pr-4 align-top font-medium">
+                                    <button
+                                        type="button"
+                                        wire:click="mountAction('inspect', { job: @js($row['job']) })"
+                                        class="text-primary-600 hover:underline dark:text-primary-400"
+                                    >
+                                        {{ $row['job'] }}
+                                    </button>
+                                </td>
                                 <td class="py-2 pr-4 align-top text-gray-500 dark:text-gray-400">{{ $row['reason'] }}</td>
                                 <td class="py-2 pr-4 align-top text-right tabular-nums text-danger-600 dark:text-danger-400">{{ $row['count'] }}</td>
                                 <td class="py-2 align-top text-gray-500 dark:text-gray-400">{{ $row['last']?->diffForHumans() ?? '—' }}</td>
@@ -171,4 +189,7 @@
             </div>
         @endif
     </x-filament::section>
+
+    {{-- Where a mounted action's modal renders. Nothing opens without it. --}}
+    <x-filament-actions::modals />
 </x-filament-widgets::widget>

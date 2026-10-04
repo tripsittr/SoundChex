@@ -101,6 +101,141 @@ class QueueActivityTest extends TestCase
             ->assertDontSee('@if')
             ->assertDontSee('@endif');
     }
+    /**
+     * The modal behind a row names the item the worker has in hand.
+     *
+     * The table could say five thousand jobs were waiting and nothing more,
+     * which is the question it provokes rather than an answer to it.
+     */
+    public function test_the_detail_names_the_running_item_and_what_is_next(): void
+    {
+        $running = $this->track('Kind of Blue');
+        $next = $this->track('A Love Supreme');
+
+        $this->enrichRow($running->id, ['reserved_at' => now()->timestamp, 'attempts' => 1]);
+        $this->enrichRow($next->id);
+
+        $detail = app(QueueInspector::class)->detail('EnrichMediaItemJob');
+
+        $this->assertCount(1, $detail['running']);
+        $this->assertSame('Kind of Blue', $detail['running'][0]['target']);
+        $this->assertSame($running->id, $detail['running'][0]['item']);
+
+        $this->assertSame(['A Love Supreme'], array_column($detail['upcoming'], 'target'));
+    }
+
+    /** A sweep is about no single item, and should say so rather than read as blank. */
+    public function test_a_whole_library_sweep_describes_itself(): void
+    {
+        DB::table('jobs')->insert([
+            'queue' => 'default',
+            'payload' => json_encode([
+                'displayName' => 'App\Jobs\DetectDuplicatesJob',
+                'data' => ['command' => serialize(new DetectDuplicatesJob)],
+            ]),
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+        ]);
+
+        $detail = app(QueueInspector::class)->detail('DetectDuplicatesJob');
+
+        $this->assertSame('Whole library', $detail['upcoming'][0]['target']);
+    }
+
+    /** An item deleted since the job was queued must not break the modal. */
+    public function test_a_job_whose_item_is_gone_still_describes_itself(): void
+    {
+        $this->enrichRow(999999);
+
+        $detail = app(QueueInspector::class)->detail('EnrichMediaItemJob');
+
+        $this->assertStringContainsString('no longer in the library', $detail['upcoming'][0]['target']);
+    }
+
+    /**
+     * The row's button mounts the action with that row's job as its argument.
+     *
+     * Only the wiring: Livewire 4 renders an action's modal into a partial,
+     * which the test harness does not include in the component's HTML, so the
+     * contents are checked below instead of asserted against this render.
+     */
+    public function test_a_row_mounts_the_action_for_its_own_job(): void
+    {
+        $item = $this->track('Bitches Brew');
+        $this->enrichRow($item->id, ['reserved_at' => now()->timestamp, 'attempts' => 1]);
+
+        $this->actingAs($this->user);
+
+        $widget = Livewire::test(QueueActivity::class)
+            ->assertSee('EnrichMediaItemJob')
+            ->mountAction('inspect', ['job' => 'EnrichMediaItemJob'])
+            ->assertActionMounted('inspect');
+
+        $this->assertSame(
+            ['job' => 'EnrichMediaItemJob'],
+            $widget->instance()->mountedActions[0]['arguments'],
+            'The row must pass its own job, or every row opens the same modal.'
+        );
+    }
+
+    /**
+     * And the modal's own view renders, naming the item in hand.
+     *
+     * Rendered directly rather than through the component, because the data
+     * being right is not the same as the view working — a widget whose data
+     * was right and whose Blade was broken is how this dashboard shipped dead.
+     */
+    public function test_the_modal_view_names_the_item_in_hand(): void
+    {
+        $item = $this->track('Bitches Brew');
+        $this->enrichRow($item->id, ['reserved_at' => now()->timestamp, 'attempts' => 1]);
+
+        $this->actingAs($this->user);
+
+        $widget = Livewire::test(QueueActivity::class)
+            ->mountAction('inspect', ['job' => 'EnrichMediaItemJob'])
+            ->instance();
+
+        $html = (string) $widget->getMountedAction()->getModalContent()?->render();
+
+        $this->assertStringContainsString('Bitches Brew', $html);
+        $this->assertStringContainsString('In hand now', $html);
+        $this->assertStringContainsString('Running', $html);
+
+        // A directive reaching the page is this view's known failure mode.
+        $this->assertStringNotContainsString('@if', $html);
+        $this->assertStringNotContainsString('@endif', $html);
+    }
+
+    private function track(string $title): MediaItem
+    {
+        self::$n++;
+
+        return MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => $title,
+            'file_path' => 'media/library/Music/track-'.self::$n.'.flac',
+            'owned' => true,
+        ]);
+    }
+
+    private function enrichRow(int $itemId, array $overrides = []): void
+    {
+        DB::table('jobs')->insert(array_merge([
+            'queue' => 'default',
+            'payload' => json_encode([
+                'displayName' => 'App\Jobs\EnrichMediaItemJob',
+                'data' => ['command' => serialize(new EnrichMediaItemJob($itemId))],
+            ]),
+            'attempts' => 0,
+            'reserved_at' => null,
+            'available_at' => now()->timestamp,
+            'created_at' => now()->timestamp,
+        ], $overrides));
+    }
     public function test_it_groups_pending_jobs_by_kind(): void
     {
         $this->queueRow('App\Jobs\EnrichMediaItemJob');

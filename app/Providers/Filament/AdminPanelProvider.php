@@ -48,8 +48,15 @@ class AdminPanelProvider extends PanelProvider
             // The file names describe the artwork, not the theme: the "dark"
             // logo has black elements and needs a light background, and vice
             // versa. So they pair with the opposite-named mode.
-            ->brandLogo(fn (): string => asset('storage/soundchex_logo_dark.png'))
-            ->darkModeBrandLogo(fn (): string => asset('storage/soundchex_logo_white.png'))
+            //
+            // Through Vite, not asset('storage/...'). These pointed into
+            // storage/app/public, which is the user's own uploaded content --
+            // provisioning deliberately never ships it, and the files were not
+            // in the repository either, so every packaged install showed two
+            // broken images. The build already carries these two, and every
+            // other logo in the app is resolved the same way.
+            ->brandLogo(fn (): string => app(Vite::class)->asset('resources/images/logo-dark-on-light.png'))
+            ->darkModeBrandLogo(fn (): string => app(Vite::class)->asset('resources/images/logo-light-on-dark.png'))
             ->brandLogoHeight('3.5rem')
             ->sidebarWidth('15rem')
             ->renderHook(

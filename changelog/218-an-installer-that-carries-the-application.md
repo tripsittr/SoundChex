@@ -357,6 +357,47 @@ It reproduces the failure — a deferred reader-then-writer losing its upgrade �
 and asserts it fails in under a second with a two-second timeout available,
 which is the evidence that `busy_timeout` was never in play. The second test
 runs the same sequence as `IMMEDIATE` and watches it finish.
+## What the worker is doing, and a logo that was never there
+
+**A modal behind every row of Background work.** The table could say 5,877 jobs
+were waiting, which is the question it provokes rather than an answer to it.
+Clicking the job's name now opens what the worker has in hand — named, not
+numbered: *Men's Needs*, job #11626, attempt 1, started two seconds ago — what
+is next, any failures for that kind, and the tail of the log filtered to the
+items involved.
+
+The log was the point. It is where this app says what happened, and reading it
+meant opening a 7 MB file on the server, which is not a reasonable thing to ask
+of someone running a media server on their own machine. `WorkerLog` reads the
+last 256 KB and parses it, never the whole file: it grows without bound, and
+loading it to show forty lines would be a denial of service against ourselves.
+Stack-trace lines are folded into the entry above them, because one exception is
+dozens of continuation lines and showing each as a row buries everything else.
+An entry that names no item is always kept even when filtering — a failure that
+never got as far as naming one is exactly what someone opening this needs.
+
+It answered a real question within a minute of existing. Every music item was
+logging *"Metadata sources skipped themselves — AcoustId, Spotify, Deezer. A
+missing API key is the usual cause."* Only `tmdb_api_key` is set, which is why
+films resolve cleanly and music comes back `fuzzy` and lands in review. Music
+enrichment is working — MusicBrainz, iTunes and the file's own tags need no
+credentials — but AcoustID is the one that fingerprints the audio, and without
+it nothing gets an exact match.
+
+**The table got cheaper at the same time.** `pending()` loaded every row's
+payload to group them — 2.6 MB at five thousand jobs — and the widget polls it
+every ten seconds. Counted in SQL now: 47 ms to 17 ms on the real queue. Guarded
+by driver, because `json_extract` is sqlite and MySQL and Postgres spells it
+differently; an unusual database is now slow rather than broken.
+
+**The admin panel's logo was a broken image**, and had been in every packaged
+install. Both brand logos pointed at `asset('storage/soundchex_logo_dark.png')`
+— inside `storage/app/public`, which is the user's own uploaded content, which
+provisioning deliberately never ships. The files were not in the repository
+either, so they only ever existed on a machine where someone had put them there
+by hand. They resolve through Vite now, like every other logo in the app, and
+Vite throws on a name that is not in the manifest rather than quietly serving a
+404.
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of
@@ -374,6 +415,10 @@ runs the same sequence as `IMMEDIATE` and watches it finish.
 - **Upgrades leave deleted files behind.** Unpacking overwrites what the archive
   contains and removes nothing, which is what protects `storage/` and the
   database; a file deleted upstream lingers.
+- **Only TMDB has a key.** AcoustID, Spotify and Deezer are unset, so every
+  music item is matched by tags, MusicBrainz and iTunes alone and comes back
+  `fuzzy`. AcoustID is the one that fingerprints the audio; until it has a key,
+  the review queue will keep filling with matches that are probably right.
 - **`server/supervisor/windows/install-services.ps1` is stale** — it still
   describes Windows as having no HTTP front and awaiting php-cgi packaging,
   superseded by FrankenPHP.
