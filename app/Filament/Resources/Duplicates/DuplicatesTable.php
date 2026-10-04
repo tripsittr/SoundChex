@@ -708,6 +708,14 @@ class DuplicatesTable
                 continue;
             }
 
+            // A row whose original has genuinely gone is stale, not mergeable.
+            // Belt and braces: the relation no longer hides an unresolved
+            // original, but a summary screen should never be what discovers a
+            // dangling id — it took the whole page down with a type error.
+            if ($record->duplicateOf === null) {
+                continue;
+            }
+
             [$winner, $reason] = $detector->decideKeeper($record->duplicateOf, $record, breakTies: true);
 
             if ($winner === null) {
