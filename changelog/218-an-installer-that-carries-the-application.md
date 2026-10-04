@@ -288,6 +288,47 @@ twice. `tests/Feature/BladeViewsParseTest.php` now compiles every template and
 runs `php -l` over the output: 87 views, one process each, and it named the one
 broken file immediately.
 
+## Three failed jobs, three different causes
+
+The dashboard that now shows failures immediately showed three, and they turned
+out to share almost nothing.
+
+**`Typed property DetectDuplicatesJob::$type must not be accessed before
+initialization`.** The job gained an optional `type` last week. A job queued
+*before* that unserialises with the property simply absent, and a typed property
+with no value throws when read rather than reading as null. The queue table is
+in the database, and the database is the one thing provisioning deliberately
+does not replace — so payloads outlive the code that wrote them, and an upgrade
+is exactly when this fires. Read through `?? null` now, which is isset-based and
+safe on an uninitialised property.
+
+**`MaxAttemptsExceededException` on a job with `tries = 1`**, which reads as a
+contradiction. `retry_after` was 90 seconds and `DetectDuplicatesJob` declares a
+timeout of 3600: the queue concluded the running sweep had been abandoned,
+handed it to another worker, and the second copy failed on the spot for having
+been attempted once already — while the first was still hashing. Seven jobs
+declared timeouts above that 90-second line, so no part of this was specific to
+duplicates. `retry_after` is 22200 now, above the `--timeout=21900` the
+supervisor gives the worker for the jobs with no ceiling of their own:
+transcoding, and server-to-server transfers, which legitimately run for hours.
+
+The test for it reads that number out of `src-tauri/src/supervisor.rs` rather
+than repeating it, because a number copied into a test asserts only that someone
+once copied it correctly. A second test refuses any job whose declared timeout
+reaches `retry_after`.
+
+**`database is locked`, four times.** Two queue workers were running. A clean
+quit kills the children, but that runs on the watcher thread, so force-killing
+or crashing the app took the thread with it and left `queue:work` and
+`schedule:work` behind; the next launch started a second pair, and both wrote to
+one SQLite file. The children are now assigned to a Windows job object with
+`KILL_ON_JOB_CLOSE`, which moves the guarantee into the kernel: the job's last
+handle closes when the app exits by any route, and everything in it is
+terminated. POSIX is untouched — there the equivalent is a process group, and
+that stack works.
+
+Strays from before this change are not adopted retroactively; a reboot or a
+manual kill clears them, and a fresh launch cannot create more.
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of
@@ -305,13 +346,6 @@ broken file immediately.
 - **Upgrades leave deleted files behind.** Unpacking overwrites what the archive
   contains and removes nothing, which is what protects `storage/` and the
   database; a file deleted upstream lingers.
-- **Stopping the app leaves its workers running.** Killing `soundchex.exe` and
-  `frankenphp.exe` left `queue:work` and `schedule:work` alive, and relaunching
-  started a second pair — two workers competing for one SQLite file. Lock
-  contention is already the commonest failure here and the worker runs with
-  `--tries=1`, so a lost lock kills a job permanently. Found while reinstalling;
-  the supervisor needs to take its children down with it and refuse to spawn a
-  worker that is already running.
 - **`server/supervisor/windows/install-services.ps1` is stale** — it still
   describes Windows as having no HTTP front and awaiting php-cgi packaging,
   superseded by FrankenPHP.

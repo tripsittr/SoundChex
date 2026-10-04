@@ -283,7 +283,14 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
         cmd.env("PHPRC", layout.run_dir.join("php.ini"));
     }
 
-    cmd.spawn()
+    let child = cmd.spawn()?;
+
+    // Into the job before anything else, so a crash between here and the
+    // watcher's bookkeeping still cannot leave it behind.
+    #[cfg(windows)]
+    tree::adopt(&child);
+
+    Ok(child)
 }
 
 /// Write the Caddyfile and php-fpm.conf into the run dir from the bundled
@@ -335,6 +342,99 @@ fn render_config(layout: &Layout) -> Result<(), String> {
 /// as long as the server is up, which is the point of a background service.
 ///
 /// Nothing on POSIX, which has no such notion.
+/// Keep the children alive no longer than the app, whatever kills the app.
+///
+/// `stop()` kills them on a clean quit, but that path runs on the watcher
+/// thread, and a force-kill or a crash of the app takes the thread with it —
+/// leaving `queue:work` and `schedule:work` running with nothing to stop them.
+/// The next launch then spawned a second pair, and two workers competed for one
+/// SQLite file; "database is locked" is already the commonest cause of a failed
+/// job here, and the worker runs with `--tries=1`, so a lost lock loses the job.
+///
+/// A Windows job object with `KILL_ON_JOB_CLOSE` moves the guarantee into the
+/// kernel: the job's last handle closes when the process holding it exits, by
+/// any means, and every process assigned to it is terminated. Nothing on the
+/// POSIX side changes — there the equivalent is a process group, and that stack
+/// is working.
+#[cfg(windows)]
+mod tree {
+    use std::process::Child;
+    use std::sync::OnceLock;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    /// A raw HANDLE is just an isize, which Rust will not share between threads
+    /// on its own account. The handle is created once and only ever read, and
+    /// it is deliberately never closed: the process exiting is what closes it,
+    /// and that close is the signal that kills the children.
+    struct Job(HANDLE);
+
+    unsafe impl Send for Job {}
+    unsafe impl Sync for Job {}
+
+    static JOB: OnceLock<Option<Job>> = OnceLock::new();
+
+    fn job() -> Option<HANDLE> {
+        JOB.get_or_init(|| {
+            // SAFETY: both calls are given a correctly sized, zeroed struct and
+            // a handle this function owns; failures come back as null or 0 and
+            // are handled rather than unwrapped.
+            unsafe {
+                let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+
+                if handle.is_null() {
+                    eprintln!("soundchex-supervisor: CreateJobObject failed; children may outlive the app");
+                    return None;
+                }
+
+                let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+                let set = SetInformationJobObject(
+                    handle,
+                    JobObjectExtendedLimitInformation,
+                    &limits as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+
+                if set == 0 {
+                    eprintln!("soundchex-supervisor: SetInformationJobObject failed; children may outlive the app");
+                    return None;
+                }
+
+                Some(Job(handle))
+            }
+        })
+        .as_ref()
+        .map(|j| j.0)
+    }
+
+    /// Put a freshly spawned child in the job. Best effort: a child that cannot
+    /// be assigned still runs, and the supervisor still kills it on a clean
+    /// stop — only the crash case is weaker, which is where it was before.
+    pub fn adopt(child: &Child) {
+        let Some(job) = job() else {
+            return;
+        };
+
+        use std::os::windows::io::AsRawHandle;
+
+        // SAFETY: the handle belongs to `child`, which outlives this call.
+        let assigned = unsafe { AssignProcessToJobObject(job, child.as_raw_handle() as HANDLE) };
+
+        if assigned == 0 {
+            eprintln!(
+                "soundchex-supervisor: could not assign pid {} to the job; it may outlive the app",
+                child.id()
+            );
+        }
+    }
+}
+
 pub fn hide_console(command: &mut Command) {
     #[cfg(windows)]
     {

@@ -47,7 +47,12 @@ libc = "0.2"
 
 # Windows uses GetDiskFreeSpaceExW instead.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+# JobObjects is for the job the supervisor's children are assigned to, so the
+# OS kills them when the app dies by any means. A graceful stop already
+# killed them; a force-kill or a crash took the watcher thread with it and
+# left queue:work running, which then competed with the next launch's worker
+# for one SQLite file.
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
 
 
 [features]

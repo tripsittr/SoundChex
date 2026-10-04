@@ -35,13 +35,19 @@ class DetectDuplicatesJob implements ShouldQueue
 
     public function handle(DuplicateDetector $detector): void
     {
+        // Read through ?? rather than directly: a job serialised before this
+        // property existed unserialises without it, and a typed property with
+        // no value throws on access rather than reading as null. The queue
+        // survives an upgrade, so those payloads are still in the table.
+        $type = $this->type ?? null;
+
         // Drop any stale flags that point at no original, so they leave the
         // review list and are judged afresh below rather than lingering.
         $detector->clearOrphans();
 
         MediaItem::unresolved()
             ->whereNotNull('file_path')
-            ->when($this->type !== null, fn ($query) => $query->where('type', $this->type))
+            ->when($type !== null, fn ($query) => $query->where('type', $type))
             // Rows the user already decided on are left alone; re-flagging a
             // pair they chose to keep would refill the review list.
             ->where(function ($query) {
