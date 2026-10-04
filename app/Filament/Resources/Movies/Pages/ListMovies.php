@@ -5,6 +5,7 @@
 
 namespace App\Filament\Resources\Movies\Pages;
 
+use App\Filament\Resources\Concerns\HasCoverRefetchActions;
 use App\Filament\Resources\Concerns\HasNeedsReviewTab;
 use App\Filament\Resources\Movies\MovieResource;
 use Filament\Actions\CreateAction;
@@ -14,13 +15,14 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ListMovies extends ListRecords
 {
-    use HasNeedsReviewTab;
+    use HasCoverRefetchActions, HasNeedsReviewTab;
 
     protected static string $resource = MovieResource::class;
 
     protected function getHeaderActions(): array
     {
         return [
+            ...$this->coverRefetchActions(),
             CreateAction::make()->label('Add movie'),
         ];
     }

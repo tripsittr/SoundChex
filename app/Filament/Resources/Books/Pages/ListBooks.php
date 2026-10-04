@@ -8,6 +8,7 @@ namespace App\Filament\Resources\Books\Pages;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Filament\Resources\Books\BookResource;
+use App\Filament\Resources\Concerns\HasCoverRefetchActions;
 use App\Filament\Resources\Concerns\HasNeedsReviewTab;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
@@ -22,13 +23,14 @@ use Illuminate\Support\Facades\Auth;
 
 class ListBooks extends ListRecords
 {
-    use HasNeedsReviewTab;
+    use HasCoverRefetchActions, HasNeedsReviewTab;
 
     protected static string $resource = BookResource::class;
 
     protected function getHeaderActions(): array
     {
         return [
+            ...$this->coverRefetchActions(),
             Action::make('bulkUpload')
                 ->label('Upload books')
                 ->icon('heroicon-o-arrow-up-tray')
@@ -59,14 +61,14 @@ class ListBooks extends ListRecords
 
                     foreach ($paths as $path) {
                         $item = MediaItem::create([
-                            'user_id'           => Auth::id(),
-                            'type'              => MediaItemType::Book,
+                            'user_id' => Auth::id(),
+                            'type' => MediaItemType::Book,
                             // Open Library promotes the real title once the
                             // lookup resolves.
-                            'title'             => pathinfo($path, PATHINFO_FILENAME),
-                            'file_path'         => $path,
+                            'title' => pathinfo($path, PATHINFO_FILENAME),
+                            'file_path' => $path,
                             'processing_status' => ProcessingStatus::Pending,
-                            'owned'             => true,
+                            'owned' => true,
                         ]);
 
                         // Sources write into this row rather than creating it.
@@ -76,7 +78,7 @@ class ListBooks extends ListRecords
                     }
 
                     Notification::make()
-                        ->title(count($paths) . ' ' . str('book')->plural(count($paths)) . ' queued')
+                        ->title(count($paths).' '.str('book')->plural(count($paths)).' queued')
                         ->body('Details are being looked up in the background.')
                         ->success()
                         ->send();

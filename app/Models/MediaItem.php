@@ -227,6 +227,26 @@ class MediaItem extends Model
         return $this->hasMany(self::class, 'duplicate_of_id');
     }
 
+    /**
+     * The series an episode belongs to. Null for everything else.
+     */
+    public function parent(): BelongsTo
+    {
+        // Same reasoning as `duplicateOf`: a series row carries no file of its
+        // own and may sit unresolved for as long as its episodes take to
+        // enrich. Hiding it would orphan every episode under it.
+        return $this->belongsTo(self::class, 'parent_id')
+            ->withoutGlobalScope(ResolvedScope::class);
+    }
+
+    /**
+     * A series' episodes.
+     */
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id');
+    }
+
     public function subtitles(): HasMany
     {
         return $this->hasMany(Subtitle::class);

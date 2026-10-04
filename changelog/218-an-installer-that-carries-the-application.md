@@ -208,6 +208,45 @@ states instead of the one a seeded database happened to be in.
 
 Verified on the installed app by screenshot: it opens on **Create your account**.
 
+## Television, duplicates in the review queue, and cover refetching
+
+**Episodes were loose on the shelf.** The Watch page listed every row of type
+Show, so 253 Simpsons episodes sat beside the three actual programmes. The
+hierarchy was already there — a series row carrying no file, with every episode
+parented to it — just never used. Browsing now lists series only, and a series
+page groups its episodes by season. Season and episode numbers are read back out
+of the filename by `EpisodeParser` rather than stored, and an episode whose name
+carries no marker lands under "Other" instead of disappearing. `continueWatching`
+still surfaces the individual episode, because it builds its own query.
+
+**Movie enrichment did nothing**, and said why in every report:
+`{"name":"TMDB","outcome":"skipped_no_key"}`. With a key configured it still
+missed, because the title it searches carries the release's edition wording —
+"The Goonies 30Th Anniversary Edition 1985" is no film. TMDB now retries with
+that wording removed, which also rescues rows already catalogued, and without
+rewriting anyone's title: only the search term is cleaned. Whole phrases only,
+never bare words — "Special", "Final" and "Ultimate" are all real film titles and
+the stripping runs to the end of the string, so one wrong match would lose the
+title entirely.
+
+**Duplicates never reached the review queue.** A pending duplicate is a decision
+nobody has taken — the detector says two files are the same and asks which to
+keep — but it showed only on the Duplicates screen while "Needs review" reported
+nothing to do. The tab now includes duplicates that are `Pending` or `Kept`.
+Not `Merged`: those are settled, and there are thousands.
+
+**Two cover buttons**, on every media list page. *Refetch missing covers* is the
+everyday one, badged with the count: an item that never got a cover is never
+asked about again on its own. *Refetch all covers* is for artwork that is present
+but wrong, and is confirmed because it is heavy. Both re-run enrichment rather
+than calling an artwork fetcher, because enrichment is what sets
+`cover_image_url` for every type; `RefetchCoversJob` shows the cost of a separate
+path, reading `musicMetadata` and requiring `needs_cover_review` so that it
+cannot serve a film at all.
+
+Verified against the real library: The Goonies resolved to TMDB 9340, 1985,
+114 minutes, with a cover.
+
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of
