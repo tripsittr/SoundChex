@@ -32,6 +32,26 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Release reservations when a worker starts
+    |--------------------------------------------------------------------------
+    |
+    | A reserved row does not record which worker holds it, so a worker killed
+    | mid-job leaves its job reserved and nothing reconsiders it until
+    | retry_after -- which is deliberately longer than the longest job can run,
+    | so a restart would otherwise cost that job six hours. Freeing them as a
+    | worker starts fixes that, and is safe only because the bundled supervisor
+    | runs exactly one worker: nothing can be holding anything while it starts.
+    |
+    | Turn this off if more than one worker serves this queue. A starting worker
+    | would otherwise free a job a sibling is part-way through, and that job
+    | would run twice.
+    |
+    */
+
+    'release_reservations_on_worker_start' => (bool) env('QUEUE_RELEASE_RESERVATIONS_ON_START', true),
+
     'connections' => [
 
         'sync' => [

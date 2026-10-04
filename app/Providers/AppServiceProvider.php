@@ -14,11 +14,15 @@ use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskSkipped;
 use Illuminate\Http\Request;
+use Illuminate\Queue\Events\WorkerStarting;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Throwable;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -51,6 +55,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->recordScheduledRuns();
+        $this->releaseStrandedJobs();
 
         // A CA bundle wherever PHP forgot to bring one.
         //
@@ -93,6 +98,64 @@ class AppServiceProvider extends ServiceProvider
      * failing task showing its last good run, which is the most misleading
      * thing the table could say.
      */
+    /**
+     * Free jobs a dead worker was holding, when a worker starts.
+     *
+     * A job is "reserved" while a worker has it, and the row carries no note of
+     * which worker that was. Kill the worker mid-job — a crash, a restart, an
+     * install — and the row stays reserved forever as far as anyone can tell.
+     * The queue only reconsiders it after `retry_after`, which this app sets
+     * above the worker's six-hour timeout because the alternative is failing
+     * jobs that are still running. So a restart used to cost one job ninety
+     * seconds and now costs it six hours, which is not a trade worth making
+     * when the restart is the thing that proves nothing is in flight.
+     *
+     * Safe because the supervisor runs exactly one worker: when it is starting,
+     * nothing can be holding anything. That assumption is the whole basis for
+     * this, so it is a setting rather than a certainty — a deployment running
+     * several workers must turn it off, or a worker starting will free a job
+     * its sibling is part-way through.
+     */
+    private function releaseStrandedJobs(): void
+    {
+        Event::listen(WorkerStarting::class, function (WorkerStarting $event): void {
+            if (! config('queue.release_reservations_on_worker_start')) {
+                return;
+            }
+
+            // The connection the worker is actually starting on, not the
+            // application default: they differ, and the default is the wrong
+            // one to reason about when the event names the right one.
+            $connection = (string) $event->connectionName;
+
+            // Only a database queue keeps its reservations in a table we own.
+            if (config("queue.connections.{$connection}.driver") !== 'database') {
+                return;
+            }
+
+            try {
+                $table = config("queue.connections.{$connection}.table", 'jobs');
+
+                $freed = DB::table($table)->whereNotNull('reserved_at')->update(['reserved_at' => null]);
+
+                if ($freed > 0) {
+                    // Worth a line: these jobs are about to run a second time,
+                    // and if one of them is what killed the worker, this is the
+                    // record that it was handed back rather than given up on.
+                    Log::info('Released jobs a stopped worker was holding', [
+                        'jobs' => $freed,
+                        'hint' => 'A worker was killed mid-job. Their attempt counts are unchanged, so a job that keeps failing still gives up.',
+                    ]);
+                }
+            } catch (Throwable $e) {
+                // Never stop a worker from starting over this.
+                Log::warning('Could not release stranded jobs', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        });
+    }
+
     private function recordScheduledRuns(): void
     {
         $record = fn (string $outcome) => function ($event) use ($outcome): void {

@@ -398,6 +398,31 @@ either, so they only ever existed on a machine where someone had put them there
 by hand. They resolve through Vite now, like every other logo in the app, and
 Vite throws on a name that is not in the manifest rather than quietly serving a
 404.
+## Jobs a dead worker was still holding
+
+Raising `retry_after` to stop the false `MaxAttemptsExceeded` failures had a
+cost that only showed up while verifying the install. A reserved row does not
+record *which* worker holds it, so a worker killed mid-job leaves its job
+reserved and indistinguishable from work in progress — and nothing reconsiders
+it until `retry_after`. That used to be ninety seconds. It is now six hours,
+deliberately, because it has to exceed the longest a job may run.
+
+So every restart cost whatever was in flight six hours of doing nothing. Visible
+on this install: job 11889 reserved at 15:17:30, the worker that held it killed
+by the installer, and the worker that replaced it starting at 15:18:37 with no
+way to tell the difference.
+
+A worker starting is the one moment it is provably safe to free them, because
+the supervisor runs exactly one — nothing can be holding anything while it is
+starting. Attempt counts are left untouched, so a job that genuinely kills its
+worker still runs out of tries rather than cycling for ever, and the release is
+logged with how many, because those jobs are about to run a second time.
+
+Behind `queue.release_reservations_on_worker_start`, which a deployment with
+more than one worker must turn off: a starting worker would otherwise free a job
+its sibling is part-way through and the job would run twice. The guard reads the
+connection off the event rather than the application default, because those two
+differ and the event is the one that is right.
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of
