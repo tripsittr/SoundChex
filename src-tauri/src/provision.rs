@@ -118,7 +118,27 @@ pub fn ensure(
         // that has just been replaced, and Laravel would go on using them.
         // Advisory: there is nothing to clear on a first install.
         progress(Progress::Step("Clearing caches from the previous version"));
-        let _ = php.artisan(app_dir, &["optimize:clear"]);
+
+        // Deliberately not `optimize:clear`, which includes `view:clear`.
+        //
+        // Blade components with an inline template are written to
+        // storage/framework/views as `{hash}.blade.php` by
+        // `Illuminate\View\Component::createBladeViewFromString`, and that
+        // method constructs its own Filesystem — no binding can reach it, so it
+        // renames a temp file over the target. Windows refuses that rename when
+        // another thread already has the file open, which is what Livewire does
+        // on any page issuing parallel requests: the panel answered "There was
+        // an error while attempting to load this page".
+        //
+        // It only writes when the file is absent, so the way to avoid the race
+        // is to stop deleting the files. They are named by a hash of their own
+        // contents, so a stale one is impossible — a changed component is a
+        // different filename. Compiled views are left alone too: Blade
+        // recompiles any whose source is newer, through the filesystem this app
+        // binds, which writes in place on Windows.
+        for command in [["config:clear"], ["route:clear"], ["event:clear"]] {
+            let _ = php.artisan(app_dir, &command);
+        }
     }
 
     progress(Progress::Step("Writing configuration"));
@@ -128,18 +148,6 @@ pub fn ensure(
     progress(Progress::Step("Preparing the database"));
     database(&php, app_dir)?;
     public_storage_link(&php, app_dir)?;
-
-    // Compile every Blade template up front.
-    //
-    // Laravel otherwise compiles a view the first time it is rendered, writing
-    // it through a temp file and a rename -- which Windows refuses when two
-    // requests compile the same view at once, and the page fails to load with
-    // nothing to explain it. Precompiling means no view is ever written during
-    // a request.
-    //
-    // Advisory: a template that will not compile should surface when it is
-    // rendered, not stop the server starting.
-    let _ = php.artisan(app_dir, &["view:cache"]);
 
     // Sets APP_URL to an address of this machine, so links the server generates
     // work from another device on the network instead of pointing at localhost.

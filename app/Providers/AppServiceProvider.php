@@ -5,6 +5,7 @@
 
 namespace App\Providers;
 
+use App\Filesystem\WindowsSafeFilesystem;
 use App\Services\CurrentProfile;
 use Composer\CaBundle\CaBundle;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -29,6 +30,14 @@ class AppServiceProvider extends ServiceProvider
         // ran that query 126 times, `/app` 28, for a value that cannot change
         // within a request.
         $this->app->singleton(CurrentProfile::class);
+
+        // Windows cannot rename a file over one another thread holds open, and
+        // Laravel's `replace()` is a temp-file-plus-rename. Under FrankenPHP,
+        // two requests compiling the same Blade view collide on exactly that
+        // and the loser returns a failed page. This swaps in a version that
+        // writes in place under a lock on Windows, and is the stock
+        // implementation everywhere else.
+        $this->app->singleton('files', fn (): WindowsSafeFilesystem => new WindowsSafeFilesystem);
     }
 
     /**
@@ -79,8 +88,8 @@ class AppServiceProvider extends ServiceProvider
             $email = (string) $request->input('email');
 
             return [
-                Limit::perMinute(5)->by('login-ip:' . $request->ip()),
-                Limit::perMinute(5)->by('login-user:' . mb_strtolower($email)),
+                Limit::perMinute(5)->by('login-ip:'.$request->ip()),
+                Limit::perMinute(5)->by('login-user:'.mb_strtolower($email)),
             ];
         });
 
