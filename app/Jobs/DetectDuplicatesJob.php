@@ -25,6 +25,14 @@ class DetectDuplicatesJob implements ShouldQueue
 
     public int $timeout = 3600;
 
+    /**
+     * @param  string|null  $type  Limit the sweep to one media type, or null for
+     *                             the whole library. The buttons on a list page
+     *                             scan what that page shows; the scheduled sweep
+     *                             still covers everything.
+     */
+    public function __construct(public ?string $type = null) {}
+
     public function handle(DuplicateDetector $detector): void
     {
         // Drop any stale flags that point at no original, so they leave the
@@ -33,6 +41,7 @@ class DetectDuplicatesJob implements ShouldQueue
 
         MediaItem::unresolved()
             ->whereNotNull('file_path')
+            ->when($this->type !== null, fn ($query) => $query->where('type', $this->type))
             // Rows the user already decided on are left alone; re-flagging a
             // pair they chose to keep would refill the review list.
             ->where(function ($query) {

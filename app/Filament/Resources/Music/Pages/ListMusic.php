@@ -7,8 +7,7 @@ namespace App\Filament\Resources\Music\Pages;
 
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
-use App\Filament\Resources\Concerns\HasCoverRefetchActions;
-use App\Filament\Resources\Concerns\HasNeedsReviewTab;
+use App\Filament\Resources\Concerns\HasLibraryMaintenanceActions;
 use App\Filament\Resources\Music\MusicResource;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
@@ -24,14 +23,14 @@ use Illuminate\Support\Facades\Auth;
 
 class ListMusic extends ListRecords
 {
-    use HasCoverRefetchActions, HasNeedsReviewTab;
+    use HasLibraryMaintenanceActions;
 
     protected static string $resource = MusicResource::class;
 
     protected function getHeaderActions(): array
     {
         return [
-            ...$this->coverRefetchActions(),
+            ...$this->libraryMaintenanceActions(),
             Action::make('scanFolders')
                 ->label('Scan for new files')
                 ->icon('heroicon-o-magnifying-glass')

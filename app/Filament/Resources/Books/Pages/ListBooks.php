@@ -8,8 +8,7 @@ namespace App\Filament\Resources\Books\Pages;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Filament\Resources\Books\BookResource;
-use App\Filament\Resources\Concerns\HasCoverRefetchActions;
-use App\Filament\Resources\Concerns\HasNeedsReviewTab;
+use App\Filament\Resources\Concerns\HasLibraryMaintenanceActions;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
 use Filament\Actions\Action;
@@ -23,14 +22,14 @@ use Illuminate\Support\Facades\Auth;
 
 class ListBooks extends ListRecords
 {
-    use HasCoverRefetchActions, HasNeedsReviewTab;
+    use HasLibraryMaintenanceActions;
 
     protected static string $resource = BookResource::class;
 
     protected function getHeaderActions(): array
     {
         return [
-            ...$this->coverRefetchActions(),
+            ...$this->libraryMaintenanceActions(),
             Action::make('bulkUpload')
                 ->label('Upload books')
                 ->icon('heroicon-o-arrow-up-tray')
