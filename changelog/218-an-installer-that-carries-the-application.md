@@ -423,6 +423,59 @@ more than one worker must turn off: a starting worker would otherwise free a job
 its sibling is part-way through and the job would run twice. The guard reads the
 connection off the event rather than the application default, because those two
 differ and the event is the one that is right.
+## A reviewed file keeps being searched
+
+A decision used to live on the file. `duplicate_status` said "keeping both" and
+the scanner skipped that row for ever after — it had no choice, because the row
+records which item it was compared against but nothing about what was decided.
+So "we settled A against B" had to be read as "leave A alone", and anything
+added afterwards was never compared against A at all. Decide two albums are both
+worth keeping, rip a third copy next month, and nothing notices.
+
+`duplicate_decisions` records the pair instead, which separates the two: the
+question that was answered stays answered, and every other question is still
+asked. Stored lowest id first, because which copy the scanner calls "the
+original" depends on where each file sits at the time and changes when one is
+filed into the library — a decision that moved with it would be no decision.
+
+The migration carries over the rulings already made. Without that, the first
+sweep after upgrading would re-ask every question the user has ever answered,
+which is the failure the old behaviour existed to prevent and a worse one than
+the gap being closed.
+
+Merged rows stay out of the sweep. Merging repoints the redundant row at the
+surviving file, so such a row shares a path — and bytes — with its original;
+searching it would match a third copy and drag a settled row back into review
+for a file it does not have its own copy of.
+
+Both halves are tested, and checked by reinstating the old skip: exactly the two
+tests that should fail did.
+
+## Asking the metadata providers less
+
+"Can the workers go faster, or can we run more of them?" More workers is the
+wrong lever, and the numbers say why. The worker spends two seconds of CPU per
+minute — it is waiting on HTTP, not computing. And the ceiling is not ours:
+MusicBrainz rate-limits anonymous clients to roughly one request a second, which
+this app respects by accident rather than by design (there is a comment about
+the policy and no throttle). Three workers would spend the same allowance three
+times faster and risk being blocked.
+
+What the queue actually holds is repetition. Measured on the real library
+mid-enrichment: 5,454 queued music lookups, 2,132 of them distinct. 61% repeats.
+`a-punk|vampire weekend` and `sun|two door cinema club` were each queued twelve
+times, and neither MusicBrainz nor iTunes responses were cached, so all twelve
+asked again.
+
+`LookupCache` sits in front of both, keyed on the query with the parameters
+sorted so the same question written two ways is one key. Seven days: long enough
+to cover a whole library sweep, short enough that a re-fetch next week sees a
+record the provider has since corrected.
+
+An empty answer is cached, and that is most of the win — the tracks nothing can
+identify are exactly the ones that repeat, and asking twelve times gets the same
+nothing. A failed request is never cached: one rate-limited minute would
+otherwise poison a week of lookups for every track in it.
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of
@@ -440,6 +493,11 @@ differ and the event is the one that is right.
 - **Upgrades leave deleted files behind.** Unpacking overwrites what the archive
   contains and removes nothing, which is what protects `storage/` and the
   database; a file deleted upstream lingers.
+- **Enrichment is still bounded by one request a second.** Caching removes the
+  repeats, but the distinct lookups remain, and nothing in the app enforces
+  MusicBrainz's rate limit — it is respected by happening to be slow enough.
+  Running a second worker would breach it, so concurrency needs a shared
+  client-side throttle first, and the stranded-job release turned off.
 - **Only TMDB has a key.** AcoustID, Spotify and Deezer are unset, so every
   music item is matched by tags, MusicBrainz and iTunes alone and comes back
   `fuzzy`. AcoustID is the one that fingerprints the audio; until it has a key,

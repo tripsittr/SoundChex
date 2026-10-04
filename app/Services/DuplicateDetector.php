@@ -11,6 +11,7 @@ use App\Enums\MediaItemType;
 use App\Events\DuplicateDetected;
 use App\Events\DuplicateMerged;
 use App\Events\DuplicateResolved;
+use App\Models\DuplicateDecision;
 use App\Models\MediaItem;
 use App\Models\MusicMetadata;
 use Illuminate\Database\Eloquent\Builder;
@@ -163,11 +164,11 @@ class DuplicateDetector
             return null;
         }
 
-        // A decision the user already made is final — re-flagging a pair they
-        // chose to keep would refill the review list forever.
-        if ($item->duplicate_status?->isResolved()) {
-            return null;
-        }
+        // A reviewed file is still searched. The decision was about a pair, and
+        // it is remembered as one in `duplicate_decisions` — so the candidate
+        // queries below pass over the items this one has already been ruled
+        // against and consider everything else. Skipping the whole file here, as
+        // this used to, meant nothing added afterwards was ever compared to it.
 
         // Byte-identical first: it's the strongest signal and the only one that
         // may be auto-deleted.
@@ -223,15 +224,11 @@ class DuplicateDetector
             return null;
         }
 
-        $candidates = MediaItem::unresolved()
+        $candidates = $this->eligibleOriginals($item)
             ->where('content_hash', $hash)
-            ->where('id', '!=', $item->id)
             // Same type only: a cover image and an audio file could in
             // principle collide, and merging across types would be wrong.
             ->where('type', $item->type)
-            // Chains are confusing to review, so a duplicate never becomes
-            // somebody else's original.
-            ->whereNull('duplicate_of_id')
             ->orderBy('id')
             ->get();
 
@@ -358,11 +355,34 @@ class DuplicateDetector
      */
     private function musicCandidates(MediaItem $item): Builder
     {
+        return $this->eligibleOriginals($item)
+            ->where('type', MediaItemType::Music)
+            ->orderBy('id');
+    }
+
+    /**
+     * Items that may be called the original of this one.
+     *
+     * Excludes the pairs already ruled on, which is what lets a reviewed file
+     * keep being searched: the question that was answered stays answered, and
+     * every other question is still asked.
+     *
+     * A copy still awaiting a decision is not eligible — a duplicate becoming
+     * somebody else's original makes a chain, and chains are confusing to
+     * review. One that was *kept* is eligible: the user said both files are
+     * worth having, so a third copy should be flagged against it like any other
+     * file in the library. A merged row has had its file deleted and so cannot
+     * be anyone's original.
+     */
+    private function eligibleOriginals(MediaItem $item): Builder
+    {
         return MediaItem::unresolved()
             ->where('id', '!=', $item->id)
-            ->where('type', MediaItemType::Music)
-            ->whereNull('duplicate_of_id')
-            ->orderBy('id');
+            ->whereNotIn('id', DuplicateDecision::partnersOf($item->id))
+            ->where(function ($query) {
+                $query->whereNull('duplicate_of_id')
+                    ->orWhere('duplicate_status', DuplicateStatus::Kept->value);
+            });
     }
 
     /** Music candidates whose title matches this item's, normalised. */
@@ -465,6 +485,8 @@ class DuplicateDetector
                 'duplicate_status' => DuplicateStatus::Merged,
             ])->saveQuietly();
 
+            $this->remember($duplicate, DuplicateStatus::Merged);
+
             DuplicateMerged::dispatch($duplicate, $original);
 
             return true;
@@ -493,6 +515,8 @@ class DuplicateDetector
             'file_path' => $original->file_path,
             'duplicate_status' => DuplicateStatus::Merged,
         ])->saveQuietly();
+
+        $this->remember($duplicate, DuplicateStatus::Merged);
 
         DuplicateMerged::dispatch($duplicate, $original);
 
@@ -538,6 +562,8 @@ class DuplicateDetector
         if ($loserPath === $keeperPath) {
             $duplicate->forceFill(['duplicate_status' => DuplicateStatus::Merged])->saveQuietly();
 
+            $this->remember($duplicate, DuplicateStatus::Merged);
+
             DuplicateResolved::dispatch($duplicate);
 
             return true;
@@ -559,6 +585,8 @@ class DuplicateDetector
             'duplicate_status' => DuplicateStatus::Merged,
             'needs_cover_review' => $this->coversDiffer($keeper, $loser),
         ])->saveQuietly();
+
+        $this->remember($duplicate, DuplicateStatus::Merged);
 
         DuplicateResolved::dispatch($duplicate);
 
@@ -652,6 +680,8 @@ class DuplicateDetector
             $duplicate->forceFill([
                 'duplicate_status' => DuplicateStatus::Merged,
             ])->saveQuietly();
+
+            $this->remember($duplicate, DuplicateStatus::Merged);
 
             return 'resolved';
         }
@@ -781,6 +811,24 @@ class DuplicateDetector
         $duplicate->forceFill([
             'duplicate_status' => DuplicateStatus::Kept,
         ])->saveQuietly();
+
+        $this->remember($duplicate, DuplicateStatus::Kept);
+    }
+
+    /**
+     * Record that this pair has been ruled on.
+     *
+     * Without this the next sweep asks again, because the status on the row is
+     * overwritten the moment the file matches something else. The pair is what
+     * was decided, so the pair is what is stored.
+     */
+    private function remember(MediaItem $duplicate, DuplicateStatus $decision): void
+    {
+        if ($duplicate->duplicate_of_id === null) {
+            return;
+        }
+
+        DuplicateDecision::record($duplicate->id, (int) $duplicate->duplicate_of_id, $decision);
     }
 
     /**

@@ -12,7 +12,7 @@ use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
 use App\Services\Metadata\Contracts\MetadataSource;
 use App\Services\MusicCredits;
-use Illuminate\Http\Client\Response;
+use App\Services\Metadata\LookupCache;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -205,7 +205,7 @@ class MusicBrainz implements MetadataSource
             'inc' => 'artists+releases+release-groups+isrcs+genres+tags',
         ]);
 
-        return $response?->json() ?: null;
+        return $response ?: null;
     }
 
     /**
@@ -220,7 +220,7 @@ class MusicBrainz implements MetadataSource
             'limit' => 25,
         ]);
 
-        $candidates = $response?->json('recordings') ?? [];
+        $candidates = data_get($response, 'recordings') ?? [];
 
         if (empty($candidates)) {
             return null;
@@ -520,7 +520,7 @@ class MusicBrainz implements MetadataSource
 
         $response = $this->request("/release/{$releaseId}", ['inc' => 'labels']);
 
-        return $response?->json('label-info.0.label.name');
+        return data_get($response, 'label-info.0.label.name');
     }
 
     /**
@@ -625,9 +625,29 @@ class MusicBrainz implements MetadataSource
     }
 
     /**
+     * One request, answered from the cache when it has been asked before.
+     *
+     * Returns the decoded body rather than a Response: a Response cannot be
+     * cached usefully, and the three callers only ever read keys out of it.
+     * Null still means the request failed, and is never cached.
+     *
      * @param  array<string, mixed>  $query
+     * @return array<mixed>|null
      */
-    private function request(string $path, array $query): ?Response
+    private function request(string $path, array $query): ?array
+    {
+        return app(LookupCache::class)->remember(
+            $this->name(),
+            $query + ['path' => $path],
+            fn (): ?array => $this->fetch($path, $query),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $query
+     * @return array<mixed>|null
+     */
+    private function fetch(string $path, array $query): ?array
     {
         $response = Http::withHeaders([
             // MusicBrainz blocks clients without a descriptive User-Agent.
@@ -642,7 +662,9 @@ class MusicBrainz implements MetadataSource
             ->retry(2, 1000, throw: false)
             ->get(self::BASE.$path, $query + ['fmt' => 'json']);
 
-        return $response->successful() ? $response : null;
+        // An empty body is still an answer -- "no such recording" -- and worth
+        // remembering. Only a failed request returns null.
+        return $response->successful() ? ($response->json() ?? []) : null;
     }
 
     private function extractYear(?string $date): ?int

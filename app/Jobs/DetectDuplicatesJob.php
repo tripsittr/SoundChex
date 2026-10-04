@@ -5,6 +5,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\DuplicateStatus;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -48,11 +49,23 @@ class DetectDuplicatesJob implements ShouldQueue
         MediaItem::unresolved()
             ->whereNotNull('file_path')
             ->when($type !== null, fn ($query) => $query->where('type', $type))
-            // Rows the user already decided on are left alone; re-flagging a
-            // pair they chose to keep would refill the review list.
+            // A file someone has reviewed is still searched. Their decision was
+            // about a pair, and `duplicate_decisions` remembers it as one, so the
+            // detector passes over that pair and still considers every other --
+            // which is the point: a file kept last week was previously never
+            // compared against anything added since.
+            //
+            // Merged is the exception, and stays excluded. Merging repoints the
+            // redundant row at the surviving file, so such a row now shares a
+            // path, and bytes, with its original. Searching it would find a third
+            // copy and drag a settled row back into review for a file it does not
+            // even have its own copy of.
             ->where(function ($query) {
                 $query->whereNull('duplicate_status')
-                    ->orWhere('duplicate_status', 'pending');
+                    ->orWhereIn('duplicate_status', [
+                        DuplicateStatus::Pending->value,
+                        DuplicateStatus::Kept->value,
+                    ]);
             })
             ->orderBy('id')
             // Chunked so a large library doesn't load entirely into memory.
