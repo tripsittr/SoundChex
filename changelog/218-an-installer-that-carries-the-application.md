@@ -305,6 +305,13 @@ broken file immediately.
 - **Upgrades leave deleted files behind.** Unpacking overwrites what the archive
   contains and removes nothing, which is what protects `storage/` and the
   database; a file deleted upstream lingers.
+- **Stopping the app leaves its workers running.** Killing `soundchex.exe` and
+  `frankenphp.exe` left `queue:work` and `schedule:work` alive, and relaunching
+  started a second pair — two workers competing for one SQLite file. Lock
+  contention is already the commonest failure here and the worker runs with
+  `--tries=1`, so a lost lock kills a job permanently. Found while reinstalling;
+  the supervisor needs to take its children down with it and refuse to spawn a
+  worker that is already running.
 - **`server/supervisor/windows/install-services.ps1` is stale** — it still
   describes Windows as having no HTTP front and awaiting php-cgi packaging,
   superseded by FrankenPHP.
