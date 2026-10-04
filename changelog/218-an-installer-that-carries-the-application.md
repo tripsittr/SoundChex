@@ -247,6 +247,47 @@ cannot serve a film at all.
 Verified against the real library: The Goonies resolved to TMDB 9340, 1985,
 114 minutes, with a cover.
 
+## The queue on the dashboard, and maintenance on every type
+
+**Background work is now visible.** Every heavy operation queues — enrichment,
+cover fetching, duplicate hashing, transcoding — and starting one gave a
+notification and then silence. A *Background work* table reads the queue tables
+directly: pending jobs grouped by kind, how many wait, how many a worker holds
+right now, the age of the oldest, and how many have already been attempted.
+Failures group by reason, because twenty rows of "database is locked" is one
+problem and twenty identical rows hide whatever else failed once. There is a
+retry button: the worker runs with `--tries=1`, so a single lock kills a job for
+good. "Nothing is being worked on" is phrased as a question — nothing reserved
+is either a dead worker or a worker between jobs, and the widget cannot tell
+which. The recurring schedule sits underneath, with the heartbeat
+`routes/console.php` writes, so "next run" is a prediction and not an intention.
+
+**Maintenance on every media type**, in one dropdown: refetch missing covers,
+refetch all covers, re-enrich what needs review, re-enrich everything, and
+search for duplicates. Only music had a button before, re-enrichment had none,
+and the duplicate search always swept the whole library. The type comes from
+the resource's own `mediaType()` — the same declaration that scopes its query,
+so the two cannot disagree.
+
+**The dashboard would not open.** The widget shipped with a parse error, and the
+page reported only "There was an error while attempting to load this page." The
+cause was one line of Blade:
+
+```blade
+{{ number_format($totalPending) }} waiting@if ($totalFailed > 0), … @endif.
+```
+
+Blade matches a directive only at a non-word boundary, so the `@if` glued to
+`waiting` was left as literal text while its `@endif` compiled anyway. The
+generated PHP carried a stray `endif`, and nothing complained until the page was
+opened. The count is interpolated now instead.
+
+`view:cache` does not catch this. It runs the compiler and writes the result,
+and invalid PHP is written out as happily as valid — which is how it shipped
+twice. `tests/Feature/BladeViewsParseTest.php` now compiles every template and
+runs `php -l` over the output: 87 views, one process each, and it named the one
+broken file immediately.
+
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of

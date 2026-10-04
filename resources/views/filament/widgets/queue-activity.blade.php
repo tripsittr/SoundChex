@@ -18,7 +18,11 @@
             @if ($totalPending === 0 && $totalFailed === 0)
                 The queue is empty.
             @else
-                {{ number_format($totalPending) }} waiting@if ($totalFailed > 0), {{ number_format($totalFailed) }} failed @endif.
+                {{-- The failed count is interpolated, not an inline @if: Blade only
+                     recognises a directive at a non-word boundary, so an @if glued
+                     to the preceding word is left as literal text while its @endif
+                     still compiles, and the page dies on a stray endif. --}}
+                {{ number_format($totalPending) }} waiting{{ $totalFailed > 0 ? ', '.number_format($totalFailed).' failed' : '' }}.
                 @if ($totalPending > 0 && ! $workerSeen)
                     {{-- Nothing reserved. Could be between jobs, could be a dead
                          worker; say which it might be rather than asserting. --}}
@@ -29,13 +33,13 @@
             @endif
         </x-slot>
 
-        @if ($totalFailed > 0)
-            <x-slot name="headerEnd">
+        <x-slot name="headerEnd">
+            @if ($totalFailed > 0)
                 <x-filament::button wire:click="retryFailed" size="sm" color="warning">
                     Retry {{ number_format($totalFailed) }} failed
                 </x-filament::button>
-            </x-slot>
-        @endif
+            @endif
+        </x-slot>
 
         @if ($pending->isEmpty() && $failed->isEmpty())
             <p class="text-sm text-gray-500 dark:text-gray-400">
