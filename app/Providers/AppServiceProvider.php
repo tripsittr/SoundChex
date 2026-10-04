@@ -7,9 +7,14 @@ namespace App\Providers;
 
 use App\Filesystem\WindowsSafeFilesystem;
 use App\Services\CurrentProfile;
+use App\Services\ScheduleInspector;
 use Composer\CaBundle\CaBundle;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\ScheduledTaskFailed;
+use Illuminate\Console\Events\ScheduledTaskFinished;
+use Illuminate\Console\Events\ScheduledTaskSkipped;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
@@ -45,6 +50,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        $this->recordScheduledRuns();
+
         // A CA bundle wherever PHP forgot to bring one.
         //
         // Windows PHP ships without one, so every outbound HTTPS request —
@@ -72,6 +79,33 @@ class AppServiceProvider extends ServiceProvider
         if ($this->app->environment('production')) {
             URL::forceScheme('https');
         }
+    }
+
+    /**
+     * Remember when each scheduled task last ran, and how it went.
+     *
+     * Laravel keeps no history. On a self-hosted server the schedule is
+     * otherwise invisible: a task that stopped running -- because the scheduler
+     * process died, or its command began failing -- looks exactly like a task
+     * with nothing to do. The dashboard reads this back.
+     *
+     * Registered for all three outcomes. Only recording success would leave a
+     * failing task showing its last good run, which is the most misleading
+     * thing the table could say.
+     */
+    private function recordScheduledRuns(): void
+    {
+        $record = fn (string $outcome) => function ($event) use ($outcome): void {
+            app(ScheduleInspector::class)->recordRun(
+                $event->task,
+                $outcome,
+                $event->runtime ?? null,
+            );
+        };
+
+        Event::listen(ScheduledTaskFinished::class, $record('ok'));
+        Event::listen(ScheduledTaskFailed::class, $record('failed'));
+        Event::listen(ScheduledTaskSkipped::class, $record('skipped'));
     }
 
     /**
