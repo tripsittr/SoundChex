@@ -20,11 +20,6 @@
       "runtime/templates": "runtime/templates/",
       "app-payload.zip": "./",
       "app-payload.id": "./"
-    },
-    "windows": {
-      "nsis": {
-        "installerHooks": "installer-hooks.nsh"
-      }
     }
   },
   "build": {

@@ -16,6 +16,7 @@ use App\Models\MediaItem;
 use App\Models\MusicMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -647,7 +648,7 @@ class DuplicateDetector
                 return false;
             }
 
-            if (! @unlink($duplicatePath)) {
+            if (! $this->deleteFile($duplicatePath)) {
                 return false;
             }
         }
@@ -712,7 +713,7 @@ class DuplicateDetector
             return true;
         }
 
-        if ($loserPath !== null && is_file($loserPath) && ! @unlink($loserPath)) {
+        if ($loserPath !== null && is_file($loserPath) && ! $this->deleteFile($loserPath)) {
             return false;
         }
 
@@ -849,6 +850,101 @@ class DuplicateDetector
     }
 
     /**
+     * Which of two video copies to keep: the bigger file.
+     *
+     * Crude and nearly always right. Two copies of one film or episode differ
+     * by resolution, bitrate or completeness, and all three show up as size.
+     * The cases this is for are not close calls -- 2 MB against 41 MB is a
+     * download that stopped early, and 18 MB against 1.8 GB is a sample.
+     *
+     * A 10% margin, so two rips that differ by container overhead are still a
+     * tie and go to a person rather than being decided on a rounding error.
+     *
+     * @return array{0: MediaItem|null, 1: string}
+     */
+    private function decideVideoKeeper(MediaItem $a, MediaItem $b, bool $breakTies): array
+    {
+        $sa = $this->sizeOf($a);
+        $sb = $this->sizeOf($b);
+
+        if ($sa !== null && $sb !== null && $sa > 0 && $sb > 0) {
+            $margin = (int) (max($sa, $sb) * 0.10);
+
+            if (abs($sa - $sb) > $margin) {
+                return [$sa > $sb ? $a : $b, 'file_size'];
+            }
+        }
+
+        // One file gone and the other present: keep the one that exists.
+        if ($sa === null && $sb !== null) {
+            return [$b, 'only_copy_present'];
+        }
+
+        if ($sb === null && $sa !== null) {
+            return [$a, 'only_copy_present'];
+        }
+
+        // Too close to call. Deliberately not broken by row id even when asked:
+        // for video that is an arbitrary choice between two files someone cares
+        // about, and the whole point of a review list is that it gets reviewed.
+        return [null, 'tie'];
+    }
+
+    /** A row's file size, or null when the file is not there. */
+    private function sizeOf(MediaItem $item): ?int
+    {
+        $path = $item->absoluteFilePath();
+
+        if ($path === null || ! is_file($path)) {
+            return null;
+        }
+
+        $size = @filesize($path);
+
+        return $size === false ? null : $size;
+    }
+
+    /**
+     * Delete a file, clearing the read-only attribute first on Windows.
+     *
+     * `unlink()` will not remove a file marked read-only on Windows, and 285
+     * of the 2,843 files in one real library carry that attribute -- arrived
+     * with it, from a copy off another machine. Every merge of one of those
+     * failed, the row stayed pending, and the duplicate came back at the next
+     * sweep: "I merged it and they came back".
+     *
+     * `chmod` is how PHP clears that attribute on Windows. Done only after the
+     * caller has decided to delete, so nothing is made writable that is not
+     * already about to go.
+     */
+    private function deleteFile(string $path): bool
+    {
+        if (@unlink($path)) {
+            return true;
+        }
+
+        // Read-only is the common reason and the recoverable one.
+        if (@chmod($path, 0666) && @unlink($path)) {
+            Log::info('Cleared the read-only attribute to delete a duplicate', [
+                'path' => $path,
+            ]);
+
+            return true;
+        }
+
+        // Said out loud, because the alternative is a toast that reports a
+        // missing file for something that is present and locked.
+        Log::error('Could not delete a duplicate copy', [
+            'path' => $path,
+            'exists' => is_file($path),
+            'writable' => is_writable($path),
+            'hint' => 'On Windows a read-only file cannot be unlinked; a file held open by another process cannot either.',
+        ]);
+
+        return false;
+    }
+
+    /**
      * Which of two copies to keep on quality, or null when neither is clearly
      * better (a tie the caller should leave for a human).
      *
@@ -880,6 +976,16 @@ class DuplicateDetector
      */
     public function decideKeeper(MediaItem $a, MediaItem $b, bool $breakTies = false): array
     {
+        // Film and television first, because none of the music tests below say
+        // anything about them: bitrate and sample rate come from
+        // `musicMetadata`, which a film does not have, and tag completeness is
+        // music tags. Every video pair therefore came out a tie, and a tie
+        // broken by row id is not a quality decision -- it deleted a 43 MB
+        // episode to keep a 17 MB one, and a 41 MB episode to keep 2 MB.
+        if ($a->type !== MediaItemType::Music) {
+            return $this->decideVideoKeeper($a, $b, $breakTies);
+        }
+
         // 1. Bitrate (bits per second), when both are measurable.
         $ra = $this->bitrate($a);
         $rb = $this->bitrate($b);

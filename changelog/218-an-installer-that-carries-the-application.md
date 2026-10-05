@@ -550,6 +550,55 @@ run removes it *and counts it*, and a different test fails for it.
 So the failure needed two runs more than two hours apart, which is why it looked
 like it arrived from nowhere. The session directories are tracked and removed in
 `tearDown` now; the file passes twice in a row and leaves nothing behind.
+## Merging a duplicate: two bugs, one of which was destructive
+
+Detection for film and television found the pairs on the real library — War Dogs
+on TMDB id, two Simpsons episodes on season and episode. Merging them did
+nothing and reported "a file was missing or the contents no longer match", about
+files that were all present. Both halves of that were wrong.
+
+**`decideKeeper()` had no idea what "better" means for a video.** It judges on
+bitrate, sample rate and tag completeness, every one of them read off
+`musicMetadata` — which a film does not have. So every video pair came out a
+tie, and the bulk action broke ties by keeping the higher row id. On this
+library that would have:
+
+| Pair | Would have kept | Would have deleted |
+| --- | --- | --- |
+| Lisa's Rival | 17 MB | **43 MB** |
+| Bart of Darkness | 2 MB | **41 MB** |
+| War Dogs | 1.77 GB | 18 MB |
+
+Two of three inverted, deleting the good copy to keep a stub. War Dogs came out
+right by luck, because the large file happened to be catalogued second.
+
+Now the larger file wins, on a 10% margin so two rips differing by container
+overhead stay a tie and go to a person. Ties are no longer broken by row id for
+video even when the caller asks: there is no quality signal left to break one
+with, and a coin toss that deletes a file is not a decision. A copy that is gone
+loses to one that is present. Music is untouched and still decides the way it
+did.
+
+**`unlink()` will not delete a read-only file on Windows.** 285 of the 2,843
+files in this library carry that attribute — `War Dogs (2016).mkv` is
+`ReadOnly, Archive, SparseFile`, so it arrived that way from a copy off another
+machine. Every merge touching one failed, the row stayed `pending`, and the next
+sweep flagged it again. That is the whole of "I merged it and they came back",
+and almost certainly the earlier "8 duplicates that wouldn't merge" too.
+
+The delete now clears the attribute and retries, and logs when it does. The two
+bugs cancelled each other on this library: the files the keeper logic would have
+destroyed were read-only, so the delete failed and nothing was lost. The bug
+that was frustrating is the bug that saved the library.
+
+**And the failure was silent.** Nothing was logged, and one message covered
+three different outcomes while naming a cause that was not any of them.
+"Skipped" is now three: merged, too close to call — open one and choose — and
+could not be deleted, with the real reason in the log.
+
+Checked by reverting both fixes: four tests fail, including `'newer'` where
+`'file_size'` belongs, which is the row-id coin toss, and the read-only merge
+returning false.
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of
@@ -572,6 +621,10 @@ like it arrived from nowhere. The session directories are tracked and removed in
   MusicBrainz's rate limit — it is respected by happening to be slow enough.
   Running a second worker would breach it, so concurrency needs a shared
   client-side throttle first, and the stranded-job release turned off.
+- **285 library files are read-only.** Deleting through them works now, but
+  anything else that writes to a file in place — retagging, cover embedding,
+  transcoding over the original — may still fail on those 285. Only the
+  duplicate delete path has been taught to clear the attribute.
 - **Only TMDB has a key.** AcoustID, Spotify and Deezer are unset, so every
   music item is matched by tags, MusicBrainz and iTunes alone and comes back
   `fuzzy`. AcoustID is the one that fingerprints the audio; until it has a key,
