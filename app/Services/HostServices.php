@@ -99,13 +99,13 @@ class HostServices
             return false;
         }
 
-        $source = base_path('Documentation & Planning/' . $service['label'] . '.plist');
+        $source = base_path('Documentation & Planning/'.$service['label'].'.plist');
         $target = $this->agentPath($service['label']);
 
         if ($target === null) {
             $this->lastError = 'Could not find your home directory, so there is '
-                . 'nowhere safe to install the service. Start the server from a '
-                . 'normal login session rather than a bare launchd context.';
+                .'nowhere safe to install the service. Start the server from a '
+                .'normal login session rather than a bare launchd context.';
 
             return false;
         }
@@ -213,7 +213,7 @@ class HostServices
             return 'Nothing logged yet.';
         }
 
-        $path = $home . '/Library/Logs/SoundChex/' . $key . '.log';
+        $path = $home.'/Library/Logs/SoundChex/'.$key.'.log';
 
         if (! is_file($path)) {
             return 'Nothing logged yet.';
@@ -237,7 +237,7 @@ class HostServices
             $position -= $read;
 
             fseek($handle, $position);
-            $chunk = fread($handle, $read) . $chunk;
+            $chunk = fread($handle, $read).$chunk;
             $buffer = explode("\n", $chunk);
         }
 
@@ -250,6 +250,56 @@ class HostServices
     public function supported(): bool
     {
         return PHP_OS_FAMILY === 'Darwin';
+    }
+
+    /**
+     * What keeps the background processes alive where this page cannot manage
+     * them.
+     *
+     * Returns null on macOS, where the page manages launchd itself.
+     *
+     * The honest answer on Windows is not "a scheduled task": the Server app is
+     * the supervisor. It starts FrankenPHP, the queue worker and the scheduler
+     * as its own children and restarts any that die, which is why there is
+     * nothing here to install. Telling someone to go and make a scheduled task
+     * would have them build a second supervisor competing with the first.
+     *
+     * @return array{manager: string, summary: string, processes: array<int, string>, autostart: string}|null
+     */
+    public function platformSupervision(): ?array
+    {
+        if (PHP_OS_FAMILY === 'Darwin') {
+            return null;
+        }
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            return [
+                'manager' => 'the SoundChex Server app',
+                'summary' => 'Windows has no launchd. The Server app is the supervisor: '
+                    .'it starts these processes itself and restarts any that stop, '
+                    .'so there is nothing to install here. Close the app and they stop with it.',
+                'processes' => [
+                    'FrankenPHP — serves the library over HTTP',
+                    'queue:work — enrichment, artwork, transcoding',
+                    'schedule:work — the scheduled jobs on the dashboard',
+                ],
+                'autostart' => 'Start with Windows is in the Server app, which adds it to the '
+                    .'per-user Run key. A Windows service would run without a desktop session '
+                    .'and could not show the app window.',
+            ];
+        }
+
+        return [
+            'manager' => 'systemd',
+            'summary' => 'Service management here is a systemd user unit. '
+                .'The headless installer registers them; this page does not manage them for you.',
+            'processes' => [
+                'caddy and php-fpm — serve the library over HTTP',
+                'queue:work — enrichment, artwork, transcoding',
+                'schedule:work — the scheduled jobs on the dashboard',
+            ],
+            'autostart' => 'systemctl --user enable, which the headless installer does.',
+        ];
     }
 
     /**
@@ -275,7 +325,7 @@ class HostServices
             return null;
         }
 
-        return $home . '/Library/LaunchAgents/' . $label . '.plist';
+        return $home.'/Library/LaunchAgents/'.$label.'.plist';
     }
 
     /** The user's home directory, from whichever source actually holds it. */

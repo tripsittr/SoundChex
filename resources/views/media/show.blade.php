@@ -398,6 +398,59 @@
             </div>
         </div>
 
+        {{--
+            Episodes, for a series. A series row has no file of its own, so
+            without this the page offered nothing to play and the episodes were
+            only reachable by scrolling the whole shelf.
+
+            Season numbers come from the filename via EpisodeParser rather than
+            a column, so an episode whose name carries no marker lands under
+            "Other" instead of disappearing.
+        --}}
+        @if ($seasons->isNotEmpty())
+            <section class="mt-10">
+                <h2 class="text-lg font-semibold text-ink-100">
+                    Episodes
+                    <span class="ml-2 text-sm font-normal text-ink-400">
+                        {{ $seasons->flatten()->count() }} across {{ $seasons->count() }} {{ \Illuminate\Support\Str::plural('season', $seasons->count()) }}
+                    </span>
+                </h2>
+
+                @foreach ($seasons as $season => $episodes)
+                    <div class="mt-6">
+                        <h3 class="text-sm font-semibold uppercase tracking-wide text-ink-400">
+                            {{ is_numeric($season) ? 'Season ' . $season : $season }}
+                            <span class="ml-1 font-normal normal-case tracking-normal text-ink-500">
+                                {{ $episodes->count() }} {{ \Illuminate\Support\Str::plural('episode', $episodes->count()) }}
+                            </span>
+                        </h3>
+
+                        <ul class="mt-2 divide-y divide-base-700 overflow-hidden rounded-lg border border-base-700">
+                            @foreach ($episodes as $episode)
+                                <li>
+                                    <a href="{{ route('media.watch', $episode) }}"
+                                       class="flex items-center gap-4 px-4 py-3 transition hover:bg-base-800">
+                                        <span class="w-12 shrink-0 text-right text-sm tabular-nums text-ink-500">
+                                            {{ $episode->episode_number !== null ? 'E' . str_pad((string) $episode->episode_number, 2, '0', STR_PAD_LEFT) : '—' }}
+                                        </span>
+
+                                        <span class="min-w-0 flex-1">
+                                            <span class="block truncate text-sm text-ink-100">{{ $episode->title }}</span>
+                                            @if ($episode->file_missing)
+                                                <span class="block text-xs text-amber-400">File missing</span>
+                                            @endif
+                                        </span>
+
+                                        <span class="shrink-0 text-xs text-ink-500">Play</span>
+                                    </a>
+                                </li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endforeach
+            </section>
+        @endif
+
         @if ($related->isNotEmpty())
             <x-media.rail title="More Like This" :items="$related" />
         @endif

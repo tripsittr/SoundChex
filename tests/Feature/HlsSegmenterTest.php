@@ -122,6 +122,40 @@ class HlsSegmenterTest extends TestCase
         }
     }
 
+    /**
+     * Session directories this test wrote, to be removed again.
+     *
+     * These go to real storage, not a faked disk, so anything left behind
+     * outlives the run. Not hypothetical: the test below deliberately creates
+     * a session that must *not* be swept and asserts it survives — and hours
+     * later its "just written" segment is older than any sweep threshold, so
+     * the next run removes it and counts it. That made
+     * `test_it_sweeps_a_session_nothing_has_touched` fail with "2 is not 1",
+     * in a different test, long after the run that caused it.
+     *
+     * @var list<string>
+     */
+    private array $created = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->created as $directory) {
+            if (! is_dir($directory)) {
+                continue;
+            }
+
+            foreach ((array) glob($directory.'/*') as $file) {
+                @unlink((string) $file);
+            }
+
+            @rmdir($directory);
+        }
+
+        $this->created = [];
+
+        parent::tearDown();
+    }
+
     /* ------------------------------------------------------------ sweep --- */
 
     /**
@@ -132,6 +166,7 @@ class HlsSegmenterTest extends TestCase
     private function sessionDir(string $name, int $ageMinutes): string
     {
         $directory = app(HlsSegmenter::class)->directoryFor($name);
+        $this->created[] = $directory;
 
         @mkdir($directory, 0777, true);
         file_put_contents($directory.'/index.m3u8', '#EXTM3U');
@@ -161,6 +196,7 @@ class HlsSegmenterTest extends TestCase
         // timestamp — which does not move as segments are added, so a long
         // film would otherwise be swept while still playing.
         $directory = app(HlsSegmenter::class)->directoryFor(str_repeat('b', 32));
+        $this->created[] = $directory;
 
         @mkdir($directory, 0777, true);
         file_put_contents($directory.'/index.m3u8', '#EXTM3U');

@@ -33,6 +33,11 @@ serde_json = "1"
 # Serialize the bundled-server supervisor's Status back to the Server app's UI
 # (S-151 Step 5).
 serde = { version = "1", features = ["derive"] }
+# Unpacks the bundled application payload on first run. Already in the tree
+# (tauri-plugin-updater depends on it), so naming it directly costs no extra
+# build. Only `deflate` is enabled: that is what the packaging script writes,
+# and the other codecs would be dead weight in the binary.
+zip = { version = "4", default-features = false, features = ["deflate"] }
 
 # `statvfs` for the free_space command, on every Unix platform we target —
 # macOS, iOS, Linux, Android. One extern "C" call; no larger dependency (like
@@ -42,7 +47,12 @@ libc = "0.2"
 
 # Windows uses GetDiskFreeSpaceExW instead.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation"] }
+# JobObjects is for the job the supervisor's children are assigned to, so the
+# OS kills them when the app dies by any means. A graceful stop already
+# killed them; a force-kill or a crash took the watcher thread with it and
+# left queue:work running, which then competed with the next launch's worker
+# for one SQLite file.
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
 
 
 [features]

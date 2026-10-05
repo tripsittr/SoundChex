@@ -61,7 +61,33 @@ return [
             'busy_timeout' => env('DB_BUSY_TIMEOUT', 120000),
             'journal_mode' => env('DB_JOURNAL_MODE', 'WAL'),
             'synchronous' => env('DB_SYNCHRONOUS', 'NORMAL'),
-            'transaction_mode' => 'DEFERRED',
+            // IMMEDIATE, not the skeleton's DEFERRED, and this is what finally
+            // stopped "database is locked" — busy_timeout above could not.
+            //
+            // A deferred transaction takes no lock at BEGIN. It reads, which
+            // fixes a snapshot, and only takes the write lock at the first
+            // write. If anyone else has written in between, that snapshot is
+            // stale, and SQLite fails the upgrade *immediately* with BUSY:
+            // waiting cannot help, because the read the transaction already did
+            // is no longer valid. busy_timeout governs how long to wait for a
+            // lock and is therefore never consulted. 120 seconds of patience
+            // bought nothing.
+            //
+            // Laravel's own queue does exactly this shape. DatabaseQueue::pop()
+            // opens a transaction, selects the next job, then updates it to
+            // reserved — and that update was the failure, over and over, while
+            // the scheduler and the web process wrote alongside it.
+            //
+            // IMMEDIATE takes the write lock at BEGIN, before reading anything.
+            // There is no upgrade, so there is no stale snapshot, and a
+            // contended lock is now something busy_timeout can wait out.
+            // The cost is that write transactions serialise; for one machine's
+            // media server that is the right trade, and a transaction that
+            // waits is better than a job that dies.
+            //
+            // Honoured on PHP 8.4 and above, which is what the bundled runtime
+            // ships (8.5).
+            'transaction_mode' => env('DB_TRANSACTION_MODE', 'IMMEDIATE'),
         ],
 
         'mysql' => [

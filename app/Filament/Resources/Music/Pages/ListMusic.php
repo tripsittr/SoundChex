@@ -7,7 +7,7 @@ namespace App\Filament\Resources\Music\Pages;
 
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
-use App\Filament\Resources\Concerns\HasNeedsReviewTab;
+use App\Filament\Resources\Concerns\HasLibraryMaintenanceActions;
 use App\Filament\Resources\Music\MusicResource;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
@@ -23,31 +23,41 @@ use Illuminate\Support\Facades\Auth;
 
 class ListMusic extends ListRecords
 {
-    use HasNeedsReviewTab;
+    use HasLibraryMaintenanceActions;
 
     protected static string $resource = MusicResource::class;
 
     protected function getHeaderActions(): array
     {
         return [
+            ...$this->libraryMaintenanceActions(),
             Action::make('scanFolders')
                 ->label('Scan for new files')
                 ->icon('heroicon-o-magnifying-glass')
                 ->color('gray')
                 ->action(function (LibraryScanner $scanner): void {
-                    $folders = config('library.watch_folders', []);
+                    // Ask the scanner, do not second-guess it.
+                    //
+                    // This used to refuse outright when `watch_folders` was
+                    // empty, and told people to set LIBRARY_WATCH_FOLDERS. But
+                    // the scanner also sweeps the storage disk, which is where
+                    // uploads land — so with no watch folder configured, which
+                    // is the normal state for a bundled server, the button
+                    // reported a misconfiguration and did nothing while there
+                    // were thousands of files sitting in the inbox it would
+                    // have found. `scan()` already reports how many folders it
+                    // resolved; the console command has always used that.
+                    $result = $scanner->scan();
 
-                    if ($folders === []) {
+                    if ($result['folders'] === 0) {
                         Notification::make()
-                            ->title('No watched folders configured')
-                            ->body('Set LIBRARY_WATCH_FOLDERS in .env to enable folder scanning.')
+                            ->title('Nowhere to scan')
+                            ->body('Storage scanning is off and no watched folders are set. Turn on storage scanning, or set LIBRARY_WATCH_FOLDERS in .env to watch folders elsewhere.')
                             ->warning()
                             ->send();
 
                         return;
                     }
-
-                    $result = $scanner->scan();
 
                     if ($result['imported'] === 0) {
                         Notification::make()
@@ -56,8 +66,10 @@ class ListMusic extends ListRecords
                             // half-written, so say so instead of reporting
                             // nothing at all.
                             ->body($result['unsettled'] > 0
-                                ? $result['unsettled'] . ' file(s) still being written — try again shortly.'
-                                : 'Everything in your watched folders is already catalogued.')
+                                ? $result['unsettled'].' file(s) still being written — try again shortly.'
+                                // Not "your watched folders": most installs have
+                                // none, and the files were found in storage.
+                                : 'Everything already catalogued — scanned '.$result['folders'].' '.str('folder')->plural($result['folders']).'.')
                             ->info()
                             ->send();
 
@@ -65,7 +77,7 @@ class ListMusic extends ListRecords
                     }
 
                     Notification::make()
-                        ->title($result['imported'] . ' new ' . str('file')->plural($result['imported']) . ' found')
+                        ->title($result['imported'].' new '.str('file')->plural($result['imported']).' found')
                         ->body('Tags are being read in the background.')
                         ->success()
                         ->send();
@@ -96,12 +108,12 @@ class ListMusic extends ListRecords
 
                     foreach ($paths as $path) {
                         $item = MediaItem::create([
-                            'user_id'           => Auth::id(),
-                            'type'              => MediaItemType::Music,
-                            'title'             => pathinfo($path, PATHINFO_FILENAME),
-                            'file_path'         => $path,
+                            'user_id' => Auth::id(),
+                            'type' => MediaItemType::Music,
+                            'title' => pathinfo($path, PATHINFO_FILENAME),
+                            'file_path' => $path,
                             'processing_status' => ProcessingStatus::Pending,
-                            'owned'             => true,
+                            'owned' => true,
                         ]);
 
                         // FileTagger writes into this row, so it must exist first.
@@ -111,7 +123,7 @@ class ListMusic extends ListRecords
                     }
 
                     Notification::make()
-                        ->title(count($paths) . ' ' . str('track')->plural(count($paths)) . ' queued')
+                        ->title(count($paths).' '.str('track')->plural(count($paths)).' queued')
                         ->body('Tags are being read in the background.')
                         ->success()
                         ->send();

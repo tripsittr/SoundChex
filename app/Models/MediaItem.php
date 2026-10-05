@@ -206,12 +206,45 @@ class MediaItem extends Model
      */
     public function duplicateOf(): BelongsTo
     {
-        return $this->belongsTo(self::class, 'duplicate_of_id');
+        // Outside ResolvedScope on purpose. A duplicate's original is very
+        // often unresolved itself — freshly imported, waiting on enrichment —
+        // and the scope would hand back null for a row that plainly exists.
+        // That is not a hidden item, it is a broken relation: the merge screen
+        // passed the null straight into decideKeeper() and the page died with
+        // "Argument #1 ($a) must be of type MediaItem, null given".
+        //
+        // Nothing user-facing reads this. Duplicate state is admin and
+        // maintenance machinery — the detector, the merge screen, the
+        // find-duplicates and reconcile commands — and every one of them needs
+        // to see unresolved items, which is exactly what the scope's own
+        // documentation says such callers must opt out of.
+        return $this->belongsTo(self::class, 'duplicate_of_id')
+            ->withoutGlobalScope(ResolvedScope::class);
     }
 
     public function duplicates(): HasMany
     {
         return $this->hasMany(self::class, 'duplicate_of_id');
+    }
+
+    /**
+     * The series an episode belongs to. Null for everything else.
+     */
+    public function parent(): BelongsTo
+    {
+        // Same reasoning as `duplicateOf`: a series row carries no file of its
+        // own and may sit unresolved for as long as its episodes take to
+        // enrich. Hiding it would orphan every episode under it.
+        return $this->belongsTo(self::class, 'parent_id')
+            ->withoutGlobalScope(ResolvedScope::class);
+    }
+
+    /**
+     * A series' episodes.
+     */
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id');
     }
 
     public function subtitles(): HasMany

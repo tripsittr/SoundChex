@@ -43,15 +43,39 @@
     </x-filament::section>
 
     @if (! $supported)
+        {{--
+            Not "unavailable". The processes do run here — something else keeps
+            them alive, and saying only that this page cannot manage them left
+            people looking for a service to install that they should not create.
+        --}}
         <x-filament::section>
-            <x-slot name="heading">Not available on this platform</x-slot>
+            <x-slot name="heading">Managed by {{ $platform['manager'] ?? 'the host' }}</x-slot>
 
             <p class="text-sm text-gray-500 dark:text-gray-400">
-                Service management uses launchd, which is macOS only. On Linux the
-                equivalent is a systemd user unit; on Windows, a scheduled task.
-                The processes still need to be running &mdash; this page just
-                cannot manage them for you here.
+                {{ $platform['summary'] ?? 'This page cannot manage services on this platform.' }}
             </p>
+
+            @if (! empty($platform['processes']))
+                <p class="mt-4 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    What is running
+                </p>
+
+                <ul class="mt-1 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                    @foreach ($platform['processes'] as $process)
+                        <li>{{ $process }}</li>
+                    @endforeach
+                </ul>
+            @endif
+
+            @if (! empty($platform['autostart']))
+                <p class="mt-4 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Starting automatically
+                </p>
+
+                <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                    {{ $platform['autostart'] }}
+                </p>
+            @endif
         </x-filament::section>
     @else
         <x-filament::section>

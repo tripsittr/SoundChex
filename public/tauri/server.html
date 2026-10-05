@@ -263,6 +263,43 @@
         const ORIGIN = 'http://127.0.0.1:8000';
 
         const invoke = (command, args) => window.__TAURI__?.core?.invoke?.(command, args);
+        const listen = (event, handler) => window.__TAURI__?.event?.listen?.(event, handler);
+
+        /**
+         * Show what first-run provisioning is doing.
+         *
+         * A new install unpacks the bundled application before it can serve
+         * anything -- thousands of files, tens of seconds. With nothing on screen
+         * but "Starting...", the only sensible reading is that it has hung, and
+         * closing the window leaves the unpack half done.
+         */
+        function watchProvisioning() {
+            if (!listen) {
+                return;
+            }
+
+            listen('server-provision', ({ payload }) => {
+                if (!payload) {
+                    return;
+                }
+
+                if (payload.stage === 'unpacking') {
+                    const percent = payload.total
+                        ? Math.floor((payload.done / payload.total) * 100)
+                        : 0;
+
+                    // Said explicitly, because it only happens once and a first
+                    // run that looks stuck is the thing this avoids.
+                    status(`Setting up for the first time — unpacking the library server, ${percent}% (${payload.done} of ${payload.total} files). This happens once.`);
+
+                    return;
+                }
+
+                if (payload.stage === 'step' && payload.label) {
+                    status(`${payload.label}…`);
+                }
+            });
+        }
 
         /**
          * Starts the bundled runtime that ships inside the SoundChex Server app.
@@ -286,6 +323,8 @@
             }
 
             try {
+                watchProvisioning();
+
                 await invoke('server_start');
                 status('Started. Waiting for it to answer…');
 
@@ -331,15 +370,39 @@
          * The identity endpoint rather than any old route: something else on port 8000
          * would otherwise read as a healthy SoundChex.
          */
-        async function checkServer() {
+        /**
+         * The server's own identity document, or null when it is not answering.
+         *
+         * Returns the body rather than a boolean: it carries `setup_required`,
+         * which decides where the window goes.
+         */
+        async function serverIdentity() {
             try {
                 const response = await fetch(`${ORIGIN}/soundchex.json`, { cache: 'no-store' });
                 const body = response.ok ? await response.json() : null;
 
-                return body?.app === 'soundchex';
+                return body?.app === 'soundchex' ? body : null;
             } catch {
-                return false;
+                return null;
             }
+        }
+
+        async function checkServer() {
+            return (await serverIdentity()) !== null;
+        }
+
+        /**
+         * Where an answering server should open.
+         *
+         * With no account yet, registration — the admin panel would bounce to a
+         * login form that cannot be satisfied, which is where a fresh install
+         * used to land. `setup_required` is only sent to loopback callers, and
+         * its absence means "do not know", so the panel stays the default.
+         */
+        function entryPoint(identity) {
+            return identity?.setup_required === true
+                ? `${ORIGIN}/register`
+                : `${ORIGIN}/admin`;
         }
 
         async function refresh() {
@@ -427,8 +490,10 @@
          * which is the one case this page exists for.
          */
         async function openOrExplain() {
-            if (await checkServer()) {
-                window.location.replace(`${ORIGIN}/admin`);
+            const identity = await serverIdentity();
+
+            if (identity) {
+                window.location.replace(entryPoint(identity));
 
                 return;
             }
@@ -444,8 +509,10 @@
         // Kept checking, so starting the server elsewhere brings this window back to
         // the panel without anyone having to reopen it.
         setInterval(async () => {
-            if (await checkServer()) {
-                window.location.replace(`${ORIGIN}/admin`);
+            const identity = await serverIdentity();
+
+            if (identity) {
+                window.location.replace(entryPoint(identity));
 
                 return;
             }

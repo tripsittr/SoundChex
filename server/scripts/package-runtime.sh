@@ -20,8 +20,10 @@ set -euo pipefail
 
 OS="${1:?os (macos|linux|windows)}"
 ARCH="${2:?arch (aarch64|x86_64)}"
-PHP_BIN="${3:?path to built php}"
-FPM_BIN="${4:?path to built php-fpm}"
+# Empty on Windows: that bundle's PHP comes from the FrankenPHP archive, not
+# from static-php-cli. Still positional so the argument order never differs.
+PHP_BIN="${3:-}"
+FPM_BIN="${4:-}"
 OUT_DIR="${5:?output dir}"
 
 CADDY_VERSION="2.11.4"
@@ -37,14 +39,18 @@ mkdir -p "$STAGE/bin"
 # --- PHP + php-fpm --------------------------------------------------------
 EXE=""
 [ "$OS" = "windows" ] && EXE=".exe"
-cp "$PHP_BIN" "$STAGE/bin/php${EXE}"
-# Windows has no php-fpm SAPI: the caller passes php.exe for both, so only ship
-# php-fpm when it is genuinely a distinct binary (POSIX). The HTTP-serving front
-# for Windows (FrankenPHP embed / a FastCGI shim) is resolved in Step 4.
-if [ "$PHP_BIN" != "$FPM_BIN" ]; then
-  cp "$FPM_BIN" "$STAGE/bin/php-fpm${EXE}"
+
+# Windows takes its PHP from the FrankenPHP archive below — one PHP for both
+# serving and the CLI, which is the only Windows arrangement that has been seen
+# to run the app. POSIX keeps the static-php-cli build and php-fpm.
+if [ "$OS" != "windows" ]; then
+  [ -n "$PHP_BIN" ] || { echo "php binary argument required on $OS" >&2; exit 1; }
+  cp "$PHP_BIN" "$STAGE/bin/php"
+  if [ "$PHP_BIN" != "$FPM_BIN" ]; then
+    cp "$FPM_BIN" "$STAGE/bin/php-fpm"
+  fi
+  chmod +x "$STAGE/bin/php" "$STAGE/bin/php-fpm" 2>/dev/null || true
 fi
-chmod +x "$STAGE/bin/php${EXE}" "$STAGE/bin/php-fpm${EXE}" 2>/dev/null || true
 
 # --- FrankenPHP (Windows only) --------------------------------------------
 # Windows has no php-fpm, so the Caddy -> fpm shape cannot be built there.
@@ -57,26 +63,49 @@ if [ "$OS" = "windows" ]; then
   FRANKEN_VERSION="${FRANKEN_VERSION:-1.12.7}"
   FRANKEN_TMP="$(mktemp -d)"
   echo "    fetching frankenphp ${FRANKEN_VERSION} (windows-x86_64)"
+  # Unpacked into its own directory: the whole payload is copied below, and
+  # extracting beside the archive would ship the 57 MB zip inside the bundle.
+  mkdir -p "$FRANKEN_TMP/unpacked"
   curl -fsSL -o "$FRANKEN_TMP/frankenphp.zip" \
     "https://github.com/php/frankenphp/releases/download/v${FRANKEN_VERSION}/frankenphp-windows-x86_64.zip"
-  unzip -q -o "$FRANKEN_TMP/frankenphp.zip" -d "$FRANKEN_TMP"
+  unzip -q -o "$FRANKEN_TMP/frankenphp.zip" -d "$FRANKEN_TMP/unpacked"
 
   # The archive's layout has changed between releases, so find the binary
   # rather than assuming where it sits.
-  FRANKEN_EXE="$(find "$FRANKEN_TMP" -name 'frankenphp*.exe' -type f | head -n 1)"
+  FRANKEN_EXE="$(find "$FRANKEN_TMP/unpacked" -name 'frankenphp*.exe' -type f | head -n 1)"
 
   if [ -z "$FRANKEN_EXE" ]; then
     echo "no frankenphp.exe inside the downloaded archive" >&2
     exit 1
   fi
 
-  cp "$FRANKEN_EXE" "$STAGE/bin/frankenphp.exe"
+  # Copy the WHOLE payload, not just the exe. frankenphp.exe on Windows is
+  # dynamically linked -- deplister reports php8ts.dll, brotlicommon.dll,
+  # brotlidec.dll, brotlienc.dll, libwatcher-c.dll and pthreadVC3.dll -- so the
+  # binary on its own cannot start, and the archive's ext/ is where every
+  # dynamic extension (pdo_sqlite included) lives. Shipping the exe alone is
+  # what made this bundle unable to serve a single request.
+  FRANKEN_ROOT="$(dirname "$FRANKEN_EXE")"
+  cp -R "$FRANKEN_ROOT/." "$STAGE/bin/"
+
+  # Build-time artefacts: import libraries and headers for compiling
+  # extensions against this PHP, of no use at runtime.
+  rm -rf "$STAGE/bin/dev"
+  rm -f "$STAGE/bin/php8embed.lib"
+
   rm -rf "$FRANKEN_TMP"
 
   # A zero-byte or HTML error page from a moved release would otherwise ship
   # as a "binary" and fail at first launch with nothing to explain it.
   if [ ! -s "$STAGE/bin/frankenphp.exe" ]; then
     echo "frankenphp download failed or was empty" >&2
+    exit 1
+  fi
+
+  # The archive is expected to carry a PHP alongside frankenphp; without it the
+  # queue worker and scheduler have nothing to run on.
+  if [ ! -s "$STAGE/bin/php.exe" ]; then
+    echo "no php.exe inside the frankenphp archive" >&2
     exit 1
   fi
 fi
@@ -86,27 +115,26 @@ echo "    fetching cacert.pem"
 curl -fsSL -o "$STAGE/bin/cacert.pem" https://curl.se/ca/cacert.pem
 
 # --- Caddy (official release static binary) -------------------------------
-case "${OS}_${ARCH}" in
-  macos_aarch64)  CADDY_OSARCH="mac_arm64" ;;
-  macos_x86_64)   CADDY_OSARCH="mac_amd64" ;;
-  linux_aarch64)  CADDY_OSARCH="linux_arm64" ;;
-  linux_x86_64)   CADDY_OSARCH="linux_amd64" ;;
-  windows_x86_64) CADDY_OSARCH="windows_amd64" ;;
-  *) echo "unsupported os/arch: ${OS}_${ARCH}" >&2; exit 1 ;;
-esac
-echo "    fetching caddy ${CADDY_VERSION} (${CADDY_OSARCH})"
-CADDY_TMP="$(mktemp -d)"
-CADDY_EXT="tar.gz"; [ "$OS" = "windows" ] && CADDY_EXT="zip"
-curl -fsSL -o "$CADDY_TMP/caddy.${CADDY_EXT}" \
-  "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_${CADDY_OSARCH}.${CADDY_EXT}"
-if [ "$CADDY_EXT" = "zip" ]; then
-  unzip -q -o "$CADDY_TMP/caddy.zip" -d "$CADDY_TMP"
-else
+# Not on Windows: FrankenPHP is the web server there, the supervisor never
+# starts caddy (its Windows process list is frankenphp/queue/scheduler) and
+# no Caddyfile is rendered. Shipping it added 48 MB nothing could run.
+if [ "$OS" != "windows" ]; then
+  case "${OS}_${ARCH}" in
+    macos_aarch64)  CADDY_OSARCH="mac_arm64" ;;
+    macos_x86_64)   CADDY_OSARCH="mac_amd64" ;;
+    linux_aarch64)  CADDY_OSARCH="linux_arm64" ;;
+    linux_x86_64)   CADDY_OSARCH="linux_amd64" ;;
+    *) echo "unsupported os/arch: ${OS}_${ARCH}" >&2; exit 1 ;;
+  esac
+  echo "    fetching caddy ${CADDY_VERSION} (${CADDY_OSARCH})"
+  CADDY_TMP="$(mktemp -d)"
+  curl -fsSL -o "$CADDY_TMP/caddy.tar.gz" \
+    "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_${CADDY_OSARCH}.tar.gz"
   tar -xzf "$CADDY_TMP/caddy.tar.gz" -C "$CADDY_TMP"
+  cp "$CADDY_TMP/caddy" "$STAGE/bin/caddy"
+  chmod +x "$STAGE/bin/caddy" 2>/dev/null || true
+  rm -rf "$CADDY_TMP"
 fi
-cp "$CADDY_TMP/caddy${EXE}" "$STAGE/bin/caddy${EXE}"
-chmod +x "$STAGE/bin/caddy${EXE}" 2>/dev/null || true
-rm -rf "$CADDY_TMP"
 
 # --- Full GPL ffmpeg (S-151 Step 8) ---------------------------------------
 # Under AGPLv3, GPL ffmpeg is compatible, so we bundle a FULL static build with
@@ -215,13 +243,42 @@ cp "$HERE/templates/README.runtime.txt" "$STAGE/README.txt" 2>/dev/null || true
 
 # --- sanity: the built php reports the required extensions ------------------
 echo "==> verifying extensions"
-REQUIRED="curl intl mbstring openssl pdo_sqlite sqlite3 gd exif zip pcntl session tokenizer"
 if [ "$OS" != "windows" ]; then
+  REQUIRED="curl intl mbstring openssl pdo_sqlite sqlite3 gd exif zip pcntl session tokenizer"
   MODS="$("$STAGE/bin/php" -m | tr '[:upper:]' '[:lower:]')"
   MISSING=""
   for e in $REQUIRED; do echo "$MODS" | grep -qx "$e" || MISSING="$MISSING $e"; done
   [ -n "$MISSING" ] && { echo "MISSING extensions:$MISSING" >&2; exit 1; }
   echo "    all required extensions present"
+else
+  # Windows extensions are DLLs in bin/ext, loaded by the php.ini the Server
+  # app writes at start (it is the only thing that knows the install path), so
+  # they cannot be checked by running php here -- no ini, nothing loaded. Check
+  # instead that the DLLs are present and that the binaries actually execute,
+  # which is what shipping frankenphp.exe alone silently failed.
+  REQUIRED_EXT="curl exif fileinfo gd intl mbstring openssl pdo_sqlite sodium sqlite3 zip"
+  MISSING=""
+  for e in $REQUIRED_EXT; do
+    [ -s "$STAGE/bin/ext/php_${e}.dll" ] || MISSING="$MISSING $e"
+  done
+  if [ -n "$MISSING" ]; then
+    echo "MISSING extension DLLs in bin/ext:$MISSING" >&2
+    exit 1
+  fi
+  echo "    all required extension DLLs present"
+
+  # Proves the dynamic links resolve. A missing php8ts.dll fails right here
+  # rather than on a user's machine with no message at all.
+  if ! "$STAGE/bin/frankenphp.exe" version >/dev/null 2>&1; then
+    echo "frankenphp.exe will not run -- missing DLL dependencies?" >&2
+    "$STAGE/bin/frankenphp.exe" version || true
+    exit 1
+  fi
+  if ! "$STAGE/bin/php.exe" --version >/dev/null 2>&1; then
+    echo "php.exe will not run -- missing DLL dependencies?" >&2
+    exit 1
+  fi
+  echo "    frankenphp.exe and php.exe both start"
 fi
 
 # --- what actually got packaged -------------------------------------------

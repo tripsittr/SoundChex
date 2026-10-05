@@ -11,10 +11,12 @@ use App\Enums\MediaItemType;
 use App\Events\DuplicateDetected;
 use App\Events\DuplicateMerged;
 use App\Events\DuplicateResolved;
+use App\Models\DuplicateDecision;
 use App\Models\MediaItem;
 use App\Models\MusicMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -163,11 +165,11 @@ class DuplicateDetector
             return null;
         }
 
-        // A decision the user already made is final — re-flagging a pair they
-        // chose to keep would refill the review list forever.
-        if ($item->duplicate_status?->isResolved()) {
-            return null;
-        }
+        // A reviewed file is still searched. The decision was about a pair, and
+        // it is remembered as one in `duplicate_decisions` — so the candidate
+        // queries below pass over the items this one has already been ruled
+        // against and consider everything else. Skipping the whole file here, as
+        // this used to, meant nothing added afterwards was ever compared to it.
 
         // Byte-identical first: it's the strongest signal and the only one that
         // may be auto-deleted.
@@ -178,6 +180,21 @@ class DuplicateDetector
         // Then the content pass, music only. Same recording, different file.
         if ($item->type === MediaItemType::Music && $this->settings->detectContentDuplicates()) {
             if ($match = $this->findContentMatch($item)) {
+                return $this->flag($item, $match['original'], $match['reason'], autoDeletable: false);
+            }
+        }
+
+        // And the same for film and television, which had no content pass at all.
+        //
+        // Only bytes were ever compared for video, and a second copy of a film
+        // almost never matches byte for byte: it is a different rip, a different
+        // release, or a download that stopped early. Two rows both titled "War
+        // Dogs", both resolved to TMDB 308266, one of them 18 MB against the
+        // other's 1.8 GB, sat in the library undetected -- and so did every
+        // Simpsons episode that had been fetched twice.
+        if ($this->settings->detectContentDuplicates()
+            && in_array($item->type, [MediaItemType::Movie, MediaItemType::Show], true)) {
+            if ($match = $this->findVideoMatch($item)) {
                 return $this->flag($item, $match['original'], $match['reason'], autoDeletable: false);
             }
         }
@@ -223,21 +240,145 @@ class DuplicateDetector
             return null;
         }
 
-        $candidates = MediaItem::unresolved()
+        $candidates = $this->eligibleOriginals($item)
             ->where('content_hash', $hash)
-            ->where('id', '!=', $item->id)
             // Same type only: a cover image and an audio file could in
             // principle collide, and merging across types would be wrong.
             ->where('type', $item->type)
-            // Chains are confusing to review, so a duplicate never becomes
-            // somebody else's original.
-            ->whereNull('duplicate_of_id')
             ->orderBy('id')
             ->get();
 
         $original = $this->pickOriginal($candidates);
 
         return $original ? ['original' => $original] : null;
+    }
+
+    /**
+     * The same film or episode in a different file, if any.
+     *
+     * Never auto-deletable, like the music content pass: the files genuinely
+     * differ, so only the user can say which copy to keep. A 1.8 GB rip and an
+     * 18 MB stub are the same film, and which one to throw away is obvious to a
+     * person and not to this code.
+     *
+     * @return array{original: MediaItem, reason: DuplicateMatch}|null
+     */
+    private function findVideoMatch(MediaItem $item): ?array
+    {
+        return $item->type === MediaItemType::Show
+            ? $this->findEpisodeMatch($item)
+            : $this->findFilmMatch($item);
+    }
+
+    /**
+     * Another copy of the same film.
+     *
+     * TMDB's id first -- it identifies the work, so it is as strong a signal as
+     * an ISRC. Failing that, title *and* year together: two different films do
+     * share a title, which is why the year is required rather than preferred,
+     * and why this one is only ever offered for review.
+     *
+     * @return array{original: MediaItem, reason: DuplicateMatch}|null
+     */
+    private function findFilmMatch(MediaItem $item): ?array
+    {
+        $meta = $item->movieMetadata;
+
+        if (filled($meta?->tmdb_id)) {
+            $original = $this->pickOriginal($this->videoCandidates($item)
+                ->whereHas('movieMetadata', fn ($q) => $q->where('tmdb_id', $meta->tmdb_id))
+                ->get());
+
+            if ($original) {
+                return ['original' => $original, 'reason' => DuplicateMatch::Tmdb];
+            }
+        }
+
+        if (blank($item->title) || blank($meta?->release_year)) {
+            return null;
+        }
+
+        $original = $this->pickOriginal($this->videoCandidates($item)
+            ->whereRaw('LOWER(TRIM(title)) = ?', [$this->normalise((string) $item->title)])
+            ->whereHas('movieMetadata', fn ($q) => $q->where('release_year', $meta->release_year))
+            ->get());
+
+        return $original ? ['original' => $original, 'reason' => DuplicateMatch::SameTitle] : null;
+    }
+
+    /**
+     * Another copy of the same episode.
+     *
+     * Season and episode number within the same series, which is the strongest
+     * identity an episode has -- stronger than its title, because series reuse
+     * titles across seasons and numbering does not.
+     *
+     * "The same series" means the same parent row where both have one, falling
+     * back to the series' own TMDB id. Matching on numbering alone would pair
+     * every S01E01 in the library with every other.
+     *
+     * @return array{original: MediaItem, reason: DuplicateMatch}|null
+     */
+    private function findEpisodeMatch(MediaItem $item): ?array
+    {
+        $meta = $item->showMetadata;
+
+        if ($meta === null) {
+            return null;
+        }
+
+        $sameSeries = function ($query) use ($item, $meta): void {
+            if ($item->parent_id !== null) {
+                $query->where('parent_id', $item->parent_id);
+
+                return;
+            }
+
+            // No parent on either side: the series' own id is the next best
+            // thing. Without even that there is nothing to scope by, and a
+            // library-wide match on "S06E01" would be nonsense.
+            if (filled($meta->tmdb_id)) {
+                $query->whereHas('showMetadata', fn ($q) => $q->where('tmdb_id', $meta->tmdb_id));
+
+                return;
+            }
+
+            $query->whereRaw('1 = 0');
+        };
+
+        if ($meta->season_number !== null && $meta->episode_number !== null) {
+            $original = $this->pickOriginal($this->videoCandidates($item)
+                ->where($sameSeries)
+                ->whereHas('showMetadata', fn ($q) => $q
+                    ->where('season_number', $meta->season_number)
+                    ->where('episode_number', $meta->episode_number))
+                ->get());
+
+            if ($original) {
+                return ['original' => $original, 'reason' => DuplicateMatch::Episode];
+            }
+        }
+
+        // Unnumbered: the title within the one series. Distinctive enough there,
+        // and worthless across the library, which is why it stays scoped.
+        if (blank($item->title) || $item->parent_id === null) {
+            return null;
+        }
+
+        $original = $this->pickOriginal($this->videoCandidates($item)
+            ->where($sameSeries)
+            ->whereRaw('LOWER(TRIM(title)) = ?', [$this->normalise((string) $item->title)])
+            ->get());
+
+        return $original ? ['original' => $original, 'reason' => DuplicateMatch::SameTitle] : null;
+    }
+
+    /** Eligible originals of the same media type, oldest first. */
+    private function videoCandidates(MediaItem $item): Builder
+    {
+        return $this->eligibleOriginals($item)
+            ->where('type', $item->type)
+            ->orderBy('id');
     }
 
     /**
@@ -358,11 +499,34 @@ class DuplicateDetector
      */
     private function musicCandidates(MediaItem $item): Builder
     {
+        return $this->eligibleOriginals($item)
+            ->where('type', MediaItemType::Music)
+            ->orderBy('id');
+    }
+
+    /**
+     * Items that may be called the original of this one.
+     *
+     * Excludes the pairs already ruled on, which is what lets a reviewed file
+     * keep being searched: the question that was answered stays answered, and
+     * every other question is still asked.
+     *
+     * A copy still awaiting a decision is not eligible — a duplicate becoming
+     * somebody else's original makes a chain, and chains are confusing to
+     * review. One that was *kept* is eligible: the user said both files are
+     * worth having, so a third copy should be flagged against it like any other
+     * file in the library. A merged row has had its file deleted and so cannot
+     * be anyone's original.
+     */
+    private function eligibleOriginals(MediaItem $item): Builder
+    {
         return MediaItem::unresolved()
             ->where('id', '!=', $item->id)
-            ->where('type', MediaItemType::Music)
-            ->whereNull('duplicate_of_id')
-            ->orderBy('id');
+            ->whereNotIn('id', DuplicateDecision::partnersOf($item->id))
+            ->where(function ($query) {
+                $query->whereNull('duplicate_of_id')
+                    ->orWhere('duplicate_status', DuplicateStatus::Kept->value);
+            });
     }
 
     /** Music candidates whose title matches this item's, normalised. */
@@ -465,6 +629,8 @@ class DuplicateDetector
                 'duplicate_status' => DuplicateStatus::Merged,
             ])->saveQuietly();
 
+            $this->remember($duplicate, DuplicateStatus::Merged);
+
             DuplicateMerged::dispatch($duplicate, $original);
 
             return true;
@@ -482,7 +648,7 @@ class DuplicateDetector
                 return false;
             }
 
-            if (! @unlink($duplicatePath)) {
+            if (! $this->deleteFile($duplicatePath)) {
                 return false;
             }
         }
@@ -493,6 +659,8 @@ class DuplicateDetector
             'file_path' => $original->file_path,
             'duplicate_status' => DuplicateStatus::Merged,
         ])->saveQuietly();
+
+        $this->remember($duplicate, DuplicateStatus::Merged);
 
         DuplicateMerged::dispatch($duplicate, $original);
 
@@ -538,12 +706,14 @@ class DuplicateDetector
         if ($loserPath === $keeperPath) {
             $duplicate->forceFill(['duplicate_status' => DuplicateStatus::Merged])->saveQuietly();
 
+            $this->remember($duplicate, DuplicateStatus::Merged);
+
             DuplicateResolved::dispatch($duplicate);
 
             return true;
         }
 
-        if ($loserPath !== null && is_file($loserPath) && ! @unlink($loserPath)) {
+        if ($loserPath !== null && is_file($loserPath) && ! $this->deleteFile($loserPath)) {
             return false;
         }
 
@@ -559,6 +729,8 @@ class DuplicateDetector
             'duplicate_status' => DuplicateStatus::Merged,
             'needs_cover_review' => $this->coversDiffer($keeper, $loser),
         ])->saveQuietly();
+
+        $this->remember($duplicate, DuplicateStatus::Merged);
 
         DuplicateResolved::dispatch($duplicate);
 
@@ -653,6 +825,8 @@ class DuplicateDetector
                 'duplicate_status' => DuplicateStatus::Merged,
             ])->saveQuietly();
 
+            $this->remember($duplicate, DuplicateStatus::Merged);
+
             return 'resolved';
         }
 
@@ -673,6 +847,101 @@ class DuplicateDetector
         $path = $item->absoluteFilePath();
 
         return $path !== null && is_file($path);
+    }
+
+    /**
+     * Which of two video copies to keep: the bigger file.
+     *
+     * Crude and nearly always right. Two copies of one film or episode differ
+     * by resolution, bitrate or completeness, and all three show up as size.
+     * The cases this is for are not close calls -- 2 MB against 41 MB is a
+     * download that stopped early, and 18 MB against 1.8 GB is a sample.
+     *
+     * A 10% margin, so two rips that differ by container overhead are still a
+     * tie and go to a person rather than being decided on a rounding error.
+     *
+     * @return array{0: MediaItem|null, 1: string}
+     */
+    private function decideVideoKeeper(MediaItem $a, MediaItem $b, bool $breakTies): array
+    {
+        $sa = $this->sizeOf($a);
+        $sb = $this->sizeOf($b);
+
+        if ($sa !== null && $sb !== null && $sa > 0 && $sb > 0) {
+            $margin = (int) (max($sa, $sb) * 0.10);
+
+            if (abs($sa - $sb) > $margin) {
+                return [$sa > $sb ? $a : $b, 'file_size'];
+            }
+        }
+
+        // One file gone and the other present: keep the one that exists.
+        if ($sa === null && $sb !== null) {
+            return [$b, 'only_copy_present'];
+        }
+
+        if ($sb === null && $sa !== null) {
+            return [$a, 'only_copy_present'];
+        }
+
+        // Too close to call. Deliberately not broken by row id even when asked:
+        // for video that is an arbitrary choice between two files someone cares
+        // about, and the whole point of a review list is that it gets reviewed.
+        return [null, 'tie'];
+    }
+
+    /** A row's file size, or null when the file is not there. */
+    private function sizeOf(MediaItem $item): ?int
+    {
+        $path = $item->absoluteFilePath();
+
+        if ($path === null || ! is_file($path)) {
+            return null;
+        }
+
+        $size = @filesize($path);
+
+        return $size === false ? null : $size;
+    }
+
+    /**
+     * Delete a file, clearing the read-only attribute first on Windows.
+     *
+     * `unlink()` will not remove a file marked read-only on Windows, and 285
+     * of the 2,843 files in one real library carry that attribute -- arrived
+     * with it, from a copy off another machine. Every merge of one of those
+     * failed, the row stayed pending, and the duplicate came back at the next
+     * sweep: "I merged it and they came back".
+     *
+     * `chmod` is how PHP clears that attribute on Windows. Done only after the
+     * caller has decided to delete, so nothing is made writable that is not
+     * already about to go.
+     */
+    private function deleteFile(string $path): bool
+    {
+        if (@unlink($path)) {
+            return true;
+        }
+
+        // Read-only is the common reason and the recoverable one.
+        if (@chmod($path, 0666) && @unlink($path)) {
+            Log::info('Cleared the read-only attribute to delete a duplicate', [
+                'path' => $path,
+            ]);
+
+            return true;
+        }
+
+        // Said out loud, because the alternative is a toast that reports a
+        // missing file for something that is present and locked.
+        Log::error('Could not delete a duplicate copy', [
+            'path' => $path,
+            'exists' => is_file($path),
+            'writable' => is_writable($path),
+            'hint' => 'On Windows a read-only file cannot be unlinked; a file held open by another process cannot either.',
+        ]);
+
+        return false;
     }
 
     /**
@@ -707,6 +976,16 @@ class DuplicateDetector
      */
     public function decideKeeper(MediaItem $a, MediaItem $b, bool $breakTies = false): array
     {
+        // Film and television first, because none of the music tests below say
+        // anything about them: bitrate and sample rate come from
+        // `musicMetadata`, which a film does not have, and tag completeness is
+        // music tags. Every video pair therefore came out a tie, and a tie
+        // broken by row id is not a quality decision -- it deleted a 43 MB
+        // episode to keep a 17 MB one, and a 41 MB episode to keep 2 MB.
+        if ($a->type !== MediaItemType::Music) {
+            return $this->decideVideoKeeper($a, $b, $breakTies);
+        }
+
         // 1. Bitrate (bits per second), when both are measurable.
         $ra = $this->bitrate($a);
         $rb = $this->bitrate($b);
@@ -781,6 +1060,24 @@ class DuplicateDetector
         $duplicate->forceFill([
             'duplicate_status' => DuplicateStatus::Kept,
         ])->saveQuietly();
+
+        $this->remember($duplicate, DuplicateStatus::Kept);
+    }
+
+    /**
+     * Record that this pair has been ruled on.
+     *
+     * Without this the next sweep asks again, because the status on the row is
+     * overwritten the moment the file matches something else. The pair is what
+     * was decided, so the pair is what is stored.
+     */
+    private function remember(MediaItem $duplicate, DuplicateStatus $decision): void
+    {
+        if ($duplicate->duplicate_of_id === null) {
+            return;
+        }
+
+        DuplicateDecision::record($duplicate->id, (int) $duplicate->duplicate_of_id, $decision);
     }
 
     /**

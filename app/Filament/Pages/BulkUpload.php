@@ -118,7 +118,7 @@ class BulkUpload extends Page
                             // picker, and the filename for the rule that
                             // actually decides.
                             ->acceptedFileTypes(static::acceptedFileTypes())
-                            ->rule('extensions:' . implode(',', static::acceptedBareExtensions()))
+                            ->rule('extensions:'.implode(',', static::acceptedBareExtensions()))
                             ->maxSize(static::maxKilobytes())
                             ->uploadingMessage('Uploading — large files take a while on a home connection.')
                             ->helperText(static::acceptedSummary()),
@@ -147,9 +147,9 @@ class BulkUpload extends Page
         $this->form->fill(['files' => []]);
 
         Notification::make()
-            ->title(count($files) . ' ' . str('file')->plural(count($files)) . ' uploaded')
+            ->title(count($files).' '.str('file')->plural(count($files)).' uploaded')
             ->body($result['imported'] > 0
-                ? $result['imported'] . ' catalogued and queued for identification.'
+                ? $result['imported'].' catalogued and queued for identification.'
                 : 'Already in the library, or still being written — the next scan will pick anything up.')
             ->success()
             ->send();
@@ -205,9 +205,26 @@ class BulkUpload extends Page
             ->values()
             ->all();
 
-        // The catch-all, and the dotted extensions, so a file whose type the
-        // browser cannot name still reaches the server-side check.
-        return array_merge($types, ['application/octet-stream'], static::acceptedExtensions());
+        // Wildcards, because the specific list above cannot win.
+        //
+        // The browser does not sniff the file — on Windows it reads the type
+        // out of the registry, and the registry says `.avi` is `video/avi`.
+        // The list above says `video/x-msvideo`, so every .avi was refused by
+        // the picker before a byte was sent, and `.mpg` (`video/mpeg`) had no
+        // entry at all. Those names vary by machine and by browser, so
+        // enumerating them is a losing game: the same file is accepted on one
+        // computer and rejected on another.
+        //
+        // `audio/*` and `video/*` cover all of it, and Laravel's `mimetypes`
+        // rule honours the same wildcard, so the server-side check agrees with
+        // the picker. The specific types above stay for books, which have no
+        // usable wildcard, and the real decision is still the `extensions:`
+        // rule on the filename — the only signal that does not drift.
+        return array_merge(
+            $types,
+            ['audio/*', 'video/*', 'application/octet-stream'],
+            static::acceptedExtensions(),
+        );
     }
 
     /**
@@ -227,7 +244,7 @@ class BulkUpload extends Page
     protected static function acceptedExtensions(): array
     {
         return collect(static::acceptedBareExtensions())
-            ->map(fn (string $extension): string => '.' . $extension)
+            ->map(fn (string $extension): string => '.'.$extension)
             ->all();
     }
 
@@ -286,9 +303,9 @@ class BulkUpload extends Page
         $limit = round(static::maxKilobytes() / 1024 / 1024, 1);
 
         return 'Accepted: '
-            . collect(config('library.type_extensions', []))
+            .collect(config('library.type_extensions', []))
                 ->map(fn (array $extensions): string => strtoupper(implode(', ', array_slice($extensions, 0, 4))))
                 ->implode(' · ')
-            . '. Up to ' . $limit . ' GB per file.';
+            .'. Up to '.$limit.' GB per file.';
     }
 }

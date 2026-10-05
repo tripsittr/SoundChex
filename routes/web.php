@@ -20,16 +20,26 @@ use App\Http\Controllers\WatchlistController;
 use App\Http\Middleware\EnsureDlnaEnabled;
 use App\Http\Middleware\EnsureRegistrationIsOpen;
 use App\Http\Middleware\RequireProfileUnlock;
+use App\Models\User;
 use App\Services\NetworkAddresses;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // The front door. Laravel's welcome page advertised the framework and told a
 // visitor nothing — on a publicly reachable URL, root should be the library
 // for anyone signed in and the login screen for everyone else.
-Route::get('/', fn () => redirect()->route(
-    auth()->check() ? 'media.home' : 'login',
-));
+// A server with no account yet sends you to registration rather than to a login
+// form you cannot possibly satisfy. It stays that way until an account exists.
+Route::get('/', function () {
+    if (auth()->check()) {
+        return redirect()->route('media.home');
+    }
+
+    return redirect()->route(
+        User::query()->doesntExist() ? 'register' : 'login',
+    );
+});
 
 /*
 | Proof that this address is a SoundChex server.
@@ -68,21 +78,34 @@ Route::get('/soundchex-addresses.json', fn () => response()
     ->middleware('auth')
     ->name('addresses');
 
-Route::get('/soundchex.json', function () {
+Route::get('/soundchex.json', function (Request $request) {
     // The build manifest's digest, which changes exactly when the frontend
     // does. Clients compare it against what they loaded and reload themselves
     // when it moves, so a deploy reaches a phone without anyone reinstalling
     // anything — which matters most when the phone is not in the same building.
     $manifest = public_path('build/manifest.json');
 
+    $body = [
+        'app' => 'soundchex',
+        'version' => 1,
+        'build' => is_file($manifest)
+            ? substr(hash_file('sha1', $manifest), 0, 12)
+            : null,
+    ];
+
+    // Whether this server still needs its first account, so the desktop app can
+    // open on registration instead of a login form nobody can satisfy.
+    //
+    // Loopback only. This endpoint is public and sends
+    // `Access-Control-Allow-Origin: *`, and "nobody owns this library yet" is
+    // precisely what someone scanning a network wants to know — the first
+    // account is the one that gets the keys. The app asking is on the machine.
+    if (in_array($request->ip(), ['127.0.0.1', '::1'], true)) {
+        $body['setup_required'] = User::query()->doesntExist();
+    }
+
     return response()
-        ->json([
-            'app' => 'soundchex',
-            'version' => 1,
-            'build' => is_file($manifest)
-                ? substr(hash_file('sha1', $manifest), 0, 12)
-                : null,
-        ])
+        ->json($body)
         ->header('Access-Control-Allow-Origin', '*');
 })->name('identity');
 

@@ -299,6 +299,17 @@ class CurrentProfile
             'name' => $user->name ?: 'Me',
             'color' => Profile::COLORS[0],
             'is_default' => true,
+            // The first profile on an account is its owner — the same rule the
+            // `is_owner` migration applies to existing installs. It was missing
+            // here, and a fresh install only ever gets its profile this way:
+            // migrations run before anyone registers, so the backfill has
+            // nothing to mark, and nothing marked it afterwards.
+            //
+            // The effect was that the person who set the server up could not
+            // open the admin panel. `canAccessPanel` asks the profile, not the
+            // account, so an owner with an unflagged profile was bounced to
+            // Filament's login — on an account that was already signed in.
+            'is_owner' => true,
         ]);
     }
 }

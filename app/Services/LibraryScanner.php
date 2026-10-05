@@ -826,7 +826,20 @@ class LibraryScanner
             ->followLinks()
             // macOS resource forks and hidden junk aren't media.
             ->notName('._*')
-            ->ignoreDotFiles(true);
+            ->ignoreDotFiles(true)
+            // A folder can be listed and then gone before the walk reaches it:
+            // the organizer is moving files out of the inbox the whole time a
+            // scan is reading it, and an album directory empties and is pruned
+            // mid-iteration. Without this, Finder throws AccessDeniedException
+            // from RecursiveDirectoryIterator and the entire scan dies — which
+            // is what "Scan for new files" did, reporting only that the page
+            // had failed.
+            //
+            // The cost is that a directory which is genuinely unreadable is
+            // skipped silently rather than failing loudly. That is the right
+            // trade here: one unreadable folder should not cost the other
+            // several thousand.
+            ->ignoreUnreadableDirs();
 
         // Skipping the sorted library matters most: walking it would re-import
         // the whole collection on every pass.

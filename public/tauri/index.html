@@ -153,7 +153,7 @@
      * reinstall. Handed to the app so a device running an old shell is visible
      * rather than merely suspected.
      */
-    const SHELL_BUILD = '695a1c6c6656';
+    const SHELL_BUILD = '57db5889f79e';
 
 
     /** The native app's version, as declared in tauri.conf.json. */
@@ -314,9 +314,6 @@
 
         if (!el) return;
 
-        // "Could not reach that server" should interrupt; "Connecting…"
-        // should not (S-441).
-        el.setAttribute('aria-live', isError ? 'assertive' : 'polite');
         el.textContent = message;
         el.dataset.error = String(isError);
     };
