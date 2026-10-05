@@ -66,6 +66,91 @@ return [
     ],
 
     /**
+     * Community tags that are not genres, as patterns matched case-insensitively
+     * against the whole lower-cased tag.
+     *
+     * Last.fm's tags are a folksonomy, so alongside "shoegaze" and "post-punk"
+     * come "seen live", "albums i own", "favourites" and "awesome". Written into
+     * `media_tags` as genres they reach the genre filter and the genre chart,
+     * which are the library's one curated facet — and a genre list containing
+     * "seen live" is a genre list nobody trusts again.
+     *
+     * These are rejected rather than canonicalised. "seen live" is not a
+     * misspelled genre, and mapping it to one would invent a fact.
+     *
+     * Decades and years are handled in code, not here: they are a shape
+     * ("80s", "1990s", "2010") rather than a list.
+     */
+    'tag_blocklist' => [
+        // Possession and personal lists.
+        '\b(my|i|mine)\b',
+        'own(ed)?$',
+        'albums? i ',
+        'collection',
+        'library',
+        'playlist',
+        'wishlist',
+
+        // Judgements and reactions.
+        'favou?rite',
+        'best',
+        'worst',
+        'awesome',
+        'amazing',
+        'perfect',
+        'beautiful',
+        'love',
+        'brilliant',
+        'masterpiece',
+        'overrated',
+        'underrated',
+        'guilty pleasure',
+
+        // Listening circumstances, not the music.
+        'seen live',
+        'want to see live',
+        'to listen',
+        'to check out',
+        'heard on',
+        'radio',
+        'spotify',
+        'vinyl',
+        'cd$',
+        'mp3',
+        'itunes',
+
+        // Nationality and language: real facts, and not genres. A genre filter
+        // offering "british" next to "shoegaze" is answering a different
+        // question than the one it was asked.
+        '^(british|american|english|scottish|irish|welsh|canadian|australian|german|french|swedish|norwegian|japanese|korean|spanish|italian|dutch|danish|finnish|polish|russian|brazilian|mexican)$',
+
+        // Gender and line-up descriptions.
+        'vocalist',
+        'female',
+        'male',
+        'singer.songwriter.*female',
+        'band$',
+        'duo$',
+        'solo',
+
+        // Catch-alls that say nothing.
+        '^music$',
+        '^songs?$',
+        '^album$',
+        '^artist$',
+        '^track$',
+        '^good',
+        '^cool',
+        '^nice',
+        '^other$',
+        '^misc',
+        '^various',
+        '^unknown$',
+        '^untagged$',
+        '^\W+$',
+    ],
+
+    /**
      * Separators used to split multi-value tag fields (genre, artist) that
      * arrive as a single delimited string.
      */

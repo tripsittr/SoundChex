@@ -17,6 +17,7 @@ use App\Jobs\ImportSubtitlesJob;
 use App\Models\MediaItem;
 use App\Models\Notification;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use SplFileInfo;
 use Symfony\Component\Finder\Finder;
@@ -36,6 +37,7 @@ class LibraryScanner
         private EpisodeParser $episodes,
         private ContainerProbe $containers,
         private MetadataHistory $history,
+        private LocalArtwork $artwork,
     ) {}
 
     /**
@@ -53,6 +55,8 @@ class LibraryScanner
         $result = [
             'imported' => 0,
             'unsettled' => 0,
+            'unreadable' => 0,
+            'unreadable_files' => [],
             'duplicates' => 0,
             'folders' => count($folders),
             'titles' => [],
@@ -107,6 +111,19 @@ class LibraryScanner
                 $classified = $this->classify($file, $path);
 
                 if ($classified === null) {
+                    // Counted and named. This was a bare `continue`, so a file
+                    // the scanner could not make a title out of was indis-
+                    // tinguishable from one that was already catalogued: the
+                    // scan printed nothing, exited 0, and five files stayed in
+                    // the inbox for four months with nothing to say why.
+                    $result['unreadable']++;
+                    $result['unreadable_files'][] = $path;
+
+                    Log::warning('A media file could not be catalogued', [
+                        'path' => $path,
+                        'hint' => 'No title could be read from the filename. Renaming it to something with words in it is usually enough.',
+                    ]);
+
                     continue;
                 }
 
@@ -128,6 +145,11 @@ class LibraryScanner
                         $result['duplicates']++;
                     }
 
+                    // Cover art the files brought with them — a poster.jpg or a
+                    // named image beside the media — before enrichment is asked
+                    // to fetch one. Local, correct, and no API call.
+                    $this->applyLocalArtwork($item);
+
                     if ($enrich) {
                         EnrichMediaItemJob::dispatch($item->id);
                     }
@@ -135,7 +157,11 @@ class LibraryScanner
                     // Captions that shipped with the file — embedded streams
                     // and sidecar .srt files. Local only, so this costs
                     // nothing but a little CPU and needs no account.
-                    if ($type === MediaItemType::Movie && config('subtitles.auto_import', true)) {
+                    // Both films and episodes carry sidecar captions; only
+                    // films were importing them. ImportSubtitlesJob reads the
+                    // item's own path, so it is type-agnostic.
+                    if (in_array($type, [MediaItemType::Movie, MediaItemType::Show], true)
+                        && config('subtitles.auto_import', true)) {
                         ImportSubtitlesJob::dispatch($item->id);
                     }
 
@@ -421,6 +447,11 @@ class LibraryScanner
                         $this->attachToSeries($item, $marker['series'], $userId);
                     }
 
+                    // The cover the files brought, the same as a scan. Unlike
+                    // enrichment this is local and free, so it runs even when a
+                    // recovery was asked not to go to the network.
+                    $this->applyLocalArtwork($item);
+
                     // Opt-in, unlike a scan. Recovery is about getting the rows
                     // back; enrichment reads tags, extracts cover art and makes
                     // network requests, which is a separate decision from
@@ -440,6 +471,29 @@ class LibraryScanner
         }
 
         return $result;
+    }
+
+    /**
+     * Set an item's cover from a sidecar image, when it has none yet.
+     *
+     * Shared by scan() and recover() so the two agree. Never overwrites: an
+     * item that already has a cover keeps it, and a later re-fetch can still
+     * replace a local one. Failures are swallowed -- a missing or unreadable
+     * sidecar must not stop a file being catalogued.
+     */
+    private function applyLocalArtwork(MediaItem $item): void
+    {
+        if (filled($item->cover_image_url)) {
+            return;
+        }
+
+        $cover = $this->artwork->discover($item);
+
+        if ($cover === null) {
+            return;
+        }
+
+        $item->forceFill(['cover_image_url' => $cover])->saveQuietly();
     }
 
     /**
@@ -638,7 +692,20 @@ class LibraryScanner
 
         // "Title by Author Name" — the author is dropped here because the
         // metadata source resolves it far more reliably from the title alone.
-        $title = preg_replace('/\s+by\s+[^-–—]+$/i', '', $title) ?? $title;
+        //
+        // Books only, and not from the start of the title. This ran on every
+        // type and swallowed any track whose name begins with "By": "01 - By
+        // My Side" matched " By My Side" and was stripped down to "01 -",
+        // which then read as a filename with no title in it and was dropped —
+        // silently, because an unclassifiable file was not counted. Five music
+        // files sat in the inbox for four months that way.
+        //
+        // `(?!$)` is not enough on its own: the guard that matters is that
+        // something precedes the "by", so a title IS the author clause rather
+        // than merely containing the word.
+        if ($type === MediaItemType::Book) {
+            $title = preg_replace('/(?<=\S)\s+by\s+[^-–—]+$/i', '', $title) ?? $title;
+        }
 
         // Underscores and dots stand in for spaces in a lot of downloads.
         $title = str_replace(['_', '.'], ' ', $title);
@@ -660,7 +727,12 @@ class LibraryScanner
         // A long unbroken run of mixed-case characters with no spaces is a
         // generated name (Livewire temp uploads look exactly like this), not
         // a title anyone would search for.
-        if (! str_contains($title, ' ') && strlen($title) > 24) {
+        //
+        // Characters, not bytes. `strlen` counted "D‐I‐V‐O‐R‐C‐E" as 25 and
+        // threw it away as a hash: its hyphens are U+2010, three bytes each,
+        // so thirteen characters measured twenty-five. Any title with accents
+        // or typographic punctuation was liable to the same thing.
+        if (! str_contains($title, ' ') && mb_strlen($title) > 24) {
             return null;
         }
 
