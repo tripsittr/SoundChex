@@ -260,6 +260,19 @@ jobs:
             test -s src-tauri/runtime/bin/php-fpm || { echo "php-fpm missing"; exit 1; }
           fi
 
+      # tauri.server.conf.json declares `app-payload.zip` as a bundle resource,
+      # and tauri-build panics outright if it is absent:
+      #
+      #     failed to run tauri-build: resource path `app-payload.zip` doesn't exist
+      #
+      # Nothing in package.json, the scripts or this workflow had ever created
+      # it — so the Server app could only be built by someone who happened to
+      # run this by hand first, which is why it only ever existed on the
+      # maintainer's Mac. Composer is already installed with --no-dev above,
+      # which is what the script warns about when it is not.
+      - name: Package the application
+        run: php scripts/package-app-payload.php
+
       - name: Build the Server app
         run: npm run build:server
 
