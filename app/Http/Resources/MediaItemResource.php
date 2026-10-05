@@ -48,6 +48,12 @@ class MediaItemResource extends JsonResource
             'wishlist' => (bool) $item->wishlist,
             'user_rating' => $item->user_rating,
             'updated_at' => $item->updated_at?->toIso8601String(),
+            // When this entered the library, which is a different question
+            // from when it last changed — an enrichment pass moves
+            // `updated_at` on everything it touches, so a "recently added"
+            // row built on it fills with whatever the scanner last looked at
+            // rather than what is new (S-451).
+            'added_at' => $item->created_at?->toIso8601String(),
             // When this profile last played it, for a "recently played" sort
             // (S-391). Null for something never played. Read from the loaded
             // relation rather than queried, so a list of 200 does not become
