@@ -36,6 +36,7 @@ class LibraryScanner
         private EpisodeParser $episodes,
         private ContainerProbe $containers,
         private MetadataHistory $history,
+        private LocalArtwork $artwork,
     ) {}
 
     /**
@@ -128,6 +129,11 @@ class LibraryScanner
                         $result['duplicates']++;
                     }
 
+                    // Cover art the files brought with them — a poster.jpg or a
+                    // named image beside the media — before enrichment is asked
+                    // to fetch one. Local, correct, and no API call.
+                    $this->applyLocalArtwork($item);
+
                     if ($enrich) {
                         EnrichMediaItemJob::dispatch($item->id);
                     }
@@ -135,7 +141,11 @@ class LibraryScanner
                     // Captions that shipped with the file — embedded streams
                     // and sidecar .srt files. Local only, so this costs
                     // nothing but a little CPU and needs no account.
-                    if ($type === MediaItemType::Movie && config('subtitles.auto_import', true)) {
+                    // Both films and episodes carry sidecar captions; only
+                    // films were importing them. ImportSubtitlesJob reads the
+                    // item's own path, so it is type-agnostic.
+                    if (in_array($type, [MediaItemType::Movie, MediaItemType::Show], true)
+                        && config('subtitles.auto_import', true)) {
                         ImportSubtitlesJob::dispatch($item->id);
                     }
 
@@ -421,6 +431,11 @@ class LibraryScanner
                         $this->attachToSeries($item, $marker['series'], $userId);
                     }
 
+                    // The cover the files brought, the same as a scan. Unlike
+                    // enrichment this is local and free, so it runs even when a
+                    // recovery was asked not to go to the network.
+                    $this->applyLocalArtwork($item);
+
                     // Opt-in, unlike a scan. Recovery is about getting the rows
                     // back; enrichment reads tags, extracts cover art and makes
                     // network requests, which is a separate decision from
@@ -440,6 +455,29 @@ class LibraryScanner
         }
 
         return $result;
+    }
+
+    /**
+     * Set an item's cover from a sidecar image, when it has none yet.
+     *
+     * Shared by scan() and recover() so the two agree. Never overwrites: an
+     * item that already has a cover keeps it, and a later re-fetch can still
+     * replace a local one. Failures are swallowed -- a missing or unreadable
+     * sidecar must not stop a file being catalogued.
+     */
+    private function applyLocalArtwork(MediaItem $item): void
+    {
+        if (filled($item->cover_image_url)) {
+            return;
+        }
+
+        $cover = $this->artwork->discover($item);
+
+        if ($cover === null) {
+            return;
+        }
+
+        $item->forceFill(['cover_image_url' => $cover])->saveQuietly();
     }
 
     /**
