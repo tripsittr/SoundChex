@@ -239,8 +239,29 @@ jobs:
             | head -1 || true)
 
           [ -n "$archive" ] || { echo "no runtime archive downloaded"; ls -R runtime-archive; exit 1; }
+          # PowerShell for the Windows zip, not `unzip`.
+          #
+          # package-runtime.sh builds it with Compress-Archive when git-bash
+          # has no `zip` CLI — which on the runner is always — and
+          # Compress-Archive writes BACKSLASH path separators. Info-ZIP warns
+          # and then extracts the entries as flat files with literal
+          # backslashes in their names:
+          #
+          #     warning: ... appears to use backslashes as path separators
+          #
+          # so no directory is created, the `find -type d` below matches
+          # nothing, and the step fails saying the bundle is missing. The
+          # archive is fine; `unzip` simply cannot read what Windows wrote.
+          # Expand-Archive reads its own format correctly.
           case "$archive" in
-            *.zip)    unzip -q "$archive" -d runtime-unpacked ;;
+            *.zip)
+              if command -v powershell >/dev/null 2>&1; then
+                powershell -NoProfile -Command \
+                  "Expand-Archive -Path '$archive' -DestinationPath 'runtime-unpacked' -Force"
+              else
+                unzip -q "$archive" -d runtime-unpacked
+              fi
+              ;;
             *.tar.gz) tar -xzf "$archive" -C runtime-unpacked ;;
           esac
           # `|| true` for the same reason: a pipeline whose head closes early
