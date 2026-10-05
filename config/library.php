@@ -265,4 +265,39 @@ return [
         'mp3', 'flac', 'm4a', 'aac', 'wav', 'aiff', 'aif',
         'ogg', 'oga', 'opus', 'wma', 'alac', 'ape', 'wv',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Artwork Sidecars
+    |--------------------------------------------------------------------------
+    |
+    | Cover art that arrives beside a media file, the way Emby, Jellyfin and
+    | plain folder libraries store it: a poster.jpg in each film's folder, a
+    | folder.jpg in each album's, or an image named after the file. When a newly
+    | catalogued item has no cover yet, the scanner uses the local one before
+    | enrichment is asked to fetch a remote one -- it is already correct and
+    | costs no API call. Nothing is overwritten, so a re-fetch can still replace
+    | it later.
+    |
+    | Named images ("War Dogs (2016).jpg") are matched anywhere, because the
+    | name ties them to one file. Generic names (poster.jpg) are matched only
+    | inside a dedicated subfolder, never at the top of an inbox where many
+    | unrelated files share one directory and the image belongs to nothing.
+    |
+    */
+
+    'artwork_sidecars' => [
+
+        'enabled' => (bool) env('LIBRARY_ARTWORK_SIDECARS', true),
+
+        'extensions' => ['jpg', 'jpeg', 'png', 'webp'],
+
+        // Suffixes allowed after the media file's own name: "<base><suffix>.jpg".
+        // The empty string is "<base>.jpg" itself.
+        'named_suffixes' => ['', '-poster', '.poster', '-cover', '.cover', '-fanart', '.fanart', '-thumb'],
+
+        // Conventional cover filenames, in the order they are preferred. Only
+        // honoured inside a dedicated media subfolder.
+        'generic_names' => ['poster', 'cover', 'folder', 'front', 'albumart', 'default', 'fanart'],
+    ],
 ];
