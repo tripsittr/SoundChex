@@ -38,11 +38,10 @@
 	root * "{$SOUNDCHEX_ROOT}"
 	encode gzip
 
-	# The cap is ours now. Caddy rejects an over-cap body with 413 before PHP
-	# ever sees it (a hard gate — not just post_max_size).
-	request_body {
-		max_size 25MB
-	}
+	# No cap. This was 25MB, which is right for artwork and stops a film: the
+	# library takes multi-gigabyte media, and Caddy refuses an over-cap body
+	# with 413 before PHP sees it, so the limit has to live in one place. That
+	# place is PHP's post_max_size, which the upload form reads back.
 
 	php_fastcgi {$SOUNDCHEX_FPM}
 	file_server

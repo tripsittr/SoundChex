@@ -32,6 +32,26 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Release reservations when a worker starts
+    |--------------------------------------------------------------------------
+    |
+    | A reserved row does not record which worker holds it, so a worker killed
+    | mid-job leaves its job reserved and nothing reconsiders it until
+    | retry_after -- which is deliberately longer than the longest job can run,
+    | so a restart would otherwise cost that job six hours. Freeing them as a
+    | worker starts fixes that, and is safe only because the bundled supervisor
+    | runs exactly one worker: nothing can be holding anything while it starts.
+    |
+    | Turn this off if more than one worker serves this queue. A starting worker
+    | would otherwise free a job a sibling is part-way through, and that job
+    | would run twice.
+    |
+    */
+
+    'release_reservations_on_worker_start' => (bool) env('QUEUE_RELEASE_RESERVATIONS_ON_START', true),
+
     'connections' => [
 
         'sync' => [
@@ -43,7 +63,15 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Must exceed the worker's --timeout, which the supervisor sets to
+            // 21900 for the jobs that have no ceiling of their own -- transcoding
+            // and server-to-server transfers, which legitimately run for hours.
+            // Below that, the queue hands a still-running job to another worker,
+            // and a job with tries = 1 fails on the spot with
+            // MaxAttemptsExceededException while the original is still working.
+            // The cost of a high value is that a job lost to a hard crash waits
+            // this long to be retried; a spurious failure is worse.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 22200),
             'after_commit' => false,
         ],
 

@@ -110,6 +110,25 @@ class NetworkAddresses
         // "dev" and the command still writes its error to the page.
         $quiet = PHP_OS_FAMILY === 'Windows' ? '2>NUL' : '2>/dev/null';
 
+        // A `tailscale serve` front end first, when one is configured, because
+        // it is the address that actually works from another device.
+        //
+        // The raw tailnet address below needs an inbound firewall rule for the
+        // port, and on Windows there is none: the installer runs per-user and
+        // cannot elevate to add one. So the server answered on loopback, this
+        // list advertised http://100.x.x.x:8000, and every phone on the tailnet
+        // was refused -- which is indistinguishable from a broken server.
+        //
+        // `tailscale serve` has no such problem. tailscaled is already a
+        // privileged service: it accepts the connection itself and forwards it
+        // to loopback, so nothing has to be opened. It also brings a real
+        // certificate and a hostname, instead of an IP over plain http.
+        $serve = $this->tailscaleServeUrl();
+
+        if ($serve !== null) {
+            $found[] = $serve;
+        }
+
         $tailscale = trim((string) @shell_exec($this->tailscaleBinary() . ' ip -4 ' . $quiet));
 
         if ($tailscale !== '') {
@@ -123,6 +142,71 @@ class NetworkAddresses
         }
 
         return array_values(array_unique($found));
+    }
+
+    /**
+     * The `tailscale serve` front end for this server, when there is one.
+     *
+     * Read from `tailscale serve status`, which prints the public URL and what
+     * it proxies to:
+     *
+     *     https://a5.tail7e590c.ts.net (tailnet only)
+     *     |-- / proxy http://127.0.0.1:8000
+     *
+     * Only accepted when the proxy target is this server's own port. A tailnet
+     * can serve several things, and handing a client the URL of somebody
+     * else's would be worse than handing it nothing.
+     */
+    public function tailscaleServeUrl(): ?string
+    {
+        $port = (int) parse_url((string) config('app.url'), PHP_URL_PORT) ?: 8000;
+        $quiet = PHP_OS_FAMILY === 'Windows' ? '2>NUL' : '2>/dev/null';
+
+        $output = (string) @shell_exec($this->tailscaleBinary().' serve status '.$quiet);
+
+        return $this->parseServeStatus($output, $port);
+    }
+
+    /**
+     * The front-end URL in `tailscale serve status` output, if it is ours.
+     *
+     * Separate from the command so the parsing can be tested without a
+     * tailnet: the shape of this output is the only thing that can break.
+     */
+    public function parseServeStatus(string $output, int $port): ?string
+    {
+        if (trim($output) === '') {
+            return null;
+        }
+
+        $url = null;
+
+        foreach (preg_split('~\r?\n~', $output) ?: [] as $line) {
+            // A line with no indent starts a new front end; the proxy lines
+            // belonging to it follow, indented.
+            if (preg_match('~^(https://[^\s]+)~', $line, $m) === 1) {
+                $url = rtrim($m[1], '/');
+
+                continue;
+            }
+
+            if ($url === null) {
+                continue;
+            }
+
+            // Accept the front end only once a proxy line names our port, and
+            // only when it serves the root -- a sub-path front end would give
+            // clients a URL that breaks every absolute link the app writes.
+            if (preg_match('~^\s*\|--\s*/\s+proxy\s+https?://(?:127\.0\.0\.1|localhost)(?::(\d+))?~i', $line, $m) === 1) {
+                $target = isset($m[1]) && $m[1] !== '' ? (int) $m[1] : 80;
+
+                if ($target === $port) {
+                    return $url;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

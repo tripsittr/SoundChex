@@ -6,6 +6,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
+use App\Http\Middleware\SetAppUrl;
 use App\Models\InstalledPlugin;
 use App\Plugins\PluginLoader;
 use App\Plugins\Registry;
@@ -47,8 +48,15 @@ class AdminPanelProvider extends PanelProvider
             // The file names describe the artwork, not the theme: the "dark"
             // logo has black elements and needs a light background, and vice
             // versa. So they pair with the opposite-named mode.
-            ->brandLogo(fn (): string => asset('storage/soundchex_logo_dark.png'))
-            ->darkModeBrandLogo(fn (): string => asset('storage/soundchex_logo_white.png'))
+            //
+            // Through Vite, not asset('storage/...'). These pointed into
+            // storage/app/public, which is the user's own uploaded content --
+            // provisioning deliberately never ships it, and the files were not
+            // in the repository either, so every packaged install showed two
+            // broken images. The build already carries these two, and every
+            // other logo in the app is resolved the same way.
+            ->brandLogo(fn (): string => app(Vite::class)->asset('resources/images/logo-dark-on-light.png'))
+            ->darkModeBrandLogo(fn (): string => app(Vite::class)->asset('resources/images/logo-light-on-dark.png'))
             ->brandLogoHeight('3.5rem')
             ->sidebarWidth('15rem')
             ->renderHook(
@@ -147,6 +155,16 @@ class AdminPanelProvider extends PanelProvider
                     ->url(fn (): string => route('media.home')),
             ])
             ->middleware([
+                // First, so every URL this panel generates matches the address
+                // the request came in on. The panel declares its own stack
+                // rather than using the `web` group, so it did not inherit this
+                // the way every other route did — and `AppServiceProvider`
+                // forces https in production, which made `/admin` redirect to
+                // https on a bundled server that only speaks http. The browser
+                // reported it as an insecure connection; the panel was simply
+                // unreachable. Behind the relay the forwarded scheme is still
+                // honoured, so a tunnelled server keeps its https.
+                SetAppUrl::class,
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,

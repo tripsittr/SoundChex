@@ -266,6 +266,7 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
             ))
         }
     };
+    hide_console(&mut cmd);
     cmd.current_dir(&layout.app_dir);
     cmd.env("SOUNDCHEX_ROOT", layout.app_dir.join("public"));
     cmd.env("SOUNDCHEX_FPM", "127.0.0.1:9100");
@@ -282,7 +283,14 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
         cmd.env("PHPRC", layout.run_dir.join("php.ini"));
     }
 
-    cmd.spawn()
+    let child = cmd.spawn()?;
+
+    // Into the job before anything else, so a crash between here and the
+    // watcher's bookkeeping still cannot leave it behind.
+    #[cfg(windows)]
+    tree::adopt(&child);
+
+    Ok(child)
 }
 
 /// Write the Caddyfile and php-fpm.conf into the run dir from the bundled
@@ -295,7 +303,7 @@ fn render_config(layout: &Layout) -> Result<(), String> {
     // arguments rather than by those files (S-418). It does need a php.ini,
     // which is the one piece of config Windows does not get for free.
     if cfg!(windows) {
-        return render_windows_php_ini(layout);
+        return write_windows_php_ini(&layout.bin_dir, &layout.run_dir).map(|_| ());
     }
 
     let templates = layout.app_dir.join("server").join("templates");
@@ -325,6 +333,154 @@ fn render_config(layout: &Layout) -> Result<(), String> {
     Ok(())
 }
 
+/// Keep a spawned process from opening a console window.
+///
+/// Windows gives a console to any child of a GUI process that does not say
+/// otherwise, so starting the server put a black window on screen for
+/// frankenphp, for each of the two workers, and for every artisan command
+/// provisioning ran. They outlive nothing and close nothing: they sit there for
+/// as long as the server is up, which is the point of a background service.
+///
+/// Nothing on POSIX, which has no such notion.
+/// Keep the children alive no longer than the app, whatever kills the app.
+///
+/// `stop()` kills them on a clean quit, but that path runs on the watcher
+/// thread, and a force-kill or a crash of the app takes the thread with it —
+/// leaving `queue:work` and `schedule:work` running with nothing to stop them.
+/// The next launch then spawned a second pair, and two workers competed for one
+/// SQLite file; "database is locked" is already the commonest cause of a failed
+/// job here, and the worker runs with `--tries=1`, so a lost lock loses the job.
+///
+/// A Windows job object with `KILL_ON_JOB_CLOSE` moves the guarantee into the
+/// kernel: the job's last handle closes when the process holding it exits, by
+/// any means, and every process assigned to it is terminated. Nothing on the
+/// POSIX side changes — there the equivalent is a process group, and that stack
+/// is working.
+#[cfg(windows)]
+mod tree {
+    use std::process::Child;
+    use std::sync::OnceLock;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    /// A raw HANDLE is just an isize, which Rust will not share between threads
+    /// on its own account. The handle is created once and only ever read, and
+    /// it is deliberately never closed: the process exiting is what closes it,
+    /// and that close is the signal that kills the children.
+    struct Job(HANDLE);
+
+    unsafe impl Send for Job {}
+    unsafe impl Sync for Job {}
+
+    static JOB: OnceLock<Option<Job>> = OnceLock::new();
+
+    fn job() -> Option<HANDLE> {
+        JOB.get_or_init(|| {
+            // SAFETY: both calls are given a correctly sized, zeroed struct and
+            // a handle this function owns; failures come back as null or 0 and
+            // are handled rather than unwrapped.
+            unsafe {
+                let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+
+                if handle.is_null() {
+                    eprintln!("soundchex-supervisor: CreateJobObject failed; children may outlive the app");
+                    return None;
+                }
+
+                let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+                let set = SetInformationJobObject(
+                    handle,
+                    JobObjectExtendedLimitInformation,
+                    &limits as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+
+                if set == 0 {
+                    eprintln!("soundchex-supervisor: SetInformationJobObject failed; children may outlive the app");
+                    return None;
+                }
+
+                Some(Job(handle))
+            }
+        })
+        .as_ref()
+        .map(|j| j.0)
+    }
+
+    /// Put a freshly spawned child in the job. Best effort: a child that cannot
+    /// be assigned still runs, and the supervisor still kills it on a clean
+    /// stop — only the crash case is weaker, which is where it was before.
+    pub fn adopt(child: &Child) {
+        let Some(job) = job() else {
+            return;
+        };
+
+        use std::os::windows::io::AsRawHandle;
+
+        // SAFETY: the handle belongs to `child`, which outlives this call.
+        let assigned = unsafe { AssignProcessToJobObject(job, child.as_raw_handle() as HANDLE) };
+
+        if assigned == 0 {
+            eprintln!(
+                "soundchex-supervisor: could not assign pid {} to the job; it may outlive the app",
+                child.id()
+            );
+        }
+    }
+}
+
+pub fn hide_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+
+        // CREATE_NO_WINDOW. Not pulled from winapi for one constant.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+}
+
+/// Strip Windows' extended-length prefix from a path.
+///
+/// `AppHandle::path().resource_dir()` hands back a verbatim path -- `\\?\C:\...`
+/// -- which is fine for Rust's own file APIs and wrong for anything that passes
+/// the string to another program. PHP could not read an `extension_dir` written
+/// that way: it looked for `\?\C:\...`, found nothing, loaded no extension at
+/// all, and every database call failed with "could not find driver".
+pub fn plain(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) => PathBuf::from(rest),
+        None => path.clone(),
+    }
+}
+
+/// A path as PHP's ini parser will read it.
+///
+/// Forward slashes, which Windows PHP accepts, because a double-quoted ini value
+/// processes `\\` and `\"` -- so a native path is altered on the way in and a
+/// path ending in a separator would swallow the closing quote.
+fn ini_path(path: &Path) -> String {
+    plain(path.to_path_buf()).to_string_lossy().replace('\\', "/")
+}
+
 /// Write a `php.ini` for the bundled Windows runtime.
 ///
 /// FrankenPHP's Windows build is a stock *dynamic* PHP: its extensions are
@@ -337,11 +493,13 @@ fn render_config(layout: &Layout) -> Result<(), String> {
 /// Generated at start rather than shipped in the bundle because the path is
 /// only known once installed: an ini written at build time carries the build
 /// machine's directories, and the install directory is not writable anyway.
-/// `spawn` points PHP at this file with `PHPRC`.
+/// `spawn` points PHP at the returned path with `PHPRC`, and so does
+/// first-run provisioning, whose `artisan migrate` needs `pdo_sqlite` just as
+/// much as a request does.
 ///
 /// POSIX does not come here — its PHP is a static build from static-php-cli
 /// with the extensions compiled in, and needs no ini at all.
-fn render_windows_php_ini(layout: &Layout) -> Result<(), String> {
+pub fn write_windows_php_ini(bin_dir: &Path, dir: &Path) -> Result<PathBuf, String> {
     // Naming a statically built-in extension is a warning PHP prints and
     // continues past; omitting a needed dynamic one is fatal at the first
     // query. So this lists everything the app requires and tolerates overlap.
@@ -365,24 +523,56 @@ fn render_windows_php_ini(layout: &Layout) -> Result<(), String> {
 
     ini.push_str(&format!(
         "extension_dir = \"{}\"\n",
-        layout.bin_dir.join("ext").display()
+        ini_path(&bin_dir.join("ext"))
     ));
 
     for extension in EXTENSIONS {
         ini.push_str(&format!("extension = {extension}\n"));
     }
 
+    // Sized for media. Without any ini at all Windows used PHP's own defaults —
+    // 2M per file, 8M per request — which stops a film before it starts.
+    //
+    // `post_max_size = 0` is PHP's documented "no limit". `BulkUpload` reads
+    // both of these back through `ini_get` to decide what it will accept, and
+    // treats 0 as unlimited, so the upload form follows this file rather than
+    // needing its own number.
+    //
+    // PHP buffers an entire upload into `upload_tmp_dir` before any code runs,
+    // so this needs as much free space as the largest file. It is put beside
+    // the server's other working files to be findable and clearable, rather
+    // than left in the system temp directory where nobody would look.
+    ini.push_str("\nupload_max_filesize = 512G\n");
+    ini.push_str("post_max_size = 0\n");
+    ini.push_str("memory_limit = 1G\n");
+    ini.push_str("max_file_uploads = 500\n");
+
+    // An upload of several gigabytes takes longer than any default allows.
+    // `max_input_time` governs reading the body, which is where the time goes.
+    ini.push_str("max_input_time = -1\n");
+    ini.push_str("max_execution_time = 0\n");
+
+    let uploads = dir.join("uploads");
+    let _ = std::fs::create_dir_all(&uploads);
+    ini.push_str(&format!("upload_tmp_dir = \"{}\"\n", ini_path(&uploads)));
+
     // The CA bundle sits beside the binaries by convention (package-runtime.sh
     // puts it there). Without it every outbound HTTPS call fails verification,
     // which on this app means artwork and metadata silently stop arriving.
-    let cacert = layout.bin_dir.join("cacert.pem");
+    let cacert = bin_dir.join("cacert.pem");
 
     if cacert.exists() {
-        ini.push_str(&format!("\ncurl.cainfo = \"{}\"\n", cacert.display()));
-        ini.push_str(&format!("openssl.cafile = \"{}\"\n", cacert.display()));
+        ini.push_str(&format!("\ncurl.cainfo = \"{}\"\n", ini_path(&cacert)));
+        ini.push_str(&format!("openssl.cafile = \"{}\"\n", ini_path(&cacert)));
     }
 
-    std::fs::write(layout.run_dir.join("php.ini"), ini).map_err(|e| e.to_string())
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+
+    let path = dir.join("php.ini");
+
+    std::fs::write(&path, ini).map_err(|e| e.to_string())?;
+
+    Ok(path)
 }
 
 fn read_template(path: &Path) -> Result<String, String> {
@@ -404,4 +594,59 @@ fn fpm_identity() -> (String, String) {
 
 fn lock_err<T>(_: T) -> String {
     "supervisor lock poisoned".into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bug this exists to stop coming back: a verbatim resource path written
+    /// into php.ini made PHP load no extensions, so every request died with
+    /// "could not find driver" and nothing said why.
+    /// Windows had no ini at all, so it used PHP's 2M-per-file default. This
+    /// server takes multi-gigabyte media.
+    #[test]
+    fn the_generated_ini_allows_large_uploads() {
+        let dir = std::env::temp_dir().join(format!("scx-ini-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+
+        let path = write_windows_php_ini(&dir.join("bin"), &dir).unwrap();
+        let ini = std::fs::read_to_string(path).unwrap();
+
+        assert!(ini.contains("upload_max_filesize = 512G"), "{ini}");
+        // PHP's documented "no limit", which BulkUpload reads back as unlimited.
+        assert!(ini.contains("post_max_size = 0"), "{ini}");
+        assert!(ini.contains("max_input_time = -1"), "{ini}");
+        assert!(ini.contains("upload_tmp_dir"), "{ini}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ini_path_drops_the_verbatim_prefix_and_uses_forward_slashes() {
+        let path = PathBuf::from(r"\\?\C:\Temp\scx\runtime\bin\ext");
+
+        assert_eq!(ini_path(&path), "C:/Temp/scx/runtime/bin/ext");
+    }
+
+    #[test]
+    fn ini_path_leaves_an_ordinary_path_alone_but_for_separators() {
+        let path = PathBuf::from(r"C:\Users\Someone Else\ext");
+
+        assert_eq!(ini_path(&path), "C:/Users/Someone Else/ext");
+    }
+
+    #[test]
+    fn plain_keeps_a_unc_share_reachable() {
+        let path = PathBuf::from(r"\\?\UNC\server\share\bin");
+
+        assert_eq!(plain(path), PathBuf::from(r"\\server\share\bin"));
+    }
+
+    #[test]
+    fn plain_is_a_no_op_on_a_normal_path() {
+        let path = PathBuf::from(r"C:\Temp\bin");
+
+        assert_eq!(plain(path.clone()), path);
+    }
 }

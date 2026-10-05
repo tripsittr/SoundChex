@@ -5,6 +5,8 @@
 
 namespace App\Filament\Resources\Concerns;
 
+use App\Enums\DuplicateStatus;
+use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -15,7 +17,7 @@ use Illuminate\Database\Eloquent\Builder;
  * rows: a badge reading 3 over a tab showing 5 is a bug report, and keeping the
  * status list in one place is what stops the two drifting apart.
  *
- * @mixin \Filament\Resources\Pages\ListRecords
+ * @mixin ListRecords
  */
 trait HasNeedsReviewTab
 {
@@ -24,13 +26,36 @@ trait HasNeedsReviewTab
     /** The tab, badged with how many items are waiting. */
     protected function needsReviewTab(): Tab
     {
-        $statuses = static::needsReviewStatuses();
-
         return Tab::make('Needs review')
-            ->badge(fn (): int => static::getResource()::getEloquentQuery()
-                ->whereIn('processing_status', $statuses)
-                ->count())
+            ->badge(fn (): int => static::needsReviewQuery(static::getResource()::getEloquentQuery())->count())
             ->badgeColor('warning')
-            ->modifyQueryUsing(fn (Builder $query) => $query->whereIn('processing_status', $statuses));
+            ->modifyQueryUsing(fn (Builder $query) => static::needsReviewQuery($query));
+    }
+
+    /**
+     * Everything waiting on a person: an item the pipeline could not identify,
+     * and one it flagged as a copy of something already in the library.
+     *
+     * A pending duplicate is a decision nobody has taken — the detector says
+     * two files are the same and is asking which to keep. It was only visible
+     * on the Duplicates screen, so a duplicate film or episode sat there
+     * unnoticed while the review queue it belongs in reported nothing to do.
+     *
+     * `Pending` and `Kept` only. A `Merged` duplicate has been dealt with, and
+     * including it would put thousands of settled rows into the queue.
+     */
+    protected static function needsReviewQuery(Builder $query): Builder
+    {
+        return $query->where(function (Builder $q): void {
+            $q->whereIn('processing_status', static::needsReviewStatuses())
+                ->orWhere(function (Builder $duplicate): void {
+                    $duplicate
+                        ->whereNotNull('duplicate_of_id')
+                        ->whereIn('duplicate_status', [
+                            DuplicateStatus::Pending->value,
+                            DuplicateStatus::Kept->value,
+                        ]);
+                });
+        });
     }
 }
