@@ -227,13 +227,25 @@ jobs:
       - name: Stage the runtime
         run: |
           mkdir -p runtime-unpacked
-          archive=$(ls runtime-archive/soundchex-server-*.tar.gz runtime-archive/soundchex-server-*.zip 2>/dev/null | head -1)
+
+          # `find`, not `ls` of two globs. The job runs under `-e -o pipefail`,
+          # and `ls a* b*` exits non-zero when *either* pattern matches nothing
+          # — which is always, since a platform ships a .tar.gz or a .zip and
+          # never both. `pipefail` then carried that through `| head -1` and
+          # killed the step in 28ms, before its own error message could print.
+          # Every platform failed identically and said nothing about why.
+          archive=$(find runtime-archive -maxdepth 1 \
+            \( -name 'soundchex-server-*.tar.gz' -o -name 'soundchex-server-*.zip' \) \
+            | head -1 || true)
+
           [ -n "$archive" ] || { echo "no runtime archive downloaded"; ls -R runtime-archive; exit 1; }
           case "$archive" in
             *.zip)    unzip -q "$archive" -d runtime-unpacked ;;
             *.tar.gz) tar -xzf "$archive" -C runtime-unpacked ;;
           esac
-          bundle=$(find runtime-unpacked -maxdepth 1 -type d -name 'soundchex-server-*' | head -1)
+          # `|| true` for the same reason: a pipeline whose head closes early
+          # must not decide this step's exit status.
+          bundle=$(find runtime-unpacked -maxdepth 1 -type d -name 'soundchex-server-*' | head -1 || true)
           [ -n "$bundle" ] || { echo "no bundle directory inside $archive"; exit 1; }
           scripts/stage-server-runtime.sh "$bundle"
 
