@@ -10,6 +10,7 @@ use App\Enums\MediaItemType;
 use App\Enums\MediaTagSource;
 use App\Models\MediaItem;
 use App\Services\Metadata\Contracts\MetadataSource;
+use App\Services\Metadata\LookupCache;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -47,7 +48,7 @@ class ItunesSearch implements MetadataSource
             return;
         }
 
-        $response = Http::get('https://itunes.apple.com/search', [
+        $parameters = [
             'term' => $query,
             'media' => 'music',
             'entity' => 'album',
@@ -56,13 +57,23 @@ class ItunesSearch implements MetadataSource
             // actually matches rather than trusting position.
             'limit' => 5,
             'country' => 'US',
-        ]);
+        ];
 
-        if (! $response->ok()) {
+        // Cached on the query: a library repeats the same album many times
+        // over -- 61% of one real queue was a repeat -- and each copy used to
+        // ask again.
+        $body = app(LookupCache::class)->remember($this->name(), $parameters, function () use ($parameters): ?array {
+            $response = Http::get('https://itunes.apple.com/search', $parameters);
+
+            // Null only for a failed request, so a bad minute is not cached.
+            return $response->ok() ? ($response->json() ?? []) : null;
+        });
+
+        if ($body === null) {
             return;
         }
 
-        $result = $this->bestMatch($response->json('results', []), $meta?->artist);
+        $result = $this->bestMatch(data_get($body, 'results') ?? [], $meta?->artist);
 
         if (empty($result)) {
             return;

@@ -14,3 +14,7 @@
 - [Check what a field means](soundchex-check-what-a-field-means.md) — match_confidence and publicState both mean less than their names suggest; grep for the write before concluding
 - [Windows delete-pending files](soundchex-windows-delete-pending.md) — unlinking a file something still has open poisons the name; every later open is refused with "Permission denied"
 - [The auto-updater switches branch](soundchex-auto-update-switches-branch.md) — a scheduled task on the Windows machine yanks the working tree back to main every five minutes, and skips its pull when anything is dirty
+- [Local reachability proves nothing](soundchex-local-reachability-proves-nothing.md) — loopback skips the firewall; a per-user installer cannot elevate to add a rule, and tailscale serve needs none
+- [Never write a regex result unchecked](soundchex-never-write-a-regex-result-unchecked.md) — preg_replace returned null and blanked an 826-line file; assert a unique anchor and refuse to write a short result
+- [The two SQLite settings that break the queue](soundchex-sqlite-queue-settings.md) — transaction_mode must be IMMEDIATE or busy_timeout never applies; retry_after must exceed the worker timeout
+- [Windows read-only blocks unlink](soundchex-readonly-blocks-delete.md) — 285 library files arrived read-only; unlink() refuses them, so merges failed silently and duplicates came back

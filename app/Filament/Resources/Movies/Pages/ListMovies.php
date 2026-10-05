@@ -5,7 +5,7 @@
 
 namespace App\Filament\Resources\Movies\Pages;
 
-use App\Filament\Resources\Concerns\HasNeedsReviewTab;
+use App\Filament\Resources\Concerns\HasLibraryMaintenanceActions;
 use App\Filament\Resources\Movies\MovieResource;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
@@ -14,13 +14,14 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ListMovies extends ListRecords
 {
-    use HasNeedsReviewTab;
+    use HasLibraryMaintenanceActions;
 
     protected static string $resource = MovieResource::class;
 
     protected function getHeaderActions(): array
     {
         return [
+            ...$this->libraryMaintenanceActions(),
             CreateAction::make()->label('Add movie'),
         ];
     }

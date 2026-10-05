@@ -46,6 +46,17 @@ class Services extends Page
 
     public bool $supported = true;
 
+    /**
+     * How this platform keeps the background processes alive, when it is not
+     * launchd.
+     *
+     * Saying only "not available here" was true and useless: the processes do
+     * run on Windows, supervised by the Server app itself, and the page gave no
+     * hint of that. @var array{manager: string, summary: string, processes:
+     * array<int, string>, autostart: string}|null
+     */
+    public ?array $platform = null;
+
     /** When the state on screen was read, so a refresh visibly did something. */
     public ?string $checkedAt = null;
 
@@ -87,6 +98,7 @@ class Services extends Page
         $host = app(HostServices::class);
 
         $this->supported = $host->supported();
+        $this->platform = $host->platformSupervision();
         $this->services = $this->supported ? $host->all() : [];
         $this->checkedAt = now()->format('H:i:s');
 

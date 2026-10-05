@@ -75,6 +75,11 @@ fn start_service(key: String, repo: String) -> Result<String, String> {
 #[cfg(desktop)]
 mod supervisor;
 
+/// Unpacks the bundled application on first run, so an installed Server app
+/// has something to serve without a checkout beside it.
+#[cfg(desktop)]
+mod provision;
+
 /// Resolve the bundled runtime layout from the app's resource dir.
 ///
 /// Tauri unpacks `bundle.resources` under the resource directory, so the runtime
@@ -85,10 +90,14 @@ mod supervisor;
 fn resolve_layout(app: &tauri::AppHandle, listen: String) -> Result<supervisor::Layout, String> {
     use tauri::Manager;
 
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("no resource dir: {e}"))?;
+    // Normalised once, here, because everything below is derived from it and
+    // some of it is handed to other programs. Tauri returns a verbatim
+    // (`\\?\`) path on Windows, which PHP does not understand.
+    let resource_dir = supervisor::plain(
+        app.path()
+            .resource_dir()
+            .map_err(|e| format!("no resource dir: {e}"))?,
+    );
 
     // The bundled runtime lives under resources/runtime/bin; in dev, fall back to
     // a RUNTIME_DIR env pointing at a locally-built bundle.
@@ -96,20 +105,30 @@ fn resolve_layout(app: &tauri::AppHandle, listen: String) -> Result<supervisor::
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| resource_dir.join("runtime").join("bin"));
 
-    // The app root: packaged, the resource dir holds artisan; in dev, the repo.
-    let app_dir = if resource_dir.join("artisan").exists() {
-        resource_dir.clone()
-    } else {
-        std::env::var("SOUNDCHEX_APP_DIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| resource_dir.clone())
-    };
-
-    let run_dir = app
+    let data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("no app data dir: {e}"))?
-        .join("server");
+        .map_err(|e| format!("no app data dir: {e}"))?;
+
+    // The app root, in order of preference: a checkout sitting in the resource
+    // dir; an explicit override; the copy unpacked from the bundled payload; and
+    // failing all of those, the resource dir, which is what a bundle with no
+    // payload has always used.
+    //
+    // The override still beats the payload on purpose. A machine already serving
+    // a library out of a checkout keeps doing so after an upgrade, rather than
+    // silently starting a second, empty one.
+    let app_dir = if resource_dir.join("artisan").exists() {
+        resource_dir.clone()
+    } else if let Ok(dir) = std::env::var("SOUNDCHEX_APP_DIR") {
+        std::path::PathBuf::from(dir)
+    } else if provision::payload(&resource_dir).is_some() {
+        data_dir.join("app")
+    } else {
+        resource_dir.clone()
+    };
+
+    let run_dir = data_dir.join("server");
 
     Ok(supervisor::Layout {
         bin_dir,
@@ -120,14 +139,65 @@ fn resolve_layout(app: &tauri::AppHandle, listen: String) -> Result<supervisor::
 }
 
 /// Start the bundled server stack (Server app).
+///
+/// Asynchronous because of what happens first: on a new install, provisioning
+/// unpacks the bundled application, writes an `.env` and migrates, which takes
+/// tens of seconds. Held on the calling thread that blocked the webview, so the
+/// window showed "Starting…" and nothing else for long enough that closing it
+/// was the reasonable thing to do — which left a half-unpacked directory and
+/// started over on the next launch. The work now runs on a blocking thread and
+/// reports progress as it goes.
+///
+/// It happens here rather than at launch so someone who never starts the server
+/// never waits for it.
 #[cfg(desktop)]
 #[tauri::command]
-fn server_start(
+async fn server_start(
     app: tauri::AppHandle,
     sup: tauri::State<'_, supervisor::Supervisor>,
     listen: Option<String>,
 ) -> Result<(), String> {
+    use tauri::{Emitter, Manager};
+
     let layout = resolve_layout(&app, listen.unwrap_or_else(|| ":8000".into()))?;
+
+    let resource_dir = supervisor::plain(
+        app.path()
+            .resource_dir()
+            .map_err(|e| format!("no resource dir: {e}"))?,
+    );
+
+    let emitter = app.clone();
+    let staged = layout.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        provision::ensure(
+            &resource_dir,
+            &staged.app_dir,
+            &staged.bin_dir,
+            &staged.run_dir,
+            &|progress| {
+                let payload = match progress {
+                    provision::Progress::Unpacking { done, total } => serde_json::json!({
+                        "stage": "unpacking",
+                        "done": done,
+                        "total": total,
+                    }),
+                    provision::Progress::Step(label) => serde_json::json!({
+                        "stage": "step",
+                        "label": label,
+                    }),
+                };
+
+                // Ignored: a window that has gone away is not a reason to abandon
+                // an unpack half finished.
+                let _ = emitter.emit("server-provision", payload);
+            },
+        )
+    })
+    .await
+    .map_err(|e| format!("provisioning thread failed: {e}"))??;
+
     sup.start(layout)
 }
 

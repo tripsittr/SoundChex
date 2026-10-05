@@ -16,8 +16,13 @@
   },
   "bundle": {
     "resources": {
-      "runtime/bin/*": "runtime/bin/",
-      "runtime/templates/*": "runtime/templates/"
+      "runtime/bin": "runtime/bin/",
+      "runtime/templates": "runtime/templates/",
+      "app-payload.zip": "./",
+      "app-payload.id": "./"
     }
+  },
+  "build": {
+    "beforeBundleCommand": "php scripts/package-app-payload.php"
   }
 }

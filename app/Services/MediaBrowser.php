@@ -385,6 +385,12 @@ class MediaBrowser
 
         return $this->gate->apply(MediaItem::query())
             ->whereIn('type', array_map(fn (MediaItemType $t) => $t->value, $types))
+            // Browsing lists things, not their parts. An episode belongs to its
+            // series and is reached from the series page; listed alongside it,
+            // 253 Simpsons episodes bury every other show on the shelf, which
+            // is what the Watch page did. `continueWatching` builds its own
+            // query and still surfaces the individual episode you were on.
+            ->whereNull('parent_id')
             // Only the metadata tables the requested types can actually have.
             // Loading all four unconditionally meant a music query also asked
             // `movie_metadata`, `show_metadata` and `book_metadata` for rows it

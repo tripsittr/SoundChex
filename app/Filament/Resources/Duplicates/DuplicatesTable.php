@@ -655,7 +655,8 @@ class DuplicatesTable
             ->modalSubmitActionLabel('Merge and delete the extra copies')
             ->action(function (Collection $records, DuplicateDetector $detector): void {
                 $merged = 0;
-                $skipped = 0;
+                $tied = 0;
+                $failed = 0;
 
                 foreach ($records as $record) {
                     if (! $record->isPendingDuplicate()) {
@@ -663,20 +664,39 @@ class DuplicatesTable
                     }
 
                     if (static::isContentMatch($record)) {
-                        // Keep the better copy; break a true tie toward the newer.
-                        $detector->resolveKeepingBest($record, breakTies: true) === 'resolved'
-                            ? $merged++
-                            : $skipped++;
+                        // Keep the better copy. Ties are reported as ties: for
+                        // video there is no quality signal left to break one
+                        // with, and picking by row id would be a coin toss that
+                        // deletes a file.
+                        $outcome = $detector->resolveKeepingBest($record, breakTies: true);
+
+                        match ($outcome) {
+                            'resolved' => $merged++,
+                            'tie' => $tied++,
+                            default => $failed++,
+                        };
                     } else {
-                        $detector->merge($record) ? $merged++ : $skipped++;
+                        $detector->merge($record) ? $merged++ : $failed++;
                     }
+                }
+
+                // Three outcomes, not two. "Skipped" used to cover all of them
+                // and blamed a missing file, which sent someone looking for a
+                // file that was present the whole time -- the real reason was a
+                // read-only attribute Windows will not unlink through.
+                $notes = [];
+
+                if ($tied > 0) {
+                    $notes[] = $tied.' too close to call — open one to choose which copy to keep.';
+                }
+
+                if ($failed > 0) {
+                    $notes[] = $failed.' could not be deleted — the file may be read-only or open in another program. The log says which.';
                 }
 
                 Notification::make()
                     ->title($merged.' merged')
-                    ->body($skipped > 0
-                        ? $skipped.' skipped — a file was missing or the contents no longer match.'
-                        : null)
+                    ->body($notes === [] ? null : implode(' ', $notes))
                     ->success()
                     ->send();
             })
@@ -705,6 +725,14 @@ class DuplicatesTable
                 $identical++;
                 $reclaim += static::fileBytes($record) ?? 0;
 
+                continue;
+            }
+
+            // A row whose original has genuinely gone is stale, not mergeable.
+            // Belt and braces: the relation no longer hides an unresolved
+            // original, but a summary screen should never be what discovers a
+            // dangling id — it took the whole page down with a type error.
+            if ($record->duplicateOf === null) {
                 continue;
             }
 

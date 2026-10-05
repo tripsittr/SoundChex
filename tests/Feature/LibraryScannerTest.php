@@ -60,6 +60,83 @@ class LibraryScannerTest extends TestCase
         app(SettingsService::class)->set('library_settle_seconds', 0);
     }
 
+    /* -------------------------------------------------- what gets swept -- */
+
+    /**
+     * With no watch folder set, the storage disk is still somewhere to scan.
+     *
+     * The "Scan for new files" button used to read `library.watch_folders`
+     * itself, and refuse with "Set LIBRARY_WATCH_FOLDERS in .env" when it was
+     * empty -- which is the normal state for a bundled server, where uploads
+     * land on the storage disk instead. It did nothing while thousands of files
+     * sat in the inbox. It asks the scanner now, and this is the answer it
+     * relies on.
+     */
+    public function test_it_sweeps_storage_when_no_watch_folder_is_configured(): void
+    {
+        config()->set('library.watch_folders', []);
+        app(SettingsService::class)->set('library_scan_storage', true);
+
+        $result = $this->scanner->scan(dryRun: true, enrich: false);
+
+        $this->assertGreaterThan(
+            0,
+            $result['folders'],
+            'The storage disk should be scanned even with no watch folder set.',
+        );
+    }
+
+    public function test_it_has_nowhere_to_scan_with_no_watch_folder_and_no_storage_sweep(): void
+    {
+        config()->set('library.watch_folders', []);
+        app(SettingsService::class)->set('library_scan_storage', false);
+
+        $result = $this->scanner->scan(dryRun: true, enrich: false);
+
+        // The only case where the button should say so.
+        $this->assertSame(0, $result['folders']);
+    }
+
+    /**
+     * A scan must survive a directory it cannot descend into.
+     *
+     * The organizer moves files out of the inbox the whole time a scan is
+     * reading it, so an album folder empties and is pruned mid-walk. Finder
+     * then threw AccessDeniedException from RecursiveDirectoryIterator and the
+     * whole scan died -- the "Scan for new files" button reported only that the
+     * page had failed, having catalogued nothing.
+     *
+     * An unreadable directory reaches the same code path as a vanished one and
+     * is the half that can be set up deterministically.
+     */
+    public function test_a_scan_survives_a_directory_it_cannot_descend_into(): void
+    {
+        if (chr(92) === DIRECTORY_SEPARATOR) {
+            $this->markTestSkipped('chmod does not remove read access on Windows.');
+        }
+
+        $reachable = $this->watched.'/reachable.mp3';
+        file_put_contents($reachable, 'x');
+
+        $blocked = $this->watched.'/blocked';
+        mkdir($blocked, 0755, true);
+        file_put_contents($blocked.'/hidden.mp3', 'x');
+        chmod($blocked, 0000);
+
+        try {
+            $result = $this->scanner->scan(enrich: false);
+
+            $this->assertGreaterThanOrEqual(
+                1,
+                $result['imported'],
+                'The readable file should still be catalogued.',
+            );
+        } finally {
+            // Restore so the directory can be cleaned up.
+            chmod($blocked, 0755);
+        }
+    }
+
     /* ------------------------------------------------------ cataloguing -- */
 
     public function test_it_records_an_intake_snapshot_of_the_arrival_state(): void

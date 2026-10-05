@@ -14,6 +14,7 @@ use App\Models\MediaItem;
 use App\Models\MediaPlay;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
+use App\Services\EpisodeParser;
 use App\Services\LyricsService;
 use App\Services\MediaBrowser;
 use App\Services\SearchService;
@@ -228,7 +229,50 @@ class MediaCenterController extends Controller
             'counts' => $this->browser->counts(),
             'item' => $item,
             'related' => $this->relatedTo($item),
+            'seasons' => $this->seasonsOf($item),
         ]);
+    }
+
+    /**
+     * A series' episodes, grouped by season and in order.
+     *
+     * Empty for anything that is not a series, which is every other page this
+     * view serves.
+     *
+     * Season and episode numbers are not columns — they are read back out of
+     * the filename by `EpisodeParser`, the same way the scanner decided the
+     * episode belonged to this series in the first place. An episode whose
+     * filename carries no marker still appears, under a season of its own, so
+     * it cannot vanish from the one page that lists it.
+     *
+     * @return Collection<int|string, Collection<int, MediaItem>>
+     */
+    private function seasonsOf(MediaItem $item): Collection
+    {
+        if ($item->type !== MediaItemType::Show || $item->file_path !== null) {
+            return collect();
+        }
+
+        $parser = app(EpisodeParser::class);
+
+        return $item->children()
+            ->with('plays')
+            ->get()
+            ->map(function (MediaItem $episode) use ($parser): MediaItem {
+                $marker = $parser->marker(basename((string) $episode->file_path));
+
+                // Set on the instance for the view; nothing is persisted.
+                $episode->season_number = $marker['season'] ?? null;
+                $episode->episode_number = $marker['episode'] ?? null;
+
+                return $episode;
+            })
+            ->sortBy([
+                fn (MediaItem $a, MediaItem $b) => ($a->season_number ?? PHP_INT_MAX) <=> ($b->season_number ?? PHP_INT_MAX),
+                fn (MediaItem $a, MediaItem $b) => ($a->episode_number ?? PHP_INT_MAX) <=> ($b->episode_number ?? PHP_INT_MAX),
+                fn (MediaItem $a, MediaItem $b) => $a->title <=> $b->title,
+            ])
+            ->groupBy(fn (MediaItem $episode) => $episode->season_number ?? 'Other');
     }
 
     /**

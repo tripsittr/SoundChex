@@ -24,8 +24,15 @@ class Tmdb implements MetadataSource
 
     public function __construct(private SettingsService $settings) {}
 
-    public function name(): string { return 'TMDB'; }
-    public function priority(): int { return 1; }
+    public function name(): string
+    {
+        return 'TMDB';
+    }
+
+    public function priority(): int
+    {
+        return 1;
+    }
 
     public function supports(MediaItem $item): bool
     {
@@ -49,16 +56,16 @@ class Tmdb implements MetadataSource
         $meta = $item->movieMetadata;
 
         $this->fillBlank($meta, [
-            'tmdb_id'         => $movie['id'] ?? null,
-            'imdb_id'         => $movie['imdb_id'] ?? null,
-            'release_year'    => $this->extractYear($movie['release_date'] ?? null),
+            'tmdb_id' => $movie['id'] ?? null,
+            'imdb_id' => $movie['imdb_id'] ?? null,
+            'release_year' => $this->extractYear($movie['release_date'] ?? null),
             'runtime_minutes' => $movie['runtime'] ?? null,
-            'tagline'         => $movie['tagline'] ?? null,
-            'language'        => $movie['original_language'] ?? null,
-            'country'         => $movie['production_countries'][0]['iso_3166_1'] ?? null,
-            'studio'          => $movie['production_companies'][0]['name'] ?? null,
-            'director'        => $this->directorName($movie['credits'] ?? []),
-            'mpaa_rating'     => $this->certification($movie['release_dates'] ?? []),
+            'tagline' => $movie['tagline'] ?? null,
+            'language' => $movie['original_language'] ?? null,
+            'country' => $movie['production_countries'][0]['iso_3166_1'] ?? null,
+            'studio' => $movie['production_companies'][0]['name'] ?? null,
+            'director' => $this->directorName($movie['credits'] ?? []),
+            'mpaa_rating' => $this->certification($movie['release_dates'] ?? []),
         ]);
 
         $this->promoteTitle($item, $movie);
@@ -87,19 +94,46 @@ class Tmdb implements MetadataSource
         [$searchTitle, $searchYear] = $this->splitTitleAndYear($item->title);
 
         $results = $this->request('/search/movie', [
-            'query'         => $searchTitle,
+            'query' => $searchTitle,
             'include_adult' => false,
             // Narrows a title search when the user supplied a year.
-            'year'          => $item->movieMetadata?->release_year ?? $searchYear,
+            'year' => $item->movieMetadata?->release_year ?? $searchYear,
         ])?->json('results') ?? [];
 
         // A wrong year excludes the right film outright, so a year-filtered
         // miss is retried without it rather than giving up.
         if (empty($results) && $searchYear !== null) {
             $results = $this->request('/search/movie', [
-                'query'         => $searchTitle,
+                'query' => $searchTitle,
                 'include_adult' => false,
             ])?->json('results') ?? [];
+        }
+
+        // Still nothing: try again without the edition wording a release carries.
+        //
+        // "The Goonies (1985) 30Th Anniversary Edition.mkv" becomes the title
+        // "The Goonies 30Th Anniversary Edition 1985", and TMDB has no film by
+        // that name — it returned no_match for a film it obviously knows. The
+        // scanner strips resolution, codec and release group, but not this.
+        //
+        // Done here rather than at import so it also rescues rows already
+        // catalogued, and without rewriting anyone's title: only the search
+        // term is cleaned.
+        $plainTitle = $this->withoutEditionWording($searchTitle);
+
+        if (empty($results) && $plainTitle !== $searchTitle) {
+            $results = $this->request('/search/movie', [
+                'query' => $plainTitle,
+                'include_adult' => false,
+                'year' => $item->movieMetadata?->release_year ?? $searchYear,
+            ])?->json('results') ?? [];
+
+            if (empty($results)) {
+                $results = $this->request('/search/movie', [
+                    'query' => $plainTitle,
+                    'include_adult' => false,
+                ])?->json('results') ?? [];
+            }
         }
 
         if (empty($results)) {
@@ -114,6 +148,39 @@ class Tmdb implements MetadataSource
         }
 
         return $this->fetchMovie((int) $results[0]['id']);
+    }
+
+    /**
+     * Drops the edition wording a release adds to a film's name.
+     *
+     * Whole phrases only, never bare words. "Special", "Final" and "Ultimate"
+     * are all real film titles, and a single-word list would gut them — the
+     * stripping runs to the end of the string, so one wrong match loses the
+     * title entirely. Every entry here is wording no film is actually called.
+     */
+    private function withoutEditionWording(string $title): string
+    {
+        $phrases = [
+            '\d*\s*(?:st|nd|rd|th)?\s*anniversary(?:\s+edition)?',
+            "(?:special|collector'?s|limited|ultimate|deluxe|platinum|definitive|extended|unrated|uncut|theatrical|international)\\s+(?:edition|cut|version)",
+            "director'?s\\s+cut",
+            'final\s+cut',
+            'remaster(?:ed)?',
+            'restored',
+            'criterion(?:\s+collection)?',
+        ];
+
+        $cleaned = preg_replace(
+            '/\s*\b(?:'.implode('|', $phrases).')\b\s*/i',
+            ' ',
+            $title,
+        ) ?? $title;
+
+        $cleaned = trim(preg_replace('/\s{2,}/', ' ', $cleaned) ?? $cleaned);
+
+        // A title made entirely of edition wording is not a title. Keep the
+        // original so the caller searches something rather than nothing.
+        return $cleaned !== '' ? $cleaned : $title;
     }
 
     /**
@@ -152,7 +219,7 @@ class Tmdb implements MetadataSource
      * Several same-titled results with comparable popularity means we can't be
      * confident which one the user meant.
      *
-     * @param array<int, array<string, mixed>> $results
+     * @param  array<int, array<string, mixed>>  $results
      */
     private function isAmbiguous(array $results, string $title): bool
     {
@@ -164,7 +231,7 @@ class Tmdb implements MetadataSource
     }
 
     /**
-     * @param array<string, mixed> $credits
+     * @param  array<string, mixed>  $credits
      */
     private function directorName(array $credits): ?string
     {
@@ -180,7 +247,7 @@ class Tmdb implements MetadataSource
     /**
      * US certification (G/PG/PG-13/R). TMDB nests these per country.
      *
-     * @param array<string, mixed> $releaseDates
+     * @param  array<string, mixed>  $releaseDates
      */
     private function certification(array $releaseDates): ?string
     {
@@ -203,7 +270,7 @@ class Tmdb implements MetadataSource
      * An item added by title keeps whatever the user typed; TMDB's canonical
      * title replaces it only when it differs by more than casing.
      *
-     * @param array<string, mixed> $movie
+     * @param  array<string, mixed>  $movie
      */
     private function promoteTitle(MediaItem $item, array $movie): void
     {
@@ -218,7 +285,7 @@ class Tmdb implements MetadataSource
     }
 
     /**
-     * @param array<string, mixed> $movie
+     * @param  array<string, mixed>  $movie
      */
     private function writeOverview(MediaItem $item, array $movie): void
     {

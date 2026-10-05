@@ -117,62 +117,31 @@ jobs:
   # the HTTP-serving front (FrankenPHP embed, or a FastCGI shim) is resolved in
   # Step 4's Windows service work. Runs in pwsh for correct Windows path handling.
   # Pinned to windows-2022 (VS 2022): the nightly spc's doctor recognizes only
-  # VS 2019/2022, and windows-latest has moved to VS 18 which it rejects with
-  # "Visual Studio not installed". Revisit when spc supports VS 18.
+  # Windows: PHP ships no php-fpm SAPI, so the POSIX "Caddy -> php-fpm" shape
+  # cannot be built there. FrankenPHP is the web server and PHP in one binary,
+  # and its official Windows release carries a complete PHP -- so that archive
+  # is the runtime, and static-php-cli is not involved on Windows at all.
+  #
+  # This used to compile PHP with spc, which needed an MSVC dev environment, a
+  # retry loop around a flaky doctor step, a windows-2022 pin (spc rejects VS
+  # 18) and about forty minutes -- to produce a php.exe that the bundle then
+  # shipped alongside a frankenphp.exe copied out of its archive without the
+  # DLLs it is linked against. That bundle could not start. Downloading the
+  # archive whole is both correct and minutes rather than tens of minutes.
   build-windows:
-    runs-on: windows-2022
+    runs-on: windows-latest
     timeout-minutes: 60
     name: windows-x86_64
-    env:
-      # EXTENSIONS minus gmp (spc can't compile it on Windows yet) and pcntl
-      # (POSIX-only — process signals don't exist on Windows; the queue worker
-      # falls back accordingly).
-      WIN_EXTENSIONS: 'bcmath,ctype,curl,dom,exif,fileinfo,filter,gd,iconv,intl,mbstring,opcache,openssl,pdo,pdo_sqlite,phar,session,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib'
     defaults:
       run:
-        shell: pwsh
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
-      # spc's doctor detects Visual Studio via vswhere but needs the MSVC dev
-      # environment activated; without it, doctor reports "Visual Studio not
-      # installed" even though windows-latest ships VS 2022. This sets up the
-      # x64 developer environment (vcvars) for the whole job.
-      - name: Set up MSVC dev environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Fetch spc
-        run: curl.exe -fsSL -o spc.exe "https://dl.static-php.dev/static-php-cli/spc-bin/nightly/spc-windows-x64.exe"
-
-      # doctor --auto-fix downloads php-sdk-binary-tools / nasm, which
-      # occasionally 500s from the upstream mirror. Retry a few times.
-      - name: Doctor (installs php-sdk-binary-tools, strawberry-perl, nasm)
-        run: |
-          for ($i=1; $i -le 4; $i++) {
-            .\spc.exe doctor --auto-fix --no-interaction
-            if ($LASTEXITCODE -eq 0) { break }
-            Write-Host "doctor attempt $i failed (exit $LASTEXITCODE); retrying in 15s..."
-            Start-Sleep -Seconds 15
-          }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      # gmp cannot be compiled on Windows by spc ("not supported to compile").
-      # It is optional for us (ramsey/uuid only *suggests* it for perf), so the
-      # Windows build drops it. Everything else in the set is Windows-buildable.
-      - name: Download sources
-        run: .\spc.exe download --for-extensions="$env:WIN_EXTENSIONS" --with-php="$env:PHP_VERSION" --prefer-pre-built --retry=3
-
-      - name: Build PHP CLI
-        run: .\spc.exe build "$env:WIN_EXTENSIONS" --build-cli
-
-      - name: Package (php.exe + caddy, no fpm)
-        shell: bash
+      - name: Package (frankenphp + php from the official archive)
         run: |
           mkdir -p dist
-          server/scripts/package-runtime.sh windows x86_64 \
-            buildroot/bin/php.exe buildroot/bin/php.exe dist
+          server/scripts/package-runtime.sh windows x86_64 "" "" dist
 
       - uses: actions/upload-artifact@v4
         with:
@@ -180,6 +149,113 @@ jobs:
           path: |
             dist/soundchex-server-*.zip
             dist/soundchex-server-*.sha256
+          if-no-files-found: warn
+
+  # The Server app itself -- the Tauri shell that carries the runtime above.
+  #
+  # Nothing built this in CI before: build-client.yml builds only the client,
+  # and the jobs above build only the runtime it bundles. The one install path
+  # that existed was scripts/reinstall-server-app.sh, which is macOS-only and
+  # runs on a developer's machine, so a break on Windows or Linux could not be
+  # seen until someone tried it there.
+  #
+  # It does not run the result: a build succeeding is the signal, exactly as in
+  # build-client.yml.
+  app:
+    needs: [build, build-windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,   label: macOS,   runtime: soundchex-server-macos-aarch64 }
+          - { os: windows-latest, label: Windows, runtime: soundchex-server-windows-x86_64 }
+          - { os: ubuntu-latest,  label: Linux,   runtime: soundchex-server-linux-x86_64 }
+    runs-on: ${{ matrix.os }}
+    # Every job gets one. A missing runner otherwise sits 24 hours and reports
+    # itself "cancelled" — which is how no server release ever published
+    # (S-419).
+    timeout-minutes: 60
+    name: app-${{ matrix.label }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # The frontend build imports the Filament theme from vendor/, so Composer
+      # packages must exist before tauri's beforeBuildCommand runs.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: intl, fileinfo, mbstring, dom, curl, zip, gd
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist --no-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.runtime }}
+          path: runtime-archive
+
+      # src-tauri/runtime is gitignored, so a fresh checkout has none and the
+      # bundle would be built without the resources that are its whole point.
+      - name: Stage the runtime
+        run: |
+          mkdir -p runtime-unpacked
+          archive=$(ls runtime-archive/soundchex-server-*.tar.gz runtime-archive/soundchex-server-*.zip 2>/dev/null | head -1)
+          [ -n "$archive" ] || { echo "no runtime archive downloaded"; ls -R runtime-archive; exit 1; }
+          case "$archive" in
+            *.zip)    unzip -q "$archive" -d runtime-unpacked ;;
+            *.tar.gz) tar -xzf "$archive" -C runtime-unpacked ;;
+          esac
+          bundle=$(find runtime-unpacked -maxdepth 1 -type d -name 'soundchex-server-*' | head -1)
+          [ -n "$bundle" ] || { echo "no bundle directory inside $archive"; exit 1; }
+          scripts/stage-server-runtime.sh "$bundle"
+
+      # Fails loudly rather than producing an installer with no runtime in it.
+      - name: Check the runtime is staged
+        run: |
+          test -d src-tauri/runtime/bin || { echo "runtime/bin missing"; exit 1; }
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            test -s src-tauri/runtime/bin/frankenphp.exe || { echo "frankenphp.exe missing"; exit 1; }
+            test -d src-tauri/runtime/bin/ext || { echo "bin/ext missing -- extensions would not load"; exit 1; }
+          else
+            test -s src-tauri/runtime/bin/php-fpm || { echo "php-fpm missing"; exit 1; }
+          fi
+
+      - name: Build the Server app
+        run: npm run build:server
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: soundchex-server-app-${{ matrix.label }}
+          path: src-tauri/target/release/bundle/**/*
           if-no-files-found: warn
 
   release:
