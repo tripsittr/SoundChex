@@ -17,6 +17,7 @@ use App\Jobs\ImportSubtitlesJob;
 use App\Models\MediaItem;
 use App\Models\Notification;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use SplFileInfo;
 use Symfony\Component\Finder\Finder;
@@ -53,6 +54,8 @@ class LibraryScanner
         $result = [
             'imported' => 0,
             'unsettled' => 0,
+            'unreadable' => 0,
+            'unreadable_files' => [],
             'duplicates' => 0,
             'folders' => count($folders),
             'titles' => [],
@@ -107,6 +110,19 @@ class LibraryScanner
                 $classified = $this->classify($file, $path);
 
                 if ($classified === null) {
+                    // Counted and named. This was a bare `continue`, so a file
+                    // the scanner could not make a title out of was indis-
+                    // tinguishable from one that was already catalogued: the
+                    // scan printed nothing, exited 0, and five files stayed in
+                    // the inbox for four months with nothing to say why.
+                    $result['unreadable']++;
+                    $result['unreadable_files'][] = $path;
+
+                    Log::warning('A media file could not be catalogued', [
+                        'path' => $path,
+                        'hint' => 'No title could be read from the filename. Renaming it to something with words in it is usually enough.',
+                    ]);
+
                     continue;
                 }
 
@@ -638,7 +654,20 @@ class LibraryScanner
 
         // "Title by Author Name" — the author is dropped here because the
         // metadata source resolves it far more reliably from the title alone.
-        $title = preg_replace('/\s+by\s+[^-–—]+$/i', '', $title) ?? $title;
+        //
+        // Books only, and not from the start of the title. This ran on every
+        // type and swallowed any track whose name begins with "By": "01 - By
+        // My Side" matched " By My Side" and was stripped down to "01 -",
+        // which then read as a filename with no title in it and was dropped —
+        // silently, because an unclassifiable file was not counted. Five music
+        // files sat in the inbox for four months that way.
+        //
+        // `(?!$)` is not enough on its own: the guard that matters is that
+        // something precedes the "by", so a title IS the author clause rather
+        // than merely containing the word.
+        if ($type === MediaItemType::Book) {
+            $title = preg_replace('/(?<=\S)\s+by\s+[^-–—]+$/i', '', $title) ?? $title;
+        }
 
         // Underscores and dots stand in for spaces in a lot of downloads.
         $title = str_replace(['_', '.'], ' ', $title);
@@ -660,7 +689,12 @@ class LibraryScanner
         // A long unbroken run of mixed-case characters with no spaces is a
         // generated name (Livewire temp uploads look exactly like this), not
         // a title anyone would search for.
-        if (! str_contains($title, ' ') && strlen($title) > 24) {
+        //
+        // Characters, not bytes. `strlen` counted "D‐I‐V‐O‐R‐C‐E" as 25 and
+        // threw it away as a hash: its hyphens are U+2010, three bytes each,
+        // so thirteen characters measured twenty-five. Any title with accents
+        // or typographic punctuation was liable to the same thing.
+        if (! str_contains($title, ' ') && mb_strlen($title) > 24) {
             return null;
         }
 
