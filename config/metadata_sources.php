@@ -37,7 +37,7 @@ return [
         'App\Services\Metadata\Sources\Music\Deezer',          // 10 — track-level cover fallback (no key, opt-in)
 
         // 'App\Services\Metadata\Sources\Music\Discogs',      // 4 — pressing details, catalog number
-        // 'App\Services\Metadata\Sources\Music\Lastfm',       // 7 — community tags, similar artists, biography
+        'App\Services\Metadata\Sources\Music\Lastfm',          // 7 — community tags, and the MusicBrainz ids this library lacks
         // 'App\Services\Metadata\Sources\Music\FanartTv',     // 8 — HD artist/album artwork
         // 'App\Services\Metadata\Sources\Music\Genius',       // 9 — lyrics, annotations
     ],
