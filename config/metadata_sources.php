@@ -54,7 +54,7 @@ return [
         'App\Services\Metadata\Sources\Show\Tmdb',             // 1 — series, seasons, episodes, cast, network
 
         // 'App\Services\Metadata\Sources\Show\TvMaze',        // 2 — episode-level detail, guest cast (no key)
-        // 'App\Services\Metadata\Sources\Show\Tvdb',          // 3 — alternate episode ordering, episode art
+        'App\Services\Metadata\Sources\Show\Tvdb',             // 3 — alternate episode ordering, episode art
         // 'App\Services\Metadata\Sources\Show\Trakt',         // 4 — ratings, progress, similar shows
         // 'App\Services\Metadata\Sources\Show\FanartTv',      // 5 — series banners, HD posters, season art
     ],
