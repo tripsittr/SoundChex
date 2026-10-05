@@ -6,7 +6,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Concerns\RestrictsToAdmins;
-
+use App\Services\SettingsService;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
@@ -16,7 +16,6 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
-use App\Services\SettingsService;
 use UnitEnum;
 
 class Settings extends Page
@@ -76,7 +75,7 @@ class Settings extends Page
         $settings = app(SettingsService::class);
 
         foreach ($state as $key => $value) {
-            $settings->set(static::settingPrefix() . $key, $value);
+            $settings->set(static::settingPrefix().$key, $value);
         }
 
         Notification::make()
@@ -103,14 +102,19 @@ class Settings extends Page
 
         $defaults = [
             'app_name' => config('app.name'),
-            'allow_registration' => true,
+            // Closed until someone chooses otherwise. This was `true`, which
+            // quietly defeated the `?? false` in EnsureRegistrationIsOpen and
+            // left sign-up open on every install that had never saved the
+            // setting. First-run is handled there by the absence of any user,
+            // not by this default.
+            'allow_registration' => false,
             'require_email_verification' => false,
         ];
 
         $stored = [];
 
         foreach ($defaults as $key => $default) {
-            $value = $settings->get(static::settingPrefix() . $key);
+            $value = $settings->get(static::settingPrefix().$key);
 
             // A stored `false` is a real choice, so only a genuinely absent
             // value falls back to the default.
