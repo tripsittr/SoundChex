@@ -46,6 +46,33 @@ enum DuplicateMatch: string implements HasColor, HasLabel
      */
     case Likely = 'likely';
 
+    /**
+     * Same film, by the provider's id for it.
+     *
+     * Video had no content pass at all, so the only duplicate a film could
+     * have was a byte-identical one — and a second rip never is. Two rows both
+     * titled "War Dogs", both resolved to TMDB 308266, one 18 MB and one
+     * 1.8 GB, were invisible to a detector that only compared bytes.
+     */
+    case Tmdb = 'tmdb';
+
+    /**
+     * Same episode of the same series, by season and episode number.
+     *
+     * The strongest identity an episode has, and more reliable than its title:
+     * series reuse titles across seasons, and numbering does not.
+     */
+    case Episode = 'episode';
+
+    /**
+     * Same title and year, with no provider id to confirm it.
+     *
+     * For a film or an episode that enrichment has not identified. Offered for
+     * review only: two different films do share a title, which is exactly why
+     * the year is required as well.
+     */
+    case SameTitle = 'same_title';
+
     public function getLabel(): string
     {
         return match ($this) {
@@ -55,6 +82,9 @@ enum DuplicateMatch: string implements HasColor, HasLabel
             self::AcoustId => 'Same audio fingerprint',
             self::Fuzzy => 'Same track (tags + length)',
             self::Likely => 'Probably the same track',
+            self::Tmdb => 'Same film (TMDB)',
+            self::Episode => 'Same episode',
+            self::SameTitle => 'Same title and year',
         };
     }
 
@@ -67,6 +97,9 @@ enum DuplicateMatch: string implements HasColor, HasLabel
             self::AcoustId => 'info',
             self::Fuzzy => 'warning',
             self::Likely => 'gray',
+            self::Tmdb => 'success',
+            self::Episode => 'success',
+            self::SameTitle => 'warning',
         };
     }
 
@@ -93,6 +126,10 @@ enum DuplicateMatch: string implements HasColor, HasLabel
             self::AcoustId => 85,
             self::Fuzzy => 60,
             self::Likely => 40,
+            // A provider id is as good as an ISRC: it identifies the work.
+            self::Tmdb => 95,
+            self::Episode => 95,
+            self::SameTitle => 55,
         };
     }
 }

@@ -476,6 +476,80 @@ An empty answer is cached, and that is most of the win — the tracks nothing ca
 identify are exactly the ones that repeat, and asking twelve times gets the same
 nothing. A failed request is never cached: one rate-limited minute would
 otherwise poison a week of lookups for every track in it.
+## Duplicate films and episodes, which were never looked for
+
+"Literally they have almost identical file names or names in the database. How
+can we not discover those?" — a fair question with an unflattering answer: for
+film and television the only check was an exact byte hash. Music had a whole
+content pass — ISRC, MusicBrainz id, fingerprint, then tags — and video had
+nothing at all. A second copy of a film is never byte-identical: it is a
+different rip, a different release, or a download that stopped early. So the
+obvious cases were structurally invisible.
+
+Two from the real library, now the test fixtures:
+
+- **War Dogs**, twice. Both resolved to TMDB 308266. One file 1.8 GB, the other
+  18 MB — a stub that never finished downloading. Different bytes, so nothing
+  compared them.
+- **Bart of Darkness** and **Lisa's Rival**, twice each, same series, same
+  season, same episode number, the file names differing by a `(2)`.
+
+Films match on TMDB's id first, which identifies the work and is as strong a
+signal as an ISRC. Failing that, title *and* year together — required, not
+preferred, because there are two films called "The Mummy" and they are not
+copies of each other.
+
+Episodes match on season and episode number within the same series. Numbering
+beats title: series reuse titles across seasons and numbering does not. Scoped
+to the series — by parent row, or the series' own id — because every series has
+an S01E01 and matching on numbering alone would pair all of them.
+
+Neither is ever deleted automatically, like the music content pass. The files
+genuinely differ, and choosing between 1.8 GB and 18 MB is obvious to a person
+and not to this code.
+
+## The server was unreachable, and looked broken instead
+
+"Is it set up for me to connect? Tailscale maybe?" It was not, and the way it
+failed was the problem: the server bound `:8000`, answered on loopback, and was
+unreachable from every other device on the tailnet. That is indistinguishable
+from a broken server.
+
+Windows blocks unsolicited inbound connections for which no rule exists, and
+nothing ever created one. (A check from the machine itself proves nothing here —
+loopback is not filtered. That is how this was missed in the first place.)
+
+The installer now adds the rule, scoped rather than open:
+
+- `100.64.0.0/10` — Tailscale's address range, so the user's own devices reach
+  it from anywhere and nothing else can route to it.
+- `LocalSubnet` — the home network, so a laptop in the same house needs no
+  tunnel.
+
+Deliberately not the public internet: a machine on a café network must not start
+serving someone's film collection to the room. Widening that is a decision for
+the person who owns the library to take knowingly, not one an installer takes
+for them. The uninstaller removes the rule — a firewall hole outliving the thing
+it was for is how a machine ends up with holes nobody can account for.
+
+Under `bundle.windows.nsis`, so macOS and Linux never see it.
+
+## A test that failed hours after the run that caused it
+
+`test_it_sweeps_a_session_nothing_has_touched` started failing with "2 is not
+1", and only in a full run. It passed alone, and passed in a full run an hour
+later.
+
+`test_it_leaves_a_session_that_is_still_being_written` deliberately creates an
+HLS session that must *not* be swept, asserts it survives, and left it on real
+storage — these tests write to `storage/app/private/hls`, not a faked disk. Its
+newest segment is "just written", so for the next two hours the next run agrees
+it is live. After that the segment is older than the sweep threshold, the next
+run removes it *and counts it*, and a different test fails for it.
+
+So the failure needed two runs more than two hours apart, which is why it looked
+like it arrived from nowhere. The session directories are tracked and removed in
+`tearDown` now; the file passes twice in a row and leaves nothing behind.
 ## Still broken
 
 - **First start takes about a minute** — 33,379 files is 57 seconds of

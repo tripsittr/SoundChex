@@ -183,6 +183,21 @@ class DuplicateDetector
             }
         }
 
+        // And the same for film and television, which had no content pass at all.
+        //
+        // Only bytes were ever compared for video, and a second copy of a film
+        // almost never matches byte for byte: it is a different rip, a different
+        // release, or a download that stopped early. Two rows both titled "War
+        // Dogs", both resolved to TMDB 308266, one of them 18 MB against the
+        // other's 1.8 GB, sat in the library undetected -- and so did every
+        // Simpsons episode that had been fetched twice.
+        if ($this->settings->detectContentDuplicates()
+            && in_array($item->type, [MediaItemType::Movie, MediaItemType::Show], true)) {
+            if ($match = $this->findVideoMatch($item)) {
+                return $this->flag($item, $match['original'], $match['reason'], autoDeletable: false);
+            }
+        }
+
         return null;
     }
 
@@ -235,6 +250,134 @@ class DuplicateDetector
         $original = $this->pickOriginal($candidates);
 
         return $original ? ['original' => $original] : null;
+    }
+
+    /**
+     * The same film or episode in a different file, if any.
+     *
+     * Never auto-deletable, like the music content pass: the files genuinely
+     * differ, so only the user can say which copy to keep. A 1.8 GB rip and an
+     * 18 MB stub are the same film, and which one to throw away is obvious to a
+     * person and not to this code.
+     *
+     * @return array{original: MediaItem, reason: DuplicateMatch}|null
+     */
+    private function findVideoMatch(MediaItem $item): ?array
+    {
+        return $item->type === MediaItemType::Show
+            ? $this->findEpisodeMatch($item)
+            : $this->findFilmMatch($item);
+    }
+
+    /**
+     * Another copy of the same film.
+     *
+     * TMDB's id first -- it identifies the work, so it is as strong a signal as
+     * an ISRC. Failing that, title *and* year together: two different films do
+     * share a title, which is why the year is required rather than preferred,
+     * and why this one is only ever offered for review.
+     *
+     * @return array{original: MediaItem, reason: DuplicateMatch}|null
+     */
+    private function findFilmMatch(MediaItem $item): ?array
+    {
+        $meta = $item->movieMetadata;
+
+        if (filled($meta?->tmdb_id)) {
+            $original = $this->pickOriginal($this->videoCandidates($item)
+                ->whereHas('movieMetadata', fn ($q) => $q->where('tmdb_id', $meta->tmdb_id))
+                ->get());
+
+            if ($original) {
+                return ['original' => $original, 'reason' => DuplicateMatch::Tmdb];
+            }
+        }
+
+        if (blank($item->title) || blank($meta?->release_year)) {
+            return null;
+        }
+
+        $original = $this->pickOriginal($this->videoCandidates($item)
+            ->whereRaw('LOWER(TRIM(title)) = ?', [$this->normalise((string) $item->title)])
+            ->whereHas('movieMetadata', fn ($q) => $q->where('release_year', $meta->release_year))
+            ->get());
+
+        return $original ? ['original' => $original, 'reason' => DuplicateMatch::SameTitle] : null;
+    }
+
+    /**
+     * Another copy of the same episode.
+     *
+     * Season and episode number within the same series, which is the strongest
+     * identity an episode has -- stronger than its title, because series reuse
+     * titles across seasons and numbering does not.
+     *
+     * "The same series" means the same parent row where both have one, falling
+     * back to the series' own TMDB id. Matching on numbering alone would pair
+     * every S01E01 in the library with every other.
+     *
+     * @return array{original: MediaItem, reason: DuplicateMatch}|null
+     */
+    private function findEpisodeMatch(MediaItem $item): ?array
+    {
+        $meta = $item->showMetadata;
+
+        if ($meta === null) {
+            return null;
+        }
+
+        $sameSeries = function ($query) use ($item, $meta): void {
+            if ($item->parent_id !== null) {
+                $query->where('parent_id', $item->parent_id);
+
+                return;
+            }
+
+            // No parent on either side: the series' own id is the next best
+            // thing. Without even that there is nothing to scope by, and a
+            // library-wide match on "S06E01" would be nonsense.
+            if (filled($meta->tmdb_id)) {
+                $query->whereHas('showMetadata', fn ($q) => $q->where('tmdb_id', $meta->tmdb_id));
+
+                return;
+            }
+
+            $query->whereRaw('1 = 0');
+        };
+
+        if ($meta->season_number !== null && $meta->episode_number !== null) {
+            $original = $this->pickOriginal($this->videoCandidates($item)
+                ->where($sameSeries)
+                ->whereHas('showMetadata', fn ($q) => $q
+                    ->where('season_number', $meta->season_number)
+                    ->where('episode_number', $meta->episode_number))
+                ->get());
+
+            if ($original) {
+                return ['original' => $original, 'reason' => DuplicateMatch::Episode];
+            }
+        }
+
+        // Unnumbered: the title within the one series. Distinctive enough there,
+        // and worthless across the library, which is why it stays scoped.
+        if (blank($item->title) || $item->parent_id === null) {
+            return null;
+        }
+
+        $original = $this->pickOriginal($this->videoCandidates($item)
+            ->where($sameSeries)
+            ->whereRaw('LOWER(TRIM(title)) = ?', [$this->normalise((string) $item->title)])
+            ->get());
+
+        return $original ? ['original' => $original, 'reason' => DuplicateMatch::SameTitle] : null;
+    }
+
+    /** Eligible originals of the same media type, oldest first. */
+    private function videoCandidates(MediaItem $item): Builder
+    {
+        return $this->eligibleOriginals($item)
+            ->where('type', $item->type)
+            ->orderBy('id');
     }
 
     /**
