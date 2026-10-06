@@ -82,6 +82,10 @@ class Omdb implements MetadataSource
 
         $values = array_filter([
             'imdb_rating' => $this->decimal($body['imdbRating'] ?? null),
+            // How many people voted, which IMDb never shows without. A score
+            // on its own is much weaker than it looks: 9.3 could be three
+            // people or three million (#511).
+            'imdb_votes' => $this->count($body['imdbVotes'] ?? null),
             'rt_score' => $this->percent($this->ratingFrom($body, 'Rotten Tomatoes')),
             'metascore' => $this->percent($body['Metascore'] ?? null),
             'awards' => $this->awards($body['Awards'] ?? null),
@@ -178,6 +182,21 @@ class Omdb implements MetadataSource
         }
 
         return null;
+    }
+
+    /**
+     * `"3,235,958"` to 3235958.
+     *
+     * OMDb sends it formatted, which is a presentation decision the client
+     * should make against its own locale rather than one baked into the
+     * database. Anything that is not digits once the separators are gone is
+     * not a count.
+     */
+    private function count(mixed $value): ?int
+    {
+        $value = str_replace([',', ' '], '', trim((string) $value));
+
+        return ctype_digit($value) && $value !== '' ? (int) $value : null;
     }
 
     /** `"9.3"` to 9.3, and OMDb's literal `"N/A"` to null. */

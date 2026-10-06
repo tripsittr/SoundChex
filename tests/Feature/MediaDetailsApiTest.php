@@ -313,4 +313,24 @@ class MediaDetailsApiTest extends TestCase
         $this->assertSame(94, (int) $detail['rt_score']);
         $this->assertSame('Won 3 Emmys.', $detail['awards']);
     }
+
+    public function test_the_vote_count_rides_with_the_rating(): void
+    {
+        // A score without a count is much weaker than it looks, which is why
+        // IMDb never shows one alone. OMDb returns `imdbVotes` on every
+        // lookup and nothing stored it (#511).
+        $film = $this->film();
+
+        $film->movieMetadata()->create(['imdb_rating' => 9.3, 'imdb_votes' => 3235958]);
+
+        $detail = $this->actingAs($this->user)
+            ->getJson("/api/v1/items/{$film->id}/details")
+            ->json('detail');
+
+        $this->assertSame(9.3, (float) $detail['imdb_rating']);
+
+        // An integer, not "3,235,958": formatting is the client's decision
+        // against its own locale, not one baked into the payload.
+        $this->assertSame(3235958, $detail['imdb_votes']);
+    }
 }
