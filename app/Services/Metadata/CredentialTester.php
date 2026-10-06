@@ -45,6 +45,7 @@ class CredentialTester
             'acoustid_api_key',
             'opensubtitles_api_key',
             'spotify.client_id',
+            'omdb_api_key',
         ], true);
     }
 
@@ -70,6 +71,7 @@ class CredentialTester
                 'acoustid_api_key' => $this->acoustid($value),
                 'opensubtitles_api_key' => $this->openSubtitles($value),
                 'spotify.client_id' => $this->spotify($value, trim($values['spotify.client_secret'] ?? '')),
+                'omdb_api_key' => $this->omdb($value),
                 default => $this->fail('This one cannot be tested from here.'),
             };
         } catch (\Throwable $e) {
@@ -199,6 +201,50 @@ class CredentialTester
         return filled($response->json('access_token'))
             ? $this->pass('Working.')
             : $this->fail($this->reason($response->json('error_description'), $response->status()));
+    }
+
+    /**
+     * OMDb, by a well-known id rather than a search.
+     *
+     * The trap this has to get right: OMDb answers **200 with
+     * `{"Response":"False","Error":"Invalid API key!"}`** for a bad key, so the
+     * status says nothing and the body decides. A tester that trusted the
+     * status would call every wrong key working -- which is worse than having
+     * no test, because it would actively mislead.
+     *
+     * `tt0111161` is The Shawshank Redemption: a title that has been in the
+     * database for decades and will not quietly disappear and make a good key
+     * look broken.
+     */
+    private function omdb(string $key): array
+    {
+        $response = Http::timeout(self::TIMEOUT)
+            ->get('https://www.omdbapi.com/', [
+                'i' => 'tt0111161',
+                'apikey' => $key,
+                // Nothing of the body is used beyond the flag, so ask for the
+                // smaller one.
+                'plot' => 'short',
+            ]);
+
+        // The body is read first, whatever the status. A bad key gets **401
+        // with the explanation in the body** -- `{"Response":"False","Error":
+        // "Invalid API key!"}` -- so branching on the status would discard the
+        // one sentence worth showing and print "The service rejected that key"
+        // instead. Verified against the live API, which is how this was
+        // caught: the first version did exactly that.
+        $body = (array) $response->json();
+
+        if (($body['Response'] ?? 'False') !== 'True') {
+            return $this->fail($this->reason($body['Error'] ?? null, $response->status()));
+        }
+
+        // No status check after this. a5's review: a `Response: True` body
+        // arriving with a non-2xx status does not happen, so the branch was
+        // unreachable -- and dead code in a credential path is worse than
+        // useless, because a reader has to work out whether it guards
+        // something.
+        return $this->pass('Working.');
     }
 
     /**
