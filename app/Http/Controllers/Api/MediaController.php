@@ -252,6 +252,11 @@ class MediaController extends Controller
             // "not measured", and inventing "HD" from a filename would be a
             // guess presented as a fact.
             'capabilities' => $item->probe?->capabilities() ?? [],
+            // Every audio track, so a client can offer the choice. A rip
+            // routinely carries the original language, a dub or two and a
+            // commentary; the probe has recorded them all along and nothing
+            // was ever sent, so every client played whichever came first.
+            'audio_tracks' => $item->probe?->audioTracks() ?? [],
 
             // The facts a detail page is built from. Flat and null-free, so a
             // client renders what is present and skips what is not rather than

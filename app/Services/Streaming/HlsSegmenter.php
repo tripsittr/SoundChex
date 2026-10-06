@@ -47,7 +47,7 @@ class HlsSegmenter
      * Returns null when ffmpeg could not be started at all, which the caller
      * turns into a direct-play fallback rather than a broken player.
      */
-    public function start(MediaItem $item, int $maxHeight, float $from = 0.0): ?string
+    public function start(MediaItem $item, int $maxHeight, float $from = 0.0, int $audioTrack = 0): ?string
     {
         $source = $item->playbackPath();
 
@@ -55,7 +55,7 @@ class HlsSegmenter
             return null;
         }
 
-        $session = $this->sessionId($item, $maxHeight, $from);
+        $session = $this->sessionId($item, $maxHeight, $from, $audioTrack);
         $directory = $this->directoryFor($session);
 
         // Already running or finished for this exact request: reuse it. A
@@ -71,7 +71,7 @@ class HlsSegmenter
             return null;
         }
 
-        $command = $this->command($source, $directory, $maxHeight, $from);
+        $command = $this->command($source, $directory, $maxHeight, $from, $audioTrack);
 
         // Started detached: this runs for as long as the film does, and the
         // request that asked for it must return as soon as the first segment
@@ -325,13 +325,17 @@ class HlsSegmenter
      * backwards past what has been produced starts a new one rather than
      * waiting for a segment that will never come.
      */
-    private function sessionId(MediaItem $item, int $maxHeight, float $from): string
+    private function sessionId(MediaItem $item, int $maxHeight, float $from, int $audioTrack = 0): string
     {
         return substr(hash('sha256', implode(':', [
             $item->id,
             $item->updated_at?->timestamp ?? 0,
             $maxHeight,
             (int) round($from),
+            // The track is part of the identity: switching language has to
+            // produce a different stream, not reuse the one already encoded
+            // with the old audio.
+            $audioTrack,
         ])), 0, 32);
     }
 
@@ -372,8 +376,13 @@ class HlsSegmenter
     }
 
     /** @return array<int, string> */
-    private function command(string $source, string $directory, int $maxHeight, float $from): array
-    {
+    private function command(
+        string $source,
+        string $directory,
+        int $maxHeight,
+        float $from,
+        int $audioTrack = 0,
+    ): array {
         $seconds = max(2, (int) config('transcode.hls.segment_seconds', 6));
 
         // Keyframes at segment boundaries, in *frames* — so the frame rate has
@@ -394,7 +403,13 @@ class HlsSegmenter
             // One video and one audio stream: many rips carry a dozen audio
             // tracks, and HLS players pick badly among them.
             '-map', '0:v:0',
-            '-map', '0:a:0?',
+            // The chosen track, not always the first.
+            //
+            // This was hardcoded to `0:a:0`, so a rip carrying an original
+            // language, a dub and a commentary always played whichever
+            // happened to be first -- and no amount of choosing in the app
+            // could change it, because the stream only ever contained one.
+            '-map', '0:a:'.$audioTrack.'?',
             '-c:v', 'libx264',
             // **The output profile has to be pinned.**
             //

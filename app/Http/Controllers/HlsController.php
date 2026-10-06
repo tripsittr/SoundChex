@@ -76,10 +76,16 @@ class HlsController extends Controller
         $from = max(0.0, (float) $request->float('from'));
         $signed = $this->signsSegments($request);
 
+        // Which audio track to encode. Clamped to what the file actually
+        // has: a request for track 9 of a two-track file would otherwise map
+        // nothing and produce a silent stream.
+        $audioTrack = $this->audioTrackFor($request, $item);
+
         $session = $this->segmenter->start(
             $item,
             $decision->maxHeight ?? (int) config('transcode.video.max_height', 1080),
             $from,
+            $audioTrack,
         );
 
         abort_if($session === null, 503, 'Could not start the stream.');
@@ -136,6 +142,24 @@ class HlsController extends Controller
      * Keyed on the request reaching an API route rather than on the guard, so
      * the web player is unaffected by anything that changes about tokens.
      */
+    /**
+     * The requested audio track, clamped to what the file has.
+     *
+     * A request for track 9 of a two-track file maps nothing and produces a
+     * **silent** stream -- which looks like a broken encode rather than a bad
+     * parameter, so it is clamped rather than refused.
+     */
+    private function audioTrackFor(Request $request, MediaItem $item): int
+    {
+        $requested = max(0, $request->integer('audio', 0));
+
+        $item->loadMissing('probe');
+
+        $available = count($item->probe?->audioTracks() ?? []);
+
+        return $available > 0 ? min($requested, $available - 1) : 0;
+    }
+
     private function signsSegments(Request $request): bool
     {
         return $request->is('api/*');

@@ -237,6 +237,110 @@ class MediaProbe extends Model
         return $audio->contains(fn (string $codec): bool => in_array($codec, self::PLAYABLE_AUDIO, true));
     }
 
+    /**
+     * The audio tracks, as something a client can put in a menu.
+     *
+     * A rip of a film routinely carries half a dozen: the original language,
+     * a dub or two, a commentary, a descriptive track. The probe has recorded
+     * all of them all along and nothing was ever sent, so every client played
+     * whichever one happened to be first and offered no way to change it.
+     *
+     * The index is what matters functionally -- it is what `-map 0:a:N` and
+     * `AVMediaSelectionOption` both key on -- and the label is what makes the
+     * menu readable.
+     *
+     * @return array<int, array{index: int, label: string, language: string|null, channels: int|null, codec: string|null, default: bool}>
+     */
+    public function audioTracks(): array
+    {
+        $tracks = [];
+
+        foreach (array_values((array) ($this->audio_streams ?? [])) as $index => $stream) {
+            $stream = (array) $stream;
+
+            $tracks[] = [
+                'index' => $index,
+                'label' => $this->audioTrackLabel($stream, $index),
+                'language' => $stream['language'] ?? null,
+                'channels' => isset($stream['channels']) ? (int) $stream['channels'] : null,
+                'codec' => $stream['codec'] ?? null,
+                'default' => (bool) ($stream['default'] ?? false),
+            ];
+        }
+
+        return $tracks;
+    }
+
+    /**
+     * What to call one track in a menu.
+     *
+     * Language first, because that is what somebody is choosing between, and
+     * the channel layout after it -- "English 5.1" distinguishes the surround
+     * mix from the stereo one, which is the other reason to have this menu.
+     *
+     * A track with no language at all falls back to its position, because
+     * "Track 2" is still a choice somebody can make and an empty row is not.
+     */
+    private function audioTrackLabel(array $stream, int $index): string
+    {
+        $parts = [];
+
+        $language = is_string($stream['language'] ?? null) ? trim($stream['language']) : '';
+
+        if ($language !== '' && strtolower($language) !== 'und') {
+            $parts[] = self::LANGUAGE_NAMES[strtolower($language)] ?? strtoupper($language);
+        }
+
+        $channels = isset($stream['channels']) ? (int) $stream['channels'] : 0;
+
+        $layout = match (true) {
+            $channels >= 8 => '7.1',
+            $channels >= 6 => '5.1',
+            $channels === 2 => 'Stereo',
+            $channels === 1 => 'Mono',
+            default => null,
+        };
+
+        if ($layout !== null) {
+            $parts[] = $layout;
+        }
+
+        return $parts === [] ? 'Track '.($index + 1) : implode(' ', $parts);
+    }
+
+    /**
+     * The handful of languages worth spelling out.
+     *
+     * Deliberately short: a three-letter code is readable enough for the
+     * unusual ones, and a complete ISO table is a lot of rows to carry for a
+     * menu that mostly says "English".
+     */
+    private const LANGUAGE_NAMES = [
+        'eng' => 'English',
+        'en' => 'English',
+        'spa' => 'Spanish',
+        'es' => 'Spanish',
+        'fra' => 'French',
+        'fre' => 'French',
+        'fr' => 'French',
+        'deu' => 'German',
+        'ger' => 'German',
+        'de' => 'German',
+        'ita' => 'Italian',
+        'it' => 'Italian',
+        'jpn' => 'Japanese',
+        'ja' => 'Japanese',
+        'kor' => 'Korean',
+        'ko' => 'Korean',
+        'por' => 'Portuguese',
+        'pt' => 'Portuguese',
+        'rus' => 'Russian',
+        'ru' => 'Russian',
+        'zho' => 'Chinese',
+        'chi' => 'Chinese',
+        'zh' => 'Chinese',
+    ];
+
     public function audioLabel(): ?string
     {
         $channels = collect($this->audio_streams ?? [])
