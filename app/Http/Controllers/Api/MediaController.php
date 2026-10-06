@@ -104,7 +104,12 @@ class MediaController extends Controller
     {
         abort_unless(app(ContentGate::class)->allows($item), 404);
 
-        $item->load(['people' => fn ($q) => $q->orderByPivot('sort_order')]);
+        $item->load([
+            'people' => fn ($q) => $q->orderByPivot('sort_order'),
+            // Loaded here rather than lazily: `capabilities()` reads several
+            // columns and this endpoint is the only caller.
+            'probe',
+        ]);
 
         // Cast and crew split apart rather than sent as one list with a role
         // on each: a detail page shows them under separate headings, and
@@ -142,6 +147,16 @@ class MediaController extends Controller
             // as their own line, and every client would otherwise filter the
             // tag list the same way.
             'genres' => $item->tags()->where('type', 'genre')->pluck('value')->filter()->values(),
+
+            // What the file can do -- HD, Dolby Vision, 5.1 -- as the short
+            // labels a player shows. A different question from the numbers in
+            // `detail`: "will this look and sound good on my setup", answered
+            // at a glance rather than read.
+            //
+            // Empty for an unprobed file, which is honest: absent badges mean
+            // "not measured", and inventing "HD" from a filename would be a
+            // guess presented as a fact.
+            'capabilities' => $item->probe?->capabilities() ?? [],
 
             // The facts a detail page is built from. Flat and null-free, so a
             // client renders what is present and skips what is not rather than
