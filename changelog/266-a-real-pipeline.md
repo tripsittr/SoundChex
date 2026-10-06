@@ -127,10 +127,14 @@ that matters most had nothing watching it.
   true to keep the old behaviour for non-pipeline jobs on a single-worker
   install. `StrandedJobsTest` enables it explicitly rather than relying on a
   default it used to get for free.
-- **Three queues exist but the bundled supervisor still runs one worker on the
-  default queue.** Until the supervisor config names `io`, `cpu` and `net`, work
-  on those queues will not be picked up — the supervisor change is part of
-  this phase's deployment, not its code.
+- **The worker now serves all four queues.** A bare `queue:work` serves
+  `default` only, so the `io`, `cpu` and `net` stages would have sat
+  unprocessed forever while the worker looked healthy. Both the Tauri
+  supervisor and the launchd plist pass
+  `--queue=default,net,cpu,io`, ordered so cheap work is never stuck behind
+  expensive. **A worker started by hand needs that flag too.**
+  Verified by draining all four queues with one worker against the real
+  library.
 - The probe and quality stages are deliberate pass-throughs until #467. They
   return `Skipped` with a reason rather than `Done`, so an item's history does
   not claim work that did not happen.

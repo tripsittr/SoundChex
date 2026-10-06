@@ -250,6 +250,16 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
             let mut c = Command::new(layout.exe("php"));
             c.arg(layout.app_dir.join("artisan"))
                 .arg("queue:work")
+                // Every queue the pipeline uses, in priority order (#465).
+                // A bare `queue:work` serves `default` only, so the io, cpu
+                // and net stages would sit unprocessed forever -- the worker
+                // would look healthy and nothing would move.
+                //
+                // Ordered so the cheap work is never stuck behind the
+                // expensive: `default` holds the transitions, `net` waits on
+                // other people's servers, `cpu` reads files, and `io` hashes
+                // and moves bytes, which is the slowest.
+                .arg("--queue=default,net,cpu,io")
                 .arg("--tries=1")
                 .arg("--timeout=21900");
             c

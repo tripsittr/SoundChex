@@ -16,6 +16,9 @@
 		<string>/Users/tripsittr/Library/Application Support/Herd/bin/php84</string>
 		<string>/Users/tripsittr/Documents/Tripsittr LLC/SoundChex/SoundChex App/artisan</string>
 		<string>queue:work</string>
+		<!-- Every queue the pipeline uses (#465). A bare queue:work serves
+		     `default` only, so the io, cpu and net stages would never run. -->
+		<string>--queue=default,net,cpu,io</string>
 		<string>--tries=1</string>
 		<string>--timeout=21900</string>
 		<string>--sleep=1</string>
