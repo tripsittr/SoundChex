@@ -622,9 +622,15 @@ class DuplicateDetector
         }
 
         // Two rows can point at one file — a re-import catalogues the same
-        // path twice. There is no redundant copy to delete here, only a
-        // redundant row, so the file must be left completely alone.
-        if ($duplicatePath === $originalPath) {
+        // path twice, or a case-only rename leaves two spellings of one name.
+        // There is no redundant copy to delete here, only a redundant row, so
+        // the file must be left completely alone.
+        //
+        // Compared by identity rather than by string: a string compare missed
+        // the two-spellings case, fell through to the byte compare below, which
+        // hashed the same file twice and agreed it was a duplicate, and deleted
+        // the user's only copy (#454).
+        if ($duplicatePath !== null && FileIdentity::same($duplicatePath, $originalPath)) {
             $duplicate->forceFill([
                 'duplicate_status' => DuplicateStatus::Merged,
             ])->saveQuietly();
@@ -703,7 +709,10 @@ class DuplicateDetector
 
         // Same file behind both rows — nothing on disk to delete, only a
         // redundant row. (Unlikely for a content match, but cheap to be safe.)
-        if ($loserPath === $keeperPath) {
+        //
+        // By identity, not by string: two spellings of one path would otherwise
+        // reach the delete below and remove the only copy (#454).
+        if ($loserPath !== null && FileIdentity::same($loserPath, $keeperPath)) {
             $duplicate->forceFill(['duplicate_status' => DuplicateStatus::Merged])->saveQuietly();
 
             $this->remember($duplicate, DuplicateStatus::Merged);

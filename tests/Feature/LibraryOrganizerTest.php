@@ -247,6 +247,51 @@ class LibraryOrganizerTest extends TestCase
         $this->assertTrue($this->organizer->isAlreadyFiled($item->fresh()));
     }
 
+    public function test_a_case_only_rename_keeps_the_file(): void
+    {
+        // The bug this exists for (tracker #454). On a case-insensitive volume
+        // -- the macOS and Windows default -- a target that differs from the
+        // source only in case is a *different string* but the *same file*.
+        //
+        // organize() compared the two as strings, so it did not recognise the
+        // file as already filed. isSameFile() then hashed both paths and got
+        // equal hashes -- because they are one file -- and adoptExisting()
+        // unlinked "the redundant copy", which was the only copy.
+        //
+        // Skipped on a case-sensitive volume, where the premise cannot arise.
+        $disk = Storage::disk('local');
+        $filed = 'media/library/Music/flipturn/Heavy Colors/03 Chicago.mp3';
+        $disk->put($filed, 'the only copy');
+
+        $absolute = $disk->path($filed);
+        $recased = dirname($absolute).'/03 CHICAGO.mp3';
+
+        if (! file_exists($recased)) {
+            $this->markTestSkipped('The test volume is case-sensitive, so a case-only collision cannot happen.');
+        }
+
+        // An item whose stored path is the other spelling of that same file.
+        $item = MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => 'Chicago',
+            'file_path' => $recased,
+            'match_confidence' => MatchConfidence::Exact,
+            'owned' => true,
+        ]);
+        $item->musicMetadata()->create([
+            'artist' => 'flipturn',
+            'album' => 'Heavy Colors',
+            'track_number' => 3,
+        ]);
+
+        $this->organizer->organize($item->fresh());
+
+        // The one thing that must never happen.
+        $this->assertFileExists($absolute);
+        $this->assertSame('the only copy', $disk->get($filed));
+    }
+
     /* -------------------------------------------------------- helpers --- */
 
     private function music(string $title, ?string $artist, ?string $album = null, ?int $track = null, string $contents = 'audio'): MediaItem

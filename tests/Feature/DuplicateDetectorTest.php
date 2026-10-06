@@ -5,6 +5,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\DuplicateMatch;
 use App\Enums\DuplicateStatus;
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
@@ -246,6 +247,42 @@ class DuplicateDetectorTest extends TestCase
      * invisible to detection. The scanner hashes everything it catalogues, and
      * these fixtures mirror that.
      */
+    public function test_merging_two_spellings_of_one_file_does_not_delete_it(): void
+    {
+        // The organizer's #454 bug, in merge(). Two rows can name one file by
+        // two spellings — a re-import after a case-only rename, or a symlinked
+        // root. merge() compared the paths as strings, so it did not take the
+        // "one file, two rows" branch; it then asked identical() whether the
+        // bytes matched, which hashed the same file twice and of course said
+        // yes, and deleted the user's only copy.
+        $disk = Storage::disk('local');
+        $disk->put('media/unsorted/Track.mp3', 'the only copy');
+
+        $absolute = $disk->path('media/unsorted/Track.mp3');
+        $recased = dirname($absolute).'/TRACK.mp3';
+
+        if (! file_exists($recased)) {
+            $this->markTestSkipped('The test volume is case-sensitive, so a case-only collision cannot happen.');
+        }
+
+        $original = $this->row('Track', $absolute);
+        $copy = $this->row('Track', $recased);
+
+        $copy->forceFill([
+            'duplicate_of_id' => $original->id,
+            'duplicate_status' => DuplicateStatus::Pending,
+            'duplicate_match' => DuplicateMatch::Bytes,
+        ])->saveQuietly();
+
+        $merged = $this->detector->merge($copy->fresh());
+
+        // Resolved as a redundant row, with the file untouched.
+        $this->assertTrue($merged);
+        $this->assertFileExists($absolute);
+        $this->assertSame('the only copy', $disk->get('media/unsorted/Track.mp3'));
+        $this->assertSame(DuplicateStatus::Merged, $copy->fresh()->duplicate_status);
+    }
+
     private function item(string $filename, string $contents, MediaItemType $type = MediaItemType::Music): MediaItem
     {
         $path = 'media/unsorted/'.$filename;

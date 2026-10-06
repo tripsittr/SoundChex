@@ -94,7 +94,10 @@ class LibraryOrganizer
 
         $absoluteTarget = Storage::path($target);
 
-        if ($source === $absoluteTarget) {
+        // By identity, for the same reason organize() does (#454): on a
+        // case-insensitive volume a re-cased name is the same file, and
+        // reporting it as unfiled is what sent it down the delete path.
+        if ($this->isSamePath($source, $absoluteTarget)) {
             return true;
         }
 
@@ -141,8 +144,11 @@ class LibraryOrganizer
 
         $absoluteTarget = Storage::path($target);
 
-        // Already filed — nothing to do.
-        if ($source === $absoluteTarget) {
+        // Already filed — nothing to do. Compared by identity, not by string:
+        // on a case-insensitive volume "03 Chicago.mp3" and "03 CHICAGO.mp3"
+        // are different strings naming one file, and a string compare here
+        // reported that file as unfiled (#454).
+        if ($this->isSamePath($source, $absoluteTarget)) {
             return null;
         }
 
@@ -163,10 +169,25 @@ class LibraryOrganizer
             return null;
         }
 
+        // The same file reached by two spellings — a case-only difference on a
+        // case-insensitive volume, or a symlinked library root. There is one
+        // file and nothing to adopt or delete: rename it to the canonical
+        // spelling and keep it.
+        //
+        // This case used to fall into isSameFile() below, which hashed both
+        // paths, found equal hashes *because they are one file*, and deleted
+        // "the duplicate" — the user's only copy (#454).
+        if ($this->isSameInode($source, $absoluteTarget)) {
+            return $this->recaseInPlace($item, $source, $absoluteTarget);
+        }
+
         // A file already sitting at the target may be this exact recording,
         // catalogued twice. Suffixing it would keep a byte-identical copy
         // forever and re-offer it for filing on every run, so an identical
         // file is treated as "already filed here" instead.
+        //
+        // Reached only for two genuinely distinct files (different inodes), so
+        // deleting the redundant one is safe.
         if ($this->isSameFile($source, $absoluteTarget)) {
             return $this->adoptExisting($item, $source, $absoluteTarget);
         }
@@ -466,6 +487,93 @@ class LibraryOrganizer
         }
 
         return $path;
+    }
+
+    /**
+     * Whether the file is already exactly where it belongs.
+     *
+     * Delegates to {@see FileIdentity}: the question cannot be answered by
+     * comparing path strings, and getting it wrong deleted files (#454).
+     */
+    private function isSamePath(string $a, string $b): bool
+    {
+        return FileIdentity::same($a, $b);
+    }
+
+    /**
+     * Whether two paths are one file reached by two spellings.
+     *
+     * Distinguished from `isSamePath()` because this case has its own correct
+     * action — rename to the canonical spelling — rather than "do nothing".
+     */
+    private function isSameInode(string $a, string $b): bool
+    {
+        return FileIdentity::sameInode($a, $b);
+    }
+
+    /**
+     * Renames a file to the canonical spelling of its own name.
+     *
+     * One file, two spellings. A direct `rename()` between them is a no-op on
+     * some filesystems and an error on others, so it goes via a temporary name
+     * in the same directory: `a.mp3` → `a.mp3.sc-tmp` → `A.mp3`. Both steps are
+     * within one directory, so neither can cross a volume.
+     *
+     * If either step fails the file keeps a valid name — the original on the
+     * first, the temporary on the second — and the row is pointed at whichever
+     * exists, so nothing is ever left pointing at nothing.
+     */
+    private function recaseInPlace(MediaItem $item, string $source, string $absoluteTarget): ?string
+    {
+        $storedSource = $item->file_path;
+        $temporary = $absoluteTarget.'.sc-tmp';
+
+        if (file_exists($temporary) && ! @unlink($temporary)) {
+            Log::warning('Could not clear a stale temporary name for a case-only rename', [
+                'item' => $item->id,
+                'temporary' => $temporary,
+            ]);
+
+            return null;
+        }
+
+        if (! @rename($source, $temporary)) {
+            Log::warning('Could not stage a case-only rename', [
+                'item' => $item->id,
+                'from' => $source,
+                'to' => $temporary,
+            ]);
+
+            return null;
+        }
+
+        if (! @rename($temporary, $absoluteTarget)) {
+            // The file is at the temporary name and the row must point there,
+            // or the catalogue loses the file entirely. The next run retries.
+            Log::error('A case-only rename stalled at its temporary name', [
+                'item' => $item->id,
+                'temporary' => $temporary,
+                'intended' => $absoluteTarget,
+            ]);
+
+            $item->file_path = $this->toRelative($temporary);
+            $item->content_hash = null;
+            $item->saveQuietly();
+
+            return null;
+        }
+
+        $relative = $this->toRelative($absoluteTarget);
+
+        $item->file_path = $relative;
+        // The path changed, so the stored hash describes a path this row no
+        // longer points at (AGENTS.md rule 2).
+        $item->content_hash = null;
+        $item->saveQuietly();
+
+        $this->repointPeersForSharedSource($item, $storedSource, $relative);
+
+        return $relative;
     }
 
     /**
