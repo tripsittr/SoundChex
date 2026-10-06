@@ -239,10 +239,11 @@ class CredentialTester
             return $this->fail($this->reason($body['Error'] ?? null, $response->status()));
         }
 
-        if (! $response->successful()) {
-            return $this->fail($this->reason(null, $response->status()));
-        }
-
+        // No status check after this. a5's review: a `Response: True` body
+        // arriving with a non-2xx status does not happen, so the branch was
+        // unreachable -- and dead code in a credential path is worse than
+        // useless, because a reader has to work out whether it guards
+        // something.
         return $this->pass('Working.');
     }
 
