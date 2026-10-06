@@ -174,6 +174,113 @@ class EpisodeListLayoutTest extends TestCase
         );
     }
 
+    /* ------------------------------------------------------- artwork ---- */
+
+    /**
+     * An episode with no art of its own shows the **series** poster.
+     *
+     * Reported from a real library: every episode row was a grey TV glyph and
+     * every Continue Watching card was blank. An episode almost never has a
+     * still — a scanner reads a file, and a still has to come from a metadata
+     * source that frequently does not have one — so without a fallback the
+     * list is a column of placeholders.
+     */
+    public function test_an_episode_without_art_shows_the_series_poster(): void
+    {
+        $series = $this->series();
+        $series->forceFill(['cover_image_url' => 'covers/shameless.jpg'])->saveQuietly();
+
+        $this->episode($series, 1, 1, 'Pilot');
+
+        // Scoped to the episode panel. The series poster is also the page's
+        // own header image, so a whole-page `assertSee` passes with no
+        // fallback at all -- which it did, until this was checked by
+        // reverting the fix.
+        $this->assertStringContainsString(
+            'covers/shameless.jpg',
+            $this->episodePanel($series),
+            'An episode with no art of its own should show the series poster.',
+        );
+    }
+
+    /**
+     * Its own art wins where it has any: a real still beats the series poster.
+     */
+    public function test_an_episodes_own_art_is_preferred(): void
+    {
+        $series = $this->series();
+        $series->forceFill(['cover_image_url' => 'covers/shameless.jpg'])->saveQuietly();
+
+        $episode = $this->episode($series, 1, 1, 'Pilot');
+        $episode->forceFill(['cover_image_url' => 'covers/s01e01.jpg'])->saveQuietly();
+
+        $this->assertStringContainsString('covers/s01e01.jpg', $this->episodePanel($series));
+    }
+
+    /**
+     * The same fallback on a Continue Watching card, which is where it was
+     * first noticed — and which reads the parent through a *constrained*
+     * select, so the cover column has to be named in it.
+     */
+    public function test_a_continue_card_falls_back_to_the_series_poster(): void
+    {
+        $series = $this->series();
+        $series->forceFill(['cover_image_url' => 'covers/shameless.jpg'])->saveQuietly();
+
+        $episode = $this->episode($series, 1, 9, 'But at Last Came a Knock');
+
+        $this->actingAs($this->user);
+
+        MediaPlay::create([
+            'media_item_id' => $episode->id,
+            'user_id' => $this->user->id,
+            'profile_id' => app(CurrentProfile::class)->id(),
+            'position_seconds' => 900,
+            'completed' => false,
+        ]);
+
+        $html = (string) $this->get('/app/watch')->assertOk()->getContent();
+
+        // The card's own markup, not the whole page: the shelf sits among
+        // other rails that may show the same series.
+        $card = $this->cardFor($html, $episode->id);
+
+        $this->assertStringContainsString(
+            'covers/shameless.jpg',
+            $card,
+            'A Continue Watching card for an episode should fall back to the series poster. '
+            .'Note this needs `cover_image_url` naming in the constrained `parent:` select.',
+        );
+    }
+
+    /** The rendered markup of one Continue Watching card. */
+    private function cardFor(string $html, int $itemID): string
+    {
+        $start = strpos($html, '/app/item/'.$itemID);
+
+        $this->assertNotFalse($start, "No card found for item {$itemID}.");
+
+        // Back to the opening <a>, forward to its close.
+        $open = strrpos(substr($html, 0, $start), '<a ');
+        $end = strpos($html, '</a>', $start);
+
+        return substr($html, (int) $open, (int) $end - (int) $open);
+    }
+
+    /** The episode list's markup, without the rest of the page. */
+    private function episodePanel(MediaItem $series): string
+    {
+        $html = (string) $this->page($series)->assertOk()->getContent();
+
+        $start = strpos($html, 'data-season-panel');
+
+        $this->assertNotFalse($start, 'No episode panel rendered.');
+
+        $end = strpos($html, '</section>', $start);
+
+        return substr($html, (int) $start, (int) $end - (int) $start);
+    }
+
     /* --------------------------------------------- the continue shelf --- */
 
     /**

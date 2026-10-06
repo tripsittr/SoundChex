@@ -37,8 +37,8 @@
    class="poster group focus:outline-none">
 
     <div class="{{ $item->artworkAspect() }} w-full">
-        @if ($item->coverUrl())
-            <img src="{{ $item->coverUrl() }}"
+        @if ($cover = $item->coverUrl())
+            <img src="{{ $cover }}"
                  alt=""
                  loading="lazy"
                  decoding="async"

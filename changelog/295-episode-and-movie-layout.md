@@ -52,6 +52,29 @@ single season also hid "Other", which is where an episode with no `S01E01` in
 its filename lands — so it rendered under no heading at all. Caught by
 `TelevisionViewTest`; the picker now shows for a single *named* season.
 
+## Episode artwork
+
+Reported from a real library: every episode row was a grey TV glyph and every
+Continue Watching card was blank. An episode almost never carries art of its
+own — a scanner reads a file, and a still has to come from a metadata source
+that frequently does not have one — so the list was a column of placeholders.
+
+`coverUrl()` now falls back to the **series poster**, which is what every
+streaming app does. Its own art still wins where it has any.
+
+Two traps came with it, both caught by reverting the fix and watching the tests
+fail:
+
+- the fallback only fires for an already-loaded `parent`, since a lazy read is
+  a query per row — so every caller that shows episodes had to eager-load it;
+- `parent:id,title` is a **constrained** select, so the cover column has to be
+  named in it or the fallback silently finds nothing. That was true on all
+  three call sites.
+
+The first version of these tests passed without the fix: the series poster is
+also the page's own header image, so a whole-page `assertSee` found it anyway.
+They now assert against the episode panel and the individual card.
+
 ## Still to do
 
 - `show_metadata` has **0 rows** on this machine and there are no `show`-type

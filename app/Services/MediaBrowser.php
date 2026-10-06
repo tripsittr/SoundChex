@@ -261,7 +261,7 @@ class MediaBrowser
             // `plays` as well: the poster draws a resume bar from it, and the
             // web shelf renders models directly rather than through the API
             // resource -- so without this every card asks for its own rows.
-            ->with(['movieMetadata', 'showMetadata', 'tags', 'parent:id,title', 'probe', 'plays'])
+            ->with(['movieMetadata', 'showMetadata', 'tags', 'parent:id,title,cover_image_url', 'probe', 'plays'])
             ->select('media_items.*')
             // Where the viewer is, which is not the furthest they ever got.
             // `MAX(position_seconds)` gets this wrong: restarting a film

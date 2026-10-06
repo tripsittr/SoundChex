@@ -623,6 +623,18 @@ class MediaItem extends Model
     {
         $value = $this->cover_image_url;
 
+        // An episode usually has no art of its own -- a scanner reads a file,
+        // and a still has to come from a metadata source that often does not
+        // have one. Falling back to the series poster is what every streaming
+        // app does, and it is the difference between an episode list of
+        // pictures and an episode list of grey TV glyphs.
+        //
+        // Only when the parent is already loaded: this is called once per row
+        // on a page of them, and a lazy read here is a query per episode.
+        if (blank($value) && $this->relationLoaded('parent')) {
+            $value = $this->parent?->cover_image_url;
+        }
+
         if (blank($value)) {
             return null;
         }

@@ -494,9 +494,19 @@
                                 <a href="{{ route('media.watch', $episode) }}"
                                    class="group flex gap-4 rounded-lg p-3 transition hover:bg-base-800">
                                     <span class="relative block aspect-video w-32 shrink-0 overflow-hidden rounded bg-base-800 sm:w-40">
-                                        @if ($episode->cover_image_url)
-                                            <img src="{{ $episode->cover_image_url }}" alt=""
+                                        {{-- coverUrl(), not the raw column: an
+                                             episode rarely has art of its own
+                                             and falls back to the series
+                                             poster, which is the difference
+                                             between a list of pictures and a
+                                             list of grey glyphs. --}}
+                                        @if ($cover = $episode->coverUrl())
+                                            <img src="{{ $cover }}" alt=""
                                                  loading="lazy" class="h-full w-full object-cover">
+                                        @else
+                                            <span class="flex h-full w-full items-center justify-center text-2xl opacity-40" aria-hidden="true">
+                                                {{ $episode->typeGlyph() }}
+                                            </span>
                                         @endif
                                         <span class="absolute inset-0 flex items-center justify-center">
                                             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
