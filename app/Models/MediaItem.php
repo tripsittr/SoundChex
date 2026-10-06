@@ -513,6 +513,55 @@ class MediaItem extends Model
     }
 
     /** The release year, wherever it lives for this type. */
+    /**
+     * How far through this the viewing profile is, as a whole percent.
+     *
+     * Null for anything never started, anything finished, and anything whose
+     * length is unknown -- a fraction of an unknown duration is a guess
+     * presented as fact, and a full bar on a finished item says the opposite
+     * of what it means.
+     *
+     * Reads the loaded `plays` relation and returns null when it is absent,
+     * rather than querying: this is called once per tile on a page of them.
+     */
+    public function resumePercent(): ?int
+    {
+        if (! $this->relationLoaded('plays')) {
+            return null;
+        }
+
+        $profileId = app(CurrentProfile::class)->id();
+
+        // Never the unfiltered set: two people share a login, and that would
+        // draw one person's progress on the other's screen.
+        if ($profileId === null) {
+            return null;
+        }
+
+        $seconds = $this->plays
+            ->where('profile_id', $profileId)
+            ->where('completed', false)
+            ->sortByDesc('updated_at')
+            ->first(fn ($play) => $play->position_seconds > 0)
+            ?->position_seconds;
+
+        // Same rule as `plays` above: a probe that was not eager-loaded is
+        // answered as "unknown" rather than fetched. This runs once per tile
+        // on a page of them, and a lazy `probe` here was a query per card --
+        // caught by the home-page cost guard, which is what it is for.
+        if ($seconds === null || ! $this->relationLoaded('probe')) {
+            return null;
+        }
+
+        $ms = $this->probe?->duration_ms;
+
+        if ($ms === null || $ms <= 0) {
+            return null;
+        }
+
+        return min(100, (int) round($seconds / ($ms / 1000) * 100));
+    }
+
     public function year(): ?int
     {
         return match ($this->type) {

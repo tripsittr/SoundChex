@@ -147,35 +147,83 @@ class EpisodeIdentityTest extends TestCase
     /**
      * The series name must not cost a query per card.
      *
-     * The relation is loaded lazily by default, so serialising twenty cards
-     * would be twenty extra round trips on the one shelf that is fetched on
-     * every appearance of the home screen.
+     * Asserted by **shape**, not against a fixed number: the count is compared
+     * between a small shelf and a large one, so a legitimate new eager load
+     * raises both and the test keeps meaning what it says. A fixed threshold
+     * has to be moved whenever the endpoint changes, and moving it is how it
+     * quietly stops catching anything -- which happened twice while writing
+     * this.
+     *
+     * Measured both ways. With the `parent` eager load: 6 episodes cost 9
+     * queries and 20 cost 8 -- flat, because every relation is one batched
+     * `where ... in (...)`. Without it: 14 and 27, climbing with the cards.
      */
     public function test_naming_the_series_does_not_cost_a_query_per_card(): void
     {
-        $series = $this->series('Shameless (U.S.)');
+        $small = $this->queriesForShelf(4);
+        $large = $this->queriesForShelf(20);
 
-        $this->actingAs($this->user);
+        $this->assertLessThanOrEqual(
+            $small + 4,
+            $large,
+            'Five times the episodes should not mean five times the queries: '
+            ."{$small} for 4 cards against {$large} for 20 means the series name "
+            .'is being resolved one card at a time.',
+        );
+    }
+
+    /**
+     * Queries run by the continue shelf with this many episodes on it.
+     *
+     * Each call builds its own account, so the two measurements do not share
+     * a growing library.
+     */
+    private function queriesForShelf(int $episodes): int
+    {
+        $user = User::factory()->create();
+
+        $series = MediaItem::unresolved()->create([
+            'user_id' => $user->id,
+            'title' => 'Shameless (U.S.)',
+            'type' => MediaItemType::Show,
+            'processing_status' => ProcessingStatus::Complete,
+        ]);
+
+        $this->actingAs($user);
         $profileId = app(CurrentProfile::class)->id();
 
-        foreach (range(1, 6) as $n) {
-            $episode = $this->episode($series, 1, $n, "Episode {$n}");
+        foreach (range(1, $episodes) as $number) {
+            $episode = MediaItem::unresolved()->create([
+                'user_id' => $user->id,
+                'title' => "Episode {$number}",
+                'type' => MediaItemType::Show,
+                'parent_id' => $series->id,
+                'file_path' => sprintf('shows/Shameless S01E%02d.mkv', $number),
+                'processing_status' => ProcessingStatus::Complete,
+            ]);
+
+            ShowMetadata::create([
+                'media_item_id' => $episode->id,
+                'season_number' => 1,
+                'episode_number' => $number,
+            ]);
 
             MediaPlay::create([
                 'media_item_id' => $episode->id,
-                'user_id' => $this->user->id,
+                'user_id' => $user->id,
                 'profile_id' => $profileId,
-                'position_seconds' => 600 + $n,
+                'position_seconds' => 600 + $number,
                 'completed' => false,
             ]);
         }
 
         $queries = 0;
+
         DB::listen(function () use (&$queries) {
             $queries++;
         });
 
-        $response = $this->getJson('/api/v1/library/continue');
+        $response = $this->getJson('/api/v1/library/continue?limit=50');
 
         $response->assertOk();
 
@@ -183,17 +231,8 @@ class EpisodeIdentityTest extends TestCase
             ->filter(fn ($card) => ($card['meta']['series_title'] ?? null) === 'Shameless (U.S.)')
             ->count();
 
-        $this->assertSame(6, $named, 'Every episode should name its series.');
+        $this->assertSame($episodes, $named, 'Every episode should name its series.');
 
-        // Measured, not guessed: this endpoint runs **7** queries with the
-        // eager load and **12** without it -- exactly the six extra the six
-        // episodes cost, one each. The threshold sits between the two, so the
-        // test fails the moment the series name goes back to being resolved
-        // per card. A looser bound passed either way and proved nothing.
-        $this->assertLessThanOrEqual(
-            8,
-            $queries,
-            'Resolving the series name should be one eager load, not one query per card.',
-        );
+        return $queries;
     }
 }

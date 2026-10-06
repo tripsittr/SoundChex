@@ -408,46 +408,144 @@
             "Other" instead of disappearing.
         --}}
         @if ($seasons->isNotEmpty())
-            <section class="mt-10">
-                <h2 class="text-lg font-semibold text-ink-100">
-                    Episodes
-                    <span class="ml-2 text-sm font-normal text-ink-400">
+            {{--
+                Episodes, in the shape the streaming apps use: a season picker,
+                and rows carrying a still, a duration and a sentence about what
+                happens.
+
+                What was here was a file listing -- "E01" and a truncated title
+                -- with every season stacked at once. A sixty-episode series is
+                unusable that way, and an episode title alone ("Aunt Ginger")
+                says nothing about whether you have seen it. The still is the
+                strongest cue of the four: recognising a frame is faster than
+                reading a synopsis.
+
+                One season is shown at a time via radio inputs and peer-
+                checked, so the picker needs no JavaScript and keeps working in
+                the desktop shell.
+            --}}
+            <section class="mt-10" x-data>
+                <div class="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 class="text-lg font-semibold text-ink-100">Episodes</h2>
+                    <span class="text-sm text-ink-400">
                         {{ $seasons->flatten()->count() }} across {{ $seasons->count() }} {{ \Illuminate\Support\Str::plural('season', $seasons->count()) }}
                     </span>
-                </h2>
+                </div>
 
                 @foreach ($seasons as $season => $episodes)
-                    <div class="mt-6">
-                        <h3 class="text-sm font-semibold uppercase tracking-wide text-ink-400">
-                            {{ is_numeric($season) ? 'Season ' . $season : $season }}
-                            <span class="ml-1 font-normal normal-case tracking-normal text-ink-500">
-                                {{ $episodes->count() }} {{ \Illuminate\Support\Str::plural('episode', $episodes->count()) }}
-                            </span>
-                        </h3>
+                    <input type="radio" name="sc-season" id="sc-season-{{ $loop->index }}"
+                           class="peer sr-only" @checked($loop->first)>
+                @endforeach
 
-                        <ul class="mt-2 divide-y divide-base-700 overflow-hidden rounded-lg border border-base-700">
-                            @foreach ($episodes as $episode)
-                                <li>
-                                    <a href="{{ route('media.watch', $episode) }}"
-                                       class="flex items-center gap-4 px-4 py-3 transition hover:bg-base-800">
-                                        <span class="w-12 shrink-0 text-right text-sm tabular-nums text-ink-500">
-                                            {{ $episode->episode_number !== null ? 'E' . str_pad((string) $episode->episode_number, 2, '0', STR_PAD_LEFT) : '—' }}
+                {{--
+                    The picker: one chip per season, the chosen one filled.
+
+                    Shown for several seasons, and also for a single *named*
+                    one -- "Other", which is where an episode whose filename
+                    carries no S01E01 marker lands. Hiding the label there
+                    would leave such an episode under no heading at all, and
+                    the page that lists it is the only page it appears on.
+                --}}
+                @if ($seasons->count() > 1 || $seasons->keys()->contains(fn ($key) => ! is_numeric($key)))
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        @foreach ($seasons as $season => $episodes)
+                            <label for="sc-season-{{ $loop->index }}"
+                                   class="cursor-pointer rounded-md border border-base-700 px-3 py-1.5 text-sm text-ink-300 transition hover:bg-base-800 has-[:checked]:border-transparent has-[:checked]:bg-base-700 has-[:checked]:font-semibold has-[:checked]:text-ink-100">
+                                {{ is_numeric($season) ? 'Season ' . $season : $season }}
+                            </label>
+                        @endforeach
+                    </div>
+                @endif
+
+                @foreach ($seasons as $season => $episodes)
+                    @php
+                        $index = $loop->index;
+                    @endphp
+                    <ul class="mt-4 hidden divide-y divide-base-700"
+                        data-season-panel="{{ $index }}">
+                        @foreach ($episodes as $episode)
+                            @php
+                                // Minutes from the probe: `show_metadata` has no
+                                // runtime column, and the measured length is the
+                                // one that matches what actually plays.
+                                $ms = $episode->probe?->duration_ms;
+                                $minutes = $ms > 0 ? max(1, (int) round($ms / 60000)) : null;
+                                $length = $minutes === null
+                                    ? null
+                                    : ($minutes < 60
+                                        ? $minutes . 'm'
+                                        : intdiv($minutes, 60) . 'h' . ($minutes % 60 ? ' ' . $minutes % 60 . 'm' : ''));
+
+                                // Where this viewer stopped, for the bar under
+                                // the still. Only drawn when the length is known
+                                // too: a fraction of an unknown duration is a
+                                // guess presented as fact.
+                                $position = $episode->plays
+                                    ->where('profile_id', $profileId)
+                                    ->where('completed', false)
+                                    ->sortByDesc('updated_at')
+                                    ->first(fn ($play) => $play->position_seconds > 0)
+                                    ?->position_seconds;
+                                $percent = ($position && $minutes)
+                                    ? min(100, (int) round($position / ($minutes * 60) * 100))
+                                    : null;
+                            @endphp
+                            <li>
+                                <a href="{{ route('media.watch', $episode) }}"
+                                   class="group flex gap-4 rounded-lg p-3 transition hover:bg-base-800">
+                                    <span class="relative block aspect-video w-32 shrink-0 overflow-hidden rounded bg-base-800 sm:w-40">
+                                        @if ($episode->cover_image_url)
+                                            <img src="{{ $episode->cover_image_url }}" alt=""
+                                                 loading="lazy" class="h-full w-full object-cover">
+                                        @endif
+                                        <span class="absolute inset-0 flex items-center justify-center">
+                                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+                                                 class="h-8 w-8 text-white/90 drop-shadow">
+                                                <path d="M8 5v14l11-7z"/>
+                                            </svg>
                                         </span>
+                                        @if ($percent)
+                                            <span class="absolute inset-x-0 bottom-0 h-[3px] bg-white/25">
+                                                <span class="block h-full bg-accent" style="width: {{ $percent }}%"></span>
+                                            </span>
+                                        @endif
+                                    </span>
 
-                                        <span class="min-w-0 flex-1">
-                                            <span class="block truncate text-sm text-ink-100">{{ $episode->title }}</span>
-                                            @if ($episode->file_missing)
-                                                <span class="block text-xs text-amber-400">File missing</span>
+                                    <span class="min-w-0 flex-1">
+                                        <span class="flex items-baseline gap-2">
+                                            <span class="text-sm font-semibold text-ink-100">
+                                                {{ $episode->episode_number !== null ? $episode->episode_number . '. ' : '' }}{{ $episode->showMetadata?->episode_title ?? $episode->title }}
+                                            </span>
+                                            @if ($length)
+                                                <span class="shrink-0 text-xs text-ink-500">{{ $length }}</span>
                                             @endif
                                         </span>
 
-                                        <span class="shrink-0 text-xs text-ink-500">Play</span>
-                                    </a>
-                                </li>
-                            @endforeach
-                        </ul>
-                    </div>
+                                        @if ($episode->notes)
+                                            <span class="mt-1 block text-sm text-ink-400">{{ $episode->notes }}</span>
+                                        @endif
+
+                                        @if ($episode->file_missing)
+                                            <span class="mt-1 block text-xs text-amber-400">File missing</span>
+                                        @endif
+                                    </span>
+                                </a>
+                            </li>
+                        @endforeach
+                    </ul>
                 @endforeach
+
+                {{--
+                    One rule per season, pairing each radio with its panel.
+                    Written out because Tailwind cannot generate an index-based
+                    sibling selector, and a handful of rules is cheaper than
+                    shipping JavaScript for a list that works without it.
+                --}}
+                <style>
+                    @foreach ($seasons as $season => $episodes)
+                        #sc-season-{{ $loop->index }}:checked ~ [data-season-panel="{{ $loop->index }}"] { display: block; }
+                    @endforeach
+                </style>
             </section>
         @endif
 

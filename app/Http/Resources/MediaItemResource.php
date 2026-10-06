@@ -59,6 +59,11 @@ class MediaItemResource extends JsonResource
             // relation rather than queried, so a list of 200 does not become
             // 200 queries — callers that want this eager-load `plays`.
             'last_played_at' => $this->lastPlayedAt($item),
+            // How far into this the profile is, in seconds. Null for anything
+            // unwatched or finished. Same rule as `last_played_at`: read from
+            // the loaded relation, never queried, so a list of 200 does not
+            // become 200 queries. Lets an episode row draw a progress bar.
+            'resume_position' => $this->resumePosition($item),
             'meta' => $this->metadata($item),
         ];
 
@@ -97,6 +102,39 @@ class MediaItemResource extends JsonResource
         return $item->plays
             ->where('profile_id', $profileId)
             ->max('created_at')?->toIso8601String();
+    }
+
+    /**
+     * Seconds into this item for the current profile, or null.
+     *
+     * Null for something never started, and for something finished -- a
+     * completed episode is not "in progress", and showing a full progress bar
+     * on it would say the opposite of what it means.
+     *
+     * Read from the already-loaded `plays` relation for the same reason as
+     * `lastPlayedAt`: a query here is a query per row.
+     */
+    private function resumePosition(MediaItem $item): ?int
+    {
+        if (! $item->relationLoaded('plays')) {
+            return null;
+        }
+
+        $profileId = app(CurrentProfile::class)->id();
+
+        // Never fall back to the unfiltered set: two people share a login, and
+        // that would report someone else's position as this profile's.
+        if ($profileId === null) {
+            return null;
+        }
+
+        $play = $item->plays
+            ->where('profile_id', $profileId)
+            ->where('completed', false)
+            ->sortByDesc('updated_at')
+            ->first(fn ($play) => $play->position_seconds > 0);
+
+        return $play?->position_seconds;
     }
 
     /**

@@ -230,6 +230,10 @@ class MediaCenterController extends Controller
             'item' => $item,
             'related' => $this->relatedTo($item),
             'seasons' => $this->seasonsOf($item),
+            // Whose progress the episode rows draw. Never falls back to the
+            // unfiltered set: two people share a login, and that would show
+            // one person's position on the other's screen.
+            'profileId' => app(CurrentProfile::class)->id(),
         ]);
     }
 
@@ -256,7 +260,11 @@ class MediaCenterController extends Controller
         $parser = app(EpisodeParser::class);
 
         return $item->children()
-            ->with('plays')
+            // `probe` comes along for the episode runtime and `showMetadata`
+            // for the synopsis and episode title: the list shows a duration
+            // and a sentence now, and resolving either lazily would be a
+            // query per row on a sixty-episode series.
+            ->with(['plays', 'probe', 'showMetadata'])
             ->get()
             ->map(function (MediaItem $episode) use ($parser): MediaItem {
                 $marker = $parser->marker(basename((string) $episode->file_path));

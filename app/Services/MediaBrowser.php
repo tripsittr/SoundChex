@@ -258,7 +258,10 @@ class MediaBrowser
             // `parent` comes along because the resource names the series an
             // episode belongs to, and resolving that lazily would be one
             // query per card on the shelf.
-            ->with(['movieMetadata', 'showMetadata', 'tags', 'parent:id,title', 'probe'])
+            // `plays` as well: the poster draws a resume bar from it, and the
+            // web shelf renders models directly rather than through the API
+            // resource -- so without this every card asks for its own rows.
+            ->with(['movieMetadata', 'showMetadata', 'tags', 'parent:id,title', 'probe', 'plays'])
             ->select('media_items.*')
             // Where the viewer is, which is not the furthest they ever got.
             // `MAX(position_seconds)` gets this wrong: restarting a film
