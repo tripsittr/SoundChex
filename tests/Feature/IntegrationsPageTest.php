@@ -473,20 +473,36 @@ class IntegrationsPageTest extends TestCase
 
         $groups = array_keys($page->groupedRows());
 
-        foreach ($groups as $group) {
-            $this->assertContains(
-                $group,
-                Integrations::GROUP_ORDER,
-                "'{$group}' is rendered but not declared in GROUP_ORDER.",
-            );
-        }
+        // Every *declared* group is honoured in order. What changed: an
+        // undeclared group no longer vanishes. Iterating GROUP_ORDER alone made
+        // the list a filter, and OpenSubtitles built a "Subtitles" card that was
+        // silently dropped -- 12 of 13 rows rendered (#490). So the assertion is
+        // that nothing is lost, not that the list is exhaustive.
+        $this->assertSame(
+            count($page->rows()),
+            collect($page->groupedRows())->flatten(1)->count(),
+            'A row was built and then dropped because its group was unlisted.',
+        );
+
+        $declared = array_values(array_intersect(Integrations::GROUP_ORDER, $groups));
+
+        $this->assertSame(
+            $declared,
+            array_values(array_intersect($groups, Integrations::GROUP_ORDER)),
+            'The declared groups are no longer in their declared order.',
+        );
     }
 
     public function test_connected_providers_sort_above_unconfigured_ones(): void
     {
         // A configured provider is the one with something to say. Burying it
         // under eight unconfigured ones makes the page look emptier than it is.
-        app(SettingsService::class)->set('omdb_api_key', 'a-key', encrypt: true);
+        //
+        // Uses TVDB rather than OMDb: OMDb is no longer offered as a card at
+        // all, because nothing in the app reads `omdb_api_key` (#490). TVDB is
+        // second in the declared Film & TV order, so it also proves the sort
+        // actually moved something.
+        app(SettingsService::class)->set('tvdb_api_key', 'a-key', encrypt: true);
 
         $this->asOwner();
 
@@ -495,7 +511,7 @@ class IntegrationsPageTest extends TestCase
 
         $film = collect($page->groupedRows()['Film & TV']);
 
-        $this->assertSame('OMDb', $film->first()['label']);
+        $this->assertSame('TVDB', $film->first()['label']);
         $this->assertTrue($film->first()['connected']);
     }
 
@@ -510,7 +526,11 @@ class IntegrationsPageTest extends TestCase
 
         $labels = collect($page->groupedRows()['Film & TV'])->pluck('label')->all();
 
-        $this->assertSame(['TMDB', 'TVDB', 'OMDb', 'Trakt'], $labels);
+        // OMDb and Trakt are gone from this list on purpose: the cards are now
+        // built from what the sources declare, and nothing reads either key
+        // (#490). They appear in the "Not built yet" section instead, which is
+        // the honest place for a credential the app would ignore.
+        $this->assertSame(['TMDB', 'TVDB'], $labels);
     }
 
     public function test_setting_up_stores_the_key_encrypted(): void

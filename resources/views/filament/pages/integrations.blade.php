@@ -79,6 +79,12 @@
 
                                 @if ($row['connected'])
                                     <x-filament::badge color="success" size="sm">Connected</x-filament::badge>
+                                @elseif (! empty($row['partial']))
+                                    {{-- Half set up is neither connected nor
+                                         untouched, and calling it either is
+                                         how a green card came to sit over a
+                                         source that did nothing. --}}
+                                    <x-filament::badge color="warning" size="sm">Half set up</x-filament::badge>
                                 @endif
 
                                 @if (count($row['warnings']) > 0)
@@ -91,7 +97,11 @@
                                 @endif
                             </div>
 
-                            <p class="truncate text-sm opacity-60">{{ $row['detail'] }}</p>
+                            {{-- Not truncated: for a metadata source this is
+                                 the sentence saying what a key buys you, and a
+                                 clipped half-sentence is the reason nobody
+                                 filled these in. --}}
+                            <p class="text-sm opacity-60">{{ $row['detail'] }}</p>
                         </div>
 
                         <div class="flex items-center gap-2">
@@ -125,6 +135,176 @@
             </div>
         </x-filament::section>
     @endforeach
+
+    {{-- Flash messages from the OAuth round trip. The callback is a browser
+         redirect, so its outcome cannot be a Livewire notification -- the page
+         is loaded fresh afterwards. --}}
+    @if (session('oauth_success'))
+        <x-filament::section>
+            <div class="rounded-lg bg-success-50 p-3 text-sm text-success-700 dark:bg-success-400/10 dark:text-success-400">
+                {{ session('oauth_success') }}
+            </div>
+        </x-filament::section>
+    @endif
+
+    @if (session('oauth_error'))
+        <x-filament::section>
+            <div class="rounded-lg bg-danger-50 p-3 text-sm text-danger-700 dark:bg-danger-400/10 dark:text-danger-400">
+                {{ session('oauth_error') }}
+            </div>
+        </x-filament::section>
+    @endif
+
+    {{-- Services you sign in to. Separate from the key cards on purpose: a key
+         is pasted once and belongs to the install, a sign-in belongs to a
+         person and expires. --}}
+    @if ($this->filter === '')
+        <x-filament::section>
+            <x-slot name="heading">Signed-in services</x-slot>
+            <x-slot name="description">
+                These need an account, not just a key — a pasted secret cannot read your own playlists or watch history
+            </x-slot>
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                @foreach ($this->signInSources() as $source)
+                    <div @class([
+                        'flex flex-col gap-3 rounded-xl border p-4',
+                        'border-primary-500/40 bg-primary-50/40 dark:bg-primary-500/5' => $source['connected'],
+                        'border-gray-200 dark:border-white/10' => ! $source['connected'],
+                    ])>
+                        <div class="min-w-0 space-y-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-semibold">{{ $source['label'] }}</span>
+
+                                @if ($source['connected'])
+                                    <x-filament::badge color="success" size="sm">Signed in</x-filament::badge>
+                                @elseif (! $source['registered'])
+                                    <x-filament::badge color="gray" size="sm">Needs an app first</x-filament::badge>
+                                @endif
+                            </div>
+
+                            <p class="text-sm opacity-60">{{ $source['adds'] }}</p>
+
+                            @if (! $source['registered'])
+                                {{-- The redirect URI, because a mismatch here is
+                                     the single most common reason an OAuth setup
+                                     fails and the service's own error says only
+                                     that it did not match. --}}
+                                <div class="mt-2 space-y-1">
+                                    <p class="text-xs opacity-60">
+                                        Register an app with {{ $source['label'] }}, paste its id and secret above,
+                                        then give it exactly this redirect URI:
+                                    </p>
+                                    <pre class="overflow-x-auto rounded-lg bg-gray-950 p-2 text-xs text-gray-100">{{ $source['redirect_uri'] }}</pre>
+                                </div>
+                            @endif
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            @if ($source['registered'])
+                                <x-filament::button
+                                    tag="a"
+                                    size="sm"
+                                    href="{{ route('oauth.redirect', ['provider' => $source['slug']]) }}">
+                                    {{ $source['connected'] ? 'Sign in again' : 'Sign in' }}
+                                </x-filament::button>
+                            @endif
+
+                            @if ($source['connected'])
+                                <x-filament::button
+                                    size="sm"
+                                    color="danger"
+                                    outlined
+                                    wire:click="signOut('{{ $source['slug'] }}')"
+                                    wire:loading.attr="disabled"
+                                    wire:target="signOut">
+                                    Sign out
+                                </x-filament::button>
+                            @endif
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </x-filament::section>
+    @endif
+
+    {{-- Sources needing nothing. A page made entirely of API-key fields
+         implies nothing works without one, when in fact the file tagger,
+         MusicBrainz, iTunes, Deezer and Open Library -- which between them do
+         most of the identifying -- all work out of the box. --}}
+    @if (count($this->keylessSources()) > 0 && ($this->filter === '' || $this->filter === 'Music'))
+        <x-filament::section collapsible collapsed>
+            <x-slot name="heading">Working already, no key needed</x-slot>
+            <x-slot name="description">
+                {{ count($this->keylessSources()) }} sources that need no account and no setup
+            </x-slot>
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                @foreach ($this->keylessSources() as $source)
+                    <div class="rounded-xl border border-gray-200 p-4 dark:border-white/10">
+                        <div class="flex items-center gap-2">
+                            <span class="font-semibold">{{ $source['name'] }}</span>
+                            <x-filament::badge color="success" size="sm">Active</x-filament::badge>
+                        </div>
+                        <p class="mt-1 text-sm opacity-60">{{ $source['adds'] }}</p>
+                    </div>
+                @endforeach
+            </div>
+        </x-filament::section>
+    @endif
+
+    {{-- Keys this page used to collect that nothing reads. Shown rather than
+         quietly removed: somebody who wants lyrics should see that we know
+         lyrics are missing, and somebody who already pasted a Discogs token
+         needs telling it is doing nothing. --}}
+    @if ($this->filter === '')
+        <x-filament::section collapsible :collapsed="! $this->hasStoredDeadKeys()">
+            <x-slot name="heading">Not built yet</x-slot>
+            <x-slot name="description">
+                {{ count($this->unimplementedSources()) }} services SoundChex does not talk to — a key here would do nothing
+            </x-slot>
+
+            <div class="space-y-3">
+                @if ($this->hasStoredDeadKeys())
+                    <div class="rounded-lg bg-warning-50 p-3 text-xs text-warning-700 dark:bg-warning-400/10 dark:text-warning-400">
+                        A key is stored for one of these. It was collected by an
+                        earlier version of this page and nothing reads it — the
+                        service is not connected, whatever was pasted.
+                    </div>
+                @endif
+
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    @foreach ($this->unimplementedSources() as $source)
+                        <div class="flex items-start justify-between gap-3 rounded-xl border border-dashed border-gray-300 p-4 dark:border-white/10">
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-semibold opacity-70">{{ $source['label'] }}</span>
+                                    <span class="text-xs opacity-50">{{ $source['group'] }}</span>
+
+                                    @if ($source['stored'])
+                                        <x-filament::badge color="warning" size="sm">Key stored, unused</x-filament::badge>
+                                    @endif
+                                </div>
+                                <p class="mt-1 text-sm opacity-60">Would add: {{ $source['would_add'] }}</p>
+                            </div>
+
+                            @if ($source['stored'])
+                                <x-filament::button
+                                    size="sm"
+                                    color="gray"
+                                    outlined
+                                    wire:click="forgetDeadKey('{{ $source['key'] }}')"
+                                    wire:loading.attr="disabled"
+                                    wire:target="forgetDeadKey">
+                                    Remove
+                                </x-filament::button>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        </x-filament::section>
+    @endif
 
     {{-- One modal for every row: the question is the same in each case, and a
          modal per integration would be fifteen copies of one form. --}}
@@ -206,30 +386,62 @@
                         </div>
                     @endif
 
-                    <div>
-                        <label class="mb-1 block text-sm font-medium" for="integration-key">
-                            API key
-                        </label>
+                    @php
+                        /* A source declares its own fields, so Spotify's two
+                           credentials are two labelled inputs rather than one
+                           box and a guess. Anything not from the catalogue --
+                           an acquisition app, a toggle -- keeps the single
+                           generic field it always had. */
+                        $fields = $editing['keys'] ?? [$editing['key'] => 'API key'];
+                        $models = ['editingKey', 'editingSecondKey'];
+                    @endphp
 
-                        <x-filament::input.wrapper>
-                            <x-filament::input
-                                id="integration-key"
-                                type="password"
-                                wire:model="editingKey"
-                                wire:keydown.enter="saveModal"
-                                autocomplete="off"
-                                :placeholder="$editing['connected'] ? 'Enter a new key to replace the stored one' : 'Paste the key'" />
-                        </x-filament::input.wrapper>
+                    @foreach (array_values($fields) as $i => $fieldLabel)
+                        @if ($i < 2)
+                            <div>
+                                <label class="mb-1 block text-sm font-medium" for="integration-key-{{ $i }}">
+                                    {{ count($fields) > 1 ? $fieldLabel : 'API key' }}
+                                </label>
 
-                        <p class="mt-2 text-xs opacity-60">
-                            @if ($editing['group'] === 'Acquisition')
-                                Found in {{ $editing['label'] }}'s own Settings &rarr; General.
-                            @else
-                                Issued by {{ $editing['label'] }}. Used only to enrich the catalogue.
-                            @endif
-                            Stored encrypted, and never shown again — replace it rather than edit it.
-                        </p>
-                    </div>
+                                <x-filament::input.wrapper>
+                                    <x-filament::input
+                                        id="integration-key-{{ $i }}"
+                                        type="password"
+                                        wire:model="{{ $models[$i] }}"
+                                        wire:keydown.enter="saveModal"
+                                        autocomplete="off"
+                                        :placeholder="$editing['connected'] ? 'Enter a new value to replace the stored one' : 'Paste it here'" />
+                                </x-filament::input.wrapper>
+                            </div>
+                        @endif
+                    @endforeach
+
+                    <p class="text-xs opacity-60">
+                        @if ($editing['group'] === 'Acquisition')
+                            Found in {{ $editing['label'] }}'s own Settings &rarr; General.
+                        @else
+                            Issued by {{ $editing['label'] }}. Used only to enrich the catalogue.
+                        @endif
+                        Stored encrypted, and never shown again — replace it rather than edit it.
+                        @if (count($fields) > 1)
+                            Both are needed; one on its own does nothing.
+                        @endif
+                    </p>
+
+                    @if ($this->canTestEditing())
+                        {{-- Checked against the service before it is saved, so
+                             a mistyped key never becomes a stored one that
+                             looks fine and silently enriches nothing. --}}
+                        @if ($this->testResult)
+                            <div @class([
+                                'rounded-lg p-3 text-xs',
+                                'bg-success-50 text-success-700 dark:bg-success-400/10 dark:text-success-400' => $this->testResult['ok'],
+                                'bg-danger-50 text-danger-700 dark:bg-danger-400/10 dark:text-danger-400' => ! $this->testResult['ok'],
+                            ])>
+                                {{ $this->testResult['ok'] ? 'Key accepted' : 'Not accepted' }} — {{ $this->testResult['message'] }}
+                            </div>
+                        @endif
+                    @endif
                 @endif
 
                 @if ($editing['connected_url'])
@@ -263,6 +475,17 @@
                     <x-filament::button wire:click="saveModal">
                         {{ $editing['connected'] ? 'Replace key' : 'Connect' }}
                     </x-filament::button>
+
+                    @if ($this->canTestEditing())
+                        <x-filament::button
+                            color="gray"
+                            wire:click="testCredential"
+                            wire:loading.attr="disabled"
+                            wire:target="testCredential">
+                            <span wire:loading.remove wire:target="testCredential">Test key</span>
+                            <span wire:loading wire:target="testCredential">Testing…</span>
+                        </x-filament::button>
+                    @endif
                 @endif
 
                 <x-filament::button color="gray" wire:click="closeModal">

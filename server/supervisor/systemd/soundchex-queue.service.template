@@ -5,7 +5,12 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart={{RUNTIME_DIR}}/bin/php {{APP_DIR}}/artisan queue:work --tries=1 --timeout=21900
+# Every queue the pipeline uses, in priority order (#465). A bare `queue:work`
+# serves `default` only, so the io, cpu and net stages would sit unprocessed
+# forever -- the worker looks healthy and nothing moves. Ordered cheapest first
+# so quick transitions are never stuck behind byte-moving. Kept in step with
+# src-tauri/src/supervisor.rs and the launchd template.
+ExecStart={{RUNTIME_DIR}}/bin/php {{APP_DIR}}/artisan queue:work --queue=default,net,cpu,io --tries=1 --timeout=21900
 WorkingDirectory={{APP_DIR}}
 Restart=always
 RestartSec=2

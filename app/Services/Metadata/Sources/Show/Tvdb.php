@@ -65,7 +65,8 @@ class Tvdb implements MetadataSource
 
     public function requiredSettings(): array
     {
-        return ['tvdb_api_key'];
+        // key => label, not a bare list -- see Lastfm for why (#490).
+        return ['tvdb_api_key' => 'TheTVDB API Key (v4)'];
     }
 
     public function supports(MediaItem $item): bool

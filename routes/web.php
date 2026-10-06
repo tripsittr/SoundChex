@@ -9,6 +9,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DlnaController;
 use App\Http\Controllers\HlsController;
 use App\Http\Controllers\MediaCenterController;
+use App\Http\Controllers\OauthController;
 use App\Http\Controllers\PlaylistController;
 use App\Http\Controllers\PluginStyleController;
 use App\Http\Controllers\ProfileController;
@@ -134,6 +135,30 @@ Route::post('/logout', [AuthController::class, 'logout'])
 Route::middleware(['auth'])->group(function (): void {
 
     Route::get('/dashboard', fn () => redirect()->route('media.home'))->name('dashboard');
+
+    /*
+    | Signing in to an outside service (#490).
+    |
+    | Some integrations cannot be authorised by a pasted key -- Spotify's own
+    | playlists, Trakt's watch history -- so the admin is sent to the service
+    | and comes back with a token. Inside the `auth` group, and the controller
+    | additionally requires the server-administration permission: the token it
+    | stores is server-wide.
+    |
+    | The callback path must match what is registered with the service exactly,
+    | so it is built from `app.configured_url` and never from the request --
+    | `SetAppUrl` rewrites `app.url` per address, and a redirect that moved with
+    | the request would be rejected on every address but one (S-322).
+    */
+    Route::prefix('oauth')->name('oauth.')->group(function (): void {
+        Route::get('/{provider}/redirect', [OauthController::class, 'redirect'])
+            ->where('provider', '[a-z]+')
+            ->name('redirect');
+
+        Route::get('/{provider}/callback', [OauthController::class, 'callback'])
+            ->where('provider', '[a-z]+')
+            ->name('callback');
+    });
 
     // A plugin's compiled stylesheet (S-350). The file sits in the plugin's own
     // directory under application support, which is not web-served, so it is
