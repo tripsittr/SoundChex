@@ -24,10 +24,24 @@ use Tests\TestCase;
  *
  * A worker starting is the one moment it is safe to say nothing is in flight,
  * because the supervisor runs exactly one.
+ *
+ * **Off by default since #465.** `library:pipeline-sweep` now recovers lost
+ * pipeline work by stage timeout, which is safe with any number of workers,
+ * where this is only safe with exactly one — releasing a reservation a sibling
+ * worker is part-way through runs that job twice. The mechanism stays for
+ * non-pipeline jobs on a single-worker install, so these tests enable it
+ * explicitly rather than relying on the default they used to get for free.
  */
 class StrandedJobsTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config()->set('queue.release_reservations_on_worker_start', true);
+    }
 
     private function job(?int $reservedAt): int
     {

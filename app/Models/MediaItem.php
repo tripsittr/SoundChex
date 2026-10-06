@@ -9,6 +9,8 @@ use App\Enums\DuplicateMatch;
 use App\Enums\DuplicateStatus;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
+use App\Enums\PipelineStage;
+use App\Enums\PipelineState;
 use App\Enums\ProcessingStatus;
 use App\Enums\ReviewReason;
 use App\Models\Scopes\ResolvedScope;
@@ -196,6 +198,11 @@ class MediaItem extends Model
         // Written by the pipeline, not a form — like duplicate state, it is kept
         // out of $fillable and set with forceFill/saveQuietly.
         'enrichment_report' => 'array',
+        // Pipeline state, likewise written only by the stage jobs (#465).
+        'pipeline_stage' => PipelineStage::class,
+        'pipeline_state' => PipelineState::class,
+        'pipeline_attempts' => 'integer',
+        'pipeline_updated_at' => 'datetime',
     ];
 
     /**

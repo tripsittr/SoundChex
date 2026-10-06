@@ -6,7 +6,9 @@
 namespace Tests\Feature;
 
 use App\Enums\MediaItemType;
-use App\Jobs\EnrichMediaItemJob;
+use App\Enums\PipelineStage;
+use App\Enums\PipelineState;
+use App\Jobs\Pipeline\RunPipelineStageJob;
 use App\Models\MediaItem;
 use App\Models\MetadataVersion;
 use App\Models\Scopes\ResolvedScope;
@@ -470,24 +472,51 @@ class LibraryScannerTest extends TestCase
 
     /* ------------------------------------------------------ enrichment --- */
 
-    public function test_it_queues_enrichment_for_a_new_item(): void
+    public function test_it_starts_the_pipeline_for_a_new_item(): void
     {
+        // The scanner dispatched EnrichMediaItemJob directly before #465. It
+        // now hands the file to LibraryIngest, which starts the pipeline at its
+        // first stage -- so a crash between cataloguing and dispatching can no
+        // longer leave a row with nothing to process it.
         $this->file('Backrooms 2026.mkv');
 
         $this->scanner->scan();
 
-        Queue::assertPushed(EnrichMediaItemJob::class);
+        Queue::assertPushed(RunPipelineStageJob::class, function (RunPipelineStageJob $job): bool {
+            return $job->stage === PipelineStage::Catalogued;
+        });
+    }
+
+    public function test_a_new_item_is_given_its_first_pipeline_stage(): void
+    {
+        // Written in the same transaction as the row, which is the actual
+        // guarantee -- the dispatch above can be lost and the sweeper will
+        // still find the item, because the row says what it is waiting for.
+        $this->file('Backrooms 2026.mkv');
+
+        $this->scanner->scan();
+
+        $item = MediaItem::withoutGlobalScopes()->latest('id')->first();
+
+        $this->assertSame(PipelineStage::Catalogued, $item->pipeline_stage);
+        $this->assertSame(PipelineState::Queued, $item->pipeline_state);
     }
 
     public function test_enrichment_can_be_suppressed(): void
     {
         // The scheduled scan enriches; a bulk import of a thousand files
         // should not queue a thousand lookups before the user has looked.
+        //
+        // The item is parked rather than left without a stage, so the sweeper
+        // does not adopt it straight back into the pipeline the caller asked it
+        // to stay out of.
         $this->file('Backrooms 2026.mkv');
 
         $this->scanner->scan(enrich: false);
 
-        Queue::assertNotPushed(EnrichMediaItemJob::class);
+        $item = MediaItem::withoutGlobalScopes()->latest('id')->first();
+
+        $this->assertSame(PipelineState::Waiting, $item->pipeline_state);
     }
 
     /* -------------------------------------------------------- helpers --- */

@@ -5,18 +5,21 @@
 
 namespace App\Services;
 
+use App\Enums\IngestOrigin;
 use App\Enums\MediaItemType;
+use App\Enums\PipelineStage;
 use App\Enums\ProcessingStatus;
 use App\Events\EpisodeAdded;
-use App\Events\MediaItemCatalogued;
 use App\Events\ScanFinished;
 use App\Events\ScanStarted;
-use App\Jobs\EnrichMediaItemJob;
 use App\Jobs\ExtractBookAssetsJob;
 use App\Jobs\ImportSubtitlesJob;
 use App\Models\MediaItem;
 use App\Models\Notification;
 use App\Models\User;
+use App\Services\IngestFailed;
+use App\Services\LibraryIngest;
+use App\Services\Pipeline\PipelineRunner;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use SplFileInfo;
@@ -32,11 +35,11 @@ use Symfony\Component\Finder\Finder;
 class LibraryScanner
 {
     public function __construct(
-        private DuplicateDetector $duplicates,
+        private LibraryIngest $ingest,
+        private PipelineRunner $pipeline,
         private LibrarySettings $settings,
         private EpisodeParser $episodes,
         private ContainerProbe $containers,
-        private MetadataHistory $history,
         private LocalArtwork $artwork,
     ) {}
 
@@ -130,7 +133,35 @@ class LibraryScanner
                 ['type' => $type, 'title' => $title, 'marker' => $marker, 'seed' => $seed] = $classified;
 
                 if (! $dryRun) {
-                    $item = $this->catalog($path, $title, $type, $userId, $seed);
+                    // One entry point for every import path (#465). The row and
+                    // its first pipeline stage are created in one transaction,
+                    // which closes the window where a crash between the two
+                    // left a row hidden with nothing to find it.
+                    try {
+                        $item = $this->ingest->accept(
+                            $path,
+                            $type,
+                            $title,
+                            IngestOrigin::Scan,
+                            $userId,
+                            $seed,
+                        );
+                    } catch (IngestFailed $e) {
+                        // One bad file must not end a scan of ten thousand.
+                        // Counted and logged by `accept()`, so it is visible
+                        // rather than a silently missing row.
+                        $result['skipped']++;
+                        $known[$path] = true;
+
+                        continue;
+                    }
+
+                    if ($item === null) {
+                        // Already catalogued -- the ordinary answer on a rescan.
+                        $known[$path] = true;
+
+                        continue;
+                    }
 
                     // Episodes hang off one series row, so a show is a single
                     // entry with children rather than ten unrelated items.
@@ -138,20 +169,24 @@ class LibraryScanner
                         $this->attachToSeries($item, $marker['series'], $userId);
                     }
 
-                    // Checked before enrichment is queued: an identical copy
-                    // doesn't need identifying a second time, and under the
-                    // 'auto' action the file may not survive the check.
-                    if ($this->duplicates->check($item) !== null) {
-                        $result['duplicates']++;
-                    }
+                    // Duplicate detection has MOVED into the pipeline's dedupe
+                    // stage, which runs after identification (#465). Here it ran
+                    // before any metadata existed, so the ISRC, MusicBrainz,
+                    // AcoustID, TMDB and episode passes had nothing to compare
+                    // and only byte-identical copies were ever found at import
+                    // -- the minority of real duplication, since a second rip
+                    // never matches byte for byte.
 
                     // Cover art the files brought with them — a poster.jpg or a
                     // named image beside the media — before enrichment is asked
                     // to fetch one. Local, correct, and no API call.
                     $this->applyLocalArtwork($item);
 
-                    if ($enrich) {
-                        EnrichMediaItemJob::dispatch($item->id);
+                    // Enrichment is the pipeline's job now; `accept()` has
+                    // already started it. The flag still turns it off, which is
+                    // what `--no-enrich` is for.
+                    if (! $enrich) {
+                        $this->pipeline->park($item, PipelineStage::Catalogued, 'enrichment was skipped for this scan');
                     }
 
                     // Captions that shipped with the file — embedded streams
@@ -441,7 +476,27 @@ class LibraryScanner
                 ['type' => $type, 'title' => $title, 'marker' => $marker, 'seed' => $seed] = $classified;
 
                 if (! $dryRun) {
-                    $item = $this->catalog($path, $title, $type, $userId, $seed);
+                    try {
+                        $item = $this->ingest->accept(
+                            $path,
+                            $type,
+                            $title,
+                            IngestOrigin::Scan,
+                            $userId,
+                            $seed,
+                        );
+                    } catch (IngestFailed $e) {
+                        $result['skipped']++;
+                        $known[$path] = true;
+
+                        continue;
+                    }
+
+                    if ($item === null) {
+                        $known[$path] = true;
+
+                        continue;
+                    }
 
                     if ($marker !== null) {
                         $this->attachToSeries($item, $marker['series'], $userId);
@@ -455,9 +510,11 @@ class LibraryScanner
                     // Opt-in, unlike a scan. Recovery is about getting the rows
                     // back; enrichment reads tags, extracts cover art and makes
                     // network requests, which is a separate decision from
-                    // whether the library exists at all.
-                    if ($enrich) {
-                        EnrichMediaItemJob::dispatch($item->id);
+                    // whether the library exists at all. Parked rather than
+                    // left stageless, so the sweeper does not adopt it straight
+                    // back into the pipeline the user asked it to stay out of.
+                    if (! $enrich) {
+                        $this->pipeline->park($item, PipelineStage::Catalogued, 'recovered without enrichment');
                     }
                 }
 
@@ -586,42 +643,6 @@ class LibraryScanner
         return ['type' => $type, 'title' => $title, 'marker' => $marker, 'seed' => $seed];
     }
 
-    /**
-     * @param  array<string, mixed>  $attributes  Seed values for the metadata row.
-     */
-    private function catalog(string $path, string $title, MediaItemType $type, ?int $userId, array $attributes = []): MediaItem
-    {
-        $item = MediaItem::create([
-            'user_id' => $userId,
-            'type' => $type,
-            // Enrichment promotes the real title once the file is identified.
-            'title' => $title,
-            'file_path' => $path,
-            // Captured once, here (S-119), so library-size totals are a stored
-            // SUM rather than a per-item filesize() sample. The file was just
-            // scanned, so it is present; a false result leaves it null to be
-            // backfilled.
-            'file_size' => $this->sizeOf($path),
-            'processing_status' => ProcessingStatus::Pending,
-            'owned' => true,
-        ]);
-
-        // Sources write into this row rather than creating it, so it has to
-        // exist before enrichment runs.
-        $item->metadata()->create($attributes);
-
-        // The state the file arrived in — its original name, path, size, and the
-        // tags it carried — captured now, before the organiser renames it and
-        // enrichment rewrites the title (S-21). Nothing else keeps it, and its
-        // absence is what forced S-44 to guess an original filename from a title.
-        $this->history->recordIntake($item->fresh(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata']));
-
-        // A new item has entered the library. Plugins subscribed to this react
-        // to something arriving, before enrichment runs (S-264 Phase 3).
-        MediaItemCatalogued::dispatch($item);
-
-        return $item;
-    }
 
     /**
      * The size in bytes of a catalogued file, or null if it cannot be read.

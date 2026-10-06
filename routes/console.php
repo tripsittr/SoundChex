@@ -73,6 +73,24 @@ Schedule::command('library:purge-trash')
     ->runInBackground();
 
 /*
+| Find pipeline work that was lost and make it happen (#465).
+|
+| A crash, a killed worker, a flushed queue or a provider outage all leave
+| items that nothing else would ever look at again -- hidden from the library
+| because they are not `complete`, and absent from review because nothing
+| flagged them. This is what makes "no item stays invisible and idle" true.
+|
+| Five minutes is short enough that a lost import is noticed while the user is
+| still watching, and long enough that a stage with a sixty-second timeout is
+| not requeued while it is legitimately working.
+*/
+Schedule::command('library:pipeline-sweep --quiet-ok')
+    ->everyFiveMinutes()
+    // A slow sweep over a large library must not stack up behind itself.
+    ->withoutOverlapping()
+    ->runInBackground();
+
+/*
 | Notifications are "what happened while you were away", not a permanent log.
 | A device that has not opened in a month does not want a month of history, and
 | an unbounded table on a server that scans every few minutes grows forever.

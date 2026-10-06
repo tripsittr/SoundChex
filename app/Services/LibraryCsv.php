@@ -7,6 +7,8 @@ namespace App\Services;
 
 use App\Enums\MediaItemType;
 use App\Enums\MediaTagSource;
+use App\Enums\PipelineStage;
+use App\Enums\PipelineState;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
 
@@ -200,6 +202,21 @@ class LibraryCsv
 
             $this->writeMetadata($item, $type, $get);
             $this->writeGenres($item, $get('genres'));
+
+            // A CSV row describes a *record*, not a file -- there is no
+            // file_path, so there is nothing to probe, hash, identify or move.
+            // It is complete on arrival.
+            //
+            // Said explicitly because the alternative is a row that is neither
+            // complete nor in any pipeline, which is exactly the hidden-and-idle
+            // state #465 abolishes: the health check counts those, and a CSV
+            // import would otherwise trip it for every row.
+            $item->forceFill([
+                'processing_status' => ProcessingStatus::Complete,
+                'pipeline_stage' => PipelineStage::Published,
+                'pipeline_state' => PipelineState::Done,
+                'pipeline_updated_at' => now(),
+            ])->saveQuietly();
 
             $imported++;
 

@@ -5,10 +5,12 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\IngestOrigin;
 use App\Enums\MediaItemType;
-use App\Enums\ProcessingStatus;
-use App\Jobs\EnrichMediaItemJob;
+use App\Enums\PipelineStage;
 use App\Models\MediaItem;
+use App\Services\LibraryIngest;
+use App\Services\Pipeline\PipelineRunner;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
@@ -41,7 +43,7 @@ class ImportMusicFolder extends Command
         'ogg', 'oga', 'opus', 'wma', 'alac', 'ape', 'wv',
     ];
 
-    public function handle(): int
+    public function handle(LibraryIngest $ingest, PipelineRunner $pipeline): int
     {
         $path = realpath($this->argument('path'));
 
@@ -98,29 +100,32 @@ class ImportMusicFolder extends Command
                 continue;
             }
 
-            // Re-running the import shouldn't duplicate the library.
-            if (MediaItem::unresolved()->where('file_path', $storedPath)->exists()) {
+            // Through the one entry point (#465). This path used to create the
+            // row itself and so skipped the hash, the duplicate check, the
+            // intake history, the catalogued event and local artwork -- which
+            // is why an imported track behaved differently from a scanned one.
+            // `accept()` returns null when the path is already catalogued,
+            // which is also the re-run guard this used to do by hand.
+            $item = $ingest->accept(
+                $storedPath,
+                MediaItemType::Music,
+                // FileTagger promotes the real title once tags are read.
+                $file->getBasename('.'.$file->getExtension()),
+                IngestOrigin::Command,
+                $userId,
+            );
+
+            if ($item === null) {
                 $skipped++;
                 $progress->advance();
 
                 continue;
             }
 
-            $item = MediaItem::create([
-                'user_id' => $userId,
-                'type' => MediaItemType::Music,
-                // FileTagger promotes the real title once tags are read.
-                'title' => $file->getBasename('.'.$file->getExtension()),
-                'file_path' => $storedPath,
-                'processing_status' => ProcessingStatus::Pending,
-                'owned' => true,
-            ]);
-
-            // FileTagger writes into this row, so it must exist first.
-            $item->musicMetadata()->create([]);
-
-            if (! $this->option('no-enrich')) {
-                EnrichMediaItemJob::dispatch($item->id);
+            if ($this->option('no-enrich')) {
+                // Parked rather than left stageless, so the sweeper does not
+                // adopt it back into the pipeline the caller opted out of.
+                $pipeline->park($item, PipelineStage::Catalogued, 'imported with --no-enrich');
             }
 
             $imported++;
