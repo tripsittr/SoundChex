@@ -12,20 +12,25 @@ use App\Events\PlaybackRecorded;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\MediaCenterController;
 use App\Http\Resources\MediaItemResource;
+use App\Jobs\TranscodeMediaJob;
 use App\Models\MediaItem;
 use App\Models\MediaPlay;
 use App\Plugins\Registry;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
 use App\Services\LyricsService;
+use App\Services\MediaTranscoder;
 use App\Services\SearchService;
+use App\Services\Streaming\StreamPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
+use Throwable;
 
 /**
  * The client-facing media API for the native app.
@@ -50,13 +55,94 @@ class MediaController extends Controller
      * A `BinaryFileResponse` sets Accept-Ranges and answers a ranged request with
      * 206 Partial Content, which is what lets AVPlayer scrub without refetching.
      */
-    public function stream(MediaItem $item): BinaryFileResponse
+    /**
+     * How this client should play this item, and where from.
+     *
+     * The web player has asked this for a long time; the native apps never
+     * could, so they fetched the file and hoped. An MKV handed to AVPlayer is
+     * a black rectangle — iOS cannot demux Matroska at all, whatever the codec
+     * inside it — and nothing in the app could tell that in advance.
+     *
+     * The same `StreamPolicy` the web uses decides, so one rule governs every
+     * client: direct play where the file is playable and the link can carry
+     * it, HLS otherwise.
+     *
+     * Asking also **queues the permanent copy** when the container is one this
+     * client cannot read. HLS makes it play now; the converted MP4 makes every
+     * later play direct and cheap, and makes an offline download possible at
+     * all. Nothing did this automatically before — conversion was a per-file
+     * button in the admin table, so a library of MKVs stayed unplayable on iOS
+     * until somebody clicked each one.
+     */
+    public function playback(Request $request, MediaItem $item, StreamPolicy $policy): JsonResponse
     {
         abort_unless(app(ContentGate::class)->allows($item), 404);
 
-        $path = $item->playbackPath();
+        $decision = $policy->decide($item, $request);
 
-        abort_unless($path !== null, 404);
+        $this->queueConversionIfWorthwhile($item);
+
+        return response()->json([
+            ...$decision->toArray(),
+            'url' => $decision->transcode
+                ? route('media.hls.playlist', ['item' => $item->id, 'from' => 0])
+                : route('api.items.stream', $item),
+            // Whether a direct download would give this client something it
+            // can actually open. The app asks before offering one, so it can
+            // say "the original will not play on this device" rather than
+            // storing a gigabyte that shows a black screen.
+            'direct_playable' => $item->isPlayableVideo() || $item->hasConvertedCopy(),
+            'converting' => app(MediaTranscoder::class)->needsConversion($item),
+        ]);
+    }
+
+    /**
+     * Queues a playable copy for a file that needs one.
+     *
+     * Idempotent by way of `needsConversion()`, which answers false once a
+     * converted copy exists — so repeated plays of the same unplayable file
+     * queue one job, not one per play.
+     *
+     * Failures are swallowed: this is a background nicety behind a request the
+     * player is waiting on, and a full queue must not stop playback starting.
+     */
+    private function queueConversionIfWorthwhile(MediaItem $item): void
+    {
+        try {
+            if (! app(MediaTranscoder::class)->needsConversion($item)) {
+                return;
+            }
+
+            TranscodeMediaJob::dispatch($item->id);
+        } catch (Throwable $exception) {
+            Log::warning('Could not queue a playable copy', [
+                'item' => $item->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    public function stream(Request $request, MediaItem $item): BinaryFileResponse
+    {
+        abort_unless(app(ContentGate::class)->allows($item), 404);
+
+        // `?variant=original` asks for the file as it sits on disk, rather
+        // than the converted copy `playbackPath()` prefers.
+        //
+        // Both are legitimate things to want. A phone that cannot demux
+        // Matroska needs the MP4; a desktop that can wants the original, with
+        // its full bitrate and its other audio and subtitle tracks, because
+        // the converted copy is a single-track H.264 reduction. The client
+        // asks the person which they want -- or both -- and says here which it
+        // is fetching.
+        //
+        // Falls back rather than 404ing when the original is gone: a missing
+        // file is the converted copy's whole reason for existing.
+        $path = $request->query('variant') === 'original'
+            ? ($item->absoluteFilePath() ?? $item->playbackPath())
+            : $item->playbackPath();
+
+        abort_unless($path !== null && is_file($path), 404);
 
         $this->recordPlay($item);
 

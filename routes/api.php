@@ -161,6 +161,12 @@ Route::prefix('v1')->group(function (): void {
         Route::get('/items/{item}/stream', [MediaController::class, 'stream'])
             ->middleware('throttle:stream')
             ->name('api.items.stream');
+        // How to play this item, and from where. The web player has asked
+        // this for a long time; the native apps could not, so they fetched
+        // the file and hoped -- and an MKV handed to AVPlayer is a black
+        // rectangle, because iOS cannot demux Matroska whatever is inside it.
+        Route::get('/items/{item}/playback', [MediaController::class, 'playback'])
+            ->name('api.items.playback');
         Route::get('/items/{item}/progress', [MediaController::class, 'progress'])
             ->name('api.items.progress');
         // Lyrics: fetched and cached from a provider (LRCLIB by default).
