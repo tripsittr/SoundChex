@@ -45,7 +45,13 @@ class TranscodeMediaJob implements ShouldQueue
 
     public function handle(MediaTranscoder $transcoder, ConversionFiler $filer): void
     {
-        $item = MediaItem::unresolved()->findOrFail($this->mediaItemId);
+        $item = MediaItem::unresolved()->find($this->mediaItemId);
+
+        // Gone by the time this ran -- merged away as a duplicate, or removed.
+        // Nothing to transcode and nothing to record (#479).
+        if ($item === null) {
+            return;
+        }
 
         if (! $transcoder->isAvailable()) {
             $item->forceFill(['transcode_status' => 'failed'])->saveQuietly();
