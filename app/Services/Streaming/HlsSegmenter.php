@@ -230,6 +230,27 @@ class HlsSegmenter
             '-map', '0:v:0',
             '-map', '0:a:0?',
             '-c:v', 'libx264',
+            // **The output profile has to be pinned.**
+            //
+            // libx264 otherwise inherits the source's pixel format, so a
+            // 10-bit rip -- which is common for anime and for anything
+            // encoded from a good master -- comes out as **High 10**. Apple's
+            // hardware decoder refuses High 10 outright: the audio plays and
+            // the picture stays black, which looks like a broken stream
+            // rather than an unsupported profile.
+            //
+            // Verified by running this exact command over a `yuv420p10le`
+            // source: without these three flags the segments are
+            // `profile=High 10, pix_fmt=yuv420p10le`; with them they are
+            // `profile=High, pix_fmt=yuv420p`.
+            //
+            // Level 4.1 is the ceiling every iOS device since the 4S decodes,
+            // and it covers 1080p comfortably. The point of transcoding is a
+            // file that plays, so the output constraints are the part that
+            // must not be left to chance.
+            '-profile:v', 'high',
+            '-level:v', '4.1',
+            '-pix_fmt', 'yuv420p',
             '-preset', 'veryfast',
             '-g', $keyframeInterval,
             '-keyint_min', $keyframeInterval,

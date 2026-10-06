@@ -204,7 +204,20 @@ class MediaTranscoder
 
         // yuv420p is the only pixel format with universal browser support;
         // 10-bit sources otherwise produce a file nothing will play.
-        $arguments = array_merge($arguments, ['-pix_fmt', 'yuv420p']);
+        //
+        // The profile is pinned alongside it for the same reason. 8-bit
+        // output implies High rather than High 10 in practice, but saying so
+        // costs nothing and makes the guarantee explicit rather than
+        // incidental -- and Level 4.1 is the ceiling every iOS device since
+        // the 4S decodes. The HLS path learned this the hard way: it set
+        // neither, and a 10-bit source came out as High 10, which Apple's
+        // hardware decoder refuses outright -- audio playing over a black
+        // picture.
+        $arguments = array_merge($arguments, [
+            '-profile:v', 'high',
+            '-level:v', '4.1',
+            '-pix_fmt', 'yuv420p',
+        ]);
 
         $maxHeight = (int) ($video['max_height'] ?? 1080);
 
@@ -263,7 +276,7 @@ class MediaTranscoder
         // Keyed by id so two films sharing a title can't overwrite each other.
         $name = preg_replace('/[^\w\- ]+/u', '', $item->title) ?: 'item';
 
-        return $root . '/' . $item->id . '-' . trim($name) . '.mp4';
+        return $root.'/'.$item->id.'-'.trim($name).'.mp4';
     }
 
     private function convertedFileExists(MediaItem $item): bool
