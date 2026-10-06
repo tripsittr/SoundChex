@@ -35,6 +35,20 @@ file, it falls back to comparing resolved real paths case-insensitively —
 device+inode there would call *every* pair identical, which for a check that
 gates deletes would be far worse than the bug being fixed.
 
+**So on Windows this is not inode safety, and the title overstates it there.**
+PHP gives no inode to compare, so identity is `realpath()` + a
+case-insensitive string compare. That is strictly better than the original bug
+— it normalises case, `.`, `..` and symlinked parents, which is exactly the
+class of collision that deleted a file — but it is still path-based, and
+Windows is a primary target platform. Two genuinely distinct files that
+`realpath()` resolves to one string would still be read as one file.
+
+What makes that acceptable rather than merely better is #464, in this same
+phase: a delete is a move to the trash. A wrong identity call on Windows now
+costs a file being trashed instead of destroyed, recoverable for 30 days.
+Closing the gap properly needs a Windows file id (`GetFileInformationByHandle`'s
+`nFileIndexHigh`/`Low`), which PHP does not expose without FFI.
+
 This also covers two cases the string compare never handled: a symlinked
 library root, and a hardlink.
 
