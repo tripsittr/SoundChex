@@ -194,6 +194,10 @@ class MediaController extends Controller
             // beside a film that has them reads as a broken page rather than a
             // gap in the data.
             'imdb_rating' => $movie?->imdb_rating ?? $show?->imdb_rating,
+            // IMDb never shows a score without the count behind it, and for
+            // good reason: 9.3 could be three people or three million. Sent
+            // as an integer so each client formats it for its own locale.
+            'imdb_votes' => $movie?->imdb_votes ?? $show?->imdb_votes,
             'rt_score' => $movie?->rt_score ?? $show?->rt_score,
             'metascore' => $movie?->metascore ?? $show?->metascore,
             // The sentence OMDb writes -- "Nominated for 7 Oscars. 21 wins &

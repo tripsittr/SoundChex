@@ -45,6 +45,7 @@ class ShowMetadata extends Model
         // reads as a broken page rather than a gap in the data (#504).
         'imdb_id',
         'imdb_rating',
+        'imdb_votes',
         'rt_score',
         'awards',
         'metascore',

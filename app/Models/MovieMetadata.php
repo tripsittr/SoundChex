@@ -36,6 +36,7 @@ class MovieMetadata extends Model
         'mpaa_rating',
         'tagline',
         'imdb_rating',
+        'imdb_votes',
         'rt_score',
         // Filled by OMDb, which is the only source here that carries them
         // (#504). The first two columns existed from the start with nothing

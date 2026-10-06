@@ -221,4 +221,31 @@ class OmdbRatingsTest extends TestCase
         $this->assertContains('omdb_api_key', $catalogue->liveKeys());
         $this->assertFalse($catalogue->isUnimplemented('omdb_api_key'));
     }
+
+    public function test_it_parses_the_formatted_vote_count(): void
+    {
+        // OMDb sends it as "3,235,958". Stored as an integer, because
+        // formatting is a presentation decision each client should make
+        // against its own locale rather than one baked into the database.
+        $this->fakeOmdb(['imdbVotes' => '3,235,958']);
+
+        $film = $this->film();
+
+        app(Omdb::class)->enrich($film);
+
+        $this->assertSame(3235958, (int) $film->fresh()->movieMetadata->imdb_votes);
+    }
+
+    public function test_an_unrated_title_stores_no_vote_count(): void
+    {
+        // "N/A" is OMDb's literal for absent, and storing it as 0 would read
+        // as "nobody voted" rather than "we do not know".
+        $this->fakeOmdb(['imdbVotes' => 'N/A']);
+
+        $film = $this->film();
+
+        app(Omdb::class)->enrich($film);
+
+        $this->assertNull($film->fresh()->movieMetadata->imdb_votes);
+    }
 }
