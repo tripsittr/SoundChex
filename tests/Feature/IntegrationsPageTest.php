@@ -64,6 +64,62 @@ class IntegrationsPageTest extends TestCase
         return $this;
     }
 
+    public function test_the_not_running_explanation_is_not_a_banner_on_the_page(): void
+    {
+        // It used to lead the page whenever nothing was running, which is most
+        // installs: an optional, not-installed, separate thing explaining
+        // itself above the integrations somebody actually came to configure.
+        $this->withKeys();
+
+        Http::fake(fn () => throw new ConnectionException('refused'));
+
+        $this->asOwner();
+
+        $html = Livewire::test(Integrations::class)->html();
+
+        $this->assertStringNotContainsString('Acquisition apps are not running', $html);
+        $this->assertStringNotContainsString('arr:setup --start', $html);
+    }
+
+    public function test_the_explanation_appears_when_managing_an_app_that_is_not_running(): void
+    {
+        // Where somebody who clicks into Radarr will actually want it.
+        $this->withKeys();
+
+        Http::fake(fn () => throw new ConnectionException('refused'));
+
+        $this->asOwner();
+
+        $html = Livewire::test(Integrations::class)
+            ->call('edit', 'radarr')
+            ->html();
+
+        $this->assertStringContainsString('arr:setup --start', $html);
+        $this->assertStringContainsString('is not running', $html);
+    }
+
+    public function test_a_running_app_is_not_told_how_to_start_itself(): void
+    {
+        // The explanation is for an app that is not up. Showing it over a
+        // working Radarr would be noise in the one place someone is editing a
+        // live connection.
+        $this->withKeys();
+
+        Http::fake([
+            '*/api/v3/system/status' => Http::response(['version' => '5.14.0.1234']),
+            '*/api/v3/queue*' => Http::response(['totalRecords' => 0]),
+            '*/api/v3/health' => Http::response([]),
+        ]);
+
+        $this->asOwner();
+
+        $html = Livewire::test(Integrations::class)
+            ->call('edit', 'radarr')
+            ->html();
+
+        $this->assertStringNotContainsString('arr:setup --start', $html);
+    }
+
     public function test_the_page_renders_when_nothing_is_running(): void
     {
         // The normal case: no Docker, nothing listening. A connection error is
@@ -72,10 +128,15 @@ class IntegrationsPageTest extends TestCase
 
         Http::fake(fn () => throw new ConnectionException('refused'));
 
+        // The page still lists the apps; what it must not do is 500 because a
+        // probe threw. The "not running" explanation used to lead the page as a
+        // banner and now lives in each app's manage modal, so this asserts the
+        // page renders rather than asserting on that text.
         $this->asOwner()
             ->get(self::URL)
             ->assertOk()
-            ->assertSee('Acquisition apps are not running');
+            ->assertSee('Acquisition')
+            ->assertSee('Radarr');
     }
 
     /** Keys for every app, so `status()` gets as far as asking. */
@@ -99,8 +160,7 @@ class IntegrationsPageTest extends TestCase
         $this->asOwner()
             ->get(self::URL)
             ->assertOk()
-            ->assertSee('5.14.0.1234')
-            ->assertDontSee('Acquisition apps are not running');
+            ->assertSee('5.14.0.1234');
     }
 
     public function test_a_health_warning_is_surfaced(): void

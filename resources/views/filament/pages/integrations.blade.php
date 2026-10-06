@@ -7,32 +7,6 @@
         $filters = $this->filterOptions();
     @endphp
 
-    @if (! $this->anyRunning())
-        {{-- Not an error. Most installs do not run these, and the useful thing
-             to say is what they are and how to start them. --}}
-        <x-filament::section>
-            <x-slot name="heading">Acquisition apps are not running</x-slot>
-            <x-slot name="description">Optional, and separate from SoundChex.</x-slot>
-
-            <div class="space-y-3 text-sm">
-                <p>
-                    Radarr, Sonarr and Lidarr find new films, television and music.
-                    SoundChex catalogues what is already here. They meet at the
-                    folder the library scanner watches, so a finished download is
-                    picked up on the next scan with nothing needing to tell
-                    SoundChex it happened.
-                </p>
-
-                <pre class="overflow-x-auto rounded-lg bg-gray-950 p-3 text-xs text-gray-100">php artisan arr:setup --start</pre>
-
-                <p class="opacity-60">
-                    Nothing downloads until an indexer is added inside each app by
-                    hand. None ship with them and none are configured here.
-                </p>
-            </div>
-        </x-filament::section>
-    @endif
-
     {{-- Filter by kind. Chips rather than a select: a handful of categories,
          each worth showing with its connected/total count so the page says at a
          glance what is set up. --}}
@@ -178,6 +152,36 @@
                         </p>
                     </div>
                 @else
+                    @if ($editing['group'] === 'Acquisition' && ! $editing['connected'])
+                        {{-- What this app is and how to start it, shown here
+                             rather than as a banner across the top of the page.
+                             It used to lead the page whenever nothing was
+                             running, which is most installs: an optional,
+                             not-installed, separate thing explaining itself
+                             above the integrations somebody actually came to
+                             configure. It belongs where they click into the app
+                             that is not running. --}}
+                        <div class="space-y-3 rounded-lg bg-gray-50 p-3 text-sm dark:bg-white/5">
+                            <p>
+                                {{ $editing['label'] }} is not running. Radarr, Sonarr and
+                                Lidarr find new films, television and music; SoundChex
+                                catalogues what is already here. They meet at the folder the
+                                library scanner watches, so a finished download is picked up
+                                on the next scan with nothing needing to tell SoundChex it
+                                happened.
+                            </p>
+
+                            <p class="opacity-70">Optional, and separate from SoundChex. To start the bundled stack:</p>
+
+                            <pre class="overflow-x-auto rounded-lg bg-gray-950 p-3 text-xs text-gray-100">php artisan arr:setup --start</pre>
+
+                            <p class="opacity-60">
+                                Nothing downloads until an indexer is added inside each app
+                                by hand. None ship with them and none are configured here.
+                            </p>
+                        </div>
+                    @endif
+
                     @if ($editing['group'] === 'Acquisition')
                         {{-- The address, because loopback is only right for our own
                              compose stack. These apps are also installed natively,
