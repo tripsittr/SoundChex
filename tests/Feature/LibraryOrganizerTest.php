@@ -144,16 +144,35 @@ class LibraryOrganizerTest extends TestCase
         $this->assertNull($this->organizer->organize($item->fresh()));
     }
 
-    public function test_music_is_exempt_from_the_confidence_gate(): void
+    public function test_music_with_its_own_tags_passes_the_confidence_gate(): void
     {
-        // Its artist and album come from the file's own embedded tags, which
-        // are authoritative about the file whatever an online source thinks.
-        // 'none' is the real unenriched state — the column defaults to it and
-        // is not nullable, so this is what an un-looked-up track actually has.
+        // Music's looser rule, and the reason for it: the artist and album come
+        // from the file's own embedded tags, which are authoritative about the
+        // file whatever an online source thinks. 'none' is the real unenriched
+        // state — the column defaults to it and is not nullable, so this is
+        // what an un-looked-up track actually has.
+        //
+        // This used to assert that *all* music was exempt, which is what the
+        // rule was taken to mean and not what it says: MusicBrainz writes
+        // `artist` too, so unconditional exemption filed music on API guesses
+        // (#460). The tag is now required, which is what "its own tags" meant.
+        $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors');
+        $item->forceFill([
+            'match_confidence' => MatchConfidence::None,
+            'enrichment_report' => ['tagged_artist' => true],
+        ])->save();
+
+        $this->assertTrue($this->organizer->canOrganize($item->fresh()));
+    }
+
+    public function test_music_with_only_a_guessed_artist_does_not_pass_the_gate(): void
+    {
+        // The same row without the tag behind it: the artist came from an API
+        // text match, so the path would be built from a guess.
         $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors');
         $item->forceFill(['match_confidence' => MatchConfidence::None])->save();
 
-        $this->assertTrue($this->organizer->canOrganize($item->fresh()));
+        $this->assertFalse($this->organizer->canOrganize($item->fresh()));
     }
 
     public function test_a_movie_without_a_year_stays_put(): void
@@ -247,6 +266,107 @@ class LibraryOrganizerTest extends TestCase
         $this->assertTrue($this->organizer->isAlreadyFiled($item->fresh()));
     }
 
+    public function test_a_case_only_rename_keeps_the_file(): void
+    {
+        // The bug this exists for (tracker #454). On a case-insensitive volume
+        // -- the macOS and Windows default -- a target that differs from the
+        // source only in case is a *different string* but the *same file*.
+        //
+        // organize() compared the two as strings, so it did not recognise the
+        // file as already filed. isSameFile() then hashed both paths and got
+        // equal hashes -- because they are one file -- and adoptExisting()
+        // unlinked "the redundant copy", which was the only copy.
+        //
+        // Skipped on a case-sensitive volume, where the premise cannot arise.
+        $disk = Storage::disk('local');
+        $filed = 'media/library/Music/flipturn/Heavy Colors/03 Chicago.mp3';
+        $disk->put($filed, 'the only copy');
+
+        $absolute = $disk->path($filed);
+        $recased = dirname($absolute).'/03 CHICAGO.mp3';
+
+        if (! file_exists($recased)) {
+            $this->markTestSkipped('The test volume is case-sensitive, so a case-only collision cannot happen.');
+        }
+
+        // An item whose stored path is the other spelling of that same file.
+        $item = MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => 'Chicago',
+            'file_path' => $recased,
+            'match_confidence' => MatchConfidence::Exact,
+            'owned' => true,
+        ]);
+        $item->musicMetadata()->create([
+            'artist' => 'flipturn',
+            'album' => 'Heavy Colors',
+            'track_number' => 3,
+        ]);
+
+        $this->organizer->organize($item->fresh());
+
+        // The one thing that must never happen.
+        $this->assertFileExists($absolute);
+        $this->assertSame('the only copy', $disk->get($filed));
+    }
+
+    public function test_a_corrupted_cross_volume_copy_does_not_delete_the_original(): void
+    {
+        // #462. The copy fallback verified by SIZE only, and a copy interrupted
+        // and resumed, or written to a failing disk, can be the right length
+        // and the wrong bytes -- after which the original was deleted and the
+        // library held a corrupt file as the only copy.
+        //
+        // Simulated by corrupting the copy in place, which is what a bad write
+        // looks like from here: same length, different content.
+        $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors', contents: 'the real audio');
+        $source = $item->absoluteFilePath();
+
+        $this->assertFalse(
+            $this->invokeCopyIsFaithful($source, $this->corruptedCopyOf($source)),
+            'A same-length, different-content copy must not be called faithful.',
+        );
+    }
+
+    public function test_a_faithful_copy_is_recognised(): void
+    {
+        // The other half: a good copy must verify, or nothing would ever file
+        // across volumes.
+        $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors', contents: 'the real audio');
+        $source = $item->absoluteFilePath();
+        $copy = $source.'.copy';
+        copy($source, $copy);
+
+        $this->assertTrue($this->invokeCopyIsFaithful($source, $copy));
+    }
+
+    public function test_it_refuses_rather_than_overwriting_when_no_name_is_free(): void
+    {
+        // uniquePath() used to return the occupied path after 999 attempts,
+        // handing the caller a path it would then overwrite. A thousand
+        // same-named files is a real problem worth surfacing (#462).
+        $disk = Storage::disk('local');
+        $directory = 'media/library/Music/flipturn/Heavy Colors';
+
+        $disk->put($directory.'/Chicago.mp3', 'occupied');
+
+        for ($i = 2; $i < 1000; $i++) {
+            $disk->put($directory."/Chicago ({$i}).mp3", 'occupied');
+        }
+
+        $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors', contents: 'the new one');
+        $source = $item->absoluteFilePath();
+
+        $this->assertNull($this->organizer->organize($item), 'Filing must be refused, not forced.');
+        $this->assertFileExists($source, 'The item stays where it is.');
+        $this->assertSame(
+            'occupied',
+            $disk->get($directory.'/Chicago.mp3'),
+            'Nothing that was already filed may be overwritten.',
+        );
+    }
+
     /* -------------------------------------------------------- helpers --- */
 
     private function music(string $title, ?string $artist, ?string $album = null, ?int $track = null, string $contents = 'audio'): MediaItem
@@ -304,6 +424,24 @@ class LibraryOrganizerTest extends TestCase
      * Exact confidence by default so tests read as being about paths; the
      * gate itself is covered by its own cases above.
      */
+    /** A copy with the same length and different bytes — a bad write. */
+    private function corruptedCopyOf(string $source): string
+    {
+        $copy = $source.'.corrupt';
+        $bytes = (string) file_get_contents($source);
+
+        file_put_contents($copy, str_repeat('x', strlen($bytes)));
+
+        return $copy;
+    }
+
+    private function invokeCopyIsFaithful(string $source, string $copy): bool
+    {
+        $method = new \ReflectionMethod(LibraryOrganizer::class, 'copyIsFaithful');
+
+        return $method->invoke($this->organizer, $source, $copy);
+    }
+
     private function item(string $title, MediaItemType $type, string $extension, string $contents = 'x'): MediaItem
     {
         $path = 'media/unsorted/' . str($title)->slug() . '.' . $extension;

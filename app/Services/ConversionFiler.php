@@ -57,6 +57,60 @@ class ConversionFiler
         $filed = $this->filedPathFor($item, $conversion);
         $archived = $this->archivePathFor($item, $original);
 
+        // The conversion's filed path can *be* the original's path: the target
+        // is the organizer's, with the conversion's extension, so an original
+        // already filed as .mp4 -- HEVC in MP4, which plays nowhere and is
+        // converted to H.264 in the same container -- maps onto itself.
+        //
+        // move() would then rename the conversion over the original with no
+        // existence check, and the archive step that follows would move what is
+        // by then the conversion, leaving the row pointing at nothing and the
+        // original destroyed (#458).
+        //
+        // Refuse and leave both files alone. The conversion stays where it is,
+        // so a later run can retry once the real problem -- an original and a
+        // conversion that want the same name -- is resolved.
+        if (FileIdentity::same($original, Storage::path($filed))) {
+            Log::warning('Refused to file a conversion over its own original', [
+                'item' => $item->id,
+                'original' => $original,
+                'filed' => $filed,
+                'note' => 'the original already occupies the conversion target; both files were left in place',
+            ]);
+
+            return null;
+        }
+
+        // Nor over anything else. A different file at the target is somebody
+        // else's, and the archive path gets the same guard below.
+        //
+        // `error`, not `warning`: the item keeps an unplayable original and
+        // there is nothing the app can do about it on its own, which is the
+        // same severity as a move that fails outright. A blocked target is also
+        // how a directory in the way shows up.
+        if (file_exists(Storage::path($filed))) {
+            Log::error('Could not file a converted copy: something already occupies the target', [
+                'item' => $item->id,
+                'from' => $conversion,
+                'to' => $filed,
+                'target_is_directory' => is_dir(Storage::path($filed)),
+            ]);
+
+            return null;
+        }
+
+        if (file_exists(Storage::path($archived))) {
+            // The archive had no collision check at all, so a second original
+            // with the same filed shape would silently replace the first.
+            Log::error('Could not file a converted copy: the archive path is taken', [
+                'item' => $item->id,
+                'from' => $original,
+                'to' => $archived,
+            ]);
+
+            return null;
+        }
+
         // Filing must never make the arrangement worse. When the organizer
         // cannot derive a structure — a film whose year never arrived — the
         // fallback is the library root, and an item already sitting in a
@@ -113,6 +167,10 @@ class ConversionFiler
             ]);
             $item->forceFill([
                 'file_path' => Storage::path($filed),
+                // The hash described the original's bytes, and the row now
+                // points at the conversion -- different bytes entirely
+                // (AGENTS.md rule 2, S-346).
+                'content_hash' => null,
                 'converted_path' => null,
             ])->saveQuietly();
 
@@ -122,6 +180,9 @@ class ConversionFiler
         $item->forceFill([
             'file_path' => Storage::path($filed),
             'archived_path' => $archived,
+            // The hash described the original's bytes; the row now points at
+            // the conversion (AGENTS.md rule 2, S-346).
+            'content_hash' => null,
             // Cleared: the conversion is the item now, not a copy of it.
             'converted_path' => null,
         ])->saveQuietly();
@@ -162,6 +223,8 @@ class ConversionFiler
 
         $item->forceFill([
             'file_path' => Storage::path($filed),
+            // Rule 2: the path moved, so the stored hash no longer describes it.
+            'content_hash' => null,
             'converted_path' => null,
         ])->saveQuietly();
 

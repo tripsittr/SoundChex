@@ -658,8 +658,21 @@ class DuplicatesTable
                 $tied = 0;
                 $failed = 0;
 
+                $tooLoose = 0;
+
                 foreach ($records as $record) {
                     if (! $record->isPendingDuplicate()) {
+                        continue;
+                    }
+
+                    // A loose match is for a person to judge, one pair at a
+                    // time. "Probably the same track" and "same title and year"
+                    // are both deliberately wide -- a differing album or
+                    // length, or no provider id at all -- so merging them in
+                    // bulk deletes a different song's or film's file (#461).
+                    if (! $record->duplicate_match?->allowsBulkResolution()) {
+                        $tooLoose++;
+
                         continue;
                     }
 
@@ -692,6 +705,10 @@ class DuplicatesTable
 
                 if ($failed > 0) {
                     $notes[] = $failed.' could not be deleted — the file may be read-only or open in another program. The log says which.';
+                }
+
+                if ($tooLoose > 0) {
+                    $notes[] = $tooLoose.' too loosely matched to merge in bulk — open each one to decide.';
                 }
 
                 Notification::make()

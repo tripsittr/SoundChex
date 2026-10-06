@@ -35,6 +35,16 @@ class MetadataPipeline
     {
         $report = $this->collectRun($item);
 
+        // A source may have recorded a fact about the run that only it could
+        // know -- FileTagger notes whether the file's embedded tags named the
+        // artist, which the organizer's music gate depends on (#460). Those
+        // keys are written during collectRun() above, so replacing the report
+        // wholesale here would discard them. The pipeline's own account wins on
+        // any key they share.
+        $item->refresh();
+
+        $report = array_merge($item->enrichment_report ?? [], $report);
+
         // Set by the pipeline, not a form. Quietly, so a report write cannot
         // itself dirty `updated_at` or trip model events mid-enrichment.
         $item->forceFill(['enrichment_report' => $report])->saveQuietly();

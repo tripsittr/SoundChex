@@ -65,7 +65,10 @@ class DuplicateDetector
      */
     private const LIKELY_DURATION_LIMIT_MS = 12_000;
 
-    public function __construct(private LibrarySettings $settings) {}
+    public function __construct(
+        private LibrarySettings $settings,
+        private MediaTrash $trash,
+    ) {}
 
     /**
      * Hashes a file, cheaply and safely.
@@ -210,6 +213,19 @@ class DuplicateDetector
      */
     private function flag(MediaItem $item, MediaItem $original, DuplicateMatch $reason, bool $autoDeletable): MediaItem
     {
+        // Which of the two is the "original" is decided here, over the pair,
+        // rather than by whichever happened to be checked second.
+        //
+        // pickOriginal() ranked the *candidates* and never the item being
+        // checked, so checking an older filed row against a newer loose copy
+        // made the filed row the duplicate -- and under duplicate_action=auto
+        // the filed copy is the one deleted (#461). Done once here because
+        // every detection funnels through this method, where the eight
+        // pickOriginal() call sites would each need it.
+        if ($this->isFiled($item) && ! $this->isFiled($original)) {
+            [$item, $original] = [$original, $item];
+        }
+
         $item->forceFill([
             'duplicate_of_id' => $original->id,
             'duplicate_status' => DuplicateStatus::Pending,
@@ -604,6 +620,13 @@ class DuplicateDetector
             return false;
         }
 
+        // "Report" means list them and never act, including from the review
+        // screen -- which is what the settings page promises and what only the
+        // automatic sweep honoured (#461).
+        if (! $this->settings->mayResolveDuplicates()) {
+            return false;
+        }
+
         // A content match is two *different* files (a FLAC and an MP3 of the
         // same song), so the byte re-compare below would always fail and
         // un-flag the pair. Merging one is a deliberate "keep the other" choice,
@@ -622,9 +645,15 @@ class DuplicateDetector
         }
 
         // Two rows can point at one file — a re-import catalogues the same
-        // path twice. There is no redundant copy to delete here, only a
-        // redundant row, so the file must be left completely alone.
-        if ($duplicatePath === $originalPath) {
+        // path twice, or a case-only rename leaves two spellings of one name.
+        // There is no redundant copy to delete here, only a redundant row, so
+        // the file must be left completely alone.
+        //
+        // Compared by identity rather than by string: a string compare missed
+        // the two-spellings case, fell through to the byte compare below, which
+        // hashed the same file twice and agreed it was a duplicate, and deleted
+        // the user's only copy (#454).
+        if ($duplicatePath !== null && FileIdentity::same($duplicatePath, $originalPath)) {
             $duplicate->forceFill([
                 'duplicate_status' => DuplicateStatus::Merged,
             ])->saveQuietly();
@@ -690,6 +719,10 @@ class DuplicateDetector
             return false;
         }
 
+        if (! $this->settings->mayResolveDuplicates()) {
+            return false;
+        }
+
         [$keeper, $loser] = $keepDuplicate ? [$duplicate, $original] : [$original, $duplicate];
 
         $keeperPath = $keeper->absoluteFilePath();
@@ -703,7 +736,10 @@ class DuplicateDetector
 
         // Same file behind both rows — nothing on disk to delete, only a
         // redundant row. (Unlikely for a content match, but cheap to be safe.)
-        if ($loserPath === $keeperPath) {
+        //
+        // By identity, not by string: two spellings of one path would otherwise
+        // reach the delete below and remove the only copy (#454).
+        if ($loserPath !== null && FileIdentity::same($loserPath, $keeperPath)) {
             $duplicate->forceFill(['duplicate_status' => DuplicateStatus::Merged])->saveQuietly();
 
             $this->remember($duplicate, DuplicateStatus::Merged);
@@ -729,6 +765,25 @@ class DuplicateDetector
             'duplicate_status' => DuplicateStatus::Merged,
             'needs_cover_review' => $this->coversDiffer($keeper, $loser),
         ])->saveQuietly();
+
+        // The loser's file is gone, so the loser's row must stop claiming to
+        // describe it -- and when the user kept the flagged copy, the loser is
+        // the *original*, whose row this method never touched. That left a row
+        // with a dead path, no status, its plays and playlist entries pointing
+        // at nothing, and any other duplicate flagged against it unresolvable:
+        // merge found no original and refused, which reads as a confusing
+        // "original is missing" skip (#461).
+        //
+        // Both rows end up pointing at the surviving file, which is what
+        // merge() has always done for the copy it deletes.
+        if ($loser->isNot($duplicate)) {
+            $loser->forceFill([
+                'file_path' => $keeper->file_path,
+                'content_hash' => null,
+                'duplicate_of_id' => $keeper->id,
+                'duplicate_status' => DuplicateStatus::Merged,
+            ])->saveQuietly();
+        }
 
         $this->remember($duplicate, DuplicateStatus::Merged);
 
@@ -905,43 +960,25 @@ class DuplicateDetector
     }
 
     /**
-     * Delete a file, clearing the read-only attribute first on Windows.
+     * Removes a redundant copy — by moving it to the trash, not unlinking it.
      *
-     * `unlink()` will not remove a file marked read-only on Windows, and 285
-     * of the 2,843 files in one real library carry that attribute -- arrived
-     * with it, from a copy off another machine. Every merge of one of those
-     * failed, the row stayed pending, and the duplicate came back at the next
-     * sweep: "I merged it and they came back".
-     *
-     * `chmod` is how PHP clears that attribute on Windows. Done only after the
-     * caller has decided to delete, so nothing is made writable that is not
-     * already about to go.
+     * Two things live in MediaTrash now, and both were learned here. Deletes go
+     * to `library.trash_root` for `trash_days` so a wrong merge is recoverable
+     * (#464). And the read-only attribute is cleared first: `unlink()` will not
+     * remove a read-only file on Windows, and 285 of the 2,843 files in one real
+     * library carry that attribute — arrived with it, from a copy off another
+     * machine. Every merge of one of those failed, the row stayed pending, and
+     * the duplicate came back at the next sweep: "I merged it and they came
+     * back". A move is refused for the same reason, so the same `chmod` applies.
      */
     private function deleteFile(string $path): bool
     {
-        if (@unlink($path)) {
-            return true;
-        }
-
-        // Read-only is the common reason and the recoverable one.
-        if (@chmod($path, 0666) && @unlink($path)) {
-            Log::info('Cleared the read-only attribute to delete a duplicate', [
-                'path' => $path,
-            ]);
-
-            return true;
-        }
-
-        // Said out loud, because the alternative is a toast that reports a
-        // missing file for something that is present and locked.
-        Log::error('Could not delete a duplicate copy', [
-            'path' => $path,
-            'exists' => is_file($path),
-            'writable' => is_writable($path),
-            'hint' => 'On Windows a read-only file cannot be unlinked; a file held open by another process cannot either.',
-        ]);
-
-        return false;
+        // Moved to the trash rather than unlinked, so a wrong merge is
+        // recoverable for `library.trash_days` (#464). MediaTrash handles the
+        // read-only case Windows otherwise refuses, and logs its own failures
+        // with the path -- the alternative being a toast that reports a missing
+        // file for something present and locked.
+        return $this->trash->discard($path, reason: 'duplicate resolved') !== null;
     }
 
     /**

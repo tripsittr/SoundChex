@@ -6,7 +6,10 @@
 namespace App\Services;
 
 use App\Enums\MediaItemType;
+use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -19,6 +22,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class LibraryOrganizer
 {
+    public function __construct(private MediaTrash $trash) {}
+
     /**
      * Whether an item is ready to be filed.
      *
@@ -62,18 +67,35 @@ class LibraryOrganizer
     /**
      * Whether this item's metadata is trustworthy enough to rename its file.
      *
-     * Music is exempt: its artist and album come from the file's own embedded
-     * tags, which are authoritative about the file regardless of what any
-     * online source thinks. Everything else is filed from an API match, so it
-     * has to have matched exactly.
+     * Everything is filed from an API match unless something better is known,
+     * so by default it has to have matched exactly.
+     *
+     * Music has a looser rule, and the reason is the file's own tags: they are
+     * authoritative about the file whatever an online source thinks (AGENTS.md
+     * rule 2). But the exemption used to be unconditional -- `true` for all
+     * music -- while MusicBrainz enrichment *writes* `artist` and `album`. So a
+     * file whose tags said nothing was filed under an API guess, which is the
+     * one thing the gate exists to prevent (#460).
+     *
+     * The rule is now what the exemption always meant: music may be filed when
+     * its own embedded tags named the artist its path is built from, or when
+     * the match is exact. API data alone never moves a file.
      */
     private function isConfidentEnoughToMove(MediaItem $item): bool
     {
-        if ($item->type === MediaItemType::Music) {
+        // An item the user has been asked to judge must not be moved out from
+        // under them -- unless they have already judged it, in which case
+        // holding it back forever is the opposite mistake (S-302).
+        if ($item->processing_status === ProcessingStatus::NeedsReview
+            && $item->reviewed_at === null) {
+            return false;
+        }
+
+        if ($item->match_confidence?->allowsFileMove()) {
             return true;
         }
 
-        return $item->match_confidence?->allowsFileMove() ?? false;
+        return $item->type === MediaItemType::Music && $item->hasTaggedArtist();
     }
 
     /**
@@ -94,7 +116,10 @@ class LibraryOrganizer
 
         $absoluteTarget = Storage::path($target);
 
-        if ($source === $absoluteTarget) {
+        // By identity, for the same reason organize() does (#454): on a
+        // case-insensitive volume a re-cased name is the same file, and
+        // reporting it as unfiled is what sent it down the delete path.
+        if ($this->isSamePath($source, $absoluteTarget)) {
             return true;
         }
 
@@ -141,8 +166,11 @@ class LibraryOrganizer
 
         $absoluteTarget = Storage::path($target);
 
-        // Already filed — nothing to do.
-        if ($source === $absoluteTarget) {
+        // Already filed — nothing to do. Compared by identity, not by string:
+        // on a case-insensitive volume "03 Chicago.mp3" and "03 CHICAGO.mp3"
+        // are different strings naming one file, and a string compare here
+        // reported that file as unfiled (#454).
+        if ($this->isSamePath($source, $absoluteTarget)) {
             return null;
         }
 
@@ -163,10 +191,25 @@ class LibraryOrganizer
             return null;
         }
 
+        // The same file reached by two spellings — a case-only difference on a
+        // case-insensitive volume, or a symlinked library root. There is one
+        // file and nothing to adopt or delete: rename it to the canonical
+        // spelling and keep it.
+        //
+        // This case used to fall into isSameFile() below, which hashed both
+        // paths, found equal hashes *because they are one file*, and deleted
+        // "the duplicate" — the user's only copy (#454).
+        if ($this->isSameInode($source, $absoluteTarget)) {
+            return $this->recaseInPlace($item, $source, $absoluteTarget);
+        }
+
         // A file already sitting at the target may be this exact recording,
         // catalogued twice. Suffixing it would keep a byte-identical copy
         // forever and re-offer it for filing on every run, so an identical
         // file is treated as "already filed here" instead.
+        //
+        // Reached only for two genuinely distinct files (different inodes), so
+        // deleting the redundant one is safe.
         if ($this->isSameFile($source, $absoluteTarget)) {
             return $this->adoptExisting($item, $source, $absoluteTarget);
         }
@@ -174,12 +217,47 @@ class LibraryOrganizer
         // Never overwrite: a same-named file with different content really is a
         // different recording, so it gets a suffix rather than clobbering what's
         // already filed.
-        $absoluteTarget = $this->uniquePath($absoluteTarget);
+        //
+        // Choosing the name and taking it must be one step. Two workers filing
+        // different recordings with the same ideal name would otherwise both
+        // see the name free, both pick it, and the second rename would replace
+        // the first worker's file (#462). The lock is per directory, so filing
+        // into different albums still runs in parallel.
+        $lock = Cache::lock('library-file:'.md5(dirname($absoluteTarget)), 30);
+
+        try {
+            $lock->block(10);
+        } catch (LockTimeoutException) {
+            // Another worker is filing into this folder. Leaving the item for
+            // the next pass is correct: nothing is lost and nothing is raced.
+            Log::info('Deferred filing: another worker holds this folder', [
+                'item' => $item->id,
+                'directory' => dirname($absoluteTarget),
+            ]);
+
+            return null;
+        }
+
+        try {
+            $absoluteTarget = $this->uniquePath($absoluteTarget);
+        } catch (\RuntimeException $e) {
+            $lock->release();
+
+            Log::error('Could not find a free name to file an item under', [
+                'item' => $item->id,
+                'target' => $absoluteTarget,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
 
         if (! @rename($source, $absoluteTarget)) {
             // rename() fails across filesystems (an external drive, say), so
             // fall back to copy-then-delete.
             if (! @copy($source, $absoluteTarget)) {
+                $lock->release();
+
                 Log::error('Could not file a media file', [
                     'item' => $item->id,
                     'from' => $source,
@@ -192,24 +270,46 @@ class LibraryOrganizer
 
             // Verify the copy landed before removing the original — a partial
             // copy plus an eager delete would lose the file outright.
-            if (filesize($absoluteTarget) !== filesize($source)) {
+            //
+            // By content, not by size: a copy interrupted and resumed, or one
+            // written to a failing disk, can be the right length and the wrong
+            // bytes. Size is checked first because it is free and rules out the
+            // common truncation without hashing a 40 GB remux twice.
+            if (! $this->copyIsFaithful($source, $absoluteTarget)) {
                 @unlink($absoluteTarget);
 
                 // The partial copy is removed and the original kept, which is
                 // the right call — but a truncated copy usually means a full
                 // disk, and that will happen again on the next file.
-                Log::error('A filed copy was short and was discarded', [
+                $lock->release();
+
+                Log::error('A filed copy did not match its source and was discarded', [
                     'item' => $item->id,
                     'from' => $source,
-                    'expected' => filesize($source),
-                    'copied' => filesize($absoluteTarget),
+                    'expected' => @filesize($source),
+                    'copied' => @filesize($absoluteTarget),
                 ]);
 
                 return null;
             }
 
-            @unlink($source);
+            // Checked, because an unchecked unlink is how the library ends up
+            // with two copies and no record of it: the row points at the new
+            // path, the old file is still on disk, and the next scan catalogues
+            // it as a second item.
+            if (! @unlink($source)) {
+                Log::warning('Filed a copy but could not remove the original', [
+                    'item' => $item->id,
+                    'original' => $source,
+                    'filed' => $absoluteTarget,
+                    'note' => 'the item points at the filed copy; the original is still on disk',
+                ]);
+            }
         }
+
+        // The name is taken now, so the critical section is over -- the row
+        // update and the peer repointing cannot race another worker's choice.
+        $lock->release();
 
         $relative = $this->toRelative($absoluteTarget);
 
@@ -469,6 +569,93 @@ class LibraryOrganizer
     }
 
     /**
+     * Whether the file is already exactly where it belongs.
+     *
+     * Delegates to {@see FileIdentity}: the question cannot be answered by
+     * comparing path strings, and getting it wrong deleted files (#454).
+     */
+    private function isSamePath(string $a, string $b): bool
+    {
+        return FileIdentity::same($a, $b);
+    }
+
+    /**
+     * Whether two paths are one file reached by two spellings.
+     *
+     * Distinguished from `isSamePath()` because this case has its own correct
+     * action — rename to the canonical spelling — rather than "do nothing".
+     */
+    private function isSameInode(string $a, string $b): bool
+    {
+        return FileIdentity::sameInode($a, $b);
+    }
+
+    /**
+     * Renames a file to the canonical spelling of its own name.
+     *
+     * One file, two spellings. A direct `rename()` between them is a no-op on
+     * some filesystems and an error on others, so it goes via a temporary name
+     * in the same directory: `a.mp3` → `a.mp3.sc-tmp` → `A.mp3`. Both steps are
+     * within one directory, so neither can cross a volume.
+     *
+     * If either step fails the file keeps a valid name — the original on the
+     * first, the temporary on the second — and the row is pointed at whichever
+     * exists, so nothing is ever left pointing at nothing.
+     */
+    private function recaseInPlace(MediaItem $item, string $source, string $absoluteTarget): ?string
+    {
+        $storedSource = $item->file_path;
+        $temporary = $absoluteTarget.'.sc-tmp';
+
+        if (file_exists($temporary) && ! @unlink($temporary)) {
+            Log::warning('Could not clear a stale temporary name for a case-only rename', [
+                'item' => $item->id,
+                'temporary' => $temporary,
+            ]);
+
+            return null;
+        }
+
+        if (! @rename($source, $temporary)) {
+            Log::warning('Could not stage a case-only rename', [
+                'item' => $item->id,
+                'from' => $source,
+                'to' => $temporary,
+            ]);
+
+            return null;
+        }
+
+        if (! @rename($temporary, $absoluteTarget)) {
+            // The file is at the temporary name and the row must point there,
+            // or the catalogue loses the file entirely. The next run retries.
+            Log::error('A case-only rename stalled at its temporary name', [
+                'item' => $item->id,
+                'temporary' => $temporary,
+                'intended' => $absoluteTarget,
+            ]);
+
+            $item->file_path = $this->toRelative($temporary);
+            $item->content_hash = null;
+            $item->saveQuietly();
+
+            return null;
+        }
+
+        $relative = $this->toRelative($absoluteTarget);
+
+        $item->file_path = $relative;
+        // The path changed, so the stored hash describes a path this row no
+        // longer points at (AGENTS.md rule 2).
+        $item->content_hash = null;
+        $item->saveQuietly();
+
+        $this->repointPeersForSharedSource($item, $storedSource, $relative);
+
+        return $relative;
+    }
+
+    /**
      * Whether two paths hold byte-identical content.
      *
      * This decides whether a file gets deleted, so a size match alone isn't
@@ -514,7 +701,11 @@ class LibraryOrganizer
 
         $this->repointPeersForSharedSource($item, $storedSource, $relative);
 
-        @unlink($source);
+        // Trashed, not unlinked: this is the branch that deleted the only copy
+        // of a file when two spellings of one path were read as two files
+        // (#454). The identity check above now prevents that, and this makes
+        // the next mistake of its kind recoverable rather than final (#464).
+        $this->trash->discard($source, reason: 'identical copy already filed');
 
         $this->pruneEmptyParents(dirname($source));
 
@@ -542,7 +733,34 @@ class LibraryOrganizer
             }
         }
 
-        return $path;
+        // Returning $path here -- which is occupied, that being why we are in
+        // this method -- handed the caller a path it would then overwrite
+        // (#462). A thousand same-named files in one folder is a real problem
+        // worth surfacing, not something to paper over by destroying one.
+        throw new \RuntimeException("No free filename after 999 attempts: {$path}");
+    }
+
+    /**
+     * Whether a copy holds the same bytes as its source.
+     *
+     * Size first because it is free and rules out the common truncation, then
+     * the content hash -- a copy interrupted and resumed, or written to a
+     * failing disk, can be the right length and the wrong bytes, and this
+     * decides whether the original is deleted.
+     */
+    private function copyIsFaithful(string $source, string $copy): bool
+    {
+        $sourceSize = @filesize($source);
+        $copySize = @filesize($copy);
+
+        if ($sourceSize === false || $copySize === false || $sourceSize !== $copySize) {
+            return false;
+        }
+
+        $sourceHash = @hash_file(DuplicateDetector::HASH, $source);
+        $copyHash = @hash_file(DuplicateDetector::HASH, $copy);
+
+        return $sourceHash !== false && $sourceHash === $copyHash;
     }
 
     /**

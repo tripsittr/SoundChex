@@ -116,6 +116,29 @@ enum DuplicateMatch: string implements HasColor, HasLabel
         return $this !== self::Bytes;
     }
 
+    /**
+     * Whether a match of this kind may be resolved in bulk, without a person
+     * looking at the specific pair.
+     *
+     * `Likely` and `SameTitle` may not. Both are deliberately loose -- a shared
+     * artist and title with a *differing* album or length, or a shared title and
+     * year with no provider id at all -- and both exist to surface things worth
+     * a look, never to decide them. A bulk "merge selected" over them deletes a
+     * different song's or film's file, which is exactly what LibraryCleanup.md
+     * ruled out and what the table did anyway (#461).
+     *
+     * An identifier match (bytes, ISRC, MBID, AcoustID, TMDB, episode number)
+     * is specific enough to act on en masse. `Fuzzy` requires an equal album
+     * and a near-equal length, which is the bar for a merge.
+     */
+    public function allowsBulkResolution(): bool
+    {
+        return match ($this) {
+            self::Likely, self::SameTitle => false,
+            default => true,
+        };
+    }
+
     /** How sure we are, for sorting the review list worst-first. */
     public function confidence(): int
     {

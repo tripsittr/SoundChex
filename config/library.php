@@ -67,6 +67,11 @@ return [
         'media/subtitles',
         // Illustrations pulled out of a book that is already catalogued.
         'media/book-assets',
+        // Files the user deleted. Without this a scan re-imports every trashed
+        // copy, so a resolved duplicate comes back on the next pass and the
+        // thirty-day undo window becomes thirty days of re-importing the same
+        // file (#464).
+        'media/.trash',
         'livewire-tmp',
         'framework',
     ],
@@ -133,6 +138,28 @@ return [
     | so there is nothing to gain and playability to lose.
     */
     'archive_root' => env('ARCHIVE_ROOT', 'media/archive'),
+
+    /*
+    | Where a deleted media file goes instead of being unlinked.
+    |
+    | Nothing in the library is removed outright any more. A duplicate the user
+    | resolves, or a copy the organizer adopts, is moved here under a dated
+    | folder and purged after `trash_days`. Until then it can be restored.
+    |
+    | The reason is #454: a path-comparison bug deleted the only copy of a file
+    | and there was nothing to recover from. A delete that is really a move
+    | makes that class of mistake survivable rather than final.
+    */
+    'trash_root' => env('TRASH_ROOT', 'media/.trash'),
+
+    /*
+    | How long a trashed file is kept before the scheduled purge removes it.
+    |
+    | Thirty days by default: long enough to notice a wrong merge after a week
+    | or two away, which is the case this exists for. Zero disables the purge
+    | entirely and keeps everything until the trash is emptied by hand.
+    */
+    'trash_days' => (int) env('TRASH_DAYS', 30),
 
     /*
     |--------------------------------------------------------------------------

@@ -17,6 +17,7 @@ use App\Models\MediaItem;
 use App\Models\MetadataVersion;
 use App\Plugins\Registry;
 use App\Services\LibraryOrganizer;
+use App\Services\LibrarySettings;
 use App\Services\Metadata\AlbumTitleNormalizer;
 use App\Services\Metadata\CoverEmbedder;
 use App\Services\Metadata\MetadataPipeline;
@@ -382,7 +383,11 @@ class EnrichMediaItemJob implements ShouldQueue
      */
     private function fileIntoLibrary(MediaItem $item, LibraryOrganizer $organizer): void
     {
-        if (! config('library.auto_organize', true)) {
+        // Through LibrarySettings, which reads the admin toggle and falls back
+        // to the config default. Reading config() directly ignored the toggle
+        // entirely -- autoOrganize() had no callers at all -- so switching
+        // auto-organize off in the UI did not stop files moving (#456).
+        if (! app(LibrarySettings::class)->autoOrganize()) {
             return;
         }
 

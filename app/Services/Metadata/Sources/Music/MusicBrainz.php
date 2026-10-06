@@ -63,10 +63,14 @@ class MusicBrainz implements MetadataSource
     {
         // How the recording was found, so the confidence reflects it: an id or
         // ISRC is unambiguous (Exact); a text search is likely-right (Fuzzy).
-        $matchedByIdentifier = filled($item->musicMetadata?->musicbrainz_recording_id)
-            || filled($item->musicMetadata?->isrc);
+        //
+        // This has to come from the resolver, not from what the file carries.
+        // Asking "does the file have an ISRC?" said Exact even when the ISRC
+        // search found nothing and the recording came from the text fallback --
+        // so a guess was recorded as certain (#459).
+        $matchedByIdentifier = false;
 
-        $recording = $this->resolveRecording($item);
+        $recording = $this->resolveRecording($item, $matchedByIdentifier);
 
         if (empty($recording)) {
             return;
@@ -148,20 +152,31 @@ class MusicBrainz implements MetadataSource
     /**
      * @return array<string, mixed>|null
      */
-    private function resolveRecording(MediaItem $item): ?array
+    private function resolveRecording(MediaItem $item, bool &$matchedByIdentifier = false): ?array
     {
         $meta = $item->musicMetadata;
 
         if (filled($meta?->musicbrainz_recording_id)) {
-            return $this->lookupById($meta->musicbrainz_recording_id);
+            $byId = $this->lookupById($meta->musicbrainz_recording_id);
+
+            // Only when the id actually resolved. A dead or mistyped MBID that
+            // returns nothing is not an identifier match.
+            $matchedByIdentifier = ! empty($byId);
+
+            return $byId;
         }
 
         if (filled($meta?->isrc)) {
             $byIsrc = $this->searchRecordings('isrc:'.$meta->isrc);
 
             if (! empty($byIsrc)) {
+                $matchedByIdentifier = true;
+
                 return $byIsrc;
             }
+
+            // Nothing for that ISRC: fall through to the text search below,
+            // which is a guess however good it looks.
         }
 
         if (filled($meta?->artist) && filled($item->title)) {

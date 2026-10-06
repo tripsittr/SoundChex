@@ -222,8 +222,12 @@ trait TalksToTmdb
      * anything reached by splitting off a year or by popularity ranking is
      * likely right but not certain enough to move a file over.
      */
-    private function recordConfidence(MediaItem $item, array $payload, bool $matchedById): void
-    {
+    private function recordConfidence(
+        MediaItem $item,
+        array $payload,
+        bool $matchedById,
+        ?string $searchedTitle = null,
+    ): void {
         // Never downgrade: an earlier source may already have pinned this.
         if ($item->match_confidence === MatchConfidence::Exact) {
             return;
@@ -231,8 +235,23 @@ trait TalksToTmdb
 
         $canonical = $payload['title'] ?? $payload['name'] ?? '';
 
-        $exact = $matchedById
-            || strcasecmp(trim($canonical), trim((string) $item->title)) === 0;
+        // Compared against the title that was *searched*, captured by the
+        // caller before promoteTitle() overwrote it with TMDB's own.
+        //
+        // Reading $item->title here is what made this always true: promotion
+        // runs first, so the two sides of the comparison were the same string
+        // and every title-search match scored Exact -- the one confidence that
+        // allows renaming and refiling a video file (#455).
+        //
+        // The fallback keeps a caller that has not been updated honest rather
+        // than silently optimistic: with nothing to compare, a match that was
+        // not reached by id is a guess.
+        if ($searchedTitle === null) {
+            $exact = $matchedById;
+        } else {
+            $exact = $matchedById
+                || strcasecmp(trim($canonical), trim($searchedTitle)) === 0;
+        }
 
         $item->forceFill([
             'match_confidence' => $exact ? MatchConfidence::Exact : MatchConfidence::Fuzzy,

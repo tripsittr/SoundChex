@@ -51,6 +51,12 @@ class Tmdb implements MetadataSource
         // would look as though it had been resolved by id.
         $matchedById = filled($item->showMetadata?->tmdb_id);
 
+        // Captured before promoteTitle() replaces it. Scoring confidence after
+        // promotion compares TMDB's title with itself, so every title-search
+        // match read Exact -- the one confidence allowed to refile a file
+        // (#455). resolveShow() searches the title as-is, so this is it.
+        $searchedTitle = (string) $item->title;
+
         $show = $this->resolveShow($item);
 
         if ($show === null) {
@@ -74,7 +80,7 @@ class Tmdb implements MetadataSource
         $this->writeArtwork($item, $show);
         $this->writeGenreTags($item, $show['genres'] ?? []);
         $this->writeCredits($item, $show['credits'] ?? [], ['Executive Producer', 'Producer']);
-        $this->recordConfidence($item, $show, $matchedById);
+        $this->recordConfidence($item, $show, $matchedById, $searchedTitle);
     }
 
     /**

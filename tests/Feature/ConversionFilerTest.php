@@ -191,6 +191,72 @@ class ConversionFilerTest extends TestCase
 
     /* -------------------------------------------------------- helpers ---- */
 
+    public function test_it_refuses_when_the_conversion_would_land_on_the_original(): void
+    {
+        // #458. filedPathFor() is the organizer's target with the conversion's
+        // extension. For an original that is ALREADY an .mp4 in its filed
+        // location -- HEVC in MP4, which plays nowhere and is converted to
+        // H.264 in MP4 -- that is the original's own path.
+        //
+        // move() renamed the conversion over it with no existence check, and
+        // the next step archived what was by then the conversion, leaving
+        // file_path pointing at nothing and the original gone.
+        //
+        // Every other test here uses an .mkv original, so this collision was
+        // never exercised.
+        $item = $this->convertedAt('media/library/Movies/Backrooms (2026)/Backrooms (2026).mp4', 2026);
+
+        $original = $item->absoluteFilePath();
+
+        $this->assertSame(
+            'original',
+            Storage::disk('local')->get('media/library/Movies/Backrooms (2026)/Backrooms (2026).mp4'),
+            'Precondition: the original is the file at the filed path.',
+        );
+
+        $result = $this->filer->promote($item);
+
+        $this->assertNull($result, 'Filing onto the original must be refused.');
+        $this->assertFileExists($original, 'The original must still be there.');
+        $this->assertSame(
+            'original',
+            Storage::disk('local')->get('media/library/Movies/Backrooms (2026)/Backrooms (2026).mp4'),
+            'The original must not have been overwritten by the conversion.',
+        );
+        $this->assertFileExists(
+            Storage::disk('local')->path($item->fresh()->converted_path),
+            'The conversion stays where it was, so the next run can retry.',
+        );
+    }
+
+    public function test_the_row_still_points_at_a_real_file_after_a_refused_filing(): void
+    {
+        // The property that matters: a refusal must not leave the catalogue
+        // describing a file that is not there.
+        $item = $this->convertedAt('media/library/Movies/Backrooms (2026)/Backrooms (2026).mp4', 2026);
+
+        $this->filer->promote($item);
+
+        $path = $item->fresh()->absoluteFilePath();
+
+        $this->assertNotNull($path);
+        $this->assertFileExists($path);
+    }
+
+    public function test_filing_clears_the_stored_hash(): void
+    {
+        // AGENTS.md rule 2: a stored hash describes the bytes at file_path.
+        // Promotion repoints the row at the conversion -- different bytes
+        // entirely -- and left the original's hash in place, so the row carried
+        // a fingerprint for a file it no longer described. That is what left
+        // 54% of hashes mismatched after S-328 and blinded duplicate detection.
+        $item = $this->converted('Backrooms', 2026);
+        $item->forceFill(['content_hash' => 'deadbeefdeadbeefdeadbeefdeadbeef'])->saveQuietly();
+
+        $this->assertNotNull($this->filer->promote($item->fresh()));
+        $this->assertNull($item->fresh()->content_hash);
+    }
+
     private function convertedAt(string $path, ?int $year): MediaItem
     {
         Storage::disk('local')->put($path, 'original');
