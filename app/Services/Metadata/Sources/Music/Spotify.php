@@ -10,6 +10,7 @@ use App\Models\MediaItem;
 use App\Services\Metadata\Contracts\MetadataSource;
 use App\Services\SettingsService;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Spotify Web API — provides audio features (energy, danceability, valence, tempo, key, mode).
@@ -70,21 +71,24 @@ class Spotify implements MetadataSource
             return;
         }
 
-        $features = Http::withToken($token)
-            ->get("https://api.spotify.com/v1/audio-features/{$spotifyId}")
-            ->json();
+        // The id is the part worth keeping, and it is already earned. Saved
+        // before the audio-features call so a 403 there does not throw away a
+        // successful search.
+        $item->musicMetadata?->fill(['spotify_id' => $spotifyId])->saveQuietly();
 
-        if (empty($features)) {
+        $features = $this->audioFeatures($spotifyId, $token);
+
+        if ($features === []) {
             return;
         }
 
         $item->musicMetadata?->fill([
-            'spotify_id' => $spotifyId,
+
             'bpm' => $item->musicMetadata->bpm ?? round($features['tempo'], 1),
             'energy' => $item->musicMetadata->energy ?? (int) round($features['energy'] * 100),
             // key + mode → musical key string; only write if not already set
             'key' => $item->musicMetadata->key ?? $this->resolveKey($features['key'] ?? -1),
-            'scale' => $item->musicMetadata->scale ?? ($features['mode'] === 1 ? 'major' : 'minor'),
+            'scale' => $item->musicMetadata->scale ?? (($features['mode'] ?? 0) === 1 ? 'major' : 'minor'),
         ])->saveQuietly();
     }
 
@@ -100,6 +104,56 @@ class Spotify implements MetadataSource
         ]);
 
         return $response->json('access_token');
+    }
+
+    /**
+     * Tempo, energy and key — if this app is still allowed to ask.
+     *
+     * Spotify **withdrew** `/v1/audio-features` in November 2024 for any app
+     * registered after that date: it answers `403` with an empty body, whatever
+     * the credentials. Verified against this install's own working app — the
+     * token request and `/v1/search` both return 200, and audio-features
+     * returns 403 for a track id that search had just handed back.
+     *
+     * That one dead endpoint was reported to the user as **"Spotify errored"**
+     * on every music item, on a source that had otherwise worked perfectly and
+     * for data that is cosmetic: bpm, energy, key and scale, none of which name
+     * a recording or decide where a file goes. A review queue that cries wolf
+     * about an optional extra teaches people to ignore it.
+     *
+     * So a 403 is treated as "not available to this app" and reported as
+     * nothing. A genuine fault — the service down, the network gone — still
+     * surfaces, because that is worth knowing.
+     *
+     * @return array<string, mixed>
+     */
+    private function audioFeatures(string $spotifyId, string $token): array
+    {
+        $response = Http::withToken($token)
+            ->timeout(15)
+            ->get("https://api.spotify.com/v1/audio-features/{$spotifyId}");
+
+        if ($response->status() === 403 || $response->status() === 404) {
+            // Logged once at debug, not as a failure: the caller must not
+            // record this against the item.
+            Log::debug('Spotify audio features are not available to this app', [
+                'status' => $response->status(),
+            ]);
+
+            return [];
+        }
+
+        if (! $response->successful()) {
+            // A real fault. Thrown so the pipeline records it the way it
+            // records any other source failure.
+            $response->throw();
+        }
+
+        $features = (array) $response->json();
+
+        // The response carries tempo and energy or it is no use; a partial body
+        // would write nulls over fields another source may have filled.
+        return isset($features['tempo'], $features['energy']) ? $features : [];
     }
 
     private function searchForTrack(MediaItem $item, string $token): ?string

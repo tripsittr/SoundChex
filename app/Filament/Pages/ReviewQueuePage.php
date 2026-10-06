@@ -5,7 +5,7 @@
 
 namespace App\Filament\Pages;
 
-use App\Enums\DuplicateStatus;
+use App\Enums\PipelineStage;
 use App\Filament\Concerns\RestrictsToAdmins;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
@@ -15,6 +15,7 @@ use BackedEnum;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Collection;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
@@ -166,7 +167,7 @@ class ReviewQueuePage extends Page
 
         $item->forceFill(['reviewed_at' => now()])->saveQuietly();
 
-        app(PipelineRunner::class)->resumeAt($item, \App\Enums\PipelineStage::Published);
+        app(PipelineRunner::class)->resumeAt($item, PipelineStage::Published);
 
         $this->after($item, 'Marked as fine');
     }
@@ -186,7 +187,7 @@ class ReviewQueuePage extends Page
             return;
         }
 
-        app(PipelineRunner::class)->resumeAt($item, \App\Enums\PipelineStage::Identified);
+        app(PipelineRunner::class)->resumeAt($item, PipelineStage::Identified);
 
         $this->after($item, 'Looking it up again');
     }
@@ -287,10 +288,49 @@ class ReviewQueuePage extends Page
         $this->ensureSelection();
     }
 
-    /** Leaves the item exactly as it is, and moves on. */
+    /** How long "not now" lasts before the question comes back. */
+    private const SNOOZE_DAYS = 7;
+
+    /**
+     * Puts the question off without answering it.
+     *
+     * This used to call `next()` and nothing else, so the item stayed exactly
+     * where it was: the queue is ordered by `duplicate_detected_at` then `id`,
+     * neither of which a skip touched. A reload, a re-search or the next day
+     * put the same item back at the top, and the button looked broken because
+     * it did nothing.
+     *
+     * The item is *not* resolved or dismissed. The question is still open and
+     * still counted by `hiddenWithNothingOpen()`; it is only out of the working
+     * queue for a week. Marking it answered would hide a real question forever,
+     * which is the failure this whole rebuild exists to end.
+     */
     public function skip(int $id): void
     {
+        $item = MediaItem::withoutGlobalScopes()->find($id);
+
+        if ($item !== null) {
+            $until = now()->addDays(self::SNOOZE_DAYS);
+
+            // On the item, because that is what the queue is built from: 86 of
+            // 124 items in a real identify queue carry no review row at all,
+            // and snoozing only the row would have worked for the other 38
+            // while doing nothing visible for these.
+            $item->forceFill(['review_snoozed_until' => $until])->saveQuietly();
+
+            // And on any review rows, so anything reading those agrees.
+            foreach (app(ReviewQueue::class)->reviewItemsFor($item) as $reviewItem) {
+                $reviewItem->snooze($until);
+            }
+        }
+
         $this->next();
+
+        Notification::make()
+            ->title('Put off for '.self::SNOOZE_DAYS.' days.')
+            ->body('It stays in the library\'s count of open questions; it just will not be asked again this week.')
+            ->success()
+            ->send();
     }
 
     /* --------------------------------------------------------- reading -- */
@@ -301,7 +341,7 @@ class ReviewQueuePage extends Page
         return app(ReviewQueue::class)->counts();
     }
 
-    /** @return \Illuminate\Database\Eloquent\Collection<int, MediaItem> */
+    /** @return Collection<int, MediaItem> */
     public function getQueueProperty()
     {
         return app(ReviewQueue::class)->items($this->job);

@@ -11,7 +11,6 @@ use App\Enums\PipelineState;
 use App\Enums\ProcessingStatus;
 use App\Enums\SystemReviewReason;
 use App\Models\MediaItem;
-use App\Models\MediaItemReport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -110,7 +109,29 @@ class ReviewQueue
      */
     public function query(string $job): Builder
     {
-        $base = MediaItem::withoutGlobalScopes();
+        // Items put off for later are excluded from every job. A skip wrote
+        // nothing before this, so the same item sat at the top of the queue
+        // through a reload, a re-search and the next day -- the button looked
+        // broken because it was.
+        //
+        // Only items that have *something* snoozed are filtered out: an item
+        // with no review row at all (older data predating the backfill) must
+        // still appear, or skipping would be impossible for exactly the items
+        // most in need of attention.
+        // Items put off for later are excluded from every job. A skip wrote
+        // nothing before this, so the same item sat at the top of the queue
+        // through a reload, a re-search and the next day -- the button looked
+        // broken because it was.
+        //
+        // Filtered on the *item's* column, not the review row's. The queue is
+        // built from columns of `media_items`, and on a real library 86 of 124
+        // items in the identify queue have no review row at all -- snoozing
+        // only the row would have worked for 38 of them and silently done
+        // nothing for the rest.
+        $base = MediaItem::withoutGlobalScopes()
+            ->where(fn (Builder $q) => $q
+                ->whereNull('review_snoozed_until')
+                ->orWhere('review_snoozed_until', '<=', now()));
 
         return match ($job) {
             // A duplicate pair, awaiting a decision. First because the other
