@@ -554,9 +554,59 @@ class LibraryOrganizer
             return null;
         }
 
-        // 120 keeps the full path clear of the 255-byte limit most
-        // filesystems impose per component.
-        return mb_substr($clean, 0, 120);
+        $clean = $this->escapeReservedName($clean);
+
+        return $this->truncateBytes($clean, 120);
+    }
+
+    /**
+     * Windows refuses these names outright, with or without an extension.
+     *
+     * `CON`, `NUL`, `PRN`, `AUX`, `COM1`–`COM9` and `LPT1`–`LPT9` are device
+     * names reserved since DOS. A file called `NUL.mp3` cannot be created on
+     * Windows at all -- the call fails rather than producing a badly-named
+     * file -- so a band called AUX or a track called Con would simply never
+     * file, with the failure logged as a permissions problem.
+     *
+     * An underscore is appended rather than the name replaced, so the result
+     * is still recognisable as what it was.
+     */
+    private function escapeReservedName(string $value): string
+    {
+        $stem = pathinfo($value, PATHINFO_FILENAME);
+
+        if (preg_match('/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i', $stem) !== 1) {
+            return $value;
+        }
+
+        $extension = pathinfo($value, PATHINFO_EXTENSION);
+
+        return $stem.'_'.($extension !== '' ? '.'.$extension : '');
+    }
+
+    /**
+     * Truncates to a byte budget, not a character count.
+     *
+     * The limit filesystems impose per path component is **bytes** (255 on
+     * ext4, APFS and NTFS), and `mb_substr` counts characters. A 120-character
+     * CJK or emoji title is 360 bytes -- measured -- which is past the limit,
+     * so the move failed with an error that named permissions rather than
+     * length.
+     *
+     * Cut on a character boundary so the result is still valid UTF-8, then
+     * re-trimmed: truncation can leave a trailing space or dot, which Windows
+     * rejects for its own separate reason.
+     */
+    private function truncateBytes(string $value, int $maxBytes): string
+    {
+        if (strlen($value) <= $maxBytes) {
+            return $value;
+        }
+
+        // mb_strcut cuts by bytes without splitting a character in half.
+        $cut = mb_strcut($value, 0, $maxBytes, 'UTF-8');
+
+        return rtrim($cut, ". \t") ?: $cut;
     }
 
     private function expandPath(string $path): string
