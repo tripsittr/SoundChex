@@ -353,6 +353,95 @@ class MusicBrainz implements MetadataSource
     /**
      * @return array<string, mixed>|null
      */
+    /**
+     * Candidate recordings for a query a person typed.
+     *
+     * The automated path picks one best match and discards the rest, which is
+     * right when it is confident and useless when it is not: "look it up again"
+     * re-runs the same query and returns the same answer, so an item nothing
+     * could settle became a loop with no way out.
+     *
+     * This returns the field rather than a verdict, so the person can read the
+     * options and choose. Their query is used verbatim -- they can correct a
+     * misspelled title, drop a bracketed remix tag, or search the artist alone
+     * -- because the whole point is that they know something the matcher does
+     * not.
+     *
+     * @return array<int, array{id: string, title: string, artist: string, album: ?string, year: ?string, score: int}>
+     */
+    public function searchCandidates(string $query, int $limit = 10): array
+    {
+        $query = trim($query);
+
+        if ($query === '') {
+            return [];
+        }
+
+        // Lucene-escaped, because this string comes from a text box: an
+        // unbalanced bracket or a bare colon would otherwise make MusicBrainz
+        // reject the whole query rather than search for it.
+        $response = $this->request('/recording', [
+            'query' => $this->escapeLucene($query),
+            'limit' => max(1, min($limit, 25)),
+        ]);
+
+        $out = [];
+
+        foreach (data_get($response, 'recordings') ?? [] as $recording) {
+            if (blank($recording['id'] ?? null)) {
+                continue;
+            }
+
+            $release = $recording['releases'][0] ?? null;
+
+            $out[] = [
+                'id' => (string) $recording['id'],
+                'title' => (string) ($recording['title'] ?? 'Untitled'),
+                'artist' => (string) data_get($recording, 'artist-credit.0.name', 'Unknown artist'),
+                // The release is what tells two otherwise identical rows apart,
+                // which is exactly the choice being offered.
+                'album' => $release['title'] ?? null,
+                'year' => isset($release['date']) ? mb_substr((string) $release['date'], 0, 4) : null,
+                'score' => (int) ($recording['score'] ?? 0),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Writes a recording a person chose onto an item.
+     *
+     * `Exact` because a human said so, which is a stronger claim than any
+     * string comparison -- and it is the confidence the filer requires before
+     * it will move a file, so a manual decision has to grant it or the choice
+     * changes nothing on disk.
+     */
+    public function applyRecording(MediaItem $item, string $mbid): bool
+    {
+        $recording = $this->lookupById($mbid);
+
+        if ($recording === null) {
+            return false;
+        }
+
+        $this->writeRecordingFields($item, $recording);
+
+        // Exact because a person said so, which is a stronger claim than any
+        // string comparison -- and it is the confidence the filer requires
+        // before it will move a file, so a manual decision has to grant it or
+        // the choice changes nothing on disk.
+        $item->forceFill([
+            'match_confidence' => MatchConfidence::Exact,
+            'matched_by' => 'Chosen by hand',
+            // Stamped so a later re-enrichment cannot quietly undo the
+            // decision, which is the trap S-302 fixed for dismissals.
+            'reviewed_at' => now(),
+        ])->saveQuietly();
+
+        return true;
+    }
+
     private function searchRecordings(string $query): ?array
     {
         // Popular songs have dozens of bootleg recordings that tie with the

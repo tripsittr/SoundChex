@@ -336,6 +336,18 @@
                             <x-filament::button wire:click="reidentify({{ $current->id }})" color="gray">
                                 Look it up again
                             </x-filament::button>
+
+                            {{-- The way out of the loop. "Look it up again"
+                                 re-runs the same automated query and returns
+                                 the same answer, so an item nothing could
+                                 settle had no exit: the only actions were to
+                                 accept a wrong match, repeat a failing lookup,
+                                 or skip forever. --}}
+                            <x-filament::button
+                                wire:click="openLookup({{ $current->id }})"
+                                color="gray">
+                                Search by hand
+                            </x-filament::button>
                         @endif
 
                         <x-filament::button wire:click="skip({{ $current->id }})" color="gray" outlined>
@@ -346,4 +358,80 @@
             </div>
         </div>
     @endif
+
+    {{-- Manual lookup. The automated path returns one verdict; this returns the
+         field and lets the person choose, because the reason an item is here is
+         that the matcher could not settle it. --}}
+    <x-filament::modal id="manual-lookup" width="2xl">
+        <x-slot name="heading">Search by hand</x-slot>
+
+        <x-slot name="description">
+            Correct the words and search again — dropping a bracketed remix tag or a
+            guest credit is usually all it takes.
+        </x-slot>
+
+        <div class="space-y-4">
+            <div class="flex gap-2">
+                <x-filament::input.wrapper class="flex-1">
+                    <x-filament::input
+                        type="text"
+                        wire:model="lookupQuery"
+                        wire:keydown.enter.prevent="runLookup"
+                        placeholder="Title and artist" />
+                </x-filament::input.wrapper>
+
+                <x-filament::button
+                    wire:click="runLookup"
+                    wire:loading.attr="disabled"
+                    wire:target="runLookup">
+                    <span wire:loading.remove wire:target="runLookup">Search</span>
+                    <span wire:loading wire:target="runLookup">Searching…</span>
+                </x-filament::button>
+            </div>
+
+            @if ($lookupRan && count($lookupResults) === 0)
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    Nothing matched that. Try fewer words — the title alone often works
+                    when the artist is spelled differently here than in MusicBrainz.
+                </p>
+            @endif
+
+            @if (count($lookupResults) > 0)
+                <ul class="divide-y divide-gray-100 rounded-lg border border-gray-200 dark:divide-white/5 dark:border-white/10">
+                    @foreach ($lookupResults as $candidate)
+                        <li class="flex items-center justify-between gap-3 p-3">
+                            <div class="min-w-0">
+                                <p class="truncate font-medium text-gray-950 dark:text-white">
+                                    {{ $candidate['title'] }}
+                                </p>
+                                <p class="truncate text-sm text-gray-500 dark:text-gray-400">
+                                    {{ $candidate['artist'] }}
+                                    @if ($candidate['album'])
+                                        — {{ $candidate['album'] }}
+                                    @endif
+                                    @if ($candidate['year'])
+                                        ({{ $candidate['year'] }})
+                                    @endif
+                                </p>
+                            </div>
+
+                            <x-filament::button
+                                size="sm"
+                                wire:click="chooseMatch({{ $current?->id ?? 0 }}, '{{ $candidate['id'] }}')"
+                                wire:loading.attr="disabled"
+                                wire:target="chooseMatch">
+                                This one
+                            </x-filament::button>
+                        </li>
+                    @endforeach
+                </ul>
+
+                <p class="text-xs opacity-60">
+                    Choosing marks the match as confirmed, which is what lets the file be
+                    filed — the automatic matcher's own guess is never trusted that far.
+                </p>
+            @endif
+        </div>
+    </x-filament::modal>
+
 </x-filament-panels::page>

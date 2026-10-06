@@ -6,16 +6,20 @@
 namespace App\Filament\Pages;
 
 use App\Enums\PipelineStage;
+use App\Enums\ProcessingStatus;
 use App\Filament\Concerns\RestrictsToAdmins;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
+use App\Services\Metadata\Sources\Music\MusicBrainz;
 use App\Services\Pipeline\PipelineRunner;
+use App\Services\Review\ReviewLog;
 use App\Services\Review\ReviewQueue;
 use BackedEnum;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
@@ -190,6 +194,143 @@ class ReviewQueuePage extends Page
         app(PipelineRunner::class)->resumeAt($item, PipelineStage::Identified);
 
         $this->after($item, 'Looking it up again');
+    }
+
+    /* ------------------------------------------------ manual lookup ----- */
+
+    /** What the person has typed into the manual search box. */
+    public string $lookupQuery = '';
+
+    /**
+     * Candidates from the last manual search.
+     *
+     * @var array<int, array<string, mixed>>
+     */
+    public array $lookupResults = [];
+
+    /** Whether a manual search has been run, so "no results" differs from "not yet". */
+    public bool $lookupRan = false;
+
+    /**
+     * Opens the manual search, pre-filled with what we know.
+     *
+     * Pre-filled rather than blank: the title and artist on the row are usually
+     * nearly right, and the common fix is deleting a bracketed remix tag or
+     * correcting one word. Starting from an empty box would make the person
+     * retype what is already on screen.
+     */
+    public function openLookup(int $id): void
+    {
+        $item = $this->find($id);
+
+        if ($item === null) {
+            return;
+        }
+
+        $this->lookupQuery = trim(implode(' ', array_filter([
+            (string) $item->title,
+            (string) ($item->musicMetadata?->primary_artist ?: $item->musicMetadata?->artist),
+        ])));
+
+        $this->lookupResults = [];
+        $this->lookupRan = false;
+
+        $this->dispatch('open-modal', id: 'manual-lookup');
+    }
+
+    /**
+     * Searches MusicBrainz with the typed query.
+     *
+     * The automated path picks one best match and discards the rest, so "look
+     * it up again" re-runs the same query and returns the same answer -- an
+     * item nothing could settle became a loop with no exit. This shows the
+     * field instead and lets the person choose.
+     */
+    public function runLookup(): void
+    {
+        $this->lookupRan = true;
+
+        $query = trim($this->lookupQuery);
+
+        if ($query === '') {
+            $this->lookupResults = [];
+
+            return;
+        }
+
+        try {
+            $this->lookupResults = app(MusicBrainz::class)->searchCandidates($query, 10);
+        } catch (\Throwable $e) {
+            Log::warning('A manual lookup could not reach MusicBrainz', ['error' => $e->getMessage()]);
+
+            $this->lookupResults = [];
+
+            Notification::make()
+                ->title('Could not reach MusicBrainz')
+                ->body('The search did not run. The item is unchanged.')
+                ->danger()
+                ->send();
+        }
+    }
+
+    /**
+     * Applies a candidate the person picked.
+     *
+     * Marked `Exact` and stamped `reviewed_at`, because a person choosing is a
+     * stronger claim than any string comparison -- and `Exact` is what the
+     * filer requires before it will move a file, so anything less would make
+     * the choice change nothing on disk.
+     */
+    public function chooseMatch(int $id, string $mbid): void
+    {
+        $item = $this->find($id);
+
+        if ($item === null) {
+            return;
+        }
+
+        if (! app(MusicBrainz::class)->applyRecording($item, $mbid)) {
+            Notification::make()
+                ->title('That recording could not be read')
+                ->body('Nothing was changed. Try another candidate.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        // Resolve whatever was open. `resolve()` resumes the pipeline once
+        // nothing is left open, which is what clears `pipeline_state`.
+        $open = app(ReviewQueue::class)->reviewItemsFor($item);
+
+        foreach ($open as $reviewItem) {
+            app(ReviewLog::class)->resolve($reviewItem, auth()->user(), ['chosen_mbid' => $mbid]);
+        }
+
+        if ($open->isEmpty()) {
+            // No review row to resolve, so `resolve()` never ran and nothing
+            // resumed the pipeline. Most of the identify queue is in this
+            // state -- 322 of 500 items on the real library have no row at all
+            // -- and without this the item keeps `pipeline_state = waiting`
+            // and stays in the queue whatever was chosen, which is the loop
+            // this change exists to end.
+            //
+            // Resumed at Filed rather than marked complete by hand: the point
+            // of choosing a match is that the file can now be put where it
+            // belongs, and the pipeline is what moves it.
+            app(PipelineRunner::class)->resumeAt($item, PipelineStage::Filed);
+        } else {
+            $item->forceFill(['processing_status' => ProcessingStatus::Complete])->saveQuietly();
+        }
+
+        // Both paths finish the same way. An early return here left the modal
+        // open, the stale candidates on screen and no confirmation, so a
+        // successful choice looked like a dead button.
+        $this->dispatch('close-modal', id: 'manual-lookup');
+        $this->lookupResults = [];
+        $this->lookupRan = false;
+
+        $this->after($item, 'Tagged by hand');
     }
 
     /** Keeps both copies of a pair, as versions rather than duplicates. */

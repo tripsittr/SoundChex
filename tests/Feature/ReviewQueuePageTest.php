@@ -7,6 +7,7 @@ namespace Tests\Feature;
 
 use App\Enums\DuplicateMatch;
 use App\Enums\DuplicateStatus;
+use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Enums\PipelineStage;
 use App\Enums\PipelineState;
@@ -20,6 +21,8 @@ use App\Services\CurrentProfile;
 use App\Services\Review\ReviewQueue;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -355,6 +358,205 @@ class ReviewQueuePageTest extends TestCase
     }
 
     /* -------------------------------------------------------- helpers --- */
+
+    /* -------------------------------------------- manual resolution ----- */
+
+    public function test_the_question_says_what_matched_rather_than_claiming_nothing_did(): void
+    {
+        // The reported contradiction. The fallback said "No source recognised
+        // it, so filing it would mean guessing at its artist and album" for
+        // ANY item no earlier branch matched -- regardless of what was known.
+        // Measured on the live queue: 322 of 500 items had an artist, an album
+        // and cover art while being told nothing had recognised them. One
+        // screenshot showed "Exact match" in the badge and "no source
+        // recognised it" in the body, about the same file.
+        $item = $this->unidentified('Elevate');
+        $item->musicMetadata->forceFill(['artist' => 'St. Lucia', 'album' => 'Remixed'])->save();
+        $item->forceFill(['match_confidence' => MatchConfidence::Fuzzy, 'matched_by' => 'MusicBrainz'])->saveQuietly();
+
+        $ask = app(ReviewQueue::class)->ask($item->fresh(), ReviewQueue::IDENTIFY);
+
+        $this->assertStringNotContainsString('No source recognised it', $ask['because']);
+        $this->assertStringContainsString('MusicBrainz', $ask['because']);
+        $this->assertStringContainsString('Remixed', $ask['because']);
+    }
+
+    public function test_an_item_nothing_matched_still_says_so(): void
+    {
+        // The honest case has to survive: an item with no artist and no album
+        // genuinely was not identified, and softening that would be the same
+        // fault in the other direction.
+        // An album is set, so the no-album branch does not claim it first;
+        // what is missing is any idea of WHO made it, which is the genuine
+        // not-identified case.
+        $item = $this->unidentified('Track 07');
+        $item->musicMetadata->forceFill(['artist' => null, 'album' => 'Unknown Album'])->save();
+
+        $ask = app(ReviewQueue::class)->ask($item->fresh(), ReviewQueue::IDENTIFY);
+
+        $this->assertStringContainsString('No source recognised it', $ask['because']);
+    }
+
+    public function test_the_no_album_question_reads_the_track_number_instead_of_asking(): void
+    {
+        // The old wording -- "Is this a single, or did the album tag fail to
+        // read? Nothing can tell those apart" -- was wrong about 77% of them:
+        // 30 of 39 no-album items on this library carry a track number, which
+        // means the file came off an album whose title did not read.
+        $item = $this->unidentified('Side Two Opener');
+        $item->musicMetadata->forceFill(['album' => null, 'track_number' => 7])->save();
+
+        $ask = app(ReviewQueue::class)->ask($item->fresh(), ReviewQueue::IDENTIFY);
+
+        $this->assertSame('No album.', $ask['question']);
+        $this->assertStringContainsString('track 7', $ask['because']);
+        $this->assertStringNotContainsString('Nothing can tell those apart', $ask['because']);
+    }
+
+    public function test_no_album_and_no_track_number_reads_as_a_standalone_file(): void
+    {
+        $item = $this->unidentified('A Single');
+        $item->musicMetadata->forceFill(['album' => null, 'track_number' => null])->save();
+
+        $ask = app(ReviewQueue::class)->ask($item->fresh(), ReviewQueue::IDENTIFY);
+
+        $this->assertStringContainsString('standalone', $ask['because']);
+    }
+
+    public function test_the_manual_search_is_prefilled_with_what_is_known(): void
+    {
+        // Starting from an empty box would make somebody retype what is
+        // already on screen; the common fix is deleting a bracketed remix tag
+        // or correcting one word.
+        $item = $this->unidentified('Elevate');
+        $item->musicMetadata->forceFill(['artist' => 'St. Lucia'])->save();
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->call('openLookup', $item->id)
+            ->assertSet('lookupQuery', 'Elevate St. Lucia');
+    }
+
+    public function test_an_empty_query_searches_for_nothing(): void
+    {
+        $this->unidentified();
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->set('lookupQuery', '   ')
+            ->call('runLookup')
+            ->assertSet('lookupResults', []);
+    }
+
+    public function test_a_search_lists_candidates_to_choose_between(): void
+    {
+        // The automated path picks one best match and discards the rest, which
+        // is why "look it up again" returns the same answer forever. This
+        // returns the field.
+        Http::fake(['*musicbrainz.org*' => Http::response(['recordings' => [
+            ['id' => 'aaa', 'title' => 'Elevate', 'score' => 100,
+                'artist-credit' => [['name' => 'St. Lucia']],
+                'releases' => [['title' => 'When the Night', 'date' => '2013-10-08']]],
+            ['id' => 'bbb', 'title' => 'Elevate', 'score' => 90,
+                'artist-credit' => [['name' => 'St. Lucia']],
+                'releases' => [['title' => 'Remixed', 'date' => '2014-01-01']]],
+        ]], 200)]);
+
+        $this->unidentified();
+
+        $results = Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->set('lookupQuery', 'Elevate St Lucia')
+            ->call('runLookup')
+            ->get('lookupResults');
+
+        $this->assertCount(2, $results);
+
+        // The release is what tells two otherwise identical rows apart, which
+        // is the choice being offered.
+        $this->assertSame('When the Night', $results[0]['album']);
+        $this->assertSame('2013', $results[0]['year']);
+        $this->assertSame('Remixed', $results[1]['album']);
+    }
+
+    public function test_an_unreachable_service_leaves_the_item_alone(): void
+    {
+        Http::fake(fn () => throw new ConnectionException('refused'));
+
+        $item = $this->unidentified();
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->set('lookupQuery', 'anything')
+            ->call('runLookup')
+            ->assertSet('lookupResults', []);
+
+        $this->assertSame(ProcessingStatus::NeedsReview, $item->fresh()->processing_status);
+    }
+
+    public function test_choosing_a_candidate_marks_it_exact_and_clears_the_queue(): void
+    {
+        // Exact because a person said so, which is a stronger claim than any
+        // string comparison -- and it is what the filer requires before it
+        // will move a file, so anything less would make the choice change
+        // nothing on disk.
+        Http::fake(['*musicbrainz.org*' => Http::response([
+            'id' => 'aaa',
+            'title' => 'Elevate',
+            'artist-credit' => [['name' => 'St. Lucia']],
+            'isrcs' => ['USA2P1340001'],
+        ], 200)]);
+
+        $item = $this->unidentified('Elevate');
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->call('chooseMatch', $item->id, 'aaa');
+
+        $fresh = $item->fresh();
+
+        $this->assertSame(MatchConfidence::Exact, $fresh->match_confidence);
+        $this->assertSame('Chosen by hand', $fresh->matched_by);
+        $this->assertSame('aaa', $fresh->musicMetadata->musicbrainz_recording_id);
+
+        // Stamped, so a later re-enrichment cannot quietly undo the decision.
+        $this->assertNotNull($fresh->reviewed_at);
+
+        $this->assertNotContains(
+            $item->id,
+            app(ReviewQueue::class)->items(ReviewQueue::IDENTIFY)->pluck('id'),
+            'The item stayed in the queue after being tagged by hand.',
+        );
+    }
+
+    public function test_choosing_clears_the_search_whether_or_not_a_review_row_existed(): void
+    {
+        // An early return on the no-review-row path left the modal open, the
+        // stale candidates on screen and no confirmation, so a successful
+        // choice looked like a dead button -- on the 322-of-500 majority that
+        // have no review row.
+        Http::fake(['*musicbrainz.org*' => Http::response([
+            'id' => 'aaa', 'title' => 'Elevate',
+            'artist-credit' => [['name' => 'St. Lucia']],
+        ], 200)]);
+
+        $item = $this->unidentified('Elevate');
+
+        $this->assertSame(0, $item->reviewItems()->count(), 'Premise: no review row.');
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->set('lookupResults', [['id' => 'aaa', 'title' => 'Elevate', 'artist' => 'St. Lucia', 'album' => null, 'year' => null, 'score' => 100]])
+            ->call('chooseMatch', $item->id, 'aaa')
+            ->assertSet('lookupResults', [])
+            ->assertSet('lookupRan', false);
+    }
+
+    public function test_an_unreadable_recording_changes_nothing(): void
+    {
+        Http::fake(['*musicbrainz.org*' => Http::response('', 404)]);
+
+        $item = $this->unidentified();
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->call('chooseMatch', $item->id, 'missing');
+
+        $this->assertNotSame(MatchConfidence::Exact, $item->fresh()->match_confidence);
+    }
 
     /* ---------------------------------------------------------- skip ----- */
 
