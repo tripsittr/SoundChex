@@ -12,6 +12,7 @@ use App\Services\Streaming\StreamPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
@@ -81,9 +82,33 @@ class HlsController extends Controller
 
         // Rewritten so each segment is fetched through this app rather than
         // from a path on disk the player cannot reach.
+        //
+        // Which route depends on who is asking. A browser carries its session
+        // cookie on every segment, so the web route is right for it. A native
+        // player does **not**: `AVURLAssetHTTPHeaderFieldsKey` applies to the
+        // playlist request and AVFoundation does not propagate those headers
+        // to the `.ts` fetches, so a segment arrives with no credentials at
+        // all, the auth middleware answers `302 -> /login`, AVPlayer follows
+        // it and decodes HTML as video. The result is a black picture with a
+        // running clock, because the playlist (which did carry the header)
+        // supplied the duration.
+        //
+        // So a token caller gets **signed** segment URLs instead: the
+        // signature travels in the URL, which is the one thing the player
+        // reliably keeps. The session id cannot do that job itself -- it is a
+        // deterministic hash of (item, height, start), so it is guessable and
+        // is not a credential.
+        $signed = $this->signsSegments($request);
+
         $body = preg_replace_callback(
             '/^(seg\d+\.ts)$/m',
-            fn (array $m): string => route('media.hls.segment', ['session' => $session, 'file' => $m[1]]),
+            fn (array $m): string => $signed
+                ? URL::temporarySignedRoute(
+                    'api.hls.segment',
+                    now()->addHours(12),
+                    ['session' => $session, 'file' => $m[1]],
+                )
+                : route('media.hls.segment', ['session' => $session, 'file' => $m[1]]),
             (string) file_get_contents($playlist),
         );
 
@@ -96,6 +121,21 @@ class HlsController extends Controller
     }
 
     /** One segment. */
+    /**
+     * Whether this caller needs segment URLs that carry their own credentials.
+     *
+     * True for a token client, false for a browser. A cookie session rides
+     * along on every segment request automatically; a bearer token does not,
+     * because the player never sees it.
+     *
+     * Keyed on the request reaching an API route rather than on the guard, so
+     * the web player is unaffected by anything that changes about tokens.
+     */
+    private function signsSegments(Request $request): bool
+    {
+        return $request->is('api/*');
+    }
+
     public function segment(string $session, string $file): BinaryFileResponse
     {
         $path = $this->segmenter->fileIn($session, $file);

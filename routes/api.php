@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\TokenController;
 use App\Http\Controllers\Api\Transfer\RequestController as TransferRequestController;
 use App\Http\Controllers\Api\Transfer\SourceController as TransferSourceController;
 use App\Http\Controllers\Api\UpdateController;
+use App\Http\Controllers\HlsController;
 use App\Http\Middleware\EnsureApiAdmin;
 use App\Http\Middleware\LoopbackOnly;
 use Illuminate\Support\Facades\Route;
@@ -51,6 +52,27 @@ Route::prefix('v1')->group(function (): void {
         ->name('api.updates');
     Route::get('/updates/{target}/{arch}/download/{file}', [UpdateController::class, 'download'])
         ->name('api.updates.download');
+
+    /*
+    | One segment of a transcoded stream.
+    |
+    | Authenticated by the **signature in the URL**, not by a token, because
+    | the player cannot carry a token here: AVFoundation applies the asset's
+    | HTTP headers to the playlist request and not to the segment fetches, so
+    | a segment arrives with no credentials whatever the client does.
+    |
+    | The signature is the credential, and it is the right shape for one: it
+    | is unguessable, it is scoped to this exact session and file, and it
+    | expires. The session id cannot do that job -- it is a deterministic hash
+    | of (item, height, start), so anyone who knows the item can compute it.
+    |
+    | Twelve hours, which outlasts any single viewing while keeping a URL that
+    | leaks into a log from being useful indefinitely.
+    */
+    Route::get('/hls/{session}/{file}', [HlsController::class, 'segment'])
+        ->middleware('signed')
+        ->where(['session' => '[a-f0-9]{32}', 'file' => '[A-Za-z0-9._-]+'])
+        ->name('api.hls.segment');
 
     /*
     | Diagnostics from a device.
@@ -167,6 +189,19 @@ Route::prefix('v1')->group(function (): void {
         // rectangle, because iOS cannot demux Matroska whatever is inside it.
         Route::get('/items/{item}/playback', [MediaController::class, 'playback'])
             ->name('api.items.playback');
+
+        // The transcoded stream, for a client that authenticates with a token.
+        //
+        // The web routes cannot serve it: they sit behind session auth, and a
+        // native player sends credentials on the *playlist* request only --
+        // AVFoundation does not propagate `AVURLAssetHTTPHeaderFieldsKey` to
+        // the `.ts` fetches. A header-less segment hit the auth middleware,
+        // got `302 -> /login`, and AVPlayer decoded the HTML as video: black
+        // picture, running clock, duration intact because the playlist did
+        // carry the header.
+        Route::get('/items/{item}/hls.m3u8', [HlsController::class, 'playlist'])
+            ->middleware('throttle:stream')
+            ->name('api.hls.playlist');
         Route::get('/items/{item}/progress', [MediaController::class, 'progress'])
             ->name('api.items.progress');
         // Lyrics: fetched and cached from a provider (LRCLIB by default).
