@@ -163,4 +163,106 @@ class MediaDetailsApiTest extends TestCase
         $this->assertSame('A tagline', $item['meta']['tagline']);
         $this->assertSame('A Studio', $item['meta']['studio']);
     }
+
+    /* ------------------------------------------------ genres & facts ---- */
+
+    public function test_genres_are_returned_rather_than_a_list_of_nulls(): void
+    {
+        // `media_tags` has no `name` column -- it is `type` and `value` -- so
+        // `pluck('name')` returned null for every row and the endpoint sent
+        // `[null, null, null]` to every client while 11,704 genre tags sat in
+        // the database. The film this was found on had "Horror", "Mystery" and
+        // "Science Fiction" stored and was sending three nulls.
+        $film = $this->film();
+
+        foreach (['Horror', 'Mystery', 'Science Fiction'] as $genre) {
+            $film->tags()->create(['type' => 'genre', 'value' => $genre, 'source' => 'api']);
+        }
+
+        $body = $this->actingAs($this->user)
+            ->getJson("/api/v1/items/{$film->id}/details")
+            ->assertOk()
+            ->json();
+
+        $this->assertSame(['Horror', 'Mystery', 'Science Fiction'], $body['genres']);
+        $this->assertNotContains(null, $body['tags'], 'A null reached the tag list.');
+    }
+
+    public function test_a_non_genre_tag_is_not_reported_as_a_genre(): void
+    {
+        // `tags` carries everything; `genres` carries only genres, because a
+        // detail page shows them on their own line and every client would
+        // otherwise filter the same way.
+        $film = $this->film();
+
+        $film->tags()->create(['type' => 'genre', 'value' => 'Horror', 'source' => 'api']);
+        $film->tags()->create(['type' => 'keyword', 'value' => 'haunted house', 'source' => 'api']);
+
+        $body = $this->actingAs($this->user)
+            ->getJson("/api/v1/items/{$film->id}/details")
+            ->json();
+
+        $this->assertSame(['Horror'], $body['genres']);
+        $this->assertContains('haunted house', $body['tags']);
+    }
+
+    public function test_the_detail_block_carries_what_a_detail_page_shows(): void
+    {
+        $film = $this->film();
+
+        $film->movieMetadata()->create([
+            'director' => 'A Director',
+            'studio' => 'A Studio',
+            'release_year' => 2020,
+            'runtime_minutes' => 111,
+            'mpaa_rating' => 'R',
+            'tagline' => 'A tagline',
+            'imdb_id' => 'tt1234567',
+        ]);
+
+        $detail = $this->actingAs($this->user)
+            ->getJson("/api/v1/items/{$film->id}/details")
+            ->json('detail');
+
+        $this->assertSame('movie', $detail['type']);
+        $this->assertSame('A Director', $detail['director']);
+        $this->assertSame(2020, $detail['year']);
+        $this->assertSame(111, $detail['runtime_minutes']);
+        $this->assertSame('R', $detail['content_rating']);
+        $this->assertSame('tt1234567', $detail['imdb_id']);
+    }
+
+    public function test_a_key_that_does_not_apply_is_absent_rather_than_null(): void
+    {
+        // One shape for every type, so a client renders what is present and
+        // skips what is not rather than testing each key for null.
+        $film = $this->film();
+
+        $film->movieMetadata()->create(['director' => 'A Director']);
+
+        $detail = $this->actingAs($this->user)
+            ->getJson("/api/v1/items/{$film->id}/details")
+            ->json('detail');
+
+        $this->assertArrayNotHasKey('artist', $detail, 'A music key reached a film.');
+        $this->assertArrayNotHasKey('season_count', $detail, 'A show key reached a film.');
+        $this->assertArrayHasKey('director', $detail);
+    }
+
+    public function test_the_ratings_are_carried_once_something_writes_them(): void
+    {
+        // imdb_rating and rt_score have existed all along with nothing filling
+        // them -- OMDb is the source and is not implemented. The endpoint
+        // carries them now, so they appear without any client changing.
+        $film = $this->film();
+
+        $film->movieMetadata()->create(['imdb_rating' => 7.5, 'rt_score' => 88]);
+
+        $detail = $this->actingAs($this->user)
+            ->getJson("/api/v1/items/{$film->id}/details")
+            ->json('detail');
+
+        $this->assertSame(7.5, (float) $detail['imdb_rating']);
+        $this->assertSame(88, (int) $detail['rt_score']);
+    }
 }
