@@ -7,6 +7,7 @@ namespace App\Services;
 
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
+use App\Models\MediaPlay;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -217,19 +218,51 @@ class MediaBrowser
             return MediaItem::query()->whereRaw('1 = 0')->get();
         }
 
+        // One "real" play session: incomplete, and far enough in to mean the
+        // film was actually started. Reused for the filter and for both
+        // subqueries so the three cannot drift apart.
+        $sessions = fn ($query) => $query
+            ->where('media_plays.'.$viewer['column'], $viewer['id'])
+            ->where('media_plays.completed', false)
+            // Nullable in practice, and `> 60` alone does not exclude null in
+            // every engine, so it is said explicitly.
+            ->whereNotNull('media_plays.position_seconds')
+            ->where('media_plays.position_seconds', '>', 60);
+
+        // The latest such session for this item, used twice below.
+        $latest = fn (string $column) => MediaPlay::query()
+            ->select($column)
+            ->whereColumn('media_plays.media_item_id', 'media_items.id')
+            ->tap($sessions)
+            ->orderByDesc('media_plays.updated_at')
+            ->limit(1);
+
+        // No join. This used to join `media_plays` and lean on `distinct()`
+        // to collapse the duplicate rows a join produces, which broke twice:
+        //
+        //  - selecting `position_seconds` alongside defeated `distinct()`, so
+        //    a film with two play rows became two cards (seen in the real
+        //    library at 240s and 111s);
+        //  - swapping in `GROUP BY` fixed the duplicates but made the ordering
+        //    column an arbitrary joined row, and an item whose newest play row
+        //    had a null position dropped off the shelf entirely.
+        //
+        // A `whereHas` filter with the position and the sort time as
+        // correlated subqueries has neither failure: one row per item by
+        // construction, and both values come from the session the viewer
+        // actually left off in.
         return $this->gate->apply(MediaItem::query())
             ->whereIn('type', [MediaItemType::Movie, MediaItemType::Show])
             ->whereNotNull('file_path')
-            ->join('media_plays', 'media_plays.media_item_id', '=', 'media_items.id')
-            ->where('media_plays.'.$viewer['column'], $viewer['id'])
-            ->where('media_plays.completed', false)
-            // A minute in is enough to mean the film was actually started.
-            ->where('media_plays.position_seconds', '>', 60)
+            ->whereHas('plays', $sessions)
             ->with(['movieMetadata', 'showMetadata', 'tags'])
-            ->orderByDesc('media_plays.updated_at')
             ->select('media_items.*')
-            // One row per item even if several play sessions exist.
-            ->distinct()
+            // Where the viewer is, which is not the furthest they ever got.
+            // `MAX(position_seconds)` gets this wrong: restarting a film
+            // abandoned near the end would show a frame from the finale of
+            // something just begun, spoiling it.
+            ->selectSub($latest('position_seconds'), 'resume_position')
+            ->orderByDesc($latest('updated_at'))
             ->limit($limit)
             ->get();
     }

@@ -5,10 +5,12 @@
 
 namespace App\Providers;
 
+use App\Events\PlaybackCompleted;
 use App\Filesystem\WindowsSafeFilesystem;
 use App\Services\CurrentProfile;
 use App\Services\QueueControl;
 use App\Services\QueueInspector;
+use App\Services\ResumeFrames;
 use App\Services\ScheduleInspector;
 use Composer\CaBundle\CaBundle;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -80,6 +82,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->recordScheduledRuns();
         $this->releaseStrandedJobs();
+        $this->discardFinishedResumeFrames();
         $this->honourQueuePause();
 
         // A CA bundle wherever PHP forgot to bring one.
@@ -267,5 +270,36 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(60)
             ->by($request->user()?->id ?: $request->ip()));
+    }
+
+    /**
+     * Drops an item's resume frames once a profile finishes it (#513).
+     *
+     * Nothing else reclaims them. A frame is written per item per ten seconds
+     * watched, so a server left alone accumulates them for everything anyone
+     * ever started, and the moment it is certainly safe to delete them is when
+     * the shelf stops offering the item back.
+     *
+     * Scoped to the profile in the event: other people sharing the server may
+     * be part-way through the same episode, and their frames have to survive
+     * someone else reaching the end.
+     *
+     * Failures are swallowed deliberately. This is housekeeping behind a
+     * progress write the player is waiting on, and a full disk or a vanished
+     * directory must not turn "you finished the film" into an error.
+     */
+    private function discardFinishedResumeFrames(): void
+    {
+        Event::listen(PlaybackCompleted::class, function (PlaybackCompleted $event): void {
+            try {
+                app(ResumeFrames::class)->forget($event->item, $event->profileId);
+            } catch (Throwable $exception) {
+                Log::warning('Could not discard resume frames for a finished item', [
+                    'item' => $event->item->id,
+                    'profile' => $event->profileId,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        });
     }
 }
