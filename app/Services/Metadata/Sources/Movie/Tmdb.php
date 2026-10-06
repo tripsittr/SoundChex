@@ -47,6 +47,18 @@ class Tmdb implements MetadataSource
         // would look as though it had been resolved by id.
         $matchedById = filled($item->movieMetadata?->tmdb_id);
 
+        // Captured before promoteTitle() replaces it, for the same reason the
+        // id is captured above: confidence is scored by comparing what we
+        // searched for against what TMDB returned, and promotion makes those
+        // two strings equal by construction. Scoring afterwards marked every
+        // title-search match Exact -- including the wrong ones -- and Exact is
+        // the one value allowed to rename and refile a video file (#455).
+        //
+        // The *parsed* title, because that is what was actually searched:
+        // a filename leaves the year in the title ("Inception 2010") and
+        // resolveMovie() splits it out before querying.
+        [$searchedTitle] = $this->splitTitleAndYear((string) $item->title);
+
         $movie = $this->resolveMovie($item);
 
         if ($movie === null) {
@@ -73,7 +85,7 @@ class Tmdb implements MetadataSource
         $this->writeArtwork($item, $movie);
         $this->writeGenreTags($item, $movie['genres'] ?? []);
         $this->writeCredits($item, $movie['credits'] ?? [], ['Director', 'Screenplay', 'Writer', 'Producer']);
-        $this->recordConfidence($item, $movie, $matchedById);
+        $this->recordConfidence($item, $movie, $matchedById, $searchedTitle);
     }
 
     /**
