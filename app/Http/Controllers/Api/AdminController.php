@@ -68,7 +68,7 @@ class AdminController extends Controller
      */
     public function item(MediaItem $item): JsonResponse
     {
-        $item->loadMissing(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata']);
+        $item->loadMissing(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata', 'parent:id,title']);
 
         return response()->json([
             'id' => $item->id,

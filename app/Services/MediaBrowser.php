@@ -255,7 +255,10 @@ class MediaBrowser
             ->whereIn('type', [MediaItemType::Movie, MediaItemType::Show])
             ->whereNotNull('file_path')
             ->whereHas('plays', $sessions)
-            ->with(['movieMetadata', 'showMetadata', 'tags'])
+            // `parent` comes along because the resource names the series an
+            // episode belongs to, and resolving that lazily would be one
+            // query per card on the shelf.
+            ->with(['movieMetadata', 'showMetadata', 'tags', 'parent:id,title', 'probe'])
             ->select('media_items.*')
             // Where the viewer is, which is not the furthest they ever got.
             // `MAX(position_seconds)` gets this wrong: restarting a film

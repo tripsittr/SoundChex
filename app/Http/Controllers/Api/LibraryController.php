@@ -271,7 +271,7 @@ class LibraryController extends Controller
             // `plays` too: the resource reports when this profile last played
             // an item, and reading that from an unloaded relation would be a
             // query per row — or, worse, silently null on every one (S-391).
-            ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata', 'plays'])
+            ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata', 'plays', 'parent:id,title', 'probe'])
             ->orderBy('media_items.id');
     }
 
