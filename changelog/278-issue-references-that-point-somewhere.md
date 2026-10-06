@@ -35,6 +35,24 @@ Four sites did need a second touch: citations listing several distinct numbers
 (`(#457, #475, #476)`) collapsed into `(#489, #489, #489)`. Those were collapsed
 to one reference with a targeted pattern that cannot reach surrounding prose.
 
+## The diff is wider than "a number remap"
+
+a5's finding, and a fair one. Running `pint --dirty` over the touched files
+folded a formatter pass into the same commit: one-line methods expanded
+(`name()`/`priority()` in `Show/Tmdb.php`), `=>` alignment stripped from arrays,
+concat spacing changed (`$root.'/'` → `$root . '/'`), and FQCN references
+replaced with imported class names in several test files.
+
+Measured: of **393** added PHP lines, **186** carry a citation — so about half
+the diff is formatting. All of it behaviour-neutral, and a5 verified that
+independently by normalising the whole diff and checking every changed code line
+has a 1:1 semantic counterpart.
+
+It should have been two commits. Saying so here rather than re-splitting it,
+because rewriting 105 files again to separate them risks more than it buys — but
+a reviewer told "only comments changed" would not expect method bodies to move,
+and that was a misleading thing to have written.
+
 ## Verified
 
 - 1554 passed, 3 skipped, 0 failed, plus 6 in `WorkerLogTest` run separately —
