@@ -147,6 +147,33 @@ Schedule::call(fn () => app(HlsSegmenter::class)->sweep())
  * own addresses mid-request blocks on the process that would answer and times
  * out against itself. The dashboard reads the result rather than taking it.
  */
+/*
+| Measure files that were catalogued before anything measured them.
+|
+| `ProbeStage` probes every item that goes through the pipeline, so anything
+| added since it existed has a probe row. Nothing ever went back for the rest,
+| and nothing ever would: the command skips already-probed items, so it was
+| safe to run and there was simply no reason for an owner to know it existed.
+|
+| The cost of that gap is quiet. Capability badges -- 4K, Dolby Vision, 5.1,
+| CC -- are derived from the probe, so an unprobed film shows none of them and
+| looks like a feature that does not work rather than a file nobody has read.
+| The quality checks that find a truncated file are in the same position.
+| Measured here: 0 of 5 video items had a probe row, including two real films
+| sitting at `pipeline_state = done`.
+|
+| Hourly and capped. Probing reads every file header and a large library is
+| hours of work, so this takes a slice at a time and gets there over a night
+| rather than saturating the disk in one pass. Already-probed items are
+| skipped, which is what makes a repeating small batch converge.
+*/
+Schedule::command('library:probe --limit=200')
+    ->hourly()
+    // A slow batch must never stack up behind itself: two of these reading the
+    // same files would halve the throughput of both.
+    ->withoutOverlapping()
+    ->runInBackground();
+
 Schedule::command('network:probe')
     ->everyFiveMinutes()
     ->withoutOverlapping();
