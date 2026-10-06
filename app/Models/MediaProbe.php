@@ -144,6 +144,71 @@ class MediaProbe extends Model
      * Stereo earns no badge for the same reason SDR does not -- it is the
      * floor, and marking the floor says nothing.
      */
+    /**
+     * Video codecs a browser or AVPlayer will decode.
+     *
+     * Deliberately short. H.264 plays everywhere; everything else is a
+     * gamble that depends on the device, the OS version and sometimes the
+     * hardware. HEVC plays on recent Apple hardware and almost nowhere else,
+     * which makes it exactly the kind of "sometimes" that produces a black
+     * rectangle on the one device somebody is holding.
+     */
+    private const PLAYABLE_VIDEO = ['h264', 'avc1', 'vp8', 'vp9', 'theora'];
+
+    /**
+     * Audio codecs that will come out of a speaker.
+     *
+     * The reason this list exists: nothing checked audio at all, so an `.mp4`
+     * carrying AC-3 or DTS passed as playable on its extension and then
+     * played **silently** — a file that looks like it works and does not,
+     * which is worse than one that plainly fails.
+     */
+    private const PLAYABLE_AUDIO = ['aac', 'mp3', 'opus', 'vorbis', 'flac', 'alac'];
+
+    /**
+     * Whether this file plays as-is, judged on what is actually inside it.
+     *
+     * The extension is not the question. A `.mp4` is a container, and one
+     * holding HEVC video or AC-3 audio is as unplayable as an MKV — it simply
+     * fails later and less obviously, because the container opened fine.
+     *
+     * Null when nothing has been probed: "unknown" is not "fine", and the
+     * caller decides what to do with an unmeasured file rather than being
+     * told it is safe.
+     */
+    public function playsDirectly(): ?bool
+    {
+        if (! $this->isVideo()) {
+            return null;
+        }
+
+        $video = strtolower((string) $this->video_codec);
+
+        if ($video === '') {
+            return null;
+        }
+
+        if (! in_array($video, self::PLAYABLE_VIDEO, true)) {
+            return false;
+        }
+
+        $audio = collect($this->audio_streams ?? [])
+            ->pluck('codec')
+            ->filter()
+            ->map(fn ($codec): string => strtolower((string) $codec));
+
+        // A file with no audio track is fine -- silent by design rather than
+        // silent by accident.
+        if ($audio->isEmpty()) {
+            return true;
+        }
+
+        // **Any** playable track is enough: the transcoder maps one audio
+        // stream, and a player picks a track it can decode. A rip carrying
+        // AC-3 alongside AAC is playable through the AAC.
+        return $audio->contains(fn (string $codec): bool => in_array($codec, self::PLAYABLE_AUDIO, true));
+    }
+
     public function audioLabel(): ?string
     {
         $channels = collect($this->audio_streams ?? [])

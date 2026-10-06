@@ -846,9 +846,42 @@ class MediaItem extends Model
             return true;
         }
 
+        // What is actually inside it, when that has been measured.
+        //
+        // The extension alone is not the question: a `.mp4` is a container,
+        // and one holding HEVC video or AC-3 audio is as unplayable as an
+        // MKV -- it just fails later and less obviously, because the
+        // container opened fine. Judging on the extension sent those files
+        // to direct play and they died on the device.
+        //
+        // Only the probe when the relation is loaded: this is called per row
+        // on listings, and a lazy read here is a query each.
+        // Both questions have to pass, and they are genuinely separate.
+        //
+        // The container decides whether the player can open the file at all:
+        // iOS cannot demux Matroska whatever is inside it, so an MKV of plain
+        // H.264 is still unplayable there.
+        //
+        // The codecs decide whether it can decode what it finds: an `.mp4` of
+        // HEVC, or one whose only audio track is AC-3, opens cleanly and then
+        // fails -- which is how those files reached direct play and died on
+        // the device while looking perfectly ordinary here.
         $extension = strtolower(pathinfo((string) $this->file_path, PATHINFO_EXTENSION));
 
-        return in_array($extension, ['mp4', 'm4v', 'webm', 'mov', 'ogv'], true);
+        if (! in_array($extension, ['mp4', 'm4v', 'webm', 'mov', 'ogv'], true)) {
+            return false;
+        }
+
+        // Only the probe when the relation is loaded: this is called per row
+        // on listings, and a lazy read here is a query each. An unprobed file
+        // is judged on its container alone, because "unknown" must not
+        // silently become "unplayable" -- that would transcode the whole
+        // library until the probe caught up.
+        if (! $this->relationLoaded('probe')) {
+            return true;
+        }
+
+        return $this->probe?->playsDirectly() ?? true;
     }
 
     /** Whether a browser-playable conversion has been produced and still exists. */
