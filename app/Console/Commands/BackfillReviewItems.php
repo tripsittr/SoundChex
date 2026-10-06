@@ -28,7 +28,8 @@ use Illuminate\Console\Command;
 class BackfillReviewItems extends Command
 {
     protected $signature = 'library:backfill-review
-        {--dry-run : Report what would be opened without writing}';
+        {--dry-run : Report what would be opened without writing}
+        {--quiet-ok : Say nothing when there was nothing to do}';
 
     protected $description = 'Give every hidden item an open review item saying why';
 
@@ -41,7 +42,12 @@ class BackfillReviewItems extends Command
             ->get();
 
         if ($hidden->isEmpty()) {
-            $this->info('Every hidden item already has an open review item. Nothing to do.');
+            // Silent on a clean run, so this can be scheduled every five
+            // minutes without writing a line to the log each time. The
+            // interesting case is the one that found something (#510).
+            if (! $this->option('quiet-ok')) {
+                $this->info('Every hidden item already has an open review item. Nothing to do.');
+            }
 
             return self::SUCCESS;
         }

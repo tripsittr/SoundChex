@@ -26,6 +26,17 @@ use App\Services\Pipeline\PipelineRunner;
  */
 class ReviewLog
 {
+    /**
+     * The statuses that mean "parked", as opposed to "being worked on".
+     *
+     * `Processing` is work in progress by definition and `Pending` is queued
+     * and waiting its turn; neither is an item nobody will look at again.
+     */
+    private const PARKED_STATUSES = [
+        ProcessingStatus::NeedsReview->value,
+        ProcessingStatus::Failed->value,
+    ];
+
     public function __construct(private PipelineRunner $runner) {}
 
     /**
@@ -156,11 +167,23 @@ class ReviewLog
      * invisible to every other report — it is absent from the library *and*
      * absent from review, which is the state this whole phase abolishes.
      * `server:health` asserts it.
+     *
+     * Only the *parked* statuses count. This used to ask for anything that was
+     * not `complete`, which includes an item the worker is part-way through
+     * writing: the enrichment job sets `needs_review`, then resolves it moments
+     * later. Sampling ten times in three seconds showed the offending id
+     * climbing with the queue — 3020, 3021, 3022 — and each one reading as
+     * complete by the time it was inspected individually.
+     *
+     * So while any queue drained, health reported one unexplained item
+     * permanently, for a different item each time, and no backfill could ever
+     * clear it. A number that never reaches zero is one nobody reads, which
+     * would hide the real stuck item this check exists to surface (#510).
      */
     public function hiddenWithNothingOpen(): int
     {
         return MediaItem::withoutGlobalScopes()
-            ->where('processing_status', '!=', ProcessingStatus::Complete->value)
+            ->whereIn('processing_status', self::PARKED_STATUSES)
             ->whereDoesntHave('reviewItems', fn ($query) => $query->open())
             ->count();
     }

@@ -272,6 +272,70 @@ class ReviewItemsTest extends TestCase
     /* -------------------------------------------------------- helpers --- */
 
     /** An item hidden from the library with nothing explaining why. */
+    /* ------------------------------------- what counts as unexplained --- */
+
+    public function test_an_item_being_worked_on_is_not_counted_as_unexplained(): void
+    {
+        // The false positive this fixes (#510). The count asked for anything
+        // that was not `complete`, which includes an item the worker is
+        // part-way through: the enrichment job sets `needs_review` and then
+        // dispatches the event that opens the review row, so there is a window
+        // where both are true.
+        //
+        // Sampling the live server ten times in three seconds showed the
+        // offending id climbing with the queue -- 3020, 3021, 3022 -- so while
+        // anything drained, health reported one unexplained item permanently,
+        // for a different item each time, and no backfill could clear it.
+        MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => 'Mid-enrichment',
+            'processing_status' => ProcessingStatus::Processing,
+            'owned' => true,
+        ]);
+
+        $this->assertSame(0, app(ReviewLog::class)->hiddenWithNothingOpen());
+    }
+
+    public function test_a_queued_item_is_not_counted_either(): void
+    {
+        // Pending is waiting its turn, not parked. Neither is an item nobody
+        // will look at again, which is what the count is for.
+        MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => 'Queued',
+            'processing_status' => ProcessingStatus::Pending,
+            'owned' => true,
+        ]);
+
+        $this->assertSame(0, app(ReviewLog::class)->hiddenWithNothingOpen());
+    }
+
+    public function test_a_parked_item_is_still_counted(): void
+    {
+        // The check must keep working: an item flagged for review with nothing
+        // saying why is absent from the library *and* absent from review,
+        // which is the state the whole rebuild abolished.
+        $this->hidden();
+
+        $this->assertSame(1, app(ReviewLog::class)->hiddenWithNothingOpen());
+    }
+
+    public function test_a_failed_item_is_counted(): void
+    {
+        // Failed is parked by any reading: nothing will pick it up again.
+        MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => 'Gave up',
+            'processing_status' => ProcessingStatus::Failed,
+            'owned' => true,
+        ]);
+
+        $this->assertSame(1, app(ReviewLog::class)->hiddenWithNothingOpen());
+    }
+
     private function hidden(): MediaItem
     {
         $item = MediaItem::create([
