@@ -7,6 +7,7 @@ namespace App\Providers;
 
 use App\Filesystem\WindowsSafeFilesystem;
 use App\Services\CurrentProfile;
+use App\Services\QueueControl;
 use App\Services\ScheduleInspector;
 use Composer\CaBundle\CaBundle;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -56,6 +58,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->recordScheduledRuns();
         $this->releaseStrandedJobs();
+        $this->honourQueuePause();
 
         // A CA bundle wherever PHP forgot to bring one.
         //
@@ -154,6 +157,27 @@ class AppServiceProvider extends ServiceProvider
                 ]);
             }
         });
+    }
+
+    /**
+     * Lets the panel pause background work without killing the worker.
+     *
+     * `queue:restart` would end the process, and on this install a LaunchAgent
+     * starts it straight back up -- so that is a restart, not a pause.
+     * Returning false from `looping` stops the worker *reserving* the next job
+     * while leaving the process alive, which is what pause should mean.
+     *
+     * Nothing in flight is interrupted: a transcode half-way through finishes,
+     * because this runs between jobs rather than during one.
+     *
+     * The flag is read fresh each time round the loop, so resuming takes effect
+     * within one poll rather than needing a restart.
+     */
+    private function honourQueuePause(): void
+    {
+        // `isPaused()` swallows a cache failure itself and answers "not
+        // paused", so a broken cache cannot wedge the queue from here either.
+        Queue::looping(fn (): bool => ! app(QueueControl::class)->isPaused());
     }
 
     private function recordScheduledRuns(): void
