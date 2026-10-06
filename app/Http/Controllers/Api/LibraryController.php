@@ -12,6 +12,7 @@ use App\Models\MediaItem;
 use App\Services\ContentGate;
 use App\Services\CurrentProfile;
 use App\Services\MediaBrowser;
+use App\Services\ResumeFrames;
 use App\Services\SmartShuffle;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +35,16 @@ use Illuminate\Support\Collection;
  */
 class LibraryController extends Controller
 {
+    /**
+     * How many frames one request may extract for a cold shelf (#513).
+     *
+     * Each is a synchronous ffmpeg call in front of a waiting client, so the
+     * first load of a new shelf fills in a few and later loads fill the rest
+     * from cache. Four keeps the added time to roughly half a second on the
+     * measured file while still making the row visibly different at once.
+     */
+    private const FRAMES_PER_REQUEST = 4;
+
     /*
      * Deliberately no constructor injection.
      *
@@ -90,6 +101,14 @@ class LibraryController extends Controller
         $reading = $browser->continueReading($limit);
 
         return response()->json([
+            // The frame each viewer stopped on, keyed by item id (#513). A
+            // poster says which film it is; the frame says where you are in
+            // it, which is the only question this row asks.
+            //
+            // Sent beside the items rather than replacing `artwork`, so a
+            // client that has not been updated still renders posters and a
+            // client that has can fall back when a frame is absent.
+            'resume_frames' => $this->resumeFrames($watching),
             'watching' => MediaItemResource::collection($watching),
             'reading' => MediaItemResource::collection($reading),
         ]);
@@ -114,6 +133,70 @@ class LibraryController extends Controller
             'items' => MediaItemResource::collection($items),
             'smart' => $request->boolean('smart'),
         ]);
+    }
+
+    /**
+     * A frame per item, for the profile asking.
+     *
+     * Absent entries are normal and the client falls back to the poster:
+     * nothing watched far enough in, the file on another machine, a format
+     * that resists seeking. A broken image is worse than an ordinary one.
+     *
+     * Generated inline rather than queued because it is cheap -- measured at
+     * 134ms for a 26KB JPEG -- and because a queued thumbnail would arrive
+     * after the row had already rendered without it.
+     *
+     * @param  Collection<int, MediaItem>  $items
+     * @return array<int, string>
+     */
+    private function resumeFrames($items): array
+    {
+        $profile = app(CurrentProfile::class)->get();
+
+        if ($profile === null) {
+            return [];
+        }
+
+        $frames = app(ResumeFrames::class);
+        $out = [];
+
+        // Cached frames first, for every item. These cost a file_exists each,
+        // so the common case -- a shelf the viewer has already loaded once --
+        // does no work at all.
+        $uncached = [];
+
+        foreach ($items as $item) {
+            $position = (int) ($item->resume_position ?? 0);
+
+            if ($position <= 0) {
+                continue;
+            }
+
+            if ($url = $frames->cachedUrlFor($item, $position, $profile->id)) {
+                $out[$item->id] = $url;
+
+                continue;
+            }
+
+            $uncached[] = [$item, $position];
+        }
+
+        // Then a bounded number of extractions. Each is one synchronous ffmpeg
+        // call -- measured at 134ms on this machine, but a slow or spun-down
+        // disk is far worse -- and a cold shelf of twenty cards would other-
+        // wise run twenty of them before the home page could render at all.
+        //
+        // The rest simply come back without a frame and the client shows the
+        // poster, which is the same fallback every other absence uses. The
+        // next load finds these cached and fills in a few more, so the shelf
+        // converges over a couple of visits instead of stalling once.
+        foreach (array_slice($uncached, 0, self::FRAMES_PER_REQUEST) as [$item, $position]) {
+            if ($url = $frames->urlFor($item, $position, $profile->id)) {
+                $out[$item->id] = $url;
+            }
+        }
+
+        return $out;
     }
 
     /**
