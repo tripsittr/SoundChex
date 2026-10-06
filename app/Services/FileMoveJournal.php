@@ -114,6 +114,27 @@ class FileMoveJournal
             'error' => null,
         ])->save();
 
+        // The row follows the file. `reconcile()` and `undo()` already did
+        // this and `execute()` did not, so a caller other than the organizer
+        // -- which happens to write `file_path` itself -- left the row pointing
+        // at a path that no longer exists, making the item unplayable. That is
+        // the crash-window symptom Phase 2 exists to prevent, reachable
+        // through the ordinary path (found by the manifest tests a5 asked for
+        // on #280).
+        //
+        // Not for a trashed file (its row keeps the surviving copy's path) and
+        // not for a sidecar (whose journal row carries the media item's id, so
+        // repointing would aim the catalogue at a .srt).
+        $item = $move->mediaItem;
+
+        if ($item !== null && ! in_array($move->kind, [FileMoveKind::Trash, FileMoveKind::Sidecar], true)) {
+            $item->forceFill([
+                'file_path' => $to,
+                // Rule 2: the stored hash described the old path.
+                'content_hash' => null,
+            ])->saveQuietly();
+        }
+
         return true;
     }
 

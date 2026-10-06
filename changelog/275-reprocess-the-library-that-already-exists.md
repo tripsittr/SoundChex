@@ -80,6 +80,36 @@ Filing sends items to **`Planned`**, not `Filed`: the plan stage computes a
 target and journals it before anything moves, which is what makes the move
 reversible.
 
+## The safety net is now tested (a5's review)
+
+a5's finding on #280, and the strongest note of the rebuild:
+
+> *"`library:manifest` and `library:verify-manifest` are the integrity check
+> around a bulk reprocess of the real ~8,700-item library — and they have zero
+> functional test coverage… the dangerous failure is a **false negative** — a
+> genuinely lost file reported as accounted-for. An untested safety net is the
+> kind this phase is meant to end."*
+
+Right on every count. Sixteen tests now exercise each branch an operator is
+about to trust: a deleted file is **LOST** with a non-zero exit, a journalled
+move is **accounted for**, a trashed file is **recoverable**, altered contents
+are **changed**, and a file already absent is **not blamed on the reprocess**.
+Plus the two vacuous-pass cases — an empty manifest and a missing one both
+**fail** rather than reporting success.
+
+### Which found a real bug
+
+`FileMoveJournal::execute()` moved the file and **never updated `file_path`**.
+`reconcile()` and `undo()` did; `execute()` did not. The organizer happens to
+write the path itself, which is why nothing caught it — but any other caller
+left the row pointing at a path that no longer existed, making the item
+unplayable.
+
+That is the crash-window symptom Phase 2 exists to prevent, reachable through
+the ordinary path. `execute()` now repoints the row, skipping a trashed file
+(its row keeps the surviving copy's path) and a sidecar (whose journal row
+carries the media item's id, so repointing would aim the catalogue at a `.srt`).
+
 ## Worth knowing
 
 - **`--limit` needed fixing twice.** `lazyById()` re-chunks by id and
