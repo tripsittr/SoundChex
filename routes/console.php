@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 SoundChex
 
-use App\Services\Streaming\HlsSegmenter;
 use App\Models\DeviceReport;
 use App\Models\Notification;
 use App\Services\LibrarySettings;
+use App\Services\Streaming\HlsSegmenter;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -87,6 +87,28 @@ Schedule::command('library:purge-trash')
 Schedule::command('library:pipeline-sweep --quiet-ok')
     ->everyFiveMinutes()
     // A slow sweep over a large library must not stack up behind itself.
+    ->withoutOverlapping()
+    ->runInBackground();
+
+/*
+| The same invariant, from the other end (#510).
+|
+| `server:health` asserts hourly that no item is hidden from the library
+| without an open review item saying why -- and nothing maintained that. The
+| backfill is what restores it, and it ran only when somebody typed it.
+|
+| Observed over one session as enrichment produced fuzzy matches: the count
+| went 8, then 94, then 377, then 611, with health reporting "unhealthy" each
+| hour and the remedy sitting behind a command the owner had no reason to know
+| existed. A dashboard that reports a problem nobody can clear teaches people
+| to ignore the dashboard.
+|
+| Alongside the sweep rather than on its own timer: they fix the two halves of
+| the same guarantee, and an item the sweep has just parked is exactly the one
+| this needs to explain.
+*/
+Schedule::command('library:backfill-review --quiet-ok')
+    ->everyFiveMinutes()
     ->withoutOverlapping()
     ->runInBackground();
 
