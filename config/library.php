@@ -67,6 +67,11 @@ return [
         'media/subtitles',
         // Illustrations pulled out of a book that is already catalogued.
         'media/book-assets',
+        // Files the user deleted. Without this a scan re-imports every trashed
+        // copy, so a resolved duplicate comes back on the next pass and the
+        // thirty-day undo window becomes thirty days of re-importing the same
+        // file (#464).
+        'media/.trash',
         'livewire-tmp',
         'framework',
     ],

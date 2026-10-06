@@ -118,6 +118,20 @@ class MediaTrashTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_the_trash_is_excluded_from_scanning(): void
+    {
+        // Without this the scanner walks the trash and re-imports every file in
+        // it, so a resolved duplicate returns on the next pass and the undo
+        // window becomes thirty days of re-importing the same file.
+        //
+        // Asserted against the configured root rather than a literal, so
+        // changing TRASH_ROOT without excluding it fails here.
+        $this->assertContains(
+            $this->trash->root(),
+            array_map(fn (string $p): string => trim($p, '/'), (array) config('library.scan_exclude')),
+        );
+    }
+
     public function test_a_retention_of_zero_keeps_everything(): void
     {
         // The "keep until emptied by hand" setting.

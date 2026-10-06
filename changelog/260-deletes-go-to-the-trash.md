@@ -63,7 +63,11 @@ duplicate came back at the next sweep.
 - Disk usage grows by whatever is deleted, for up to 30 days. On a library
   where duplicates are being resolved in bulk that is real space — worth a
   `library:purge-trash --days=7` if it matters more than the undo window.
-- `media/.trash` starts with a dot so the scanner's existing exclusions skip
-  it; a trashed file must not be re-catalogued as a new import.
+- `media/.trash` is added to `library.scan_exclude`. The exclusion list is
+  explicit paths, not a dot-prefix rule, so without that entry the scanner
+  would walk the trash and re-import every file in it — a resolved duplicate
+  would come back on the next pass and the thirty-day undo window would become
+  thirty days of re-importing the same file. A test asserts the configured
+  trash root is excluded, so changing `TRASH_ROOT` without excluding it fails.
 - Existing duplicate tests assert the file is gone from its old path, which
   trashing satisfies, so all 93 still pass unchanged.
