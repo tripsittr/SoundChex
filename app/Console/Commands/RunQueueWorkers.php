@@ -56,10 +56,22 @@ class RunQueueWorkers extends Command
         // Children are killed with this process rather than orphaned: a pool
         // whose supervisor died is worse than no pool, because the next start
         // adds a second set and nothing reaps the first.
-        $this->trap([SIGTERM, SIGINT], function (): void {
-            $this->stopAll();
-            exit(0);
-        });
+        //
+        // Only where signals exist. `SIGTERM` and `SIGINT` are **pcntl**
+        // constants, and pcntl is not built into Windows PHP -- referencing
+        // them there is a fatal `Undefined constant` before a single worker
+        // spawns. Since `supervisor.rs` runs this as the only worker launcher,
+        // that would have stopped all background processing on the Windows
+        // server (a5's review, #512).
+        //
+        // Skipping the trap on Windows is safe: the pool is reaped when the
+        // parent is killed, through the job object the process is created in.
+        if (extension_loaded('pcntl')) {
+            $this->trap([SIGTERM, SIGINT], function (): void {
+                $this->stopAll();
+                exit(0);
+            });
+        }
 
         do {
             $this->reconcile($control->concurrency());
@@ -101,10 +113,12 @@ class RunQueueWorkers extends Command
         }
 
         if (count($this->workers) > $wanted) {
-            // `stop()` sends SIGTERM, which `queue:work` treats as "finish the
+            // Symfony's default signal is already SIGTERM on Unix and a
+            // taskkill on Windows, so naming the constant bought nothing and
+            // cost portability. `queue:work` treats SIGTERM as "finish the
             // current job and exit" rather than "die now".
             foreach (array_splice($this->workers, $wanted) as $extra) {
-                $extra->stop(timeout: 0, signal: SIGTERM);
+                $extra->stop(0);
             }
         }
     }
@@ -134,7 +148,7 @@ class RunQueueWorkers extends Command
     private function stopAll(): void
     {
         foreach ($this->workers as $worker) {
-            $worker->stop(timeout: 10, signal: SIGTERM);
+            $worker->stop(10);
         }
 
         $this->workers = [];

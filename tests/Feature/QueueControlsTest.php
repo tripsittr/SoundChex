@@ -137,6 +137,36 @@ class QueueControlsTest extends TestCase
         $this->assertSame([], app(QueueControl::class)->pausedJobs());
     }
 
+    /* ------------------------------------------------- the worker pool -- */
+
+    public function test_the_pool_command_runs_without_pcntl(): void
+    {
+        // a5's blocking finding, and the gap that let it through: **no test
+        // executed `handle()` at all**, so the one code path that runs on
+        // every boot had no coverage while `QueueControl` had plenty.
+        //
+        // `SIGTERM` and `SIGINT` are pcntl constants and pcntl is not built
+        // into Windows PHP, so referencing them fatals with "Undefined
+        // constant" before a single worker spawns. Since `supervisor.rs` runs
+        // this as the only worker launcher, that would have stopped all
+        // background processing on the Windows server.
+        //
+        // This asserts the command *runs*, which is the thing that was broken.
+        // It passes on a machine with pcntl too -- the point is that CI, which
+        // lacks it, would now catch the regression.
+        $this->artisan('queue:workers', ['--once' => true, '--queue' => 'default'])
+            ->assertSuccessful();
+    }
+
+    public function test_the_pool_reports_how_many_it_starts(): void
+    {
+        app(QueueControl::class)->setConcurrency(2);
+
+        $this->artisan('queue:workers', ['--once' => true, '--queue' => 'default'])
+            ->expectsOutputToContain('Starting 2 worker(s)')
+            ->assertSuccessful();
+    }
+
     /* ------------------------------------------------- concurrency ------ */
 
     public function test_one_job_at_a_time_by_default(): void
