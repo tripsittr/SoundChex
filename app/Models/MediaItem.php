@@ -648,6 +648,29 @@ class MediaItem extends Model
     }
 
     /**
+     * What ffprobe found in this file (#467).
+     *
+     * One probe per item, replaced when re-run: a probe measures the bytes as
+     * they are now, and after a remux the old numbers describe a file that no
+     * longer exists.
+     */
+    public function probe(): HasOne
+    {
+        return $this->hasOne(MediaProbe::class);
+    }
+
+    /**
+     * Everything wrong with this file.
+     *
+     * A list rather than one verdict, because a file can be several kinds of
+     * wrong at once and each is separately resolvable.
+     */
+    public function qualityFindings(): HasMany
+    {
+        return $this->hasMany(QualityFinding::class);
+    }
+
+    /**
      * The edition this title names, if it names one.
      *
      * A `" - "` suffix on a music title is usually an **edition marker**, not
