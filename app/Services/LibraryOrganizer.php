@@ -8,6 +8,8 @@ namespace App\Services;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -215,12 +217,47 @@ class LibraryOrganizer
         // Never overwrite: a same-named file with different content really is a
         // different recording, so it gets a suffix rather than clobbering what's
         // already filed.
-        $absoluteTarget = $this->uniquePath($absoluteTarget);
+        //
+        // Choosing the name and taking it must be one step. Two workers filing
+        // different recordings with the same ideal name would otherwise both
+        // see the name free, both pick it, and the second rename would replace
+        // the first worker's file (#462). The lock is per directory, so filing
+        // into different albums still runs in parallel.
+        $lock = Cache::lock('library-file:'.md5(dirname($absoluteTarget)), 30);
+
+        try {
+            $lock->block(10);
+        } catch (LockTimeoutException) {
+            // Another worker is filing into this folder. Leaving the item for
+            // the next pass is correct: nothing is lost and nothing is raced.
+            Log::info('Deferred filing: another worker holds this folder', [
+                'item' => $item->id,
+                'directory' => dirname($absoluteTarget),
+            ]);
+
+            return null;
+        }
+
+        try {
+            $absoluteTarget = $this->uniquePath($absoluteTarget);
+        } catch (\RuntimeException $e) {
+            $lock->release();
+
+            Log::error('Could not find a free name to file an item under', [
+                'item' => $item->id,
+                'target' => $absoluteTarget,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
 
         if (! @rename($source, $absoluteTarget)) {
             // rename() fails across filesystems (an external drive, say), so
             // fall back to copy-then-delete.
             if (! @copy($source, $absoluteTarget)) {
+                $lock->release();
+
                 Log::error('Could not file a media file', [
                     'item' => $item->id,
                     'from' => $source,
@@ -233,24 +270,46 @@ class LibraryOrganizer
 
             // Verify the copy landed before removing the original — a partial
             // copy plus an eager delete would lose the file outright.
-            if (filesize($absoluteTarget) !== filesize($source)) {
+            //
+            // By content, not by size: a copy interrupted and resumed, or one
+            // written to a failing disk, can be the right length and the wrong
+            // bytes. Size is checked first because it is free and rules out the
+            // common truncation without hashing a 40 GB remux twice.
+            if (! $this->copyIsFaithful($source, $absoluteTarget)) {
                 @unlink($absoluteTarget);
 
                 // The partial copy is removed and the original kept, which is
                 // the right call — but a truncated copy usually means a full
                 // disk, and that will happen again on the next file.
-                Log::error('A filed copy was short and was discarded', [
+                $lock->release();
+
+                Log::error('A filed copy did not match its source and was discarded', [
                     'item' => $item->id,
                     'from' => $source,
-                    'expected' => filesize($source),
-                    'copied' => filesize($absoluteTarget),
+                    'expected' => @filesize($source),
+                    'copied' => @filesize($absoluteTarget),
                 ]);
 
                 return null;
             }
 
-            @unlink($source);
+            // Checked, because an unchecked unlink is how the library ends up
+            // with two copies and no record of it: the row points at the new
+            // path, the old file is still on disk, and the next scan catalogues
+            // it as a second item.
+            if (! @unlink($source)) {
+                Log::warning('Filed a copy but could not remove the original', [
+                    'item' => $item->id,
+                    'original' => $source,
+                    'filed' => $absoluteTarget,
+                    'note' => 'the item points at the filed copy; the original is still on disk',
+                ]);
+            }
         }
+
+        // The name is taken now, so the critical section is over -- the row
+        // update and the peer repointing cannot race another worker's choice.
+        $lock->release();
 
         $relative = $this->toRelative($absoluteTarget);
 
@@ -674,7 +733,34 @@ class LibraryOrganizer
             }
         }
 
-        return $path;
+        // Returning $path here -- which is occupied, that being why we are in
+        // this method -- handed the caller a path it would then overwrite
+        // (#462). A thousand same-named files in one folder is a real problem
+        // worth surfacing, not something to paper over by destroying one.
+        throw new \RuntimeException("No free filename after 999 attempts: {$path}");
+    }
+
+    /**
+     * Whether a copy holds the same bytes as its source.
+     *
+     * Size first because it is free and rules out the common truncation, then
+     * the content hash -- a copy interrupted and resumed, or written to a
+     * failing disk, can be the right length and the wrong bytes, and this
+     * decides whether the original is deleted.
+     */
+    private function copyIsFaithful(string $source, string $copy): bool
+    {
+        $sourceSize = @filesize($source);
+        $copySize = @filesize($copy);
+
+        if ($sourceSize === false || $copySize === false || $sourceSize !== $copySize) {
+            return false;
+        }
+
+        $sourceHash = @hash_file(DuplicateDetector::HASH, $source);
+        $copyHash = @hash_file(DuplicateDetector::HASH, $copy);
+
+        return $sourceHash !== false && $sourceHash === $copyHash;
     }
 
     /**
