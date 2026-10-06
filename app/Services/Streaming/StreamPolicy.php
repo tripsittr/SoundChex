@@ -5,10 +5,14 @@
 
 namespace App\Services\Streaming;
 
+use App\Enums\MediaItemType;
 use App\Models\MediaItem;
 use App\Services\MediaTranscoder;
+use App\Services\Quality\MediaProber;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\IpUtils;
+use Throwable;
 
 /**
  * Whether to hand a client the file or an HLS stream (S-29).
@@ -33,6 +37,48 @@ use Symfony\Component\HttpFoundation\IpUtils;
  */
 class StreamPolicy
 {
+    /**
+     * Probes a video that has never been measured, so the decision below is
+     * made on its codecs rather than its file extension.
+     *
+     * Deliberately quiet about failure. A probe that cannot run -- no
+     * ffprobe, a file on another machine, a format it refuses -- leaves the
+     * item unmeasured and the decision falls back to the container, which is
+     * exactly the behaviour that existed before. A playback request must not
+     * fail because a measurement did.
+     */
+    private function measureIfUnprobed(MediaItem $item): void
+    {
+        if (! in_array($item->type, [MediaItemType::Movie, MediaItemType::Show], true)) {
+            return;
+        }
+
+        $item->loadMissing('probe');
+
+        if ($item->probe !== null) {
+            return;
+        }
+
+        try {
+            $prober = app(MediaProber::class);
+
+            if (! $prober->isAvailable()) {
+                return;
+            }
+
+            $prober->probe($item);
+
+            // Re-read, so `isPlayableVideo()` sees what was just written
+            // rather than the absence it was called with.
+            $item->load('probe');
+        } catch (Throwable $exception) {
+            Log::warning('Could not probe an item before deciding how to play it', [
+                'item' => $item->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
     /** Loopback and the private ranges — a client on the same network. */
     private const LOCAL_RANGES = [
         '127.0.0.0/8',
@@ -78,6 +124,19 @@ class StreamPolicy
         if ($item->hasConvertedCopy() && $this->isLocal($request)) {
             return PlaybackDecision::direct('a converted copy is already web-playable');
         }
+
+        // Measure it now if nobody has.
+        //
+        // Judging an unprobed file on its container alone is optimistic in
+        // the one direction that hurts: an `.mp4` of HEVC is called playable,
+        // direct-plays, and shows a black rectangle. The hourly backfill
+        // closes that eventually, but "eventually" is the whole viewing
+        // somebody is trying to start right now.
+        //
+        // ffprobe reads a header, not a file -- well under a second even for
+        // a large rip -- so this is cheap enough to do on the path, and it
+        // happens once: the row is written and every later decision reads it.
+        $this->measureIfUnprobed($item);
 
         if (! $item->isPlayableVideo()) {
             return PlaybackDecision::transcode(
