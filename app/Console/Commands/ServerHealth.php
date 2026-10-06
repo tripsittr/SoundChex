@@ -5,6 +5,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Pipeline\PipelineSweeper;
 use App\Events\ServerExtensionMissing;
 use App\Events\ServerHealthChecked;
 use App\Models\Notification;
@@ -45,6 +46,14 @@ class ServerHealth extends Command
         $queueDepth = $this->tableCount('jobs');
         $failedJobs = $this->tableCount('failed_jobs');
 
+        // The number that must be zero (#465): an item hidden from the library
+        // with no pipeline stage is invisible to every other report -- absent
+        // from the library because it is not `complete`, and absent from review
+        // because nothing flagged it. Checked here so the guarantee is verified
+        // continuously rather than believed.
+        $stranded = app(PipelineSweeper::class)->strandedCount();
+        $stuckMoves = $this->tableCount('file_moves', fn ($query) => $query->where('state', 'started'));
+
         $problems = [];
 
         if ($missing !== []) {
@@ -59,11 +68,22 @@ class ServerHealth extends Command
         if ($failedJobs > 0) {
             $problems[] = "{$failedJobs} failed job(s)";
         }
+        if ($stranded > 0) {
+            $problems[] = "{$stranded} item(s) hidden with no pipeline stage";
+        }
+        if ($stuckMoves > 0) {
+            // A move left mid-flight. The sweeper reconciles these, so one
+            // still sitting here means it could not decide -- both paths hold
+            // different files and a person has to look.
+            $problems[] = "{$stuckMoves} unfinished file move(s)";
+        }
 
         $metrics = [
             'disk_free_fraction' => $diskFree,
             'queue_depth' => $queueDepth,
             'failed_jobs' => $failedJobs,
+            'stranded_items' => $stranded,
+            'unfinished_moves' => $stuckMoves,
             'missing_extensions' => $missing,
         ];
 
@@ -99,11 +119,19 @@ class ServerHealth extends Command
         return ($free !== false && $total !== false && $total > 0) ? $free / $total : null;
     }
 
-    private function tableCount(string $table): int
+    private function tableCount(string $table, ?callable $filter = null): int
     {
         try {
-            return (int) DB::table($table)->count();
+            $query = DB::table($table);
+
+            if ($filter !== null) {
+                $filter($query);
+            }
+
+            return (int) $query->count();
         } catch (\Throwable) {
+            // A table that does not exist yet -- a fresh install mid-migration
+            // -- is not a health problem worth reporting as one.
             return 0;
         }
     }

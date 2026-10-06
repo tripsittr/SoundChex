@@ -49,7 +49,16 @@ class EnrichMediaItemJob implements ShouldQueue
         // never reach the items that need it most.
         $item = MediaItem::unresolved()
             ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata'])
-            ->findOrFail($this->mediaItemId);
+            ->find($this->mediaItemId);
+
+        // The item can be gone by the time this runs: a duplicate merged away
+        // while its enrich job sat in the queue, or a row removed by hand.
+        // That is "nothing to do", not a failure -- the work is moot either
+        // way, and findOrFail() put six of these in failed_jobs on the live
+        // server where they looked like a broken pipeline (#479).
+        if ($item === null) {
+            return;
+        }
 
         $item->update(['processing_status' => ProcessingStatus::Processing]);
 

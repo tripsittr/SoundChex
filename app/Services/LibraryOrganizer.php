@@ -786,7 +786,7 @@ class LibraryOrganizer
      * Converts an absolute path back to one relative to the storage disk, so
      * the stored value keeps working through Storage::.
      */
-    private function toRelative(string $absolute): string
+    public function toRelative(string $absolute): string
     {
         $root = realpath(Storage::path(''));
         $real = realpath($absolute) ?: $absolute;

@@ -48,9 +48,19 @@ return [
     | would otherwise free a job a sibling is part-way through, and that job
     | would run twice.
     |
+    | DEFAULTS OFF SINCE THE PIPELINE (#465). `library:pipeline-sweep` now
+    | requeues lost work every five minutes, by stage timeout rather than by
+    | releasing reservations -- which is safe with any number of workers,
+    | because every stage is idempotent and claiming one is atomic. The old
+    | mechanism was only ever safe with exactly one worker, and it is the thing
+    | that made running a second one unsafe.
+    |
+    | Set QUEUE_RELEASE_RESERVATIONS_ON_START=true to get the old behaviour for
+    | non-pipeline jobs on a single-worker install.
+    |
     */
 
-    'release_reservations_on_worker_start' => (bool) env('QUEUE_RELEASE_RESERVATIONS_ON_START', true),
+    'release_reservations_on_worker_start' => (bool) env('QUEUE_RELEASE_RESERVATIONS_ON_START', false),
 
     'connections' => [
 
