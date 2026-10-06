@@ -130,8 +130,80 @@ class MediaController extends Controller
             'overview' => $item->notes,
             'cast' => $people->where('role', 'actor')->values(),
             'crew' => $people->where('role', '!=', 'actor')->values(),
-            'tags' => $item->tags()->pluck('name')->values(),
+
+            // `value`, not `name`: `media_tags` has no `name` column, so this
+            // plucked null for every row and sent `[null, null, null]` to
+            // every client while 11,704 genre tags sat in the database. The
+            // movie this was found on has "Horror", "Mystery" and "Science
+            // Fiction" stored and was sending three nulls.
+            'tags' => $item->tags()->orderBy('type')->pluck('value')->filter()->values(),
+
+            // Genres separately as well as in `tags`: a detail page shows them
+            // as their own line, and every client would otherwise filter the
+            // tag list the same way.
+            'genres' => $item->tags()->where('type', 'genre')->pluck('value')->filter()->values(),
+
+            // The facts a detail page is built from. Flat and null-free, so a
+            // client renders what is present and skips what is not rather than
+            // testing for each key.
+            'detail' => array_filter($this->detailFacts($item), fn ($v) => $v !== null && $v !== ''),
         ]);
+    }
+
+    /**
+     * Everything known about an item, whatever kind it is.
+     *
+     * One shape for every type rather than a branch per client: iOS, Android,
+     * the desktop shell and the web player all want "what is this, who made it,
+     * how long is it, how was it rated", and a key that does not apply is
+     * simply absent.
+     *
+     * @return array<string, mixed>
+     */
+    private function detailFacts(MediaItem $item): array
+    {
+        $movie = $item->movieMetadata;
+        $show = $item->showMetadata;
+        $music = $item->musicMetadata;
+        $book = $item->bookMetadata;
+
+        return [
+            'type' => $item->type?->value,
+            'year' => $movie?->release_year ?? $show?->first_air_year ?? $music?->year ?? $book?->published_year,
+            'runtime_minutes' => $movie?->runtime_minutes,
+            'director' => $movie?->director,
+            'studio' => $movie?->studio,
+            'creator' => $show?->creator,
+            'network' => $show?->network,
+            'season_count' => $show?->season_count,
+            'episode_count' => $show?->episode_count,
+            'season_number' => $show?->season_number,
+            'episode_number' => $show?->episode_number,
+            'episode_title' => $show?->episode_title,
+            'content_rating' => $movie?->mpaa_rating ?? $show?->content_rating,
+            'tagline' => $movie?->tagline,
+            'language' => $movie?->language ?? $show?->language,
+            'country' => $movie?->country,
+
+            // Ratings. The columns have existed all along and nothing writes
+            // them yet -- OMDb is the source and is not implemented (#504) --
+            // so these are null on every row today and will fill in without
+            // any client needing to change.
+            'imdb_rating' => $movie?->imdb_rating,
+            'rt_score' => $movie?->rt_score,
+            'imdb_id' => $movie?->imdb_id,
+            'tmdb_id' => $movie?->tmdb_id ?? $show?->tmdb_id,
+
+            'artist' => $music?->artist,
+            'album' => $music?->album,
+            'track_number' => $music?->track_number,
+            'author' => $book?->author,
+
+            // File facts, because "as much detail about the files as we can"
+            // includes what the file itself is.
+            'file_size' => $item->file_size,
+            'added_at' => $item->created_at?->toIso8601String(),
+        ];
     }
 
     /**
