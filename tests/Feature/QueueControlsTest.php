@@ -5,6 +5,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Widgets\QueueActivity;
 use App\Services\QueueControl;
 use App\Services\QueueInspector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -190,6 +191,29 @@ class QueueControlsTest extends TestCase
         Cache::forget('soundchex.queue.sample');
 
         $this->assertNull(app(QueueInspector::class)->throughput());
+    }
+
+    public function test_the_widget_shows_an_eta_whenever_it_shows_a_rate(): void
+    {
+        // The bug the per-request memo was meant to fix, and did not: the
+        // widget calls `throughput()` and `remaining()` separately, and each
+        // resolved a *fresh* inspector from the container, so the memo never
+        // spanned them. The second call wrote a new sample, compared against
+        // one zero seconds old, and returned null.
+        //
+        // Visible as a dashboard saying "about 47 a minute" that never said
+        // how long that would take. Asserted through the widget rather than
+        // the service, because the service alone was already passing.
+        Cache::put('soundchex.queue.sample', ['at' => now()->subMinutes(2)->timestamp, 'pending' => 100], now()->addHour());
+
+        $this->queueJob();
+
+        $widget = new QueueActivity;
+
+        $rate = $widget->throughput();
+
+        $this->assertNotNull($rate, 'Premise: a rate is known.');
+        $this->assertNotNull($widget->remaining(), 'A rate was shown with no ETA beside it.');
     }
 
     public function test_the_rate_is_consistent_within_one_request(): void
