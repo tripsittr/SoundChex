@@ -52,6 +52,13 @@ class ServerHealth extends Command
         // because nothing flagged it. Checked here so the guarantee is verified
         // continuously rather than believed.
         $stranded = app(PipelineSweeper::class)->strandedCount();
+
+        // The other number that must be zero (#469): an item hidden from the
+        // library with nothing open to explain it is absent from the library
+        // AND absent from review at once, which is invisible to every other
+        // report. Measured at 96 before the backfill; asserted here so the
+        // guarantee is checked continuously rather than believed.
+        $unexplained = app(\App\Services\Review\ReviewLog::class)->hiddenWithNothingOpen();
         $stuckMoves = $this->tableCount('file_moves', fn ($query) => $query->where('state', 'started'));
 
         $problems = [];
@@ -71,6 +78,9 @@ class ServerHealth extends Command
         if ($stranded > 0) {
             $problems[] = "{$stranded} item(s) hidden with no pipeline stage";
         }
+        if ($unexplained > 0) {
+            $problems[] = "{$unexplained} hidden item(s) with nothing saying why";
+        }
         if ($stuckMoves > 0) {
             // A move left mid-flight. The sweeper reconciles these, so one
             // still sitting here means it could not decide -- both paths hold
@@ -83,6 +93,7 @@ class ServerHealth extends Command
             'queue_depth' => $queueDepth,
             'failed_jobs' => $failedJobs,
             'stranded_items' => $stranded,
+            'unexplained_hidden_items' => $unexplained,
             'unfinished_moves' => $stuckMoves,
             'missing_extensions' => $missing,
         ];

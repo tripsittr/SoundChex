@@ -648,6 +648,19 @@ class MediaItem extends Model
     }
 
     /**
+     * Everything needing a person about this item (#469).
+     *
+     * One record per reason, replacing review-as-a-status: five columns and a
+     * reports table could say THAT something was wrong but not why, what the
+     * evidence was, or what to do -- so a new failure kind had nowhere to go
+     * and went nowhere.
+     */
+    public function reviewItems(): HasMany
+    {
+        return $this->hasMany(ReviewItem::class);
+    }
+
+    /**
      * What ffprobe found in this file (#467).
      *
      * One probe per item, replaced when re-run: a probe measures the bytes as

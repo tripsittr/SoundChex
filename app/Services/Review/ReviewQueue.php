@@ -9,6 +9,7 @@ use App\Enums\DuplicateStatus;
 use App\Enums\MediaItemType;
 use App\Enums\PipelineState;
 use App\Enums\ProcessingStatus;
+use App\Enums\SystemReviewReason;
 use App\Models\MediaItem;
 use App\Models\MediaItemReport;
 use Illuminate\Database\Eloquent\Builder;
@@ -147,6 +148,19 @@ class ReviewQueue
     }
 
     /**
+     * The open review items for an item, newest first.
+     *
+     * The authoritative record since #469. The columns this used to read could
+     * say THAT something was wrong but not why, so a reason comes from here
+     * where there is one -- and the columns remain the fallback for anything
+     * predating the backfill.
+     */
+    public function reviewItemsFor(MediaItem $item)
+    {
+        return $item->reviewItems()->open()->latest('id')->get();
+    }
+
+    /**
      * The question this item is really asking, in words.
      *
      * The old table showed a row and left the reader to work out what was
@@ -187,6 +201,28 @@ class ReviewQueue
             ];
         }
 
+        // A recorded review item outranks anything derived: it was written at
+        // the moment the decision was needed, with the evidence to hand (#469).
+        $recorded = $this->reviewItemsFor($item)->first();
+
+        if ($recorded !== null) {
+            $reason = $recorded->reasonEnum();
+
+            if ($reason instanceof SystemReviewReason) {
+                return [
+                    'question' => $this->questionFor($reason),
+                    'because' => $this->becauseFor($reason),
+                ];
+            }
+
+            if ($reason !== null) {
+                return [
+                    'question' => $reason->label().', reported by someone using the library.',
+                    'because' => filled($recorded->note) ? '"'.$recorded->note.'"' : $reason->hint(),
+                ];
+            }
+        }
+
         // Identify. The pipeline records why it parked the item, and that text
         // is written for a person — so it is shown rather than replaced with a
         // generic "needs review".
@@ -210,6 +246,52 @@ class ReviewQueue
             'question' => 'This file has not been identified.',
             'because' => 'No source recognised it, so filing it would mean guessing at its artist and album.',
         ];
+    }
+
+    /**
+     * The question a system reason asks, phrased for a person.
+     *
+     * Separate from the enum's label(), which is a badge: "No album" fits a
+     * chip, and "Is this a single, or did the tag fail to read?" is what
+     * somebody needs in order to answer.
+     */
+    private function questionFor(SystemReviewReason $reason): string
+    {
+        return match ($reason) {
+            SystemReviewReason::MissingAlbum => 'No album.',
+            SystemReviewReason::NoMatch => 'Nothing could identify this file.',
+            SystemReviewReason::AmbiguousMatch => 'Several matches scored alike.',
+            SystemReviewReason::LowConfidence => 'Matched loosely, not by an identifier.',
+            SystemReviewReason::CompilationOrUndated => 'Matched to a compilation or an undated release.',
+            SystemReviewReason::Duplicate => 'This looks like a copy of something already here.',
+            SystemReviewReason::Quality => 'A quality check found something wrong.',
+            SystemReviewReason::Unreadable => 'This file could not be read.',
+            SystemReviewReason::CoverUncertain => 'Which cover is right?',
+            SystemReviewReason::CannotFile => 'This cannot be filed yet.',
+            SystemReviewReason::MoveFailed => 'Moving this file failed.',
+            SystemReviewReason::MissingFile => 'The file is not where the catalogue says.',
+            SystemReviewReason::Stuck => 'This gave up part way through.',
+        };
+    }
+
+    /** Why a machine cannot answer it, which is why it is here at all. */
+    private function becauseFor(SystemReviewReason $reason): string
+    {
+        return match ($reason) {
+            SystemReviewReason::MissingAlbum => 'Is this a single that never had one, or did the album tag fail to read? Nothing can tell those apart.',
+            SystemReviewReason::NoMatch => 'No source recognised it, so filing it would mean guessing at its artist and album.',
+            SystemReviewReason::AmbiguousMatch => 'Picking one would be a coin toss, and a wrong match renames the file.',
+            SystemReviewReason::LowConfidence => 'A text search is usually right and sometimes not. Only an identifier is certain.',
+            SystemReviewReason::CompilationOrUndated => 'The recording is right; the release it was matched to may not be the original.',
+            SystemReviewReason::Duplicate => 'Same work, same version, same quality. Which copy to keep depends on things only you can see.',
+            SystemReviewReason::Quality => 'The file may be truncated, silent, or not what it claims to be.',
+            SystemReviewReason::Unreadable => 'It may be corrupt, or not media at all.',
+            SystemReviewReason::CoverUncertain => 'Two copies carried different art, so whichever was kept is a guess.',
+            SystemReviewReason::CannotFile => 'The metadata a path is built from is missing, so there is nowhere to put it.',
+            SystemReviewReason::MoveFailed => 'The journal records which half happened, so nothing is lost -- but it needs finishing.',
+            SystemReviewReason::MissingFile => 'Either it moved without the catalogue noticing, or it is gone.',
+            SystemReviewReason::Stuck => 'It failed repeatedly, so a person should see the error before it tries again.',
+        };
     }
 
     /** Open user reports, which appear as extra evidence on an item. */
