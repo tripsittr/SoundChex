@@ -213,6 +213,19 @@ class DuplicateDetector
      */
     private function flag(MediaItem $item, MediaItem $original, DuplicateMatch $reason, bool $autoDeletable): MediaItem
     {
+        // Which of the two is the "original" is decided here, over the pair,
+        // rather than by whichever happened to be checked second.
+        //
+        // pickOriginal() ranked the *candidates* and never the item being
+        // checked, so checking an older filed row against a newer loose copy
+        // made the filed row the duplicate -- and under duplicate_action=auto
+        // the filed copy is the one deleted (#461). Done once here because
+        // every detection funnels through this method, where the eight
+        // pickOriginal() call sites would each need it.
+        if ($this->isFiled($item) && ! $this->isFiled($original)) {
+            [$item, $original] = [$original, $item];
+        }
+
         $item->forceFill([
             'duplicate_of_id' => $original->id,
             'duplicate_status' => DuplicateStatus::Pending,
@@ -607,6 +620,13 @@ class DuplicateDetector
             return false;
         }
 
+        // "Report" means list them and never act, including from the review
+        // screen -- which is what the settings page promises and what only the
+        // automatic sweep honoured (#461).
+        if (! $this->settings->mayResolveDuplicates()) {
+            return false;
+        }
+
         // A content match is two *different* files (a FLAC and an MP3 of the
         // same song), so the byte re-compare below would always fail and
         // un-flag the pair. Merging one is a deliberate "keep the other" choice,
@@ -699,6 +719,10 @@ class DuplicateDetector
             return false;
         }
 
+        if (! $this->settings->mayResolveDuplicates()) {
+            return false;
+        }
+
         [$keeper, $loser] = $keepDuplicate ? [$duplicate, $original] : [$original, $duplicate];
 
         $keeperPath = $keeper->absoluteFilePath();
@@ -741,6 +765,25 @@ class DuplicateDetector
             'duplicate_status' => DuplicateStatus::Merged,
             'needs_cover_review' => $this->coversDiffer($keeper, $loser),
         ])->saveQuietly();
+
+        // The loser's file is gone, so the loser's row must stop claiming to
+        // describe it -- and when the user kept the flagged copy, the loser is
+        // the *original*, whose row this method never touched. That left a row
+        // with a dead path, no status, its plays and playlist entries pointing
+        // at nothing, and any other duplicate flagged against it unresolvable:
+        // merge found no original and refused, which reads as a confusing
+        // "original is missing" skip (#461).
+        //
+        // Both rows end up pointing at the surviving file, which is what
+        // merge() has always done for the copy it deletes.
+        if ($loser->isNot($duplicate)) {
+            $loser->forceFill([
+                'file_path' => $keeper->file_path,
+                'content_hash' => null,
+                'duplicate_of_id' => $keeper->id,
+                'duplicate_status' => DuplicateStatus::Merged,
+            ])->saveQuietly();
+        }
 
         $this->remember($duplicate, DuplicateStatus::Merged);
 

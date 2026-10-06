@@ -76,6 +76,19 @@ class LibrarySettings
         return $this->duplicateAction() === 'auto';
     }
 
+    /**
+     * Whether any code path may act on a duplicate at all.
+     *
+     * The `report` action promises on the settings page that duplicates are
+     * only ever listed -- "never act, even from the review screen". Neither the
+     * table actions nor `library:duplicates --merge` checked it, so the promise
+     * held only for the automatic sweep (#461).
+     */
+    public function mayResolveDuplicates(): bool
+    {
+        return $this->duplicateAction() !== 'report';
+    }
+
     /** Bytes above which a file isn't hashed. Zero means no limit. */
     public function hashLimitBytes(): int
     {
