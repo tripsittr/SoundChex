@@ -43,6 +43,18 @@ class QueueControl
      */
     private const PAUSE_TTL_HOURS = 24;
 
+    /** Which job kinds are paused, as a list of short class names. */
+    private const PAUSED_JOBS_KEY = 'soundchex.queue.paused_jobs';
+
+    /** How many jobs may run at once; one worker per job. */
+    private const CONCURRENCY_KEY = 'queue.concurrency';
+
+    /**
+     * Beyond this the disk is the bottleneck rather than the queue, and an
+     * accidental 64 would make the machine unusable rather than fast.
+     */
+    public const MAX_CONCURRENCY = 8;
+
     /**
      * Whether work is paused.
      *
@@ -53,6 +65,97 @@ class QueueControl
      * The safe direction is to keep working. A stuck pause looks like the app
      * is broken; an ignored one is merely annoying.
      */
+    /**
+     * How many jobs may run at once.
+     *
+     * **One by default**, deliberately: enrichment is rate-limited by the
+     * services it calls -- MusicBrainz allows one request a second -- so a
+     * second job in parallel buys nothing there and doubles the chance of
+     * tripping a limit. Hashing and transcoding are the exceptions, bound by
+     * this machine rather than somebody else's, which is why the number is a
+     * setting rather than a constant.
+     *
+     * Implemented as the number of workers, because one worker takes one job
+     * at a time: that is what concurrency means for a queue.
+     *
+     * Capped at eight. Beyond that the disk is the bottleneck rather than the
+     * queue, and an accidental 64 would make the machine unusable rather than
+     * fast.
+     */
+    public function concurrency(): int
+    {
+        $count = (int) app(SettingsService::class)->get(self::CONCURRENCY_KEY, 1);
+
+        return max(1, min($count, self::MAX_CONCURRENCY));
+    }
+
+    public function setConcurrency(int $count): void
+    {
+        $count = max(1, min($count, self::MAX_CONCURRENCY));
+
+        app(SettingsService::class)->set(self::CONCURRENCY_KEY, $count);
+
+        Log::info('Job concurrency changed from the panel', ['jobs_at_once' => $count]);
+    }
+
+    /**
+     * Whether a particular kind of job is paused.
+     *
+     * Per job rather than all-or-nothing, because the reason to pause is
+     * almost always specific: enrichment is hammering a rate-limited API, or a
+     * transcode is making the machine unusable. Stopping everything to deal
+     * with one of them also stops the cover fetches and the duplicate scan,
+     * which were not the problem.
+     */
+    public function isJobPaused(string $job): bool
+    {
+        return in_array($job, $this->pausedJobs(), true);
+    }
+
+    /**
+     * Every job kind currently paused.
+     *
+     * @return array<int, string>
+     */
+    public function pausedJobs(): array
+    {
+        try {
+            $jobs = Cache::get(self::PAUSED_JOBS_KEY, []);
+
+            return is_array($jobs) ? array_values(array_filter($jobs, 'is_string')) : [];
+        } catch (\Throwable $e) {
+            Log::warning('Could not read the per-job pause list; treating all as running', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    public function pauseJob(string $job): void
+    {
+        $jobs = array_values(array_unique([...$this->pausedJobs(), $job]));
+
+        $until = now()->addHours(self::PAUSE_TTL_HOURS);
+
+        Cache::put(self::PAUSED_JOBS_KEY, $jobs, $until);
+
+        Log::info('A job kind was paused from the panel', ['job' => $job, 'until' => $until->toIso8601String()]);
+    }
+
+    public function resumeJob(string $job): void
+    {
+        $jobs = array_values(array_filter($this->pausedJobs(), fn (string $k): bool => $k !== $job));
+
+        if ($jobs === []) {
+            Cache::forget(self::PAUSED_JOBS_KEY);
+        } else {
+            Cache::put(self::PAUSED_JOBS_KEY, $jobs, now()->addHours(self::PAUSE_TTL_HOURS));
+        }
+
+        Log::info('A job kind was resumed from the panel', ['job' => $job]);
+    }
+
     public function isPaused(): bool
     {
         try {

@@ -16,6 +16,7 @@ use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskSkipped;
 use Illuminate\Http\Request;
+use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\WorkerStarting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -29,6 +30,14 @@ use Throwable;
 
 class AppServiceProvider extends ServiceProvider
 {
+    /**
+     * How long a paused job waits before being offered again.
+     *
+     * Long enough that a paused kind is not re-reserved every few seconds for
+     * hours, short enough that resuming is felt quickly.
+     */
+    private const PAUSED_JOB_RETRY_SECONDS = 60;
+
     /**
      * Register any application services.
      */
@@ -191,6 +200,27 @@ class AppServiceProvider extends ServiceProvider
         // `isPaused()` swallows a cache failure itself and answers "not
         // paused", so a broken cache cannot wedge the queue from here either.
         Queue::looping(fn (): bool => ! app(QueueControl::class)->isPaused());
+
+        // Per-job pause, which `looping` cannot express: that hook runs before
+        // a job is reserved and so has no idea which one is next. `before` has
+        // the job in hand, so a paused kind is released back to the queue --
+        // with a delay, or the worker would spin on it -- while every other
+        // kind keeps running.
+        //
+        // Releasing rather than deleting: a pause is "not now", and the work
+        // is still wanted. The job rejoins the queue and runs when the kind is
+        // resumed.
+        Queue::before(function (JobProcessing $event): void {
+            $name = class_basename((string) ($event->job->payload()['displayName'] ?? ''));
+
+            if ($name === '' || ! app(QueueControl::class)->isJobPaused($name)) {
+                return;
+            }
+
+            // Far enough out that a paused kind is not re-reserved every few
+            // seconds for hours, close enough that resuming is felt quickly.
+            $event->job->release(self::PAUSED_JOB_RETRY_SECONDS);
+        });
     }
 
     private function recordScheduledRuns(): void

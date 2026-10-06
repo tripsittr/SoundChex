@@ -88,6 +88,90 @@ class QueueControlsTest extends TestCase
         }
     }
 
+    /* ----------------------------------------------------- per-job ------ */
+
+    public function test_one_job_kind_can_be_paused_without_stopping_the_rest(): void
+    {
+        // The reason to pause is almost always specific -- enrichment hammering
+        // a rate-limited API, or a transcode making the machine unusable.
+        // Stopping everything also stops the cover fetches and the duplicate
+        // scan, which were not the problem.
+        $control = app(QueueControl::class);
+
+        $control->pauseJob('EnrichMediaItemJob');
+
+        $this->assertTrue($control->isJobPaused('EnrichMediaItemJob'));
+        $this->assertFalse($control->isJobPaused('TranscodeMediaJob'));
+
+        // And the global pause is untouched: the two are separate ideas.
+        $this->assertFalse($control->isPaused());
+    }
+
+    public function test_resuming_one_kind_leaves_the_others_paused(): void
+    {
+        $control = app(QueueControl::class);
+
+        $control->pauseJob('EnrichMediaItemJob');
+        $control->pauseJob('TranscodeMediaJob');
+        $control->resumeJob('EnrichMediaItemJob');
+
+        $this->assertFalse($control->isJobPaused('EnrichMediaItemJob'));
+        $this->assertTrue($control->isJobPaused('TranscodeMediaJob'));
+    }
+
+    public function test_pausing_the_same_kind_twice_does_not_duplicate_it(): void
+    {
+        $control = app(QueueControl::class);
+
+        $control->pauseJob('EnrichMediaItemJob');
+        $control->pauseJob('EnrichMediaItemJob');
+
+        $this->assertSame(['EnrichMediaItemJob'], $control->pausedJobs());
+    }
+
+    public function test_an_unreadable_cache_reports_nothing_paused(): void
+    {
+        // Same rule as the global pause: the safe direction is to keep working.
+        Cache::shouldReceive('get')->andThrow(new \RuntimeException('cache gone'));
+
+        $this->assertSame([], app(QueueControl::class)->pausedJobs());
+    }
+
+    /* ------------------------------------------------- concurrency ------ */
+
+    public function test_one_job_at_a_time_by_default(): void
+    {
+        // Deliberate: enrichment is rate-limited by the services it calls, so
+        // a second job in parallel buys nothing there and doubles the chance
+        // of tripping a limit.
+        $this->assertSame(1, app(QueueControl::class)->concurrency());
+    }
+
+    public function test_concurrency_can_be_raised_in_settings(): void
+    {
+        app(QueueControl::class)->setConcurrency(4);
+
+        $this->assertSame(4, app(QueueControl::class)->concurrency());
+    }
+
+    public function test_concurrency_is_capped(): void
+    {
+        // Beyond the cap the disk is the bottleneck rather than the queue, and
+        // an accidental 64 would make the machine unusable rather than fast.
+        app(QueueControl::class)->setConcurrency(999);
+
+        $this->assertSame(QueueControl::MAX_CONCURRENCY, app(QueueControl::class)->concurrency());
+    }
+
+    public function test_concurrency_never_drops_below_one(): void
+    {
+        // Zero would stop the queue through a setting that reads like a tuning
+        // knob, which is not how somebody expects to pause work.
+        app(QueueControl::class)->setConcurrency(0);
+
+        $this->assertSame(1, app(QueueControl::class)->concurrency());
+    }
+
     /* -------------------------------------------------------- cancel ---- */
 
     public function test_discarding_removes_queued_work(): void
