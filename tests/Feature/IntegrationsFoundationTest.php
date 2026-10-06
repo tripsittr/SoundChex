@@ -415,6 +415,56 @@ class IntegrationsFoundationTest extends TestCase
         $this->assertFalse($result['ok']);
     }
 
+    public function test_omdb_can_be_tested(): void
+    {
+        // Every other source I wired has a Test button; OMDb shipped without
+        // one, so a pasted key could only be confirmed by waiting for
+        // enrichment to run and reading the ratings afterwards.
+        $this->assertTrue(app(CredentialTester::class)->canTest('omdb_api_key'));
+    }
+
+    public function test_omdb_reports_a_bad_key_in_the_services_own_words(): void
+    {
+        // The trap, verified against the live API: OMDb returns **401 with the
+        // explanation in the body**. Branching on the status discards the one
+        // sentence worth showing -- "Invalid API key!" tells somebody what to
+        // fix, "The service rejected that key" does not. The first version of
+        // this did exactly that.
+        Http::fake(['*omdbapi.com*' => Http::response([
+            'Response' => 'False',
+            'Error' => 'Invalid API key!',
+        ], 401)]);
+
+        $result = app(CredentialTester::class)->test('omdb_api_key', ['omdb_api_key' => 'bad']);
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame('Invalid API key!', $result['message']);
+    }
+
+    public function test_omdb_accepts_a_working_key(): void
+    {
+        Http::fake(['*omdbapi.com*' => Http::response([
+            'Response' => 'True',
+            'Title' => 'The Shawshank Redemption',
+        ], 200)]);
+
+        $this->assertTrue(app(CredentialTester::class)->test('omdb_api_key', ['omdb_api_key' => 'good'])['ok']);
+    }
+
+    public function test_omdb_does_not_read_a_failure_body_as_success(): void
+    {
+        // A 200 with Response False is how OMDb answers a bad id, and a
+        // tester that trusted the status would call a wrong key working --
+        // worse than no test, because it actively misleads.
+        Http::fake(['*omdbapi.com*' => Http::response([
+            'Response' => 'False',
+            'Error' => 'Error getting data.',
+            'Title' => 'Looks real',
+        ], 200)]);
+
+        $this->assertFalse(app(CredentialTester::class)->test('omdb_api_key', ['omdb_api_key' => 'x'])['ok']);
+    }
+
     public function test_a_service_that_cannot_be_tested_says_so(): void
     {
         $this->assertFalse(app(CredentialTester::class)->canTest('discogs_token'));
