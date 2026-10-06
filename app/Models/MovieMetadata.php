@@ -37,11 +37,17 @@ class MovieMetadata extends Model
         'tagline',
         'imdb_rating',
         'rt_score',
+        // Filled by OMDb, which is the only source here that carries them
+        // (#504). The first two columns existed from the start with nothing
+        // writing them.
+        'awards',
+        'metascore',
     ];
 
     protected $casts = [
         'imdb_rating' => 'float',
         'rt_score' => 'float',
+        'metascore' => 'integer',
     ];
 
     public function mediaItem(): BelongsTo

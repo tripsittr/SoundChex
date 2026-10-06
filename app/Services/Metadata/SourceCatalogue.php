@@ -51,6 +51,7 @@ class SourceCatalogue
         Sources\Music\MusicBrainz::class,
         Sources\Music\AcoustId::class,
         Sources\Movie\Tmdb::class,
+        Sources\Movie\Omdb::class,
         Sources\Show\Tmdb::class,
         Sources\Show\Tvdb::class,
         Sources\Book\OpenLibrary::class,
@@ -107,6 +108,10 @@ class SourceCatalogue
             'group' => 'Artwork',
             'adds' => 'High-resolution cover art, and a fallback for album details. Free, no key.',
         ],
+        'OMDb' => [
+            'group' => 'Film & TV',
+            'adds' => 'The IMDb rating, the Rotten Tomatoes score, Metacritic, and the awards a film won. Nothing else here carries any of them. A free key.',
+        ],
         'TMDB' => [
             'group' => 'Film & TV',
             'adds' => 'Films and television: titles, years, synopses, cast, posters and backdrops. One free key covers both.',
@@ -143,11 +148,6 @@ class SourceCatalogue
      * @var array<string, array{label: string, group: string, would_add: string}>
      */
     public const UNIMPLEMENTED = [
-        'omdb_api_key' => [
-            'label' => 'OMDb',
-            'group' => 'Film & TV',
-            'would_add' => 'Ratings from IMDb, Rotten Tomatoes and Metacritic.',
-        ],
         'trakt_client_secret' => [
             'label' => 'Trakt',
             'group' => 'Film & TV',

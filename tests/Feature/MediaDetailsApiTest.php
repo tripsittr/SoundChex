@@ -265,4 +265,52 @@ class MediaDetailsApiTest extends TestCase
         $this->assertSame(7.5, (float) $detail['imdb_rating']);
         $this->assertSame(88, (int) $detail['rt_score']);
     }
+
+    public function test_the_detail_block_carries_awards_and_metascore(): void
+    {
+        // The whole point of implementing OMDb (#504): these had nowhere to go
+        // at all -- no awards column existed anywhere -- and the two score
+        // columns that did exist were null on every row.
+        $film = $this->film();
+
+        $film->movieMetadata()->create([
+            'imdb_rating' => 9.3,
+            'rt_score' => 89,
+            'metascore' => 82,
+            'awards' => 'Nominated for 7 Oscars. 21 wins & 43 nominations total',
+        ]);
+
+        $detail = $this->actingAs($this->user)
+            ->getJson("/api/v1/items/{$film->id}/details")
+            ->json('detail');
+
+        $this->assertSame(9.3, (float) $detail['imdb_rating']);
+        $this->assertSame(89, (int) $detail['rt_score']);
+        $this->assertSame(82, (int) $detail['metascore']);
+        $this->assertStringContainsString('7 Oscars', $detail['awards']);
+    }
+
+    public function test_a_show_carries_the_same_scores_as_a_film(): void
+    {
+        // OMDb answers for a series by IMDb id exactly as it does for a film,
+        // and a show with no scores beside a film that has them would read as a
+        // broken page rather than a gap in the data.
+        $show = MediaItem::unresolved()->create([
+            'user_id' => $this->user->id,
+            'title' => 'A Show',
+            'type' => MediaItemType::Show,
+            'file_path' => 'shows/a-show.mkv',
+            'processing_status' => ProcessingStatus::Complete,
+        ]);
+
+        $show->showMetadata()->create(['imdb_rating' => 8.7, 'rt_score' => 94, 'awards' => 'Won 3 Emmys.']);
+
+        $detail = $this->actingAs($this->user)
+            ->getJson("/api/v1/items/{$show->id}/details")
+            ->json('detail');
+
+        $this->assertSame(8.7, (float) $detail['imdb_rating']);
+        $this->assertSame(94, (int) $detail['rt_score']);
+        $this->assertSame('Won 3 Emmys.', $detail['awards']);
+    }
 }
