@@ -269,18 +269,6 @@ class Integrations extends Page
         Notification::make()->title($label.' connected.')->success()->send();
     }
 
-    /**
-     * Whether any of them are up.
-     *
-     * Drives the explanation at the top of the page: with none running, the
-     * useful thing to show is how to start them, not three identical rows
-     * saying the same thing.
-     */
-    public function anyRunning(): bool
-    {
-        return collect($this->apps)->contains(fn (array $app): bool => $app['running'] === true);
-    }
-
     protected function getHeaderActions(): array
     {
         return [
@@ -901,11 +889,5 @@ class Integrations extends Page
         $ok
             ? Notification::make()->title('Test sent — check the channel.')->success()->send()
             : Notification::make()->title('The endpoint did not accept the test.')->danger()->send();
-    }
-
-    /** The command that starts the stack, shown when nothing is running. */
-    public function startCommand(): string
-    {
-        return 'docker compose -f docker/arr/compose.yaml up -d';
     }
 }
