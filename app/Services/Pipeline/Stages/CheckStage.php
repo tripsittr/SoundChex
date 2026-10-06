@@ -8,22 +8,53 @@ namespace App\Services\Pipeline\Stages;
 use App\Jobs\Pipeline\StageOutcome;
 use App\Models\MediaItem;
 use App\Services\Pipeline\Stage;
+use App\Services\Quality\QualityChecker;
 
 /**
- * Checks the file is actually any good (#465, filled out by #467).
+ * Checks the file is actually any good (#467).
  *
- * A placeholder that passes through. Phase 4 adds the real checks -- truncated
- * files, CAM rips, fake lossless, decode errors, upsampled audio -- and the
- * quality profile they rank against. Nothing checks quality today, which is why
- * a truncated file and a transcoded "FLAC" import as healthy.
+ * Was a pass-through placeholder (#465). Nothing checked quality at all before
+ * this: a truncated file, a CAM rip and a file with no audio stream all
+ * imported as healthy, and the owner found out when they pressed play.
  *
- * Here now so the sequence is complete and #467 is a handler swap rather than a
- * pipeline change.
+ * Only the cheap checks run here -- everything answerable from the probe and
+ * the filename. The expensive ones (decoding the whole file for errors,
+ * reading the spectrum to catch a lossy file in a lossless container) belong
+ * in a background job that may finish after the item is published, because a
+ * good file should not wait on them.
  */
 class CheckStage implements Stage
 {
+    public function __construct(private QualityChecker $checker) {}
+
     public function run(MediaItem $item): StageOutcome
     {
-        return StageOutcome::skipped('quality checks arrive with #467');
+        $findings = $this->checker->check($item);
+
+        if ($findings === []) {
+            return StageOutcome::done();
+        }
+
+        $blocking = array_values(array_filter(
+            $findings,
+            fn ($finding): bool => $finding->isBlocking(),
+        ));
+
+        if ($blocking === []) {
+            // Warnings are recorded and do not stop anything. A library full
+            // of blocked files nobody asked about is how a quality check gets
+            // switched off.
+            return StageOutcome::skipped(count($findings).' quality note(s) recorded');
+        }
+
+        // Named, because "quality problem" tells a person nothing and the
+        // whole point of a review item is that it says what to do.
+        $reasons = array_map(
+            fn ($finding): string => str_replace('_', ' ', (string) $finding->check)
+                .' ('.$finding->value.' vs '.$finding->threshold.')',
+            $blocking,
+        );
+
+        return StageOutcome::needsReview(implode('; ', $reasons));
     }
 }
