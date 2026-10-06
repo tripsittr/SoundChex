@@ -61,6 +61,13 @@ class ReviewQueue
      * rather than hiding it, so the set of controls does not shift under
      * somebody between visits.
      *
+     * One `COUNT` per job rather than a single grouped query, which a5 noted
+     * on review. Deliberate: a job is *defined* by its predicate in `query()`,
+     * and those predicates have to stay mutually exclusive or the counts lie
+     * and the same decision is offered twice. A grouped query would restate
+     * that logic as a CASE expression in a second place, and the two would
+     * drift. Four counts on indexed columns is the cheaper mistake.
+     *
      * @return array<string, int>
      */
     public function counts(): array

@@ -61,6 +61,56 @@ class ReviewQueuePageTest extends TestCase
         Filament::setCurrentPanel('admin');
     }
 
+    /* ----------------------------------------------------------- gate --- */
+
+    public function test_a_profile_without_library_administration_is_refused(): void
+    {
+        // a5's review note 2. The gate comes from RestrictsToAdmins and is
+        // covered where that trait lives, so this page is transitively safe --
+        // but a screen whose buttons merge duplicates and delete files should
+        // assert its own door rather than inherit the claim. If somebody
+        // later gives this page its own canAccess(), this is what catches a
+        // mistake in it.
+        $member = Profile::create([
+            'user_id' => $this->user->id,
+            'name' => 'Member',
+            'is_owner' => false,
+        ]);
+
+        app(CurrentProfile::class)->switchTo($member->id);
+
+        $this->assertFalse(
+            $member->canAdministerLibrary(),
+            'Precondition: a plain member holds neither library nor server administration.',
+        );
+        $this->assertFalse(
+            ReviewQueuePage::canAccess(),
+            'A profile that cannot administer the library must not reach a screen that merges duplicates and deletes files.',
+        );
+    }
+
+    public function test_the_owner_profile_reaches_the_page(): void
+    {
+        // The other half: the owner cannot be locked out, or a household with
+        // nobody able to review would need database surgery.
+        $this->assertTrue(ReviewQueuePage::canAccess());
+    }
+
+    public function test_the_page_is_hidden_from_navigation_for_a_refused_profile(): void
+    {
+        // Cosmetic on its own -- canAccess() is the real gate -- but a menu
+        // entry that 403s when clicked is worse than no entry.
+        $member = Profile::create([
+            'user_id' => $this->user->id,
+            'name' => 'Member 2',
+            'is_owner' => false,
+        ]);
+
+        app(CurrentProfile::class)->switchTo($member->id);
+
+        $this->assertFalse(ReviewQueuePage::shouldRegisterNavigation());
+    }
+
     /* ---------------------------------------------------------- queue --- */
 
     public function test_the_four_jobs_are_mutually_exclusive(): void
