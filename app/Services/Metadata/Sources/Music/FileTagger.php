@@ -23,6 +23,11 @@ use Illuminate\Support\Str;
  */
 class FileTagger implements MetadataSource
 {
+    /**
+     * Above this, a "track number" is something else — see `trackNumber()`.
+     */
+    private const MAX_TRACK_NUMBER = 100;
+
     public function name(): string
     {
         return 'File Tags (getID3)';
@@ -158,7 +163,11 @@ class FileTagger implements MetadataSource
             'title' => $first('title'),
             'label' => $first('publisher') ?? $first('label'),
             'isrc' => $first('isrc'),
-            'track_number' => $this->leadingInt($first('track_number') ?? $first('track')),
+            // Sanity-checked, because the stored values were mostly not track
+            // numbers at all (#507): 7,654 of 8,233 rows on a real library
+            // exceeded 100, matching the index prefix on the filename
+            // ("906 Stressed Out.mp3" -> 906).
+            'track_number' => $this->trackNumber($first('track_number') ?? $first('track')),
             'disc_number' => $this->leadingInt($first('part_of_a_set') ?? $first('discnumber')),
             'release_year' => $this->extractYear($year),
             'bpm' => is_numeric($bpm) ? round((float) $bpm, 1) : null,
@@ -559,6 +568,35 @@ class FileTagger implements MetadataSource
             strtoupper($m[1]),
             $scaleRaw ? ($scaleMap[$scaleRaw] ?? null) : null,
         ];
+    }
+
+    /**
+     * A track number, or null when the tag is plainly not one.
+     *
+     * Measured on a real library: **7,654 of 8,233** stored values exceeded
+     * 100, and each matched the index prefix on its filename — `906 Stressed
+     * Out.mp3` stored as track 906. Only 579 were plausible. Disc numbers had
+     * no such problem, so this is specific to the track field.
+     *
+     * Rejected rather than clamped. A wrong small number is worse than none: it
+     * reads as real, sorts an album into nonsense, and nothing later can tell
+     * it was invented. Null leaves the field open for a real tag read or a
+     * metadata source to fill.
+     *
+     * The ceiling is deliberately generous. The longest plausible single-disc
+     * running order is nowhere near 100 tracks, and multi-disc sets carry a
+     * separate disc number — so anything above it is a counter, an index or a
+     * year, not a position on a record.
+     */
+    private function trackNumber(?string $raw): ?int
+    {
+        $value = $this->leadingInt($raw);
+
+        if ($value === null) {
+            return null;
+        }
+
+        return ($value >= 1 && $value <= self::MAX_TRACK_NUMBER) ? $value : null;
     }
 
     /** Track tags are often "3/12" — take the leading number. */
