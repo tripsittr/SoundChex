@@ -84,8 +84,11 @@ class MediaController extends Controller
 
         return response()->json([
             ...$decision->toArray(),
+            // The API playlist, not the web one: the web route is behind
+            // session auth and its segments are too, and a native player
+            // cannot carry credentials on a segment fetch at all.
             'url' => $decision->transcode
-                ? route('media.hls.playlist', ['item' => $item->id, 'from' => 0])
+                ? route('api.hls.playlist', ['item' => $item->id, 'from' => 0])
                 : route('api.items.stream', $item),
             // Whether a direct download would give this client something it
             // can actually open. The app asks before offering one, so it can
