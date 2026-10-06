@@ -5,6 +5,7 @@
 
 namespace App\Services;
 
+use App\Enums\FileMoveKind;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
@@ -12,6 +13,7 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Moves catalogued files into an organized Artist/Album/## Track tree.
@@ -22,7 +24,10 @@ use Illuminate\Support\Facades\Storage;
  */
 class LibraryOrganizer
 {
-    public function __construct(private MediaTrash $trash) {}
+    public function __construct(
+        private MediaTrash $trash,
+        private FileMoveJournal $journal,
+    ) {}
 
     /**
      * Whether an item is ready to be filed.
@@ -325,9 +330,95 @@ class LibraryOrganizer
 
         $this->repointPeersForSharedSource($item, $storedSource, $relative);
 
+        // Subtitles and artwork that shipped beside the file follow it. Nothing
+        // moved them before, so filing a film orphaned its captions: the player
+        // looks for them next to the video, and they stayed in the inbox
+        // (#468). Done after the row is saved, because a sidecar that fails to
+        // move is a missing subtitle rather than a lost film.
+        $this->moveSidecars($item, $source, $absoluteTarget);
+
         $this->pruneEmptyParents(dirname($source));
 
         return $relative;
+    }
+
+    /**
+     * Extensions that belong to the file beside them rather than standing alone.
+     *
+     * Subtitles and lyrics are named for their media file; `.nfo` and `.cue`
+     * describe it. All of them are found by stem, so they have to travel with
+     * it or the player stops finding them.
+     */
+    private const SIDECAR_EXTENSIONS = ['srt', 'ass', 'ssa', 'vtt', 'sub', 'idx', 'lrc', 'nfo', 'cue'];
+
+    /**
+     * Moves anything named after the file that just moved.
+     *
+     * Matched on the **exact stem**, optionally followed by a language or flag
+     * suffix: `Alien.srt`, `Alien.en.srt`, `Alien.en.forced.srt`. Deliberately
+     * not a prefix glob -- `SubtitleImporter` uses `base*.srt` and that lets
+     * `Alien.mkv` claim `Aliens.en.srt`, which is the bug this must not repeat.
+     *
+     * Never overwrites: a sidecar already at the target is left alone, because
+     * it is more likely to be the right one than the stray this is carrying.
+     *
+     * Journalled, like the media move itself. a5 noted on review that raw
+     * `rename()` here left an asymmetry: a crash between the journalled media
+     * move and these would orphan a sidecar in the old folder -- present and
+     * logged, not lost, but invisible to the reconciler. Recording them means
+     * the sweeper can finish or reverse them like anything else.
+     *
+     * The journal rows carry the media item's id, because that is what relates
+     * a subtitle to its film -- and `FileMoveKind::Sidecar` is why that does
+     * not make the reconciler repoint `file_path` at a `.srt`.
+     */
+    private function moveSidecars(MediaItem $item, string $source, string $target): void
+    {
+        $directory = dirname($source);
+        $stem = pathinfo($source, PATHINFO_FILENAME);
+
+        if ($stem === '' || ! is_dir($directory)) {
+            return;
+        }
+
+        $targetDirectory = dirname($target);
+        $targetStem = pathinfo($target, PATHINFO_FILENAME);
+
+        // One batch for the whole set, so `library:undo-moves --batch` puts a
+        // film's captions back with it rather than one at a time.
+        $batchId = (string) Str::uuid();
+
+        foreach ((array) scandir($directory) as $entry) {
+            if (! is_string($entry) || $entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            $extension = strtolower(pathinfo($entry, PATHINFO_EXTENSION));
+
+            if (! in_array($extension, self::SIDECAR_EXTENSIONS, true)) {
+                continue;
+            }
+
+            // The part between the stem and the extension: "" for Alien.srt,
+            // ".en" for Alien.en.srt. Anything else is a different file.
+            $entryStem = pathinfo($entry, PATHINFO_FILENAME);
+
+            if ($entryStem !== $stem && ! str_starts_with($entryStem, $stem.'.')) {
+                continue;
+            }
+
+            $qualifier = substr($entryStem, strlen($stem));
+            $from = $directory.'/'.$entry;
+            $to = $targetDirectory.'/'.$targetStem.$qualifier.'.'.$extension;
+
+            if (! is_file($from) || file_exists($to)) {
+                continue;
+            }
+
+            // The journal logs its own failures with both paths, which is the
+            // clue behind "it was there before I organised".
+            $this->journal->move($item, $from, $to, FileMoveKind::Sidecar, $batchId);
+        }
     }
 
     /**
@@ -389,7 +480,17 @@ class LibraryOrganizer
     {
         $meta = $item->musicMetadata;
 
-        $artist = $this->segment($meta?->artist);
+        // The ALBUM artist decides the folder, falling back to the track's own
+        // when there is none. A compilation's tracks each have a different
+        // performer but one shelf, and using the track artist scattered them:
+        // measured on this library, 160 albums would spread across 429 folders,
+        // and the Stranger Things soundtrack split into 14 folders for 14
+        // tracks -- one per track (#468).
+        //
+        // The fallback is why most files are unaffected: a single artist's
+        // album has no album-artist tag and needs none.
+        $artist = $this->segment($meta?->album_artist)
+            ?? $this->segment($meta?->artist);
 
         if ($artist === null) {
             return null;
@@ -414,6 +515,10 @@ class LibraryOrganizer
         // Stripped here as well as fixed at the source, because a title that
         // arrives in that shape from anywhere should not be written to disk in
         // it.
+        // Stripped against the TRACK artist, not the folder's album artist: on
+        // a compilation the performer is the one thing the filename should
+        // keep, and stripping the album artist would leave every file named
+        // after the compilation.
         return [$artist, $album, $track.$this->withoutArtist($title, $meta?->artist).$suffix];
     }
 

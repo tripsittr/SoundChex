@@ -367,6 +367,200 @@ class LibraryOrganizerTest extends TestCase
         );
     }
 
+    /* ---------------------------------------------------- album artist -- */
+
+    public function test_a_compilation_files_under_its_album_artist(): void
+    {
+        // Using the track artist scattered compilations: measured on this
+        // library, 160 albums would spread across 429 folders, and the
+        // Stranger Things soundtrack split into 14 folders for 14 tracks --
+        // one per track (#468).
+        $first = $this->compilationTrack('Running Up That Hill', 'Kate Bush', 1);
+        $second = $this->compilationTrack('Master of Puppets', 'Metallica', 2);
+
+        $this->assertSame(
+            'media/library/Music/Various Artists/Stranger Things Soundtrack/01 Running Up That Hill.mp3',
+            $this->organizer->targetPath($first),
+        );
+        $this->assertSame(
+            'media/library/Music/Various Artists/Stranger Things Soundtrack/02 Master of Puppets.mp3',
+            $this->organizer->targetPath($second),
+            'Both tracks belong on one shelf, whoever performed them.',
+        );
+    }
+
+    public function test_a_track_with_no_album_artist_still_files_under_its_own(): void
+    {
+        // Why most of the library is unaffected: a single artist's album has
+        // no album-artist tag and needs none.
+        $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors', track: 3);
+
+        $this->assertSame(
+            'media/library/Music/flipturn/Heavy Colors/03 Chicago.mp3',
+            $this->organizer->targetPath($item),
+        );
+    }
+
+    private function compilationTrack(string $title, string $artist, int $track): MediaItem
+    {
+        $path = 'media/unsorted/'.str($title)->slug().'.mp3';
+        Storage::disk('local')->put($path, 'audio');
+
+        $item = MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => $title,
+            'file_path' => Storage::disk('local')->path($path),
+            'match_confidence' => MatchConfidence::Exact,
+            'owned' => true,
+        ]);
+
+        $item->musicMetadata()->create([
+            'artist' => $artist,
+            'album_artist' => 'Various Artists',
+            'album' => 'Stranger Things Soundtrack',
+            'track_number' => $track,
+        ]);
+
+        return $item->fresh();
+    }
+
+    /* --------------------------------------------------------- sidecars -- */
+
+    public function test_subtitles_travel_with_the_film(): void
+    {
+        // Nothing moved them before, so filing a film orphaned its captions:
+        // the player looks beside the video and they stayed in the inbox.
+        $disk = Storage::disk('local');
+
+        $item = $this->movie('Backrooms', year: 2026);
+        $source = $item->absoluteFilePath();
+        $stem = pathinfo($source, PATHINFO_FILENAME);
+
+        file_put_contents(dirname($source).'/'.$stem.'.srt', 'WEBVTT');
+        file_put_contents(dirname($source).'/'.$stem.'.en.srt', 'english');
+
+        $target = $this->organizer->organize($item);
+
+        $this->assertNotNull($target);
+
+        $filedStem = pathinfo($disk->path($target), PATHINFO_FILENAME);
+        $filedDir = dirname($disk->path($target));
+
+        $this->assertFileExists($filedDir.'/'.$filedStem.'.srt');
+        $this->assertFileExists(
+            $filedDir.'/'.$filedStem.'.en.srt',
+            'A language suffix must be kept, or the player stops matching it.',
+        );
+    }
+
+    public function test_a_similarly_named_film_does_not_steal_a_sidecar(): void
+    {
+        // SubtitleImporter globs `base*.srt`, which lets Alien.mkv claim
+        // Aliens.en.srt. Matching on the exact stem is what stops that, and
+        // this is the test that would catch it coming back.
+        $item = $this->movie('Alien', year: 1979);
+        $source = $item->absoluteFilePath();
+        $stem = pathinfo($source, PATHINFO_FILENAME);
+
+        // A different film's subtitle, whose name merely starts the same way.
+        $neighbour = dirname($source).'/'.$stem.'s.en.srt';
+        file_put_contents($neighbour, 'belongs to Aliens');
+
+        $this->organizer->organize($item);
+
+        $this->assertFileExists($neighbour, "Another film's subtitle must be left where it is.");
+    }
+
+    public function test_an_existing_sidecar_at_the_target_is_not_overwritten(): void
+    {
+        // One already filed is more likely to be the right one than the stray
+        // being carried in.
+        $disk = Storage::disk('local');
+
+        $item = $this->movie('Backrooms', year: 2026);
+        $source = $item->absoluteFilePath();
+        $stem = pathinfo($source, PATHINFO_FILENAME);
+        file_put_contents(dirname($source).'/'.$stem.'.srt', 'the incoming one');
+
+        $filed = 'media/library/Movies/Backrooms (2026)/Backrooms (2026).srt';
+        $disk->put($filed, 'the one already there');
+
+        $this->organizer->organize($item);
+
+        $this->assertSame('the one already there', $disk->get($filed));
+    }
+
+    public function test_an_unrelated_file_in_the_folder_is_left_alone(): void
+    {
+        // Only the extensions that belong to a media file travel with it.
+        $item = $this->movie('Backrooms', year: 2026);
+        $source = $item->absoluteFilePath();
+
+        $unrelated = dirname($source).'/notes.txt';
+        file_put_contents($unrelated, 'mine');
+
+        $this->organizer->organize($item);
+
+        $this->assertFileExists($unrelated);
+    }
+
+    public function test_sidecar_moves_are_journalled(): void
+    {
+        // a5's note on #278: raw rename() left an asymmetry -- a crash between
+        // the journalled media move and the sidecar moves would orphan a
+        // subtitle in the old folder, present and logged but invisible to the
+        // reconciler. Journalling them means the sweeper can finish or reverse
+        // them like anything else.
+        $item = $this->movie('Backrooms', year: 2026);
+        $source = $item->absoluteFilePath();
+        $stem = pathinfo($source, PATHINFO_FILENAME);
+
+        file_put_contents(dirname($source).'/'.$stem.'.srt', 'WEBVTT');
+        file_put_contents(dirname($source).'/'.$stem.'.en.srt', 'english');
+
+        $this->organizer->organize($item);
+
+        $sidecarMoves = \App\Models\FileMove::where('kind', \App\Enums\FileMoveKind::Sidecar)->get();
+
+        $this->assertCount(2, $sidecarMoves, 'Both subtitles should be recorded.');
+        $this->assertSame(
+            1,
+            $sidecarMoves->pluck('batch_id')->unique()->count(),
+            'One batch, so an undo puts a film\'s captions back together.',
+        );
+    }
+
+    public function test_reconciling_a_sidecar_does_not_repoint_the_item_at_it(): void
+    {
+        // The hazard journalling introduces, and why Sidecar is its own kind.
+        // A journalled sidecar carries the media item's id -- that is what
+        // relates a subtitle to its film -- and reconcile() repoints
+        // `file_path` for any non-trash move with an item attached. Without
+        // the exclusion the catalogue would end up aimed at a .srt.
+        $item = $this->movie('Backrooms', year: 2026);
+        $source = $item->absoluteFilePath();
+        $stem = pathinfo($source, PATHINFO_FILENAME);
+        file_put_contents(dirname($source).'/'.$stem.'.srt', 'WEBVTT');
+
+        $this->organizer->organize($item);
+
+        $filmPath = $item->fresh()->file_path;
+
+        // Force the sidecar's row back to `started`, as a crash mid-move would.
+        \App\Models\FileMove::where('kind', \App\Enums\FileMoveKind::Sidecar)
+            ->update(['state' => \App\Enums\FileMoveState::Started->value]);
+
+        app(\App\Services\FileMoveJournal::class)->reconcile();
+
+        $this->assertSame(
+            $filmPath,
+            $item->fresh()->file_path,
+            'The item must still point at the film, not at its subtitle.',
+        );
+        $this->assertStringEndsNotWith('.srt', (string) $item->fresh()->file_path);
+    }
+
     /* ----------------------------------------------------- path safety -- */
 
     public function test_a_long_title_is_truncated_by_bytes_not_characters(): void

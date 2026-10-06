@@ -146,6 +146,14 @@ class FileTagger implements MetadataSource
 
         return array_filter([
             'artist' => static::stripIndexPrefix($first('artist') ?? $first('album_artist')),
+            // The shelf an album belongs on, as distinct from a track's own
+            // performer. Read as its own field rather than only as a fallback:
+            // the track artist names who played, the album artist names where
+            // it is filed, and conflating them scatters a compilation into one
+            // folder per track (#468).
+            'album_artist' => static::stripIndexPrefix(
+                $firstOf('album_artist', 'albumartist', 'album artist', 'band')
+            ),
             'album' => $first('album'),
             'title' => $first('title'),
             'label' => $first('publisher') ?? $first('label'),

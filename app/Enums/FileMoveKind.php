@@ -23,6 +23,16 @@ enum FileMoveKind: string
     /** Restored from the trash, or undone. Recorded so an undo is itself audited. */
     case Restore = 'restore';
 
+    /**
+     * A subtitle, lyric or `.nfo` travelling with the media file it names.
+     *
+     * Its own kind because the reconciler must **not** repoint the item's
+     * `file_path` at it: a journalled sidecar carries the film's id (that is
+     * what relates them), and treating the move like the film's own would
+     * leave the catalogue pointing at a `.srt` (a5's review of #278).
+     */
+    case Sidecar = 'sidecar';
+
     public function label(): string
     {
         return match ($this) {
@@ -31,6 +41,7 @@ enum FileMoveKind: string
             self::Trash => 'Moved to trash',
             self::Archive => 'Archived',
             self::Restore => 'Restored',
+            self::Sidecar => 'Moved with its media',
         };
     }
 }
