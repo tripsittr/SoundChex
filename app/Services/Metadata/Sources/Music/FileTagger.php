@@ -119,6 +119,26 @@ class FileTagger implements MetadataSource
             ? trim((string) $tags[$key][0])
             : null;
 
+        // The first of several spellings that is present.
+        //
+        // Taggers do not agree on these key names. Picard writes
+        // `MUSICBRAINZ_TRACKID` into Vorbis comments and `MusicBrainz Track Id`
+        // into an ID3v2 TXXX frame; other tools write `musicbrainz_recordingid`
+        // or `MusicBrainz Recording Id`. `normalizedTags()` lowercases keys but
+        // does not strip spaces or underscores, so each of those is a *distinct*
+        // key and reading only one silently misses the rest.
+        $firstOf = function (string ...$keys) use ($first): ?string {
+            foreach ($keys as $key) {
+                $value = $first($key);
+
+                if ($value !== null) {
+                    return $value;
+                }
+            }
+
+            return null;
+        };
+
         $bpm = $first('bpm');
         $year = $first('year') ?? $first('date') ?? $first('creation_date');
 
@@ -136,8 +156,30 @@ class FileTagger implements MetadataSource
             'bpm' => is_numeric($bpm) ? round((float) $bpm, 1) : null,
             'key' => $key,
             'scale' => $scale,
-            'musicbrainz_recording_id' => $first('musicbrainz_recordingid'),
-            'musicbrainz_release_id' => $first('musicbrainz_albumid'),
+            // Every documented spelling, because the key a file used depends
+            // on which tagger wrote it (see $firstOf above). Order is most to
+            // least specific: a *recording* id identifies the performance,
+            // while Picard's "track id" is that same recording id under its
+            // older name -- not the release-track id, which is a different
+            // thing and deliberately not read here.
+            'musicbrainz_recording_id' => $firstOf(
+                'musicbrainz_recordingid',
+                'musicbrainz recording id',
+                'musicbrainz_trackid',
+                'musicbrainz track id',
+            ),
+            'musicbrainz_release_id' => $firstOf(
+                'musicbrainz_albumid',
+                'musicbrainz album id',
+            ),
+            // Picard writes this and nothing read it, so a fingerprinted file
+            // arrived with its AcoustID on disk and none in the database --
+            // which is one of the five causes in the audit's 4.4.
+            'acoustid' => $firstOf(
+                'acoustid_id',
+                'acoustid id',
+                'acoustid_fingerprint',
+            ),
         ], fn ($v) => $v !== null && $v !== '');
     }
 

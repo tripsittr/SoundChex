@@ -91,3 +91,26 @@ with `fpcalc`, which is #466's work rather than a database re-score.
   fingerprinting and the parser fixes. A far smaller problem than 8,440.
 - **a5 should check the same numbers on the Windows library** before assuming
   this picture holds there; the plan's 8,440 figure came from somewhere.
+
+### Identifier tags are read whichever spelling the tagger used
+
+`normalizedTags()` lowercases tag keys but does **not** strip spaces or
+underscores, so `MUSICBRAINZ_TRACKID`, `MusicBrainz Track Id` and
+`musicbrainz_recordingid` are three distinct keys. The code read one.
+
+All documented spellings are now tried in order, most specific first — a
+*recording* id names the performance, and Picard's "track id" is that same id
+under its older name. AcoustID is read for the first time: Picard writes it and
+nothing looked, so a fingerprinted file arrived with its AcoustID on disk and
+none in the database.
+
+This is the audit's cause 3, and it is **not** why this library reads as
+unmatched (6,050 rows do carry a recording id). It is a real gap for files
+tagged by a tool whose spelling differs, which is why it is fixed here and not
+presented as the headline.
+
+The tests drive `taggedFields()` with synthetic getID3 output, because the Mac
+has no media on it — the library's files live elsewhere, so `absoluteFilePath()`
+returns null for all 8,314 rows. **a5 should confirm against real
+Picard-tagged files**, which is the only way to know which spellings actually
+occur. Five of the nine fail without the fix.
