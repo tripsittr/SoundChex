@@ -86,6 +86,34 @@ flickers. It only resolves an ambiguous "play this song" — a playlist entry, a
 shuffle. **Every version stays browsable in its own release**, which is what
 the user asked for and the opposite of a hidden picker.
 
+### The dedupe stage uses the verdict now
+
+`DedupeStage` classifies first, then asks the grouper what the pair is. A
+version, a quality variant or an unrelated pair **clears the duplicate flag**
+the detector had just set and continues — leaving it would put a version in the
+duplicate queue, which is the behaviour being fixed.
+
+The flag is cleared here rather than by teaching `DuplicateDetector` about
+editions, because that would duplicate the version model inside it.
+
+### `library:group-versions` for the existing library
+
+Derived entirely from identifiers already stored, so no network and no rate
+limit. **Run on this library:**
+
+```
+1,449 works have more than one copy, involving 3,296 rows
+```
+
+All 1,449 are same-edition, so on this library they are genuine duplicate
+candidates rather than versions — and spot-checking confirms it: same title,
+same album, sizes within ~100 bytes.
+
+Every one of those pairs also shows the #487 stale-hash signature (identical
+hash, different size), so the size guard is doing real work: they reach
+`duplicate` — a review item — instead of being auto-resolved on a hash that
+cannot be trusted.
+
 ## Worth knowing
 
 - **Nothing is backfilled yet.** Existing rows have no `work_key` until
