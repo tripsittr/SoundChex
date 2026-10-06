@@ -8,6 +8,10 @@
     $scheduled = $this->scheduled();
 
     $schedulerAlive = $heartbeat !== null && $heartbeat > now()->subMinutes(10)->timestamp;
+
+    $paused = $this->isPaused();
+    $rate = $this->throughput();
+    $remaining = $this->remaining();
 @endphp
 
 <x-filament-widgets::widget>
@@ -23,7 +27,25 @@
                      to the preceding word is left as literal text while its @endif
                      still compiles, and the page dies on a stray endif. --}}
                 {{ number_format($totalPending) }} waiting{{ $totalFailed > 0 ? ', '.number_format($totalFailed).' failed' : '' }}.
-                @if ($totalPending > 0 && ! $workerSeen)
+
+                @if ($paused)
+                    {{-- Said first and plainly: a paused queue looks exactly
+                         like a stuck one, and that ambiguity is the whole
+                         reason somebody opens this widget. --}}
+                    <span class="font-medium text-warning-600 dark:text-warning-400">
+                        Paused{{ $this->pausedUntil() ? ' — lapses at '.$this->pausedUntil() : '' }}.
+                        Anything already running finishes.
+                    </span>
+                @elseif ($rate !== null && $rate > 0)
+                    {{-- Measured, not estimated. A rate-limited source like
+                         MusicBrainz at one request a second is nothing a
+                         static guess would capture. --}}
+                    <span class="text-gray-500 dark:text-gray-400">
+                        About {{ $rate }} a minute{{ $remaining ? ', done in '.$remaining : '' }}.
+                    </span>
+                @endif
+
+                @if ($totalPending > 0 && ! $workerSeen && ! $paused)
                     {{-- Nothing reserved. Could be between jobs, could be a dead
                          worker; say which it might be rather than asserting. --}}
                     <span class="text-warning-600 dark:text-warning-400">
@@ -33,12 +55,40 @@
             @endif
         </x-slot>
 
-        <x-slot name="headerEnd">
-            @if ($totalFailed > 0)
-                <x-filament::button wire:click="retryFailed" size="sm" color="warning">
-                    Retry {{ number_format($totalFailed) }} failed
-                </x-filament::button>
-            @endif
+        {{-- `afterHeader`, not `headerEnd`: the section component has no such
+             slot, so this whole block -- including the Retry button, which
+             predates these controls -- was silently dropped and never rendered
+             once. --}}
+        <x-slot name="afterHeader">
+            <div class="flex flex-wrap items-center gap-2">
+                @if ($totalFailed > 0)
+                    <x-filament::button wire:click="retryFailed" size="sm" color="warning">
+                        Retry {{ number_format($totalFailed) }} failed
+                    </x-filament::button>
+
+                    {{-- Clearing is distinct from retrying: these rows are a
+                         log, so clearing them loses the reasons and cancels
+                         nothing. The confirmation says exactly that. --}}
+                    {{ $this->clearFailedAction }}
+                @endif
+
+                @if ($paused)
+                    <x-filament::button wire:click="resume" size="sm" color="success">
+                        Resume
+                    </x-filament::button>
+                @elseif ($totalPending > 0)
+                    {{-- Pause, not stop: the worker keeps running and simply
+                         declines the next job, so nothing in flight is cut
+                         off. --}}
+                    <x-filament::button wire:click="pause" size="sm" color="gray">
+                        Pause
+                    </x-filament::button>
+                @endif
+
+                @if ($totalPending > 0)
+                    {{ $this->cancelAllAction }}
+                @endif
+            </div>
         </x-slot>
 
         @if ($pending->isEmpty() && $failed->isEmpty())
@@ -56,7 +106,8 @@
                             <th class="py-2 pr-4 font-medium text-right">Waiting</th>
                             <th class="py-2 pr-4 font-medium text-right">Running</th>
                             <th class="py-2 pr-4 font-medium">Oldest</th>
-                            <th class="py-2 font-medium text-right">Retried</th>
+                            <th class="py-2 pr-4 font-medium text-right">Retried</th>
+                            <th class="py-2 font-medium text-right">Share</th>
                         </tr>
                     </thead>
 
@@ -85,12 +136,26 @@
                                 <td class="py-2 pr-4 text-gray-600 dark:text-gray-300">
                                     {{ $row['oldest']?->diffForHumans() ?? '—' }}
                                 </td>
-                                <td class="py-2 text-right tabular-nums">
+                                <td class="py-2 pr-4 text-right tabular-nums">
                                     @if ($row['attempted'] > 0)
                                         <span class="text-warning-600 dark:text-warning-400">{{ $row['attempted'] }}</span>
                                     @else
                                         <span class="text-gray-400">0</span>
                                     @endif
+                                </td>
+
+                                {{-- Which job the backlog actually is. With one
+                                     kind at 6,398 of 6,404 the number alone
+                                     reads as "the queue is busy", where the
+                                     share says "it is this one". --}}
+                                <td class="py-2 text-right">
+                                    @php $share = $totalPending > 0 ? (int) round($row['queued'] / $totalPending * 100) : 0; @endphp
+                                    <div class="flex items-center justify-end gap-2">
+                                        <div class="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-white/10">
+                                            <div class="h-full rounded-full bg-primary-500" style="width: {{ $share }}%"></div>
+                                        </div>
+                                        <span class="w-9 text-right tabular-nums text-xs text-gray-500 dark:text-gray-400">{{ $share }}%</span>
+                                    </div>
                                 </td>
                             </tr>
                         @endforeach

@@ -6,8 +6,10 @@
 namespace App\Filament\Widgets;
 
 use App\Filament\Pages\Dashboard;
+use App\Services\QueueControl;
 use App\Services\QueueInspector;
 use App\Services\ScheduleInspector;
+use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
@@ -104,6 +106,141 @@ class QueueActivity extends Widget implements HasActions, HasSchemas
     public function scheduled(): Collection
     {
         return app(ScheduleInspector::class)->all();
+    }
+
+    /* ----------------------------------------------------- controls ----- */
+
+    public function isPaused(): bool
+    {
+        return app(QueueControl::class)->isPaused();
+    }
+
+    /** When a pause lapses by itself, so a forgotten one is visible. */
+    public function pausedUntil(): ?string
+    {
+        return app(QueueControl::class)->pausedUntil()?->format('H:i');
+    }
+
+    /** Jobs a minute, measured rather than estimated. Null until two samples. */
+    public function throughput(): ?float
+    {
+        return app(QueueInspector::class)->throughput();
+    }
+
+    /**
+     * Roughly how long until it is empty, in words.
+     *
+     * "about 4 hours" answers the question somebody has; "7,018 waiting" does
+     * not. Null while the rate is unknown rather than guessing.
+     */
+    public function remaining(): ?string
+    {
+        $minutes = app(QueueInspector::class)->minutesRemaining();
+
+        if ($minutes === null) {
+            return null;
+        }
+
+        return now()->addMinutes($minutes)->diffForHumans(['parts' => 1, 'syntax' => CarbonInterface::DIFF_ABSOLUTE]);
+    }
+
+    /**
+     * Stops the worker taking new jobs, without killing it.
+     *
+     * Nothing in flight is interrupted: this takes effect between jobs, so a
+     * transcode half-way through finishes.
+     */
+    public function pause(): void
+    {
+        app(QueueControl::class)->pause();
+
+        Notification::make()
+            ->title('Background work paused')
+            ->body('Anything already running finishes. Nothing new starts until you resume.')
+            ->success()
+            ->send();
+    }
+
+    public function resume(): void
+    {
+        app(QueueControl::class)->resume();
+
+        Notification::make()->title('Background work resumed')->success()->send();
+    }
+
+    /**
+     * Throws away everything queued.
+     *
+     * Confirmed, because it is not recoverable -- the jobs are gone and
+     * whatever they would have done is simply not done. Jobs a worker has in
+     * hand are left alone, since deleting the row would not stop the work,
+     * only lose the record of it.
+     */
+    public function cancelAllAction(): Action
+    {
+        return Action::make('cancelAll')
+            ->label('Discard queued')
+            ->icon('heroicon-m-trash')
+            ->color('danger')
+            ->requiresConfirmation()
+            ->modalHeading('Discard all queued work?')
+            ->modalDescription(fn (): string => $this->totalPending().' job(s) will be thrown away. '
+                .'Anything a worker is running right now finishes. This cannot be undone, '
+                .'though a library scan will queue the work again.')
+            ->modalSubmitActionLabel('Discard them')
+            ->action(function (): void {
+                $count = app(QueueControl::class)->cancel();
+
+                Notification::make()
+                    ->title($count === 0 ? 'Nothing queued' : $count.' job(s) discarded')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * Clears the failed-job record.
+     *
+     * These rows are a log rather than work -- nothing retries from them
+     * unless asked -- so clearing loses the reasons and nothing else. The
+     * confirmation says how many and what they were, because "6 failed" with
+     * no detail is the state this widget exists to end.
+     */
+    public function clearFailedAction(): Action
+    {
+        return Action::make('clearFailed')
+            ->label('Clear failed')
+            ->icon('heroicon-m-x-circle')
+            ->color('gray')
+            ->requiresConfirmation()
+            ->modalHeading('Clear the failed-job record?')
+            ->modalDescription(fn (): string => $this->failedSummary())
+            ->modalSubmitActionLabel('Clear them')
+            ->action(function (): void {
+                $count = app(QueueControl::class)->clearFailed();
+
+                Notification::make()
+                    ->title($count === 0 ? 'Nothing had failed' : $count.' record(s) cleared')
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /** What is about to be lost, named rather than counted. */
+    private function failedSummary(): string
+    {
+        $failed = $this->failed();
+
+        if ($failed->isEmpty()) {
+            return 'Nothing has failed.';
+        }
+
+        $lines = $failed->take(3)->map(
+            fn (array $row): string => $row['count'].' x '.$row['job']
+        )->implode(', ');
+
+        return $this->totalFailed().' record(s) will be removed ('.$lines.'). '
+            .'They are a log, not work -- clearing them retries nothing and cancels nothing.';
     }
 
     /**

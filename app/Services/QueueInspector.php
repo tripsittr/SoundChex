@@ -8,6 +8,7 @@ namespace App\Services;
 use App\Models\MediaItem;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -24,6 +25,18 @@ use Illuminate\Support\Facades\DB;
  */
 class QueueInspector
 {
+    /** Where the last pending-count sample is kept, for the rate. */
+    private const SAMPLE_KEY = 'soundchex.queue.sample';
+
+    /**
+     * The rate for this request, or `false` while it has not been worked out.
+     *
+     * `false` rather than `null` as the unset marker, because `null` is a
+     * meaningful answer here -- "not enough samples yet" -- and the two must
+     * not be confused.
+     */
+    private float|null|false $rate = false;
+
     /**
      * Pending work, grouped by job, busiest first.
      *
@@ -71,6 +84,71 @@ class QueueInspector
             ])
             ->sortByDesc('queued')
             ->values();
+    }
+
+    /**
+     * How fast the queue is actually draining, in jobs a minute.
+     *
+     * Measured rather than guessed: the pending count is sampled and compared
+     * with the last sample, so this reflects what the worker is really doing
+     * -- including a rate-limited source like MusicBrainz at one request a
+     * second, which no static estimate would capture.
+     *
+     * Null until there are two samples to compare, because one number is not a
+     * rate and a made-up figure is worse than an empty column.
+     */
+    public function throughput(): ?float
+    {
+        // Computed once per request and remembered. Writing a new sample on
+        // every call made the second call in one render compare against a
+        // sample zero seconds old and return null -- so `minutesRemaining()`,
+        // which asks for the rate again, was null every time.
+        if ($this->rate !== false) {
+            return $this->rate;
+        }
+
+        $now = now()->timestamp;
+        $pending = $this->totalPending();
+
+        $last = Cache::get(self::SAMPLE_KEY);
+
+        Cache::put(self::SAMPLE_KEY, ['at' => $now, 'pending' => $pending], now()->addHour());
+
+        if (! is_array($last) || ! isset($last['at'], $last['pending'])) {
+            return $this->rate = null;
+        }
+
+        $seconds = $now - (int) $last['at'];
+
+        // Too close together to mean anything -- the widget polls every ten
+        // seconds and a single job landing would read as a huge rate.
+        if ($seconds < 30) {
+            return $this->rate = null;
+        }
+
+        $done = (int) $last['pending'] - $pending;
+
+        // Negative means more work arrived than drained, which is true and not
+        // a rate at which anything finishes.
+        return $this->rate = $done > 0 ? round($done / ($seconds / 60), 1) : 0.0;
+    }
+
+    /**
+     * Roughly how long until the queue is empty, in minutes.
+     *
+     * Deliberately coarse. It is the current rate extended forward, which is
+     * wrong the moment the rate changes -- but "about four hours" answers the
+     * question somebody actually has, where "7,018 waiting" does not.
+     */
+    public function minutesRemaining(): ?int
+    {
+        $rate = $this->throughput();
+
+        if ($rate === null || $rate <= 0) {
+            return null;
+        }
+
+        return (int) ceil($this->totalPending() / $rate);
     }
 
     /**
