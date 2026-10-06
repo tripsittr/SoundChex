@@ -12,6 +12,7 @@ use App\Enums\PipelineStage;
 use App\Enums\PipelineState;
 use App\Enums\ProcessingStatus;
 use App\Filament\Pages\ReviewQueuePage;
+use App\Jobs\Pipeline\RunPipelineStageJob;
 use App\Models\MediaItem;
 use App\Models\Profile;
 use App\Models\User;
@@ -258,7 +259,7 @@ class ReviewQueuePageTest extends TestCase
         $this->assertSame(PipelineState::Queued, $fresh->pipeline_state);
         $this->assertSame(0, $fresh->pipeline_attempts, 'A person changed something, so past failures say nothing about this run.');
 
-        Queue::assertPushed(\App\Jobs\Pipeline\RunPipelineStageJob::class);
+        Queue::assertPushed(RunPipelineStageJob::class);
     }
 
     public function test_re_identifying_an_item_that_still_cannot_be_identified_parks_it_again(): void
@@ -397,6 +398,101 @@ class ReviewQueuePageTest extends TestCase
     }
 
     /** @param array<string, mixed> $state */
+    /* ----------------------------------------------------- cover art ----- */
+
+    public function test_the_cover_is_shown_on_every_job_not_only_the_cover_job(): void
+    {
+        // The reported bug. The cover was drawn inside the `covers` branch
+        // alone, so on a library with nothing in that queue the review page
+        // showed no artwork at all -- 38 items to identify and 6 duplicates to
+        // judge, every one rendered as text while valid artwork sat on disk.
+        // Recognising a record by its sleeve is most of how somebody answers
+        // these questions.
+        $item = $this->unidentified();
+        $item->forceFill(['cover_image_url' => 'artwork/Someone/An Album/Cover-1.jpg'])->saveQuietly();
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->assertSee('An%20Album', false);
+    }
+
+    public function test_a_cover_path_with_spaces_is_url_encoded(): void
+    {
+        // `Storage::disk('public')->url()` does NOT encode the path, and these
+        // paths are built from artist and album names. Emitted raw, the browser
+        // never fetched them -- the second half of the same bug. `coverUrl()`
+        // rawurlencodes each segment, so the assertion is that no raw space
+        // reaches a src attribute.
+        $item = $this->unidentified();
+        $item->forceFill([
+            'cover_image_url' => 'artwork/The Band, Live/Album Name/Spaced-2.jpg',
+        ])->saveQuietly();
+
+        $html = Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])->html();
+
+        $this->assertStringContainsString('Album%20Name', $html);
+
+        $this->assertSame(
+            0,
+            preg_match('/src="[^"]*[ \t][^"]*"/', $html),
+            'A src attribute contains an unencoded space, which the browser will not fetch.',
+        );
+    }
+
+    public function test_a_non_breaking_space_in_a_cover_path_is_encoded(): void
+    {
+        // Found in this library for real: two artwork directories that look
+        // identical, one holding a NO-BREAK SPACE (U+00A0). The row pointed at
+        // the right file all along; only the encoding was wrong. A plain
+        // str_replace(' ', '%20') would miss it, which is why this is its own
+        // case.
+        $item = $this->unidentified();
+        $item->forceFill([
+            'cover_image_url' => "artwork/Some\u{A0}Artist/Unknown Album/West End-3.jpg",
+        ])->saveQuietly();
+
+        $html = Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])->html();
+
+        // %C2%A0 is U+00A0 percent-encoded as UTF-8.
+        $this->assertStringContainsString('Some%C2%A0Artist', $html);
+    }
+
+    public function test_an_item_with_no_cover_renders_without_a_broken_image(): void
+    {
+        // No placeholder <img> with an empty src: a browser resolves src="" to
+        // the current page and fetches the whole document as an image.
+        $this->unidentified('Artless');
+
+        $html = Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->assertSee('Artless')
+            ->html();
+
+        $this->assertSame(0, preg_match('/<img[^>]*src=""/', $html));
+    }
+
+    public function test_both_covers_are_shown_when_comparing_duplicates(): void
+    {
+        // "Is this the same record?" is answered by eye faster than by
+        // comparing two file paths, and differing artwork is often the
+        // clearest sign two copies are different releases rather than
+        // duplicates.
+        $copy = $this->pendingDuplicate();
+
+        $copy->forceFill([
+            'cover_image_url' => 'artwork/Someone/Second Release/Copy-11.jpg',
+        ])->saveQuietly();
+
+        MediaItem::withoutGlobalScopes()
+            ->whereKey($copy->duplicate_of_id)
+            ->first()
+            ?->forceFill(['cover_image_url' => 'artwork/Someone/First Release/Original-10.jpg'])
+            ->saveQuietly();
+
+        $html = Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::DUPLICATES])->html();
+
+        $this->assertStringContainsString('First%20Release', $html, "The existing copy's cover is missing.");
+        $this->assertStringContainsString('Second%20Release', $html, "The new copy's cover is missing.");
+    }
+
     private function item(string $title, array $state): MediaItem
     {
         $path = 'media/unsorted/'.str()->slug($title).'-'.fake()->unique()->numberBetween(1, 99999).'.mp3';

@@ -151,13 +151,34 @@
                         <span>#{{ $current->id }}</span>
                     </div>
 
-                    <h1 class="mt-2 text-pretty text-2xl font-semibold text-gray-950 dark:text-white">
-                        {{ $current->title }}
-                    </h1>
+                    {{-- The cover sits beside the title on *every* job, not
+                         only the cover job. It was previously drawn in the
+                         `covers` branch alone, so on a library with nothing in
+                         that queue the review page showed no artwork at all --
+                         38 items to identify and 6 duplicates to judge, each
+                         rendered as text while valid artwork sat on disk.
+                         Recognising a record by its sleeve is most of how
+                         somebody answers these questions. --}}
+                    <div class="mt-2 flex items-start gap-4">
+                        @if ($current->coverUrl())
+                            <img
+                                src="{{ $current->coverUrl() }}"
+                                alt="Cover art for {{ $current->title }}"
+                                loading="lazy"
+                                class="size-20 shrink-0 rounded-lg border border-gray-200 bg-gray-100 object-cover dark:border-white/10 dark:bg-white/5"
+                            >
+                        @endif
 
-                    @if ($current->musicMetadata?->artist)
-                        <p class="mt-1 text-gray-600 dark:text-gray-300">{{ $current->musicMetadata->artist }}</p>
-                    @endif
+                        <div class="min-w-0">
+                            <h1 class="text-pretty text-2xl font-semibold text-gray-950 dark:text-white">
+                                {{ $current->title }}
+                            </h1>
+
+                            @if ($current->musicMetadata?->artist)
+                                <p class="mt-1 text-gray-600 dark:text-gray-300">{{ $current->musicMetadata->artist }}</p>
+                            @endif
+                        </div>
+                    </div>
 
                     {{-- The question, in words. The old table showed a row and
                          left the reader to work out what was being asked. --}}
@@ -174,7 +195,23 @@
                             @foreach ([['This copy', $current], ['Already in the library', $original]] as [$label, $side])
                                 <div class="min-w-0 rounded-lg border border-gray-200 p-4 dark:border-white/10">
                                     <h3 class="text-sm font-semibold text-gray-950 dark:text-white">{{ $label }}</h3>
-                                    <p class="mt-0.5 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+
+                                    {{-- Both covers, side by side. "Is this the
+                                         same record?" is answered by eye faster
+                                         than by comparing two file paths, and
+                                         differing artwork is often the clearest
+                                         sign two copies are different releases
+                                         rather than duplicates. --}}
+                                    @if ($side->coverUrl())
+                                        <img
+                                            src="{{ $side->coverUrl() }}"
+                                            alt="Cover art for {{ $side->title }}"
+                                            loading="lazy"
+                                            class="mt-2 size-28 rounded-lg border border-gray-200 bg-gray-100 object-cover dark:border-white/10 dark:bg-white/5"
+                                        >
+                                    @endif
+
+                                    <p class="mt-2 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
                                         {{ $side->file_path }}
                                     </p>
                                     <dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
@@ -209,10 +246,18 @@
                                 </div>
                             @endif
 
-                            @if ($current->cover_image_url)
+                            {{-- Through `coverUrl()`, not `Storage::url()`.
+                                 The disk helper does not encode the path, and
+                                 these paths come from artist and album names:
+                                 spaces, commas, `$`, and in one real case a
+                                 NO-BREAK SPACE (U+00A0) in "$uicideboy$,&nbsp;Germ".
+                                 Emitted raw, the browser never fetched them.
+                                 `coverUrl()` rawurlencodes each segment. --}}
+                            @if ($current->coverUrl())
                                 <img
-                                    src="{{ \Illuminate\Support\Str::startsWith($current->cover_image_url, ['http://', 'https://']) ? $current->cover_image_url : \Illuminate\Support\Facades\Storage::disk('public')->url($current->cover_image_url) }}"
+                                    src="{{ $current->coverUrl() }}"
                                     alt="Cover currently on {{ $current->title }}"
+                                    loading="lazy"
                                     class="h-40 w-40 rounded-lg border border-gray-200 object-cover dark:border-white/10"
                                 >
                             @endif
