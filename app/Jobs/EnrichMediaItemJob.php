@@ -55,7 +55,7 @@ class EnrichMediaItemJob implements ShouldQueue
         // while its enrich job sat in the queue, or a row removed by hand.
         // That is "nothing to do", not a failure -- the work is moot either
         // way, and findOrFail() put six of these in failed_jobs on the live
-        // server where they looked like a broken pipeline (#479).
+        // server where they looked like a broken pipeline (#489).
         if ($item === null) {
             return;
         }
@@ -395,7 +395,7 @@ class EnrichMediaItemJob implements ShouldQueue
         // Through LibrarySettings, which reads the admin toggle and falls back
         // to the config default. Reading config() directly ignored the toggle
         // entirely -- autoOrganize() had no callers at all -- so switching
-        // auto-organize off in the UI did not stop files moving (#456).
+        // auto-organize off in the UI did not stop files moving (#489).
         if (! app(LibrarySettings::class)->autoOrganize()) {
             return;
         }

@@ -6,7 +6,7 @@
 namespace App\Services;
 
 /**
- * A file could not be catalogued (#465).
+ * A file could not be catalogued (#489).
  *
  * Thrown rather than returned as null, because `accept()` already uses null for
  * "this path is already catalogued" -- an ordinary, successful outcome. Folding
@@ -18,6 +18,4 @@ namespace App\Services;
  * report importing nothing, while the scanner catches it per file so one bad
  * file does not end a scan of ten thousand.
  */
-class IngestFailed extends \RuntimeException
-{
-}
+class IngestFailed extends \RuntimeException {}

@@ -25,7 +25,7 @@ use Tests\TestCase;
  * A worker starting is the one moment it is safe to say nothing is in flight,
  * because the supervisor runs exactly one.
  *
- * **Off by default since #465.** `library:pipeline-sweep` now recovers lost
+ * **Off by default since #489.** `library:pipeline-sweep` now recovers lost
  * pipeline work by stage timeout, which is safe with any number of workers,
  * where this is only safe with exactly one — releasing a reservation a sibling
  * worker is part-way through runs that job twice. The mechanism stays for

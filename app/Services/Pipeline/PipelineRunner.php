@@ -13,7 +13,7 @@ use App\Models\MediaItem;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Moves items from one pipeline stage to the next (#465).
+ * Moves items from one pipeline stage to the next (#489).
  *
  * Every transition goes through here rather than being written at each call
  * site, because the interesting part is not the stage name — it is that
@@ -136,7 +136,7 @@ class PipelineRunner
      * Gives a stage another go, or parks it once the attempts are spent.
      *
      * A provider being rate-limited is the case this exists for: it is not a
-     * failure and must never be recorded as "no match" (#466), so the stage
+     * failure and must never be recorded as "no match" (#489), so the stage
      * simply happens again later.
      */
     public function retry(MediaItem $item, PipelineStage $stage, string $reason): void

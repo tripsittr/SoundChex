@@ -18,7 +18,7 @@ use Tests\TestCase;
 
 /**
  * Every move is recorded before it happens, and every outcome is recoverable
- * (#465).
+ * (#489).
  *
  * The crash window this closes: `rename()` succeeded, the process died before
  * the row was updated, the item still pointed at the old path, the sweep called
@@ -77,7 +77,7 @@ class FileMoveJournalTest extends TestCase
 
     public function test_it_refuses_to_move_onto_a_different_file(): void
     {
-        // Overwriting is how #454 lost a file. A target that is occupied by
+        // Overwriting is how #489 lost a file. A target that is occupied by
         // something else is not ours to replace.
         [$item, $source] = $this->fileAt('media/unsorted/track.mp3', 'the new one');
         $target = Storage::path('media/library/Music/A/One/track.mp3');
@@ -213,7 +213,7 @@ class FileMoveJournalTest extends TestCase
         // So the guard has to sit at the rename, not at the caller: anything
         // appearing between the check and the move was lost without a word.
         // Narrow in practice (undo is the manual `library:undo-moves`), but it
-        // is the same class of bug as #454 and this phase exists to end it.
+        // is the same class of bug as #489 and this phase exists to end it.
         //
         // Driving `moveFile()` directly is deliberate. Calling `undo()` here
         // would pass for the wrong reason: `isReversible()` re-reads the disk
@@ -247,7 +247,7 @@ class FileMoveJournalTest extends TestCase
     public function test_a_move_still_completes_a_case_only_rename(): void
     {
         // The guard must not block one file under two spellings, which is a
-        // rename to perform rather than a collision (#454). Identity-equal
+        // rename to perform rather than a collision (#489). Identity-equal
         // paths are let through.
         $disk = Storage::disk('local');
         $disk->put('media/library/Music/A/One/Track.mp3', 'the audio');

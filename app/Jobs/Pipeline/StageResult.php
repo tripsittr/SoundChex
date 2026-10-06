@@ -6,7 +6,7 @@
 namespace App\Jobs\Pipeline;
 
 /**
- * What a stage did (#465).
+ * What a stage did (#489).
  *
  * The audit's third structural fault was that stages returned `null` for every
  * outcome: "nothing to do", "failed", "needs a person" and "try again later"

@@ -6,11 +6,13 @@
 namespace App\Console\Commands;
 
 use App\Models\MediaItem;
+use App\Services\Versions\EditionKey;
 use App\Services\Versions\VersionGrouper;
+use App\Services\Versions\WorkKey;
 use Illuminate\Console\Command;
 
 /**
- * Gives existing rows their work and edition keys (#457).
+ * Gives existing rows their work and edition keys (#489).
  *
  * The pipeline classifies everything from now on, but a library catalogued
  * before the version model has no keys at all -- so nothing groups, every
@@ -62,8 +64,8 @@ class GroupVersions extends Command
             if ($dryRun) {
                 // Derived without writing, so a run can be inspected before it
                 // touches 8,000 rows.
-                $key = app(\App\Services\Versions\WorkKey::class)->for($item);
-                $edition = app(\App\Services\Versions\EditionKey::class)->for($item);
+                $key = app(WorkKey::class)->for($item);
+                $edition = app(EditionKey::class)->for($item);
             } else {
                 $grouper->classify($item);
                 $fresh = $item->fresh();

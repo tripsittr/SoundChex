@@ -8,7 +8,7 @@ namespace App\Services\Versions;
 use App\Models\MediaItem;
 
 /**
- * Which version of a work a file is (#476).
+ * Which version of a work a file is (#489).
  *
  * The rule the user set: *"If Spotify has 15 versions of a song for an artist,
  * we should too."* A remaster, a single edit, a live cut, an acoustic take and
@@ -69,7 +69,7 @@ class EditionKey
      *
      * Reads the title's own suffix — which `MediaItem::editionSuffix()` has
      * already proven is an edition rather than the artist's name written into
-     * the title (#452).
+     * the title (#489).
      */
     public function for(MediaItem $item): ?string
     {

@@ -11,12 +11,11 @@ use App\Enums\PipelineState;
 use App\Enums\ProcessingStatus;
 use App\Enums\SystemReviewReason;
 use App\Models\MediaItem;
-use App\Models\MediaItemReport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * What needs a person, grouped by the job they came to do (#480).
+ * What needs a person, grouped by the job they came to do (#489).
  *
  * The old review screen offered six tabs named after the system's own
  * taxonomy — Metadata, Duplicates, Cover art, Keeping both, Merged, All — none
@@ -150,7 +149,7 @@ class ReviewQueue
     /**
      * The open review items for an item, newest first.
      *
-     * The authoritative record since #469. The columns this used to read could
+     * The authoritative record since #489. The columns this used to read could
      * say THAT something was wrong but not why, so a reason comes from here
      * where there is one -- and the columns remain the fallback for anything
      * predating the backfill.
@@ -202,7 +201,7 @@ class ReviewQueue
         }
 
         // A recorded review item outranks anything derived: it was written at
-        // the moment the decision was needed, with the evidence to hand (#469).
+        // the moment the decision was needed, with the evidence to hand (#489).
         $recorded = $this->reviewItemsFor($item)->first();
 
         if ($recorded !== null) {

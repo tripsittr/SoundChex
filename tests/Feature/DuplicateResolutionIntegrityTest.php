@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * Resolving a duplicate must leave *both* rows describing reality (#461).
+ * Resolving a duplicate must leave *both* rows describing reality (#489).
  *
  * Three defects covered here, all of which end with a row pointing at a file
  * that is not there:
@@ -110,7 +110,7 @@ class DuplicateResolutionIntegrityTest extends TestCase
     {
         // The settings page promises "never act, even from the review screen".
         // Only the automatic sweep honoured it; the table actions and
-        // library:duplicates --merge did not (#461).
+        // library:duplicates --merge did not (#489).
         app(SettingsService::class)->set('library_duplicate_action', 'report');
 
         [$original, $copy] = $this->contentPair();

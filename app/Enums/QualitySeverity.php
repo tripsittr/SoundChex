@@ -6,7 +6,7 @@
 namespace App\Enums;
 
 /**
- * How much a quality finding matters (#467).
+ * How much a quality finding matters (#489).
  *
  * The distinction that does work is `Bad` vs the rest: only `Bad` parks an
  * item for review. A warning is worth recording and not worth stopping an

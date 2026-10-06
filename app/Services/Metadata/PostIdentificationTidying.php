@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Log;
  * The tidying that follows identification: credits, title, album, album flag.
  *
  * Lifted out of `EnrichMediaItemJob` so the pipeline's enrich stage and the old
- * job run the *same* code rather than two implementations that drift (#465).
+ * job run the *same* code rather than two implementations that drift (#489).
  * Each method keeps the reasoning it was written with, because each one
  * prevented something specific — the comments are the record of what.
  *

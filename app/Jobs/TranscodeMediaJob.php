@@ -48,7 +48,7 @@ class TranscodeMediaJob implements ShouldQueue
         $item = MediaItem::unresolved()->find($this->mediaItemId);
 
         // Gone by the time this ran -- merged away as a duplicate, or removed.
-        // Nothing to transcode and nothing to record (#479).
+        // Nothing to transcode and nothing to record (#489).
         if ($item === null) {
             return;
         }

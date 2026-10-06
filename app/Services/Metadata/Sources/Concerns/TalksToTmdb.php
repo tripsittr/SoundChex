@@ -43,7 +43,7 @@ trait TalksToTmdb
     }
 
     /**
-     * @param array<string, mixed> $query
+     * @param  array<string, mixed>  $query
      */
     private function request(string $path, array $query = []): ?Response
     {
@@ -56,7 +56,7 @@ trait TalksToTmdb
         $response = Http::acceptJson()
             ->timeout(10)
             ->retry(2, 500, throw: false)
-            ->get(self::BASE . $path, $query + ['api_key' => $key]);
+            ->get(self::BASE.$path, $query + ['api_key' => $key]);
 
         return $response->successful() ? $response : null;
     }
@@ -70,7 +70,7 @@ trait TalksToTmdb
     private function imageUrl(?string $path, string $size = 'w500'): ?string
     {
         return filled($path)
-            ? self::IMAGE_BASE . '/' . $size . '/' . ltrim($path, '/')
+            ? self::IMAGE_BASE.'/'.$size.'/'.ltrim($path, '/')
             : null;
     }
 
@@ -78,7 +78,7 @@ trait TalksToTmdb
      * Writes only fields that are still empty, so file tags and manual edits
      * (both of which outrank an API) survive.
      *
-     * @param array<string, mixed> $values
+     * @param  array<string, mixed>  $values
      */
     private function fillBlank(?object $meta, array $values): void
     {
@@ -101,7 +101,7 @@ trait TalksToTmdb
     }
 
     /**
-     * @param array<int, array<string, mixed>> $genres
+     * @param  array<int, array<string, mixed>>  $genres
      */
     private function writeGenreTags(MediaItem $item, array $genres): void
     {
@@ -126,8 +126,8 @@ trait TalksToTmdb
             }
 
             $item->tags()->create([
-                'type'   => 'genre',
-                'value'  => $canonical,
+                'type' => 'genre',
+                'value' => $canonical,
                 'source' => MediaTagSource::Api,
             ]);
         }
@@ -139,8 +139,8 @@ trait TalksToTmdb
      * People are shared across the catalog and keyed by TMDB id, so the same
      * actor in three films is one row.
      *
-     * @param array<string, mixed> $credits
-     * @param array<int, string> $crewJobs Job titles worth keeping.
+     * @param  array<string, mixed>  $credits
+     * @param  array<int, string>  $crewJobs  Job titles worth keeping.
      */
     private function writeCredits(MediaItem $item, array $credits, array $crewJobs): void
     {
@@ -159,8 +159,8 @@ trait TalksToTmdb
             }
 
             $item->people()->attach($person->id, [
-                'role'       => 'actor',
-                'character'  => $member['character'] ?? null,
+                'role' => 'actor',
+                'character' => $member['character'] ?? null,
                 'sort_order' => $sort++,
             ]);
         }
@@ -179,14 +179,14 @@ trait TalksToTmdb
             }
 
             $item->people()->attach($person->id, [
-                'role'       => strtolower($job),
+                'role' => strtolower($job),
                 'sort_order' => $sort++,
             ]);
         }
     }
 
     /**
-     * @param array<string, mixed> $member
+     * @param  array<string, mixed>  $member
      */
     private function resolvePerson(array $member): ?Person
     {
@@ -241,7 +241,7 @@ trait TalksToTmdb
         // Reading $item->title here is what made this always true: promotion
         // runs first, so the two sides of the comparison were the same string
         // and every title-search match scored Exact -- the one confidence that
-        // allows renaming and refiling a video file (#455).
+        // allows renaming and refiling a video file (#489).
         //
         // The fallback keeps a caller that has not been updated honest rather
         // than silently optimistic: with nothing to compare, a match that was
@@ -262,7 +262,7 @@ trait TalksToTmdb
     /**
      * Sets the item's artwork if it doesn't have any yet.
      *
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     private function writeArtwork(MediaItem $item, array $payload): void
     {

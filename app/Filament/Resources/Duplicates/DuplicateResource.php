@@ -31,7 +31,7 @@ class DuplicateResource extends Resource
     use RestrictsToAdmins;
 
     /**
-     * Hidden from the sidebar, superseded by ReviewQueuePage (#480).
+     * Hidden from the sidebar, superseded by ReviewQueuePage (#489).
      *
      * Still routed, so a bookmarked URL keeps working and the three test
      * suites that cover this table still have something to exercise. Two

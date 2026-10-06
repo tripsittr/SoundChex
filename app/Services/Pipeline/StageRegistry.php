@@ -18,7 +18,7 @@ use App\Services\Pipeline\Stages\ProbeStage;
 use App\Services\Pipeline\Stages\PublishStage;
 
 /**
- * Which class runs which stage (#465).
+ * Which class runs which stage (#489).
  *
  * A map rather than a convention, so a missing handler is a loud error at the
  * point of lookup instead of a stage that silently does nothing -- which is

@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Something wrong with a file (#467).
+ * Something wrong with a file (#489).
  *
  * Nothing checked quality before this: a truncated file, a CAM rip, a
  * transcoded "FLAC" and a file with no audio stream all imported as healthy,

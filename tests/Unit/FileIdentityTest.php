@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * This class gates every delete in the library, so its *refusals* matter as
  * much as its matches: a false "same file" skips a delete harmlessly, while a
- * false "different file" is what destroyed a user's only copy (#454).
+ * false "different file" is what destroyed a user's only copy (#489).
  */
 class FileIdentityTest extends TestCase
 {

@@ -14,7 +14,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * A job whose item is gone has nothing to do, and that is not a failure (#479).
+ * A job whose item is gone has nothing to do, and that is not a failure (#489).
  *
  * `findOrFail()` threw `ModelNotFoundException` when an item was deleted
  * between the job being queued and run — a duplicate merged away while its

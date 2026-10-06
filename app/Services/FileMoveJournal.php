@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Moves files, and records every move before making it (#465).
+ * Moves files, and records every move before making it (#489).
  *
  * The rule this enforces: **no byte moves without a journal row first.** That
  * row is written in `planned`, flipped to `started` immediately before the
@@ -98,7 +98,7 @@ class FileMoveJournal
         }
 
         // Refuse rather than overwrite. A file at the target is somebody's,
-        // and deciding it is expendable is exactly the mistake #454 was.
+        // and deciding it is expendable is exactly the mistake #489 was.
         if (file_exists($to) && ! FileIdentity::same($from, $to)) {
             return $this->fail($move, 'something else already occupies the target');
         }
@@ -315,7 +315,7 @@ class FileMoveJournal
      * `rename()` first: atomic on one volume, and needs no room for a second
      * copy of a film. Across volumes it fails, and the copy fallback is
      * verified by content — a copy can be the right length and the wrong bytes
-     * (#462).
+     * (#489).
      */
     private function moveFile(string $from, string $to): bool
     {
@@ -335,7 +335,7 @@ class FileMoveJournal
         //
         // Identity-equal is allowed through: that is one file under two
         // spellings, which is a rename to perform rather than a collision
-        // (#454).
+        // (#489).
         if (file_exists($to) && ! FileIdentity::same($from, $to)) {
             Log::warning('Refused to move a file onto something else', [
                 'from' => $from,

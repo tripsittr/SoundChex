@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One recorded move of one file (#465).
+ * One recorded move of one file (#489).
  *
  * Written *before* the move happens, which is the whole point. The organizer's
  * crash window was: `rename()` succeeds, the process dies, the row still points

@@ -22,7 +22,7 @@ namespace App\Services;
  * strings, concluded a re-cased target was a different file, hashed both paths,
  * found the hashes equal — *because they were one file* — and deleted "the
  * redundant copy", which was the user's only copy. `DuplicateDetector::merge()`
- * had the same flaw. That is tracker #454, and this class exists so the answer
+ * had the same flaw. That is tracker #489, and this class exists so the answer
  * is computed once, correctly, in one place.
  *
  * Device + inode is the filesystem's own notion of identity, so that is what

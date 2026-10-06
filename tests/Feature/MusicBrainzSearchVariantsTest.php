@@ -8,6 +8,7 @@ namespace Tests\Feature;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
+use App\Models\MusicMetadata;
 use App\Models\User;
 use App\Services\Metadata\Sources\Music\MusicBrainz;
 use App\Services\SettingsService;
@@ -17,7 +18,7 @@ use ReflectionMethod;
 use Tests\TestCase;
 
 /**
- * A findable recording is found, whatever the tagger wrote (part of #466).
+ * A findable recording is found, whatever the tagger wrote (part of #489).
  *
  * MusicBrainz matches the query literally, so an edition suffix or a second
  * credited artist makes a recording it plainly knows about unfindable.
@@ -30,11 +31,11 @@ use Tests\TestCase;
  *
  * 360 of this library's 642 unmatched rows carry a comma-joined artist and 155
  * an edition suffix, so this is most of the remaining problem — not the 8,440
- * the plan predicted (#485).
+ * the plan predicted (#489).
  *
  * The edition is dropped **from the query only**. The stored title keeps it:
  * "Psycho Killer - Acoustic" and "1979 - Remastered 2012" are distinct
- * recordings, and collapsing them is the loss #476 forbids.
+ * recordings, and collapsing them is the loss #489 forbids.
  */
 class MusicBrainzSearchVariantsTest extends TestCase
 {
@@ -111,14 +112,14 @@ class MusicBrainzSearchVariantsTest extends TestCase
         $this->assertSame(
             MatchConfidence::Fuzzy,
             $item->fresh()->match_confidence,
-            'A text match is Fuzzy, not Exact -- it was not reached by an identifier (#459).',
+            'A text match is Fuzzy, not Exact -- it was not reached by an identifier (#489).',
         );
     }
 
     public function test_the_stored_title_keeps_its_edition(): void
     {
         // Dropping the edition from the QUERY must not drop it from the title.
-        // "Psycho Killer - Acoustic" is a distinct recording (#476).
+        // "Psycho Killer - Acoustic" is a distinct recording (#489).
         Http::fake(['musicbrainz.org/*' => Http::response(['recordings' => [$this->recording()]])]);
 
         $item = $this->track('Psycho Killer - Acoustic', 'Talking Heads');
@@ -150,7 +151,7 @@ class MusicBrainzSearchVariantsTest extends TestCase
         $item = new MediaItem(['title' => $title]);
         $item->type = MediaItemType::Music;
 
-        $meta = new \App\Models\MusicMetadata(['artist' => $artist]);
+        $meta = new MusicMetadata(['artist' => $artist]);
 
         $method = new ReflectionMethod(MusicBrainz::class, 'searchVariants');
 

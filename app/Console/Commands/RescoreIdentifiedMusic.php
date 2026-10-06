@@ -10,10 +10,11 @@ use App\Enums\MediaItemType;
 use App\Models\MediaItem;
 use App\Services\Metadata\Sources\Music\MusicBrainz;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
 
 /**
  * Re-scores music that already carries a MusicBrainz id but reads as a guess
- * (#485).
+ * (#489).
  *
  * The plan said the library read `match_confidence = none` because the
  * recording id was probably never read. Measuring it said otherwise: on this
@@ -31,7 +32,7 @@ use Illuminate\Console\Command;
  * roughly 73%.
  *
  * **It calls the API rather than trusting the column.** Setting `Exact` because
- * an id is *present* is the exact mistake #459 fixed — a dead or mistyped id
+ * an id is *present* is the exact mistake #489 fixed — a dead or mistyped id
  * must not score exact — so each row's id is actually resolved.
  */
 class RescoreIdentifiedMusic extends Command
@@ -68,7 +69,7 @@ class RescoreIdentifiedMusic extends Command
                 $query->clone()->with('musicMetadata')->limit($take)->get()
                     ->map(fn (MediaItem $item): array => [
                         $item->id,
-                        \Illuminate\Support\Str::limit($item->title, 36),
+                        Str::limit($item->title, 36),
                         filled($item->musicMetadata?->musicbrainz_recording_id)
                             ? 'mb:'.substr((string) $item->musicMetadata->musicbrainz_recording_id, 0, 8)
                             : 'isrc:'.$item->musicMetadata?->isrc,
@@ -152,7 +153,7 @@ class RescoreIdentifiedMusic extends Command
      * complete is the kind that silently misses rows on somebody else's.
      *
      * AcoustID is deliberately out. Resolving a fingerprint means computing it
-     * from the file with `fpcalc`, which is #466's work and not a database
+     * from the file with `fpcalc`, which is #489's work and not a database
      * re-score — and this library has no row where it would be the only
      * identifier anyway.
      *

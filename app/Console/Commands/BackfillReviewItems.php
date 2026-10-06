@@ -14,7 +14,7 @@ use App\Services\Review\ReviewLog;
 use Illuminate\Console\Command;
 
 /**
- * Gives every already-hidden item a reason (#469).
+ * Gives every already-hidden item a reason (#489).
  *
  * Measured before writing this: **96 items are hidden from the library with
  * nothing open to explain why** -- absent from the library and absent from

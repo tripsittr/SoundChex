@@ -18,11 +18,11 @@ use Tests\TestCase;
 
 /**
  * The admin toggle that decides whether enrichment moves the user's files
- * (#456).
+ * (#489).
  *
  * It read `config('library.auto_organize')` while the settings page wrote to
  * the database, so `LibrarySettings::autoOrganize()` had no callers at all and
- * switching the toggle off changed nothing. With #454 and #455 live, this was
+ * switching the toggle off changed nothing. With #489 and #489 live, this was
  * the control a user would reach for to stop files moving, and it was inert.
  */
 class AutoOrganizeSettingTest extends TestCase

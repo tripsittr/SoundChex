@@ -65,7 +65,7 @@ class ConversionFiler
         // move() would then rename the conversion over the original with no
         // existence check, and the archive step that follows would move what is
         // by then the conversion, leaving the row pointing at nothing and the
-        // original destroyed (#458).
+        // original destroyed (#489).
         //
         // Refuse and leave both files alone. The conversion stays where it is,
         // so a later run can retry once the real problem -- an original and a
@@ -264,7 +264,7 @@ class ConversionFiler
 
         // Already in the flat root, or outside the library altogether: filing
         // it to the root takes nothing away.
-        if (! str_starts_with($current, $root . '/')) {
+        if (! str_starts_with($current, $root.'/')) {
             return false;
         }
 
@@ -288,12 +288,12 @@ class ConversionFiler
             $root = trim((string) config('library.library_root', 'media/library'), '/');
             $name = preg_replace('/[^\w\- .()]+/u', '', $item->title) ?: 'Untitled';
 
-            return $root . '/' . trim($name) . '.' . pathinfo($conversion, PATHINFO_EXTENSION);
+            return $root.'/'.trim($name).'.'.pathinfo($conversion, PATHINFO_EXTENSION);
         }
 
         $extension = pathinfo($conversion, PATHINFO_EXTENSION);
 
-        return preg_replace('/\.[^.]+$/', '', $target) . '.' . $extension;
+        return preg_replace('/\.[^.]+$/', '', $target).'.'.$extension;
     }
 
     /**
@@ -309,16 +309,16 @@ class ConversionFiler
         if ($target === null) {
             $name = preg_replace('/[^\w\- .()]+/u', '', $item->title) ?: 'Untitled';
 
-            return $root . '/' . trim($name) . '.' . $extension;
+            return $root.'/'.trim($name).'.'.$extension;
         }
 
         $withoutRoot = preg_replace(
-            '#^' . preg_quote(trim((string) config('library.library_root', 'media/library'), '/'), '#') . '/#',
+            '#^'.preg_quote(trim((string) config('library.library_root', 'media/library'), '/'), '#').'/#',
             '',
             $target,
         );
 
-        return $root . '/' . preg_replace('/\.[^.]+$/', '', $withoutRoot) . '.' . $extension;
+        return $root.'/'.preg_replace('/\.[^.]+$/', '', $withoutRoot).'.'.$extension;
     }
 
     /** Moves a file, creating the directory it is going into. */

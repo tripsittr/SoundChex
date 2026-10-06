@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
- * Re-scoring music that already carries an identifier (#485).
+ * Re-scoring music that already carries an identifier (#489).
  *
  * The plan said the library read `none` because the MusicBrainz id was never
  * read. Measuring said otherwise: 6,050 of 8,314 rows carry one, and the real
@@ -23,7 +23,7 @@ use Tests\TestCase;
  * predate the current pipeline.
  *
  * The rule these defend: **presence of an id is not a match.** Setting `Exact`
- * from the column alone is the mistake #459 fixed, so an id that no longer
+ * from the column alone is the mistake #489 fixed, so an id that no longer
  * resolves must stay a guess.
  */
 class RescoreIdentifiedMusicTest extends TestCase
@@ -56,7 +56,7 @@ class RescoreIdentifiedMusicTest extends TestCase
 
     public function test_an_identifier_that_no_longer_resolves_stays_a_guess(): void
     {
-        // The rule #459 established: an id being *present* is not a match. A
+        // The rule #489 established: an id being *present* is not a match. A
         // recording MusicBrainz has merged away or retired legitimately stays
         // Fuzzy, and a command that promoted it anyway would be reintroducing
         // the bug this library was just cleaned of.

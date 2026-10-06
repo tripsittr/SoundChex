@@ -11,12 +11,12 @@ use ReflectionMethod;
 use Tests\TestCase;
 
 /**
- * Identifier tags are read whichever spelling the tagger used (part of #466).
+ * Identifier tags are read whichever spelling the tagger used (part of #489).
  *
  * The audit's cause 3 for the unmatched library was that `FileTagger` reads
  * `musicbrainz_recordingid` while Picard writes `MUSICBRAINZ_TRACKID`. On this
  * library that is **not** the cause of the headline number — 6,050 of 8,314
- * rows do carry a recording id, so some spelling is being read (#485) — but it
+ * rows do carry a recording id, so some spelling is being read (#489) — but it
  * is still a real gap for files tagged by a tool whose spelling differs.
  *
  * `normalizedTags()` lowercases keys and does **not** strip spaces or

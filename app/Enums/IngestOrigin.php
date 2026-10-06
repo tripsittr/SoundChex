@@ -6,7 +6,7 @@
 namespace App\Enums;
 
 /**
- * How a file entered the library (#465).
+ * How a file entered the library (#489).
  *
  * Recorded because the five import paths had genuinely diverged — the scanner
  * hashed, checked duplicates, recorded intake history, fired the catalogued

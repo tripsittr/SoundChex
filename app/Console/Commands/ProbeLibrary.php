@@ -12,10 +12,10 @@ use App\Services\Quality\QualityChecker;
 use Illuminate\Console\Command;
 
 /**
- * Measures files the pipeline has not reached (#467).
+ * Measures files the pipeline has not reached (#489).
  *
  * The pipeline probes everything from now on, but a library catalogued before
- * #467 has no measurements at all -- which is the state where keep-best for
+ * #489 has no measurements at all -- which is the state where keep-best for
  * video compares file sizes and nothing knows a file is truncated.
  *
  * Local work only: reads the file, writes a row. No network, so no rate limit

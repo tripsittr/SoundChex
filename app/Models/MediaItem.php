@@ -198,7 +198,7 @@ class MediaItem extends Model
         // Written by the pipeline, not a form — like duplicate state, it is kept
         // out of $fillable and set with forceFill/saveQuietly.
         'enrichment_report' => 'array',
-        // Pipeline state, likewise written only by the stage jobs (#465).
+        // Pipeline state, likewise written only by the stage jobs (#489).
         'pipeline_stage' => PipelineStage::class,
         'pipeline_state' => PipelineState::class,
         'pipeline_attempts' => 'integer',
@@ -648,7 +648,7 @@ class MediaItem extends Model
     }
 
     /**
-     * Everything needing a person about this item (#469).
+     * Everything needing a person about this item (#489).
      *
      * One record per reason, replacing review-as-a-status: five columns and a
      * reports table could say THAT something was wrong but not why, what the
@@ -661,7 +661,7 @@ class MediaItem extends Model
     }
 
     /**
-     * What ffprobe found in this file (#467).
+     * What ffprobe found in this file (#489).
      *
      * One probe per item, replaced when re-run: a probe measures the bytes as
      * they are now, and after a remux the old numbers describe a file that no
@@ -692,7 +692,7 @@ class MediaItem extends Model
      * are in the review queue right now.
      *
      * Surfaced rather than stripped, because stripping it merges recordings
-     * that must stay apart — the rule the user set for versions (#476): if
+     * that must stay apart — the rule the user set for versions (#489): if
      * Spotify shows fifteen versions of a song, so should we. Shown as evidence
      * on the review screen so a person can see what distinguishes two copies.
      *
@@ -717,7 +717,7 @@ class MediaItem extends Model
         }
 
         // A suffix that is just the artist's own name is not an edition -- it
-        // is the scanner having written the credit into the title (#452).
+        // is the scanner having written the credit into the title (#489).
         // Measured: 126 of this library's 772 suffixed titles are this, so
         // treating them as editions would invent 126 editions that do not
         // exist and then group real versions under them.
@@ -747,7 +747,7 @@ class MediaItem extends Model
      * Recorded by `FileTagger`, the one source that can tell an embedded tag
      * from a filename guess or a later API match. It gates filing for music
      * (`LibraryOrganizer::isConfidentEnoughToMove()`): tags are authoritative
-     * about the file, API data is not, and before #460 the two were
+     * about the file, API data is not, and before #489 the two were
      * indistinguishable once a run had finished.
      *
      * Absent for anything enriched before this was recorded, which reads as

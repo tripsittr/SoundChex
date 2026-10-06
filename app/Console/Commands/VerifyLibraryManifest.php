@@ -5,6 +5,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\FileMoveKind;
 use App\Enums\FileMoveState;
 use App\Models\FileMove;
 use App\Models\MediaItem;
@@ -12,7 +13,7 @@ use App\Services\DuplicateDetector;
 use Illuminate\Console\Command;
 
 /**
- * Checks every file in a manifest is still accounted for (#470, step 5).
+ * Checks every file in a manifest is still accounted for (#489, step 5).
  *
  * The plan's acceptance test for a reprocess: *every file in the manifest
  * exists at its old or new path with the same hash, or is in trash with a
@@ -175,7 +176,7 @@ class VerifyLibraryManifest extends Command
     private function wasTrashed(int $itemId): bool
     {
         return FileMove::where('media_item_id', $itemId)
-            ->where('kind', \App\Enums\FileMoveKind::Trash)
+            ->where('kind', FileMoveKind::Trash)
             ->whereIn('state', [FileMoveState::Done, FileMoveState::Started])
             ->exists();
     }

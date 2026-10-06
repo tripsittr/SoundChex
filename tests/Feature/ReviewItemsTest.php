@@ -15,13 +15,14 @@ use App\Models\MediaItem;
 use App\Models\ReviewItem;
 use App\Models\User;
 use App\Services\Review\ReviewLog;
+use App\Services\Review\ReviewQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * One record for everything that needs a person (#469).
+ * One record for everything that needs a person (#489).
  *
  * Review was a **status, not a record**: five columns plus a reports table,
  * each added for one feature. A new failure kind had nowhere to go, so it went
@@ -261,7 +262,7 @@ class ReviewItemsTest extends TestCase
     {
         // A reason whose job does not exist would leave an item in the
         // database and off every screen.
-        $jobs = array_keys(\App\Services\Review\ReviewQueue::JOBS);
+        $jobs = array_keys(ReviewQueue::JOBS);
 
         foreach (SystemReviewReason::cases() as $reason) {
             $this->assertContains($reason->job(), $jobs, "{$reason->value} maps to an unknown job.");

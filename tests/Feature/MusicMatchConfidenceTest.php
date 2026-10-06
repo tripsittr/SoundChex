@@ -89,7 +89,7 @@ class MusicMatchConfidenceTest extends TestCase
 
     public function test_an_isrc_that_finds_nothing_does_not_make_a_text_match_exact(): void
     {
-        // #459. $matchedByIdentifier was computed from whether the FILE carried
+        // #489. $matchedByIdentifier was computed from whether the FILE carried
         // an ISRC, not from how the recording was actually found. resolveRecording()
         // tries the ISRC, gets nothing, and falls through to the artist+title
         // search -- but the confidence had already been decided as Exact.

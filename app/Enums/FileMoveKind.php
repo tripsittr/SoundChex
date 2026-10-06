@@ -5,7 +5,7 @@
 
 namespace App\Enums;
 
-/** What a journalled file operation was (#465). */
+/** What a journalled file operation was (#489). */
 enum FileMoveKind: string
 {
     /** Into the library tree, or between folders within it. */
@@ -14,7 +14,7 @@ enum FileMoveKind: string
     /** Same folder, new name — including a case-only correction. */
     case Rename = 'rename';
 
-    /** To the trash. The reversible form of a delete (#464). */
+    /** To the trash. The reversible form of a delete (#489). */
     case Trash = 'trash';
 
     /** An original set aside once a playable conversion took its place. */

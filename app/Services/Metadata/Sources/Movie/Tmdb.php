@@ -52,7 +52,7 @@ class Tmdb implements MetadataSource
         // searched for against what TMDB returned, and promotion makes those
         // two strings equal by construction. Scoring afterwards marked every
         // title-search match Exact -- including the wrong ones -- and Exact is
-        // the one value allowed to rename and refile a video file (#455).
+        // the one value allowed to rename and refile a video file (#489).
         //
         // The *parsed* title, because that is what was actually searched:
         // a filename leaves the year in the title ("Inception 2010") and

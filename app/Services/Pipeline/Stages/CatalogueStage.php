@@ -10,7 +10,7 @@ use App\Models\MediaItem;
 use App\Services\Pipeline\Stage;
 
 /**
- * Confirms the row describes a file that is actually there (#465).
+ * Confirms the row describes a file that is actually there (#489).
  *
  * `LibraryIngest` has already created the row, so this stage looks like it has
  * nothing to do -- and that is deliberate. It is the gate: a row whose file

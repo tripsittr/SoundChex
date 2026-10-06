@@ -14,11 +14,11 @@ use App\Services\MetadataHistory;
 use App\Services\Pipeline\Stage;
 
 /**
- * Works out what this file is (#465).
+ * Works out what this file is (#489).
  *
  * Runs the existing `MetadataPipeline` rather than replacing it: splitting
  * identification from enrichment properly -- scored candidates, stored
- * runners-up, a provider error that is not a no-match -- is #466, and doing it
+ * runners-up, a provider error that is not a no-match -- is #489, and doing it
  * here as well would mean doing it twice. What *this* stage adds now is the
  * thing the old one-job design could not: an **outcome**.
  *
@@ -71,7 +71,7 @@ class IdentifyStage implements Stage
             MatchConfidence::Exact => StageOutcome::done(),
 
             // A loose match continues, because its fields are still better than
-            // nothing and the filing gate -- which #455/#460 tightened -- is
+            // nothing and the filing gate -- which #489/#489 tightened -- is
             // what stops it moving a file. The review item explains itself.
             MatchConfidence::Fuzzy => StageOutcome::done(),
 
@@ -102,7 +102,7 @@ class IdentifyStage implements Stage
         if ($errors->isNotEmpty()) {
             // A provider failing is not the same as a file being
             // unidentifiable, and recording it as one is what made real
-            // outages look like an unmatchable library (#466).
+            // outages look like an unmatchable library (#489).
             return 'no match, but these sources errored: '.$errors->implode(', ');
         }
 

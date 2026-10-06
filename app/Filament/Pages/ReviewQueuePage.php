@@ -5,7 +5,7 @@
 
 namespace App\Filament\Pages;
 
-use App\Enums\DuplicateStatus;
+use App\Enums\PipelineStage;
 use App\Filament\Concerns\RestrictsToAdmins;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
@@ -15,12 +15,13 @@ use BackedEnum;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Collection;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
 /**
  * One thing at a time, with the evidence and the two or three plausible
- * answers (#480).
+ * answers (#489).
  *
  * Supersedes `DuplicateResource`'s table — 1,043 lines, 16 columns, 14 actions
  * and six tabs named after the system's own taxonomy (Metadata, Duplicates,
@@ -35,12 +36,12 @@ use UnitEnum;
  * for anyone who bookmarked it, until a follow-up retires it.
  *
  * A **Page** rather than a Resource, because a table is for scanning and this
- * task is deciding (#482). It stays in the panel because `/admin` is already
+ * task is deciding (#489). It stays in the panel because `/admin` is already
  * gated on the current *profile's* permissions, and reviewing means approving
  * file moves, merging duplicates and deleting files — exactly what that gate
  * exists for. A kids profile must never reach a merge button.
  *
- * The layout this implements was approved before it was built (#481), because
+ * The layout this implements was approved before it was built (#489), because
  * the complaint was about design and building to my own taste first would have
  * wasted the pass.
  */
@@ -166,7 +167,7 @@ class ReviewQueuePage extends Page
 
         $item->forceFill(['reviewed_at' => now()])->saveQuietly();
 
-        app(PipelineRunner::class)->resumeAt($item, \App\Enums\PipelineStage::Published);
+        app(PipelineRunner::class)->resumeAt($item, PipelineStage::Published);
 
         $this->after($item, 'Marked as fine');
     }
@@ -186,7 +187,7 @@ class ReviewQueuePage extends Page
             return;
         }
 
-        app(PipelineRunner::class)->resumeAt($item, \App\Enums\PipelineStage::Identified);
+        app(PipelineRunner::class)->resumeAt($item, PipelineStage::Identified);
 
         $this->after($item, 'Looking it up again');
     }
@@ -209,8 +210,8 @@ class ReviewQueuePage extends Page
      * Resolves a pair by keeping one copy.
      *
      * Delegates to the detector, which re-hashes before deleting and routes
-     * the loser to the trash rather than unlinking it (#464). Refuses on its
-     * own when `duplicate_action` is `report` (#461), so this does not need to
+     * the loser to the trash rather than unlinking it (#489). Refuses on its
+     * own when `duplicate_action` is `report` (#489), so this does not need to
      * re-check that.
      */
     public function keepOne(int $id, bool $keepFlagged = false): void
@@ -264,7 +265,7 @@ class ReviewQueuePage extends Page
      * already made and where only the artwork was uncertain, so confirming
      * them en masse risks nothing on disk. Bulk deliberately does **not**
      * exist for loose duplicate matches — the detector refuses those outright
-     * (#461), and offering a button that cannot work would be worse than none.
+     * (#489), and offering a button that cannot work would be worse than none.
      */
     public function acceptAllCovers(): void
     {
@@ -301,7 +302,7 @@ class ReviewQueuePage extends Page
         return app(ReviewQueue::class)->counts();
     }
 
-    /** @return \Illuminate\Database\Eloquent\Collection<int, MediaItem> */
+    /** @return Collection<int, MediaItem> */
     public function getQueueProperty()
     {
         return app(ReviewQueue::class)->items($this->job);

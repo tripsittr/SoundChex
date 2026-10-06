@@ -5,10 +5,11 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Pipeline\PipelineSweeper;
 use App\Events\ServerExtensionMissing;
 use App\Events\ServerHealthChecked;
 use App\Models\Notification;
+use App\Services\Pipeline\PipelineSweeper;
+use App\Services\Review\ReviewLog;
 use App\Services\RuntimeHealth;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -46,19 +47,19 @@ class ServerHealth extends Command
         $queueDepth = $this->tableCount('jobs');
         $failedJobs = $this->tableCount('failed_jobs');
 
-        // The number that must be zero (#465): an item hidden from the library
+        // The number that must be zero (#489): an item hidden from the library
         // with no pipeline stage is invisible to every other report -- absent
         // from the library because it is not `complete`, and absent from review
         // because nothing flagged it. Checked here so the guarantee is verified
         // continuously rather than believed.
         $stranded = app(PipelineSweeper::class)->strandedCount();
 
-        // The other number that must be zero (#469): an item hidden from the
+        // The other number that must be zero (#489): an item hidden from the
         // library with nothing open to explain it is absent from the library
         // AND absent from review at once, which is invisible to every other
         // report. Measured at 96 before the backfill; asserted here so the
         // guarantee is checked continuously rather than believed.
-        $unexplained = app(\App\Services\Review\ReviewLog::class)->hiddenWithNothingOpen();
+        $unexplained = app(ReviewLog::class)->hiddenWithNothingOpen();
         $stuckMoves = $this->tableCount('file_moves', fn ($query) => $query->where('state', 'started'));
 
         $problems = [];

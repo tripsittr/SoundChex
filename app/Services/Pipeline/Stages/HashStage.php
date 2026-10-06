@@ -11,7 +11,7 @@ use App\Services\DuplicateDetector;
 use App\Services\Pipeline\Stage;
 
 /**
- * Writes the file's content hash (#465).
+ * Writes the file's content hash (#489).
  *
  * Its own stage, on the `io` queue, because hashing is the slowest cheap thing
  * the pipeline does -- a 40 GB remux takes real time -- and it used to happen

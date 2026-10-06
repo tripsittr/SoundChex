@@ -16,7 +16,6 @@ use App\Models\MediaItem;
 use App\Models\MusicMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -219,7 +218,7 @@ class DuplicateDetector
         // pickOriginal() ranked the *candidates* and never the item being
         // checked, so checking an older filed row against a newer loose copy
         // made the filed row the duplicate -- and under duplicate_action=auto
-        // the filed copy is the one deleted (#461). Done once here because
+        // the filed copy is the one deleted (#489). Done once here because
         // every detection funnels through this method, where the eight
         // pickOriginal() call sites would each need it.
         if ($this->isFiled($item) && ! $this->isFiled($original)) {
@@ -622,7 +621,7 @@ class DuplicateDetector
 
         // "Report" means list them and never act, including from the review
         // screen -- which is what the settings page promises and what only the
-        // automatic sweep honoured (#461).
+        // automatic sweep honoured (#489).
         if (! $this->settings->mayResolveDuplicates()) {
             return false;
         }
@@ -652,7 +651,7 @@ class DuplicateDetector
         // Compared by identity rather than by string: a string compare missed
         // the two-spellings case, fell through to the byte compare below, which
         // hashed the same file twice and agreed it was a duplicate, and deleted
-        // the user's only copy (#454).
+        // the user's only copy (#489).
         if ($duplicatePath !== null && FileIdentity::same($duplicatePath, $originalPath)) {
             $duplicate->forceFill([
                 'duplicate_status' => DuplicateStatus::Merged,
@@ -738,7 +737,7 @@ class DuplicateDetector
         // redundant row. (Unlikely for a content match, but cheap to be safe.)
         //
         // By identity, not by string: two spellings of one path would otherwise
-        // reach the delete below and remove the only copy (#454).
+        // reach the delete below and remove the only copy (#489).
         if ($loserPath !== null && FileIdentity::same($loserPath, $keeperPath)) {
             $duplicate->forceFill(['duplicate_status' => DuplicateStatus::Merged])->saveQuietly();
 
@@ -772,7 +771,7 @@ class DuplicateDetector
         // with a dead path, no status, its plays and playlist entries pointing
         // at nothing, and any other duplicate flagged against it unresolvable:
         // merge found no original and refused, which reads as a confusing
-        // "original is missing" skip (#461).
+        // "original is missing" skip (#489).
         //
         // Both rows end up pointing at the surviving file, which is what
         // merge() has always done for the copy it deletes.
@@ -964,7 +963,7 @@ class DuplicateDetector
      *
      * Two things live in MediaTrash now, and both were learned here. Deletes go
      * to `library.trash_root` for `trash_days` so a wrong merge is recoverable
-     * (#464). And the read-only attribute is cleared first: `unlink()` will not
+     * (#489). And the read-only attribute is cleared first: `unlink()` will not
      * remove a read-only file on Windows, and 285 of the 2,843 files in one real
      * library carry that attribute — arrived with it, from a copy off another
      * machine. Every merge of one of those failed, the row stayed pending, and
@@ -974,7 +973,7 @@ class DuplicateDetector
     private function deleteFile(string $path): bool
     {
         // Moved to the trash rather than unlinked, so a wrong merge is
-        // recoverable for `library.trash_days` (#464). MediaTrash handles the
+        // recoverable for `library.trash_days` (#489). MediaTrash handles the
         // read-only case Windows otherwise refuses, and logs its own failures
         // with the path -- the alternative being a toast that reports a missing
         // file for something present and locked.

@@ -11,19 +11,22 @@ use App\Enums\PipelineStage;
 use App\Enums\PipelineState;
 use App\Enums\ProcessingStatus;
 use App\Jobs\Pipeline\RunPipelineStageJob;
+use App\Jobs\Pipeline\StageResult;
 use App\Models\MediaItem;
 use App\Models\User;
 use App\Services\LibraryIngest;
 use App\Services\Pipeline\PipelineRunner;
 use App\Services\Pipeline\PipelineSweeper;
+use App\Services\Pipeline\Stage;
+use App\Services\Pipeline\StageRegistry;
+use App\Services\Pipeline\Stages\CatalogueStage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * The guarantee Phase 2 exists to deliver (#465):
+ * The guarantee Phase 2 exists to deliver (#489):
  *
  * > No item stays invisible and idle. Every file ends either filed, or waiting
  * > for a person with a reason recorded.
@@ -287,13 +290,13 @@ class PipelineFlowTest extends TestCase
             'owned' => true,
         ]);
 
-        $outcome = app(\App\Services\Pipeline\Stages\CatalogueStage::class)->run($item);
+        $outcome = app(CatalogueStage::class)->run($item);
 
         // Parked with a reason, whichever way the path failed: a relative path
         // with no file behind it does not resolve at all, which is a different
         // sentence from a resolvable path whose file is gone. Both are review
         // items rather than silent failures, which is the point.
-        $this->assertSame(\App\Jobs\Pipeline\StageResult::NeedsReview, $outcome->result);
+        $this->assertSame(StageResult::NeedsReview, $outcome->result);
         $this->assertNotEmpty($outcome->reason, 'A parked item must say why.');
     }
 
@@ -305,9 +308,9 @@ class PipelineFlowTest extends TestCase
 
         $item = $this->accept('media/unsorted/present.mp3');
 
-        $outcome = app(\App\Services\Pipeline\Stages\CatalogueStage::class)->run($item);
+        $outcome = app(CatalogueStage::class)->run($item);
 
-        $this->assertSame(\App\Jobs\Pipeline\StageResult::Done, $outcome->result);
+        $this->assertSame(StageResult::Done, $outcome->result);
     }
 
     public function test_the_catalogue_stage_backfills_a_size_the_ingest_could_not_read(): void
@@ -317,7 +320,7 @@ class PipelineFlowTest extends TestCase
         $item = $this->accept('media/unsorted/sized.mp3');
         $item->forceFill(['file_size' => null])->saveQuietly();
 
-        app(\App\Services\Pipeline\Stages\CatalogueStage::class)->run($item->fresh());
+        app(CatalogueStage::class)->run($item->fresh());
 
         $this->assertSame(strlen('audio bytes'), $item->fresh()->file_size);
     }
@@ -326,11 +329,11 @@ class PipelineFlowTest extends TestCase
     {
         // A missing handler would mark an item done without the work
         // happening, which is worse than an error.
-        $registry = app(\App\Services\Pipeline\StageRegistry::class);
+        $registry = app(StageRegistry::class);
 
         foreach (PipelineStage::cases() as $stage) {
             $this->assertInstanceOf(
-                \App\Services\Pipeline\Stage::class,
+                Stage::class,
                 $registry->for($stage),
                 "No handler for {$stage->value}.",
             );

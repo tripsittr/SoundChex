@@ -18,7 +18,7 @@ use Tests\TestCase;
 /**
  * `MatchConfidence::Exact` is the one value that permits moving a video file,
  * so what sets it decides whether a wrong match gets a wrong *filename and
- * folder* as well as a wrong row (#455).
+ * folder* as well as a wrong row (#489).
  *
  * The bug these cover: `enrich()` called `promoteTitle()` — which overwrites
  * the item's title with TMDB's — *before* `recordConfidence()`, which decides

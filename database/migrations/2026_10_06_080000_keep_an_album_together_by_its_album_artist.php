@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * The artist an album belongs to, as distinct from a track's own (#468).
+ * The artist an album belongs to, as distinct from a track's own (#489).
  *
  * Music files under `Artist/Album/Track`, using the **track** artist -- so a
  * compilation scatters. Measured on this library: **160 albums would spread

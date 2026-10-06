@@ -11,7 +11,7 @@ use Illuminate\Console\Command;
 
 /**
  * Writes down every media file, so a reprocess can be checked afterwards
- * (#470, step 1).
+ * (#489, step 1).
  *
  * Reprocessing 8,335 catalogued items is the riskiest operation in the whole
  * plan, and the thing that makes it survivable is being able to answer "is

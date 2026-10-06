@@ -27,7 +27,7 @@ class CoverEmbedderTest extends TestCase
 
     public function test_it_does_not_rewrite_a_file_that_already_has_the_cover(): void
     {
-        // #463. Every re-enrichment of an Exact music match rewrote the whole
+        // #489. Every re-enrichment of an Exact music match rewrote the whole
         // audio file -- ffmpeg remuxes to a temporary and renames over the
         // original -- with no check for artwork that was already there. A
         // library-wide re-enrichment therefore rewrote every track, changed

@@ -12,6 +12,7 @@ use App\Enums\PipelineStage;
 use App\Enums\PipelineState;
 use App\Enums\ProcessingStatus;
 use App\Filament\Pages\ReviewQueuePage;
+use App\Jobs\Pipeline\RunPipelineStageJob;
 use App\Models\MediaItem;
 use App\Models\Profile;
 use App\Models\User;
@@ -25,7 +26,7 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * The review queue (#480), built to the approved layout (#481).
+ * The review queue (#489), built to the approved layout (#489).
  *
  * What matters here is that the four jobs stay **mutually exclusive** — an
  * item in two jobs means the counts lie and the same decision is offered twice
@@ -258,7 +259,7 @@ class ReviewQueuePageTest extends TestCase
         $this->assertSame(PipelineState::Queued, $fresh->pipeline_state);
         $this->assertSame(0, $fresh->pipeline_attempts, 'A person changed something, so past failures say nothing about this run.');
 
-        Queue::assertPushed(\App\Jobs\Pipeline\RunPipelineStageJob::class);
+        Queue::assertPushed(RunPipelineStageJob::class);
     }
 
     public function test_re_identifying_an_item_that_still_cannot_be_identified_parks_it_again(): void
@@ -279,7 +280,7 @@ class ReviewQueuePageTest extends TestCase
 
     public function test_keeping_both_copies_resolves_the_pair_without_touching_either_file(): void
     {
-        // The rule the user set (#476): if Spotify has fifteen versions, so do
+        // The rule the user set (#489): if Spotify has fifteen versions, so do
         // we. Keeping both must leave both files alone.
         $item = $this->pendingDuplicate();
         $here = $item->absoluteFilePath();
@@ -337,7 +338,7 @@ class ReviewQueuePageTest extends TestCase
         // Three of the real queue's items are "Psycho Killer - Acoustic",
         // "1979 - Remastered 2012" and "Murder on the Dancefloor - triple j
         // Like A Version". Stripping after " - " would merge recordings that
-        // must stay apart (#476), so the page shows it as evidence.
+        // must stay apart (#489), so the page shows it as evidence.
         $item = $this->unidentified('Psycho Killer - Acoustic');
 
         $this->assertSame('Acoustic', $item->editionSuffix());

@@ -6,7 +6,7 @@
 namespace App\Enums;
 
 /**
- * How far a journalled move got (#465).
+ * How far a journalled move got (#489).
  *
  * `Started` is the state that makes recovery possible: a row sitting in it
  * means the process died mid-move, and the reconciler has the device, inode and

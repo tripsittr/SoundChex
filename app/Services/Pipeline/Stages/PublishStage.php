@@ -13,7 +13,7 @@ use App\Models\MediaItem;
 use App\Services\Pipeline\Stage;
 
 /**
- * Makes the item visible and says so (#465).
+ * Makes the item visible and says so (#489).
  *
  * The last stage, and the only one that sets `processing_status` to `complete`
  * -- which is what `ResolvedScope` uses to show an item at all. Everything

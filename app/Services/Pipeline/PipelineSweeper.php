@@ -13,7 +13,7 @@ use App\Services\FileMoveJournal;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Finds work the pipeline lost, and makes it happen (#465).
+ * Finds work the pipeline lost, and makes it happen (#489).
  *
  * The guarantee this delivers: **no item stays invisible and idle.** Before
  * this, a crash between cataloguing a row and dispatching its job left the row

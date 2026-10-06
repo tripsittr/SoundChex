@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * The backstop for every delete in the library (#464).
+ * The backstop for every delete in the library (#489).
  *
  * Its job is to make a wrong delete survivable, so the cases that matter are
  * the failures: a file it cannot move must be left alone, and a restore must

@@ -17,10 +17,11 @@ use App\Services\Quality\MediaProber;
 use App\Services\Quality\QualityChecker;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * What a file contains, and what is wrong with it (#467).
+ * What a file contains, and what is wrong with it (#489).
  *
  * Two gaps this closes. **No video technical data was stored anywhere** —
  * resolution, HDR, codecs, channels, languages and bitrate all absent, which
@@ -207,7 +208,7 @@ class MediaProbeAndQualityTest extends TestCase
         ];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('filenames')]
+    #[DataProvider('filenames')]
     public function test_cam_detection_reads_whole_words_only(string $filename, bool $expected): void
     {
         $item = new MediaItem(['title' => 'x', 'file_path' => '/media/'.$filename]);
