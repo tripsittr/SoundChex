@@ -30,6 +30,23 @@ class DuplicateResource extends Resource
     use HasNeedsReviewStatuses;
     use RestrictsToAdmins;
 
+    /**
+     * Hidden from the sidebar, superseded by ReviewQueuePage (#480).
+     *
+     * Still routed, so a bookmarked URL keeps working and the three test
+     * suites that cover this table still have something to exercise. Two
+     * entries pointing at the same job would be the confusing part, so only
+     * the new one appears.
+     *
+     * `canAccess()` is untouched: hiding a resource from navigation is not
+     * access control, and that distinction is the whole point of
+     * RestrictsToAdmins.
+     */
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     protected static ?string $model = MediaItem::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
