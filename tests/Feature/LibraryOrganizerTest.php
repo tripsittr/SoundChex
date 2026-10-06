@@ -367,6 +367,61 @@ class LibraryOrganizerTest extends TestCase
         );
     }
 
+    /* ----------------------------------------------------- path safety -- */
+
+    public function test_a_long_title_is_truncated_by_bytes_not_characters(): void
+    {
+        // The limit filesystems impose per path component is BYTES -- 255 on
+        // ext4, APFS and NTFS -- and mb_substr counts characters. Measured
+        // before the fix: a 120-character CJK title produced a 360-byte
+        // segment, past the limit, and the move failed with an error that
+        // named permissions rather than length.
+        $segment = $this->invokeSegment(str_repeat('交響曲', 50));
+
+        $this->assertLessThanOrEqual(255, strlen($segment), 'A path component must fit the filesystem limit.');
+        $this->assertTrue(mb_check_encoding($segment, 'UTF-8'), 'Cutting must not split a character in half.');
+    }
+
+    public function test_a_short_title_is_left_exactly_as_it_is(): void
+    {
+        // Truncation must not touch anything that fits.
+        $this->assertSame('Heavy Colors', $this->invokeSegment('Heavy Colors'));
+    }
+
+    /** @return array<string, array{0: string, 1: string}> */
+    public static function reservedNames(): array
+    {
+        return [
+            // Device names reserved since DOS. A file called NUL.mp3 cannot be
+            // created on Windows at all -- the call fails rather than
+            // producing a badly-named file.
+            'CON' => ['CON', 'CON_'],
+            'NUL' => ['NUL', 'NUL_'],
+            'PRN' => ['PRN', 'PRN_'],
+            'AUX' => ['AUX', 'AUX_'],
+            'COM1' => ['COM1', 'COM1_'],
+            'LPT1' => ['LPT1', 'LPT1_'],
+            'lower case with an extension' => ['con.mp3', 'con_.mp3'],
+            // And the false positives it must not catch.
+            'Concrete is not CON' => ['Concrete', 'Concrete'],
+            'Auxiliary is not AUX' => ['Auxiliary', 'Auxiliary'],
+            'Communion is not COM1' => ['Communion', 'Communion'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('reservedNames')]
+    public function test_windows_reserved_names_are_escaped(string $given, string $expected): void
+    {
+        $this->assertSame($expected, $this->invokeSegment($given));
+    }
+
+    private function invokeSegment(string $value): string
+    {
+        $method = new \ReflectionMethod($this->organizer, 'segment');
+
+        return (string) $method->invoke($this->organizer, $value);
+    }
+
     /* -------------------------------------------------------- helpers --- */
 
     private function music(string $title, ?string $artist, ?string $album = null, ?int $track = null, string $contents = 'audio'): MediaItem
