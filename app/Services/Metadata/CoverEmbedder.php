@@ -53,6 +53,17 @@ class CoverEmbedder
             return false;
         }
 
+        // Nothing to do when the file already carries this cover.
+        //
+        // Without this check every re-enrichment of an Exact music match
+        // rewrote the whole audio file -- ffmpeg remuxes it to a temporary and
+        // renames over the original -- so a library-wide re-enrichment rewrote
+        // every track, changed every mtime, and invalidated every stored hash,
+        // all to embed artwork that was already there (#463).
+        if ($this->alreadyEmbedded($audioPath, $coverPath)) {
+            return false;
+        }
+
         $temp = $this->tempPath($audioPath, $extension);
 
         $result = Process::timeout(120)->run($this->command($audioPath, $coverPath, $temp, $extension));
@@ -71,7 +82,57 @@ class CoverEmbedder
             return false;
         }
 
+        // The bytes at file_path just changed, so the stored hash describes a
+        // file that no longer exists (AGENTS.md rule 2, S-346). Left in place
+        // this made two rows on one file hold two different hashes, neither
+        // matching the file, and a reviewed track kept returning to the queue.
+        if (filled($item->content_hash)) {
+            $item->forceFill(['content_hash' => null])->saveQuietly();
+        }
+
         return true;
+    }
+
+    /**
+     * Whether the audio file already carries this exact cover.
+     *
+     * Compared by the embedded image's bytes against the cover file's, which is
+     * the only comparison that answers the question -- a file can carry a
+     * *different* cover, which does need replacing. ffmpeg extracts the
+     * attached picture to a temporary and the two are hashed.
+     *
+     * Any failure answers "not embedded": re-embedding a cover that was already
+     * there wastes a remux, while skipping one that is missing leaves the
+     * library without artwork, so the safe default is to proceed.
+     */
+    private function alreadyEmbedded(string $audioPath, string $coverPath): bool
+    {
+        $extracted = $this->tempPath($audioPath, 'jpg');
+
+        try {
+            $result = Process::timeout(30)->run([
+                config('transcode.ffmpeg', 'ffmpeg'),
+                '-hide_banner', '-loglevel', 'error', '-y',
+                '-i', $audioPath,
+                // The attached picture only. No stream means no cover, and
+                // ffmpeg exits non-zero, which reads as "not embedded".
+                '-map', '0:v:0',
+                '-c', 'copy',
+                '-f', 'image2',
+                $extracted,
+            ]);
+
+            if (! $result->successful() || ! is_file($extracted) || filesize($extracted) === 0) {
+                return false;
+            }
+
+            $embedded = @hash_file('xxh128', $extracted);
+            $wanted = @hash_file('xxh128', $coverPath);
+
+            return $embedded !== false && $embedded === $wanted;
+        } finally {
+            @unlink($extracted);
+        }
     }
 
     /**
