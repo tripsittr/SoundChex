@@ -88,6 +88,11 @@
                 @if ($totalPending > 0)
                     {{ $this->cancelAllAction }}
                 @endif
+
+                {{-- Always offered, not only while work is queued: somebody
+                     tuning this usually does it *before* starting a big scan,
+                     not in the middle of one. --}}
+                {{ $this->setConcurrencyAction }}
             </div>
         </x-slot>
 
@@ -107,7 +112,8 @@
                             <th class="py-2 pr-4 font-medium text-right">Running</th>
                             <th class="py-2 pr-4 font-medium">Oldest</th>
                             <th class="py-2 pr-4 font-medium text-right">Retried</th>
-                            <th class="py-2 font-medium text-right">Share</th>
+                            <th class="py-2 pr-4 font-medium text-right">Share</th>
+                            <th class="py-2 font-medium text-right"><span class="sr-only">Controls</span></th>
                         </tr>
                     </thead>
 
@@ -148,7 +154,7 @@
                                      kind at 6,398 of 6,404 the number alone
                                      reads as "the queue is busy", where the
                                      share says "it is this one". --}}
-                                <td class="py-2 text-right">
+                                <td class="py-2 pr-4 text-right">
                                     @php $share = $totalPending > 0 ? (int) round($row['queued'] / $totalPending * 100) : 0; @endphp
                                     <div class="flex items-center justify-end gap-2">
                                         <div class="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-white/10">
@@ -156,6 +162,24 @@
                                         </div>
                                         <span class="w-9 text-right tabular-nums text-xs text-gray-500 dark:text-gray-400">{{ $share }}%</span>
                                     </div>
+                                </td>
+
+                                {{-- Per row, because the reason to pause is
+                                     almost always one job kind: stopping
+                                     everything also stops the cover fetches
+                                     and the duplicate scan, which were not the
+                                     problem. --}}
+                                <td class="py-2 text-right">
+                                    @php $jobPaused = $this->isJobPaused($row['job']); @endphp
+                                    <x-filament::button
+                                        size="xs"
+                                        :color="$jobPaused ? 'success' : 'gray'"
+                                        wire:click="toggleJob(@js($row['job']))"
+                                        wire:loading.attr="disabled"
+                                        wire:target="toggleJob"
+                                    >
+                                        {{ $jobPaused ? 'Resume' : 'Pause' }}
+                                    </x-filament::button>
                                 </td>
                             </tr>
                         @endforeach

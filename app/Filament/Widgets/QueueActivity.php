@@ -13,6 +13,7 @@ use Carbon\CarbonInterface;
 use Filament\Actions\Action;
 use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
+use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
@@ -142,6 +143,90 @@ class QueueActivity extends Widget implements HasActions, HasSchemas
         }
 
         return now()->addMinutes($minutes)->diffForHumans(['parts' => 1, 'syntax' => CarbonInterface::DIFF_ABSOLUTE]);
+    }
+
+    /** Whether one kind of job is paused, for its row. */
+    public function isJobPaused(string $job): bool
+    {
+        return app(QueueControl::class)->isJobPaused($job);
+    }
+
+    /**
+     * Pauses or resumes one kind of job.
+     *
+     * Per row rather than all-or-nothing, because the reason to pause is
+     * almost always specific: enrichment hammering a rate-limited API, or a
+     * transcode making the machine unusable. Stopping everything also stops
+     * the cover fetches and the duplicate scan, which were not the problem.
+     */
+    public function toggleJob(string $job): void
+    {
+        $control = app(QueueControl::class);
+
+        if ($control->isJobPaused($job)) {
+            $control->resumeJob($job);
+
+            Notification::make()->title($job.' resumed')->success()->send();
+
+            return;
+        }
+
+        $control->pauseJob($job);
+
+        Notification::make()
+            ->title($job.' paused')
+            ->body('Anything already running finishes. The rest of the queue keeps going.')
+            ->success()
+            ->send();
+    }
+
+    /** How many jobs may run at once. */
+    public function concurrency(): int
+    {
+        return app(QueueControl::class)->concurrency();
+    }
+
+    /**
+     * Changes how many jobs run at once.
+     *
+     * One by default on purpose: enrichment is rate-limited by the services it
+     * calls, so a second job in parallel buys nothing there. Hashing and
+     * transcoding are the exceptions, which is why this is adjustable.
+     *
+     * Takes effect within about fifteen seconds -- `queue:workers` re-reads
+     * the setting on a timer rather than needing a restart.
+     */
+    public function setConcurrencyAction(): Action
+    {
+        return Action::make('setConcurrency')
+            ->label('Jobs at once: '.$this->concurrency())
+            ->icon('heroicon-m-adjustments-horizontal')
+            ->color('gray')
+            ->schema([
+                Select::make('concurrency')
+                    ->label('Jobs at once')
+                    ->options(array_combine(
+                        range(1, QueueControl::MAX_CONCURRENCY),
+                        array_map(
+                            fn (int $n): string => $n === 1 ? '1 (recommended)' : (string) $n,
+                            range(1, QueueControl::MAX_CONCURRENCY),
+                        ),
+                    ))
+                    ->default($this->concurrency())
+                    ->required()
+                    ->helperText('One is right for most work: enrichment is limited by how fast '
+                        .'other people\'s services answer, not by this machine. Raise it when '
+                        .'hashing or transcoding is the backlog.'),
+            ])
+            ->action(function (array $data): void {
+                app(QueueControl::class)->setConcurrency((int) $data['concurrency']);
+
+                Notification::make()
+                    ->title('Now running '.$data['concurrency'].' job(s) at once')
+                    ->body('The workers pick this up within about fifteen seconds.')
+                    ->success()
+                    ->send();
+            });
     }
 
     /**

@@ -13,7 +13,12 @@
 	<array>
 		<string>{{RUNTIME_DIR}}/bin/php</string>
 		<string>{{APP_DIR}}/artisan</string>
-		<string>queue:work</string>
+		<!--
+		  `queue:workers`, not `queue:work`: it runs as many workers as the
+		  panel's concurrency setting asks for and re-reads it on a timer, so
+		  changing the number does not mean editing this file and reinstalling.
+		-->
+		<string>queue:workers</string>
 		<!--
 		  Every queue the pipeline uses, in priority order (#465).
 
@@ -30,7 +35,6 @@
 		  the two must not drift.
 		-->
 		<string>--queue=default,net,cpu,io</string>
-		<string>--tries=1</string>
 		<string>--timeout=21900</string>
 	</array>
 	<key>KeepAlive</key>

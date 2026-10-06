@@ -249,7 +249,11 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
         "queue" => {
             let mut c = Command::new(layout.exe("php"));
             c.arg(layout.app_dir.join("artisan"))
-                .arg("queue:work")
+                // `queue:workers`, not `queue:work`: it runs as many workers
+                // as the panel's concurrency setting asks for and re-reads it
+                // on a timer, so changing the number does not mean rebuilding
+                // this binary (#509).
+                .arg("queue:workers")
                 // Every queue the pipeline uses, in priority order (#465).
                 // A bare `queue:work` serves `default` only, so the io, cpu
                 // and net stages would sit unprocessed forever -- the worker
@@ -260,7 +264,6 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
                 // other people's servers, `cpu` reads files, and `io` hashes
                 // and moves bytes, which is the slowest.
                 .arg("--queue=default,net,cpu,io")
-                .arg("--tries=1")
                 .arg("--timeout=21900");
             c
         }

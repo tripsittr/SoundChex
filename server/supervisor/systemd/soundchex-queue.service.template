@@ -10,7 +10,10 @@ Type=simple
 # forever -- the worker looks healthy and nothing moves. Ordered cheapest first
 # so quick transitions are never stuck behind byte-moving. Kept in step with
 # src-tauri/src/supervisor.rs and the launchd template.
-ExecStart={{RUNTIME_DIR}}/bin/php {{APP_DIR}}/artisan queue:work --queue=default,net,cpu,io --tries=1 --timeout=21900
+# `queue:workers`, not `queue:work`: it runs as many workers as the panel's
+# concurrency setting asks for and re-reads it on a timer, so changing the
+# number does not mean editing this file and reinstalling (#509).
+ExecStart={{RUNTIME_DIR}}/bin/php {{APP_DIR}}/artisan queue:workers --queue=default,net,cpu,io --timeout=21900
 WorkingDirectory={{APP_DIR}}
 Restart=always
 RestartSec=2
