@@ -14,6 +14,22 @@
 		<string>{{RUNTIME_DIR}}/bin/php</string>
 		<string>{{APP_DIR}}/artisan</string>
 		<string>queue:work</string>
+		<!--
+		  Every queue the pipeline uses, in priority order (#465).
+
+		  A bare `queue:work` serves `default` only, so the io, cpu and net
+		  stages sit unprocessed forever: the worker looks healthy, the
+		  dashboard says "nothing is being worked on", and the jobs pile up.
+		  Observed on a live install with 36 jobs stranded on `net` for three
+		  hours while a worker ran.
+
+		  Ordered so cheap work is never stuck behind expensive: `default`
+		  holds the transitions, `net` waits on other people's servers, `cpu`
+		  reads files, and `io` hashes and moves bytes, which is slowest. The
+		  Rust supervisor in src-tauri/src/supervisor.rs passes the same list;
+		  the two must not drift.
+		-->
+		<string>--queue=default,net,cpu,io</string>
 		<string>--tries=1</string>
 		<string>--timeout=21900</string>
 	</array>
