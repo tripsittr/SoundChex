@@ -54,15 +54,29 @@ class FileTagger implements MetadataSource
 
         $info = (new getID3)->analyze($path);
 
+        $tagged = $this->taggedFields($info);
+
         $values = array_merge(
             $this->technicalFields($info),
-            $this->taggedFields($info),
+            $tagged,
         );
 
         // Only fall back to the filename for fields the tags didn't supply.
         if (blank($values['artist'] ?? null) || blank($values['title'] ?? null)) {
             $values = array_merge($this->parseFilename($item), $values);
         }
+
+        // Whether the *embedded tags* named the artist, as opposed to the
+        // filename fallback above or a later API match.
+        //
+        // The organizer's music gate asks exactly this. Music is allowed to be
+        // filed on its own tags because they are authoritative about the file
+        // (AGENTS.md rule 2) -- but MusicBrainz also writes `artist`, so after
+        // a run nothing distinguished a real tag from an API guess, and files
+        // were moved on the guess (#460). Recorded here because this is the one
+        // source that can tell the difference. Phase 3 replaces it with
+        // per-field provenance for every field and source.
+        $this->recordTaggedArtist($item, filled($tagged['artist'] ?? null));
 
         $this->writeMetadata($item, $values);
         $this->writeTitle($item, $values);
@@ -215,6 +229,22 @@ class FileTagger implements MetadataSource
         }
 
         return [];
+    }
+
+    /**
+     * Notes that the file's embedded tags named the artist.
+     *
+     * Kept in `enrichment_report`. The pipeline writes that column again once
+     * every source has run, so it deliberately merges what is already stored
+     * rather than replacing it -- otherwise this key would be discarded a few
+     * milliseconds after being written.
+     */
+    private function recordTaggedArtist(MediaItem $item, bool $tagged): void
+    {
+        $report = $item->enrichment_report ?? [];
+        $report['tagged_artist'] = $tagged;
+
+        $item->forceFill(['enrichment_report' => $report])->saveQuietly();
     }
 
     /**

@@ -144,16 +144,35 @@ class LibraryOrganizerTest extends TestCase
         $this->assertNull($this->organizer->organize($item->fresh()));
     }
 
-    public function test_music_is_exempt_from_the_confidence_gate(): void
+    public function test_music_with_its_own_tags_passes_the_confidence_gate(): void
     {
-        // Its artist and album come from the file's own embedded tags, which
-        // are authoritative about the file whatever an online source thinks.
-        // 'none' is the real unenriched state — the column defaults to it and
-        // is not nullable, so this is what an un-looked-up track actually has.
+        // Music's looser rule, and the reason for it: the artist and album come
+        // from the file's own embedded tags, which are authoritative about the
+        // file whatever an online source thinks. 'none' is the real unenriched
+        // state — the column defaults to it and is not nullable, so this is
+        // what an un-looked-up track actually has.
+        //
+        // This used to assert that *all* music was exempt, which is what the
+        // rule was taken to mean and not what it says: MusicBrainz writes
+        // `artist` too, so unconditional exemption filed music on API guesses
+        // (#460). The tag is now required, which is what "its own tags" meant.
+        $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors');
+        $item->forceFill([
+            'match_confidence' => MatchConfidence::None,
+            'enrichment_report' => ['tagged_artist' => true],
+        ])->save();
+
+        $this->assertTrue($this->organizer->canOrganize($item->fresh()));
+    }
+
+    public function test_music_with_only_a_guessed_artist_does_not_pass_the_gate(): void
+    {
+        // The same row without the tag behind it: the artist came from an API
+        // text match, so the path would be built from a guess.
         $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors');
         $item->forceFill(['match_confidence' => MatchConfidence::None])->save();
 
-        $this->assertTrue($this->organizer->canOrganize($item->fresh()));
+        $this->assertFalse($this->organizer->canOrganize($item->fresh()));
     }
 
     public function test_a_movie_without_a_year_stays_put(): void

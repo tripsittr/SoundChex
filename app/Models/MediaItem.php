@@ -640,6 +640,24 @@ class MediaItem extends Model
         return (bool) preg_match('#^[A-Za-z]:[\\\\/]#', $path);
     }
 
+    /**
+     * Whether the file's own embedded tags named its artist.
+     *
+     * Recorded by `FileTagger`, the one source that can tell an embedded tag
+     * from a filename guess or a later API match. It gates filing for music
+     * (`LibraryOrganizer::isConfidentEnoughToMove()`): tags are authoritative
+     * about the file, API data is not, and before #460 the two were
+     * indistinguishable once a run had finished.
+     *
+     * Absent for anything enriched before this was recorded, which reads as
+     * false — such an item simply needs `Exact` to be filed, which is the
+     * cautious answer.
+     */
+    public function hasTaggedArtist(): bool
+    {
+        return (bool) ($this->enrichment_report['tagged_artist'] ?? false);
+    }
+
     /** Whether the underlying file is present and readable. */
     public function hasReadableFile(): bool
     {

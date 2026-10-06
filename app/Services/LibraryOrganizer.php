@@ -6,6 +6,7 @@
 namespace App\Services;
 
 use App\Enums\MediaItemType;
+use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -62,18 +63,35 @@ class LibraryOrganizer
     /**
      * Whether this item's metadata is trustworthy enough to rename its file.
      *
-     * Music is exempt: its artist and album come from the file's own embedded
-     * tags, which are authoritative about the file regardless of what any
-     * online source thinks. Everything else is filed from an API match, so it
-     * has to have matched exactly.
+     * Everything is filed from an API match unless something better is known,
+     * so by default it has to have matched exactly.
+     *
+     * Music has a looser rule, and the reason is the file's own tags: they are
+     * authoritative about the file whatever an online source thinks (AGENTS.md
+     * rule 2). But the exemption used to be unconditional -- `true` for all
+     * music -- while MusicBrainz enrichment *writes* `artist` and `album`. So a
+     * file whose tags said nothing was filed under an API guess, which is the
+     * one thing the gate exists to prevent (#460).
+     *
+     * The rule is now what the exemption always meant: music may be filed when
+     * its own embedded tags named the artist its path is built from, or when
+     * the match is exact. API data alone never moves a file.
      */
     private function isConfidentEnoughToMove(MediaItem $item): bool
     {
-        if ($item->type === MediaItemType::Music) {
+        // An item the user has been asked to judge must not be moved out from
+        // under them -- unless they have already judged it, in which case
+        // holding it back forever is the opposite mistake (S-302).
+        if ($item->processing_status === ProcessingStatus::NeedsReview
+            && $item->reviewed_at === null) {
+            return false;
+        }
+
+        if ($item->match_confidence?->allowsFileMove()) {
             return true;
         }
 
-        return $item->match_confidence?->allowsFileMove() ?? false;
+        return $item->type === MediaItemType::Music && $item->hasTaggedArtist();
     }
 
     /**
