@@ -84,7 +84,7 @@ class Tmdb implements MetadataSource
 
         $this->promoteTitle($item, $show);
         $this->writeOverview($item, $show);
-        $this->writeArtwork($item, $show);
+        $this->writeArtwork($item, $show['poster_path'] ?? null);
         $this->writeGenreTags($item, $show['genres'] ?? []);
         $this->writeCredits($item, $show['credits'] ?? [], ['Executive Producer', 'Producer']);
         $this->recordConfidence($item, $show, $matchedById, $searchedTitle);
@@ -135,6 +135,13 @@ class Tmdb implements MetadataSource
         if (filled($episode['name'] ?? null)) {
             $item->forceFill(['title' => $episode['name']])->saveQuietly();
         }
+
+        // The still was already in that response and was being thrown away,
+        // which is why every episode list was a column of grey glyphs: TVDB
+        // is the only other source that writes episode artwork and it needs
+        // its own API key, so a server holding only a TMDB key had nothing
+        // fetching stills at all.
+        $this->writeArtwork($item, $episode['still_path'] ?? null);
 
         // Numbering came from the filename, so this match is as exact as it
         // gets — the file itself said which episode it is.
@@ -212,6 +219,30 @@ class Tmdb implements MetadataSource
         }
 
         $item->title = $canonical;
+        $item->saveQuietly();
+    }
+
+    /**
+     * Stores a TMDB image path as a full URL, when the row has none.
+     *
+     * TMDB returns a bare path -- `/abc123.jpg` -- which is meaningless on its
+     * own; the host and a size go in front of it. `w780` for a still and a
+     * poster alike: large enough for a detail page at 3x, small enough that a
+     * sixty-episode list is not sixty full-resolution images.
+     *
+     * Never overwrites. A cover that arrived beside the file, or one a person
+     * chose by hand, outranks this -- the same rule `LocalArtwork` and every
+     * other source follow.
+     */
+    private function writeArtwork(MediaItem $item, mixed $path): void
+    {
+        if (filled($item->cover_image_url) || ! is_string($path) || trim($path) === '') {
+            return;
+        }
+
+        $item->cover_image_url = 'https://image.tmdb.org/t/p/w780'
+            .(str_starts_with($path, '/') ? '' : '/').$path;
+
         $item->saveQuietly();
     }
 
