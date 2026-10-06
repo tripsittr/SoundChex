@@ -6,6 +6,7 @@
 namespace App\Services\Review;
 
 use App\Enums\DuplicateStatus;
+use App\Enums\MediaItemType;
 use App\Enums\PipelineState;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
@@ -191,7 +192,7 @@ class ReviewQueue
             ];
         }
 
-        if ($item->isMusic() && blank($item->musicMetadata?->album)) {
+        if ($item->type === MediaItemType::Music && blank($item->musicMetadata?->album)) {
             return [
                 'question' => 'No album.',
                 'because' => 'Is this a single that never had one, or did the album tag fail to read? Nothing can tell those apart.',

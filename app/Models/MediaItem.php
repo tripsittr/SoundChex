@@ -648,6 +648,38 @@ class MediaItem extends Model
     }
 
     /**
+     * The edition this title names, if it names one.
+     *
+     * A `" - "` suffix on a music title is usually an **edition marker**, not
+     * noise: "Psycho Killer - Acoustic", "1979 - Remastered 2012", "Goodbye
+     * Horses - Single". 772 titles in this library carry one, and three of them
+     * are in the review queue right now.
+     *
+     * Surfaced rather than stripped, because stripping it merges recordings
+     * that must stay apart — the rule the user set for versions (#476): if
+     * Spotify shows fifteen versions of a song, so should we. Shown as evidence
+     * on the review screen so a person can see what distinguishes two copies.
+     *
+     * Deliberately conservative: it only reads a suffix that follows a spaced
+     * hyphen or en dash, which is the convention streaming services use, and
+     * it never rewrites the title.
+     */
+    public function editionSuffix(): ?string
+    {
+        if ($this->type !== MediaItemType::Music) {
+            return null;
+        }
+
+        if (preg_match('/\s[-\x{2013}]\s(.+)$/u', (string) $this->title, $match) !== 1) {
+            return null;
+        }
+
+        $suffix = trim($match[1]);
+
+        return $suffix === '' ? null : $suffix;
+    }
+
+    /**
      * Whether the file's own embedded tags named its artist.
      *
      * Recorded by `FileTagger`, the one source that can tell an embedded tag
