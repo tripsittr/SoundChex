@@ -106,9 +106,22 @@ class QueueControl
         $query = DB::table('jobs')->whereNull('reserved_at');
 
         if ($job !== null) {
-            // The payload carries the fully-qualified name; the table shows the
-            // short one.
-            $query->where('payload', 'like', '%'.str_replace('\\', '\\\\', $job).'%');
+            // Two separate transformations, and conflating them was the bug.
+            //
+            // First the name is written the way JSON stores it: the payload is
+            // a JSON document, so a class name's backslashes appear doubled in
+            // it and a raw PHP name matches nothing.
+            //
+            // Then LIKE's own metacharacters are escaped, with `ESCAPE` spelled
+            // out -- a5's review caught that `%` and `_` went through raw, and
+            // without the clause the escaping is merely characters: a bare `%`
+            // matched every payload and would have emptied the queue. The name
+            // comes from a fixed set today, but a filter that is safe only
+            // because of where its input happens to come from stops being safe
+            // the moment somebody points a search box at it.
+            $pattern = $this->escapeLike(str_replace('\\', '\\\\', $job));
+
+            $query->whereRaw("payload LIKE ? ESCAPE '~'", ['%'.$pattern.'%']);
         }
 
         $count = $query->count();
@@ -125,6 +138,23 @@ class QueueControl
         ]);
 
         return $count;
+    }
+
+    /**
+     * Escapes a string for a LIKE pattern.
+     *
+     * Backslash first, or it would double-escape the escapes added after it.
+     * `%` matches anything and `_` matches one character, so an unescaped one
+     * in a job name would widen the match silently rather than fail loudly --
+     * and this method deletes rows.
+     */
+    private function escapeLike(string $value): string
+    {
+        // `~` as the escape character rather than a backslash, because the
+        // value legitimately *contains* backslashes -- a JSON-escaped class
+        // name is mostly backslashes -- and using one as the escape would mean
+        // escaping every one of them again. `~` appears in no PHP class name.
+        return str_replace(['~', '%', '_'], ['~~', '~%', '~_'], $value);
     }
 
     /**

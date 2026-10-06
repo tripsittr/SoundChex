@@ -125,6 +125,23 @@ class QueueControlsTest extends TestCase
         $this->assertStringContainsString('Transcode', (string) DB::table('jobs')->value('payload'));
     }
 
+    public function test_a_wildcard_in_a_job_name_cannot_widen_the_delete(): void
+    {
+        // a5's review: `%` and `_` went through raw into the LIKE pattern.
+        // Harmless today because the name comes from a fixed set, but a filter
+        // that is safe only because of where its input happens to come from
+        // stops being safe the moment somebody passes it a search box -- and
+        // this method deletes rows.
+        $this->queueJob('App\\Jobs\\EnrichMediaItemJob');
+        $this->queueJob('App\\Jobs\\TranscodeMediaJob');
+
+        // A bare `%` would match every payload and empty the queue.
+        $discarded = app(QueueControl::class)->cancel('%');
+
+        $this->assertSame(0, $discarded, 'A wildcard matched jobs it should not have.');
+        $this->assertSame(2, DB::table('jobs')->count(), 'The queue was emptied by a wildcard.');
+    }
+
     /* --------------------------------------------------- failed rows ---- */
 
     public function test_clearing_failed_records_removes_them(): void
