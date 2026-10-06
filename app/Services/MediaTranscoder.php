@@ -41,6 +41,12 @@ class MediaTranscoder
             return false;
         }
 
+        // The probe decides this, so it has to be present: without it
+        // `isPlayableVideo()` judges the container alone and an `.mp4` of
+        // HEVC is called playable -- meaning no conversion is ever queued for
+        // precisely the files that need one.
+        $item->loadMissing('probe');
+
         return match ($item->type) {
             MediaItemType::Movie, MediaItemType::Show => ! $item->isPlayableVideo()
                 || $this->hasUnplayableCodec($item),

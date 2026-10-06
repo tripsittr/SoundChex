@@ -29,6 +29,13 @@ class WatchController extends Controller
 
         abort_unless($item->hasReadableFile(), 404);
 
+        // The probe, because the question below is about codecs and not just
+        // the extension. `isPlayableVideo()` falls back to judging the
+        // container alone when this relation is absent, so without it an
+        // `.mp4` of HEVC passes the gate and the page loads a player that
+        // shows a black rectangle.
+        $item->loadMissing('probe');
+
         // MKV and AVI don't decode in any browser, so sending someone to a
         // player that shows a black rectangle helps nobody — the detail page
         // offers a download for those instead.
