@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SoundChex Review Queue</title>
+
+<style>
+/* Layout: a full-height two-pane shell. Left is a thin stack of what needs
+   deciding; right is one decision at a time, at full size, with its evidence.
+   The table is gone — scanning rows is for reports, and this is for deciding.
+
+   Palette and type come from the app's own resources/css/tokens.css verbatim,
+   including the measured-contrast note on --sc-accent-text. Single dark look
+   by choice: this is the SoundChex admin surface, which has no light mode. */
+:root {
+  --sc-base-900: #08080b;
+  --sc-base-800: #0f0f14;
+  --sc-base-700: #16161d;
+  --sc-base-600: #1f1f28;
+  --sc-base-500: #2a2a35;
+  --sc-ink-100: #f4f4f5;
+  --sc-ink-300: #b8b8c0;
+  --sc-ink-400: #a1a1ab;
+  --sc-ink-500: #8a8a96;
+  --sc-accent: #e11d3a;
+  --sc-accent-hot: #ff2a4a;
+  --sc-accent-text: #ff2343;
+  --sc-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Semantic, separate from the accent. */
+  --sc-ok: #2fbf71;
+  --sc-ok-text: #45d184;
+  --sc-warn: #d9a21b;
+  --sc-warn-text: #f0bb3c;
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--sc-base-900); color: var(--sc-ink-100);
+  font: 15px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--sc-accent-text); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- shell -- */
+.shell { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+
+.topbar {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding: 12px 18px; padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  background: var(--sc-base-800); border-bottom: 1px solid var(--sc-base-600);
+}
+.brand { font-weight: 650; letter-spacing: -0.01em; margin-right: 4px; }
+.brand span { color: var(--sc-ink-500); font-weight: 400; }
+
+/* Entry by the job you came to do, not by the system's reason taxonomy.
+   Each one is a different shape of decision, so each gets its own view. */
+.jobs { display: flex; gap: 6px; flex-wrap: wrap; }
+.job {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 13px; border-radius: 999px;
+  background: transparent; border: 1px solid var(--sc-base-600);
+  color: var(--sc-ink-300); transition: background 120ms var(--sc-ease);
+}
+.job:hover { background: var(--sc-base-700); color: var(--sc-ink-100); }
+.job[aria-pressed="true"] {
+  background: var(--sc-base-600); color: var(--sc-ink-100);
+  border-color: var(--sc-base-500);
+}
+.job .n {
+  font-variant-numeric: tabular-nums; font-size: 12px;
+  padding: 1px 7px; border-radius: 999px;
+  background: var(--sc-base-600); color: var(--sc-ink-400);
+}
+.job[aria-pressed="true"] .n { background: var(--sc-accent); color: #fff; }
+.job[data-empty="1"] { opacity: 0.45; }
+
+.spacer { flex: 1 1 auto; }
+.kbdhint { color: var(--sc-ink-500); font-size: 12.5px; }
+.kbdhint kbd {
+  font: 11.5px/1 var(--font-mono); padding: 3px 5px; border-radius: 4px;
+  background: var(--sc-base-700); border: 1px solid var(--sc-base-500);
+  color: var(--sc-ink-300);
+}
+
+/* ----------------------------------------------------------- two panes -- */
+.panes { display: grid; grid-template-columns: 300px 1fr; min-height: 0; }
+@media (max-width: 860px) {
+  .panes { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .queue { max-height: 36vh; border-right: 0; border-bottom: 1px solid var(--sc-base-600); }
+}
+
+.queue {
+  overflow-y: auto; min-width: 0;
+  background: var(--sc-base-800); border-right: 1px solid var(--sc-base-600);
+}
+.queue-head {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; padding: 12px 14px 9px;
+  background: var(--sc-base-800); border-bottom: 1px solid var(--sc-base-600);
+}
+.queue-head h2 {
+  margin: 0; font-size: 11.5px; font-weight: 600;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--sc-ink-500);
+}
+.queue-head .remaining { font-size: 12px; color: var(--sc-ink-500); font-variant-numeric: tabular-nums; }
+
+.row {
+  display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: center;
+  width: 100%; text-align: left; padding: 9px 14px;
+  background: transparent; border: 0; border-bottom: 1px solid var(--sc-base-700);
+}
+.row:hover { background: var(--sc-base-700); }
+.row[aria-current="true"] {
+  background: var(--sc-base-700);
+  box-shadow: inset 3px 0 0 var(--sc-accent);
+}
+.row .art {
+  width: 34px; height: 34px; border-radius: 4px; flex: none;
+  background: var(--sc-base-600); display: grid; place-items: center;
+  font-size: 13px; color: var(--sc-ink-500);
+}
+.row .t { min-width: 0; }
+.row .t b { display: block; font-weight: 500; font-size: 13.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .t small { display: block; color: var(--sc-ink-500); font-size: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.done { opacity: 0.4; }
+.row.done .t b { text-decoration: line-through; }
+
+/* ------------------------------------------------------------- decision -- */
+.stage { overflow-y: auto; min-width: 0; padding: 0 0 28px; }
+.pad { padding: 22px 26px 0; max-width: 760px; }
+@media (max-width: 560px) { .pad { padding: 18px 16px 0; } }
+
+.eyebrow {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--sc-ink-500); margin-bottom: 10px;
+}
+.chip {
+  padding: 2px 8px; border-radius: 4px; font-size: 11px; letter-spacing: 0.04em;
+  border: 1px solid currentColor;
+}
+.chip.fuzzy { color: var(--sc-warn-text); }
+.chip.none { color: var(--sc-ink-400); }
+.chip.exact { color: var(--sc-ok-text); }
+
+h1.subject {
+  margin: 0 0 4px; font-size: clamp(22px, 3.4vw, 30px); line-height: 1.15;
+  font-weight: 640; letter-spacing: -0.02em; text-wrap: balance;
+}
+.byline { margin: 0 0 18px; color: var(--sc-ink-300); font-size: 15px; }
+
+/* The question, stated once, in words. This is what the old page never did:
+   it showed you a row and left you to work out what was being asked. */
+.ask {
+  padding: 14px 16px; border-radius: 8px; margin-bottom: 18px;
+  background: var(--sc-base-700); border: 1px solid var(--sc-base-600);
+  border-left: 3px solid var(--sc-accent);
+}
+.ask p { margin: 0; font-size: 15px; }
+.ask p + p { margin-top: 7px; color: var(--sc-ink-300); font-size: 13.5px; }
+
+/* Evidence: the facts needed to answer, as a definition list. */
+.evidence {
+  display: grid; grid-template-columns: auto 1fr; gap: 7px 16px;
+  margin: 0 0 20px; padding: 0; font-size: 13.5px;
+}
+.evidence dt { color: var(--sc-ink-500); white-space: nowrap; }
+.evidence dd { margin: 0; min-width: 0; }
+.evidence dd code { font: 12.5px/1.4 var(--font-mono); color: var(--sc-ink-300); word-break: break-all; }
+.evidence .flag { color: var(--sc-warn-text); }
+
+/* Two or three plausible actions, the likely one first. */
+.actions { display: flex; gap: 9px; flex-wrap: wrap; padding-top: 4px;
+  border-top: 1px solid var(--sc-base-600); margin-top: 4px; padding-top: 18px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 15px; border-radius: 7px;
+  background: var(--sc-base-700); border: 1px solid var(--sc-base-500);
+  transition: transform 90ms var(--sc-ease), background 120ms var(--sc-ease);
+}
+.btn:hover { background: var(--sc-base-600); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--sc-accent); border-color: var(--sc-accent); color: #fff; font-weight: 550; }
+.btn.primary:hover { background: var(--sc-accent-hot); }
+.btn kbd {
+  font: 11px/1 var(--font-mono); padding: 3px 5px; border-radius: 4px;
+  background: #0003; border: 1px solid #fff2;
+}
+.btn.ghost { background: transparent; }
+
+/* Side-by-side, for a duplicate. A pair is compared, not listed. */
+.versus { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px;
+  align-items: stretch; margin-bottom: 18px; }
+@media (max-width: 620px) { .versus { grid-template-columns: 1fr; } .vs-mid { display: none; } }
+.side {
+  padding: 14px; border-radius: 9px; min-width: 0;
+  background: var(--sc-base-800); border: 1px solid var(--sc-base-600);
+}
+.side.better { border-color: var(--sc-ok); box-shadow: 0 0 0 1px var(--sc-ok) inset; }
+.side h3 { margin: 0 0 2px; font-size: 14px; font-weight: 600; }
+.side .where { color: var(--sc-ink-500); font-size: 12px; font-family: var(--font-mono);
+  word-break: break-all; margin-bottom: 10px; }
+.side dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0; font-size: 13px; }
+.side dt { color: var(--sc-ink-500); }
+.side dd { margin: 0; font-variant-numeric: tabular-nums; }
+.side .verdict {
+  display: inline-block; margin-top: 11px; padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase;
+  background: var(--sc-ok); color: #04130a; font-weight: 600;
+}
+.vs-mid { display: grid; place-items: center; color: var(--sc-ink-500); font-size: 12px; }
+
+/* A grid of candidate covers, for artwork. Images are compared by eye. */
+.covers { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 12px; margin-bottom: 18px; }
+.cover { padding: 0; background: transparent; border: 0; text-align: left; min-width: 0; }
+.cover .frame {
+  aspect-ratio: 1; max-width: 100%; border-radius: 7px; overflow: hidden;
+  background: var(--sc-base-600); display: grid; place-items: center;
+  border: 2px solid transparent; transition: border-color 120ms var(--sc-ease);
+}
+.cover[aria-pressed="true"] .frame { border-color: var(--sc-accent); }
+.cover .frame span { font-size: 11px; color: var(--sc-ink-500); text-align: center; padding: 6px; }
+.cover b { display: block; font-size: 12px; font-weight: 500; margin-top: 6px; }
+.cover small { display: block; font-size: 11.5px; color: var(--sc-ink-500); }
+
+/* Bulk, where it is safe. Never reaches a loose match — the detector refuses
+   those outright, so the UI must not imply otherwise. */
+.bulk {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 18px; padding: 12px 14px; border-radius: 8px;
+  background: color-mix(in srgb, var(--sc-ok) 11%, var(--sc-base-800));
+  border: 1px solid color-mix(in srgb, var(--sc-ok) 34%, var(--sc-base-600));
+  font-size: 13.5px;
+}
+.bulk .safe { color: var(--sc-ok-text); font-weight: 600; }
+.bulk p { margin: 0; color: var(--sc-ink-300); }
+
+.empty { display: grid; place-items: center; height: 100%; padding: 40px 20px; }
+.empty-in { text-align: center; max-width: 380px; }
+.empty-in .mark { font-size: 30px; color: var(--sc-ok-text); margin-bottom: 10px; }
+.empty-in h2 { margin: 0 0 7px; font-size: 19px; font-weight: 620; }
+.empty-in p { margin: 0; color: var(--sc-ink-400); font-size: 14px; }
+
+.note {
+  margin: 22px 26px 0; max-width: 760px; padding: 12px 14px; border-radius: 8px;
+  background: var(--sc-base-800); border: 1px dashed var(--sc-base-500);
+  color: var(--sc-ink-400); font-size: 12.5px;
+}
+.note b { color: var(--sc-ink-300); }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">SoundChex <span>· Review</span></div>
+
+    <div class="jobs" role="group" aria-label="What do you want to do">
+      <button class="job" data-job="identify" aria-pressed="true">
+        Identify unknown files <span class="n" id="n-identify">80</span>
+      </button>
+      <button class="job" data-job="duplicates" aria-pressed="false">
+        Sort out duplicates <span class="n" id="n-duplicates">2</span>
+      </button>
+      <button class="job" data-job="covers" aria-pressed="false">
+        Fix cover art <span class="n" id="n-covers">1</span>
+      </button>
+      <button class="job" data-job="files" aria-pressed="false" data-empty="1">
+        File problems <span class="n" id="n-files">0</span>
+      </button>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="kbdhint"><kbd>J</kbd> <kbd>K</kbd> move · <kbd>1</kbd>–<kbd>3</kbd> decide · <kbd>S</kbd> skip</div>
+  </header>
+
+  <div class="panes">
+    <nav class="queue" aria-label="Queue">
+      <div class="queue-head">
+        <h2 id="queue-title">Unknown files</h2>
+        <span class="remaining" id="remaining"></span>
+      </div>
+      <div id="rows"></div>
+    </nav>
+
+    <main class="stage" id="stage" tabindex="-1"></main>
+  </div>
+</div>
+
+<script>
+const ITEMS = [
+  {"id":48,"title":"Murder on the Dancefloor - triple j Like A Version","artist":"Royel Otis, triple j","album":null,"conf":"fuzzy","ms":187392},
+  {"id":91,"title":"Drive Baby","artist":"Delacey, Valley Boy","album":null,"conf":"fuzzy","ms":158496},
+  {"id":115,"title":"Lego Ring","artist":"Faye Webster, Lil Yachty","album":null,"conf":"fuzzy","ms":175000},
+  {"id":203,"title":"Dylan Thomas","artist":"Better Oblivion Community Center","album":null,"conf":"none","ms":194000},
+  {"id":311,"title":"Dearly Departed (feat Esmé Patterson)","artist":"Shakey Graves","album":null,"conf":"fuzzy","ms":215000},
+  {"id":402,"title":"Psycho Killer - Acoustic","artist":"Talking Heads","album":null,"conf":"fuzzy","ms":283000},
+  {"id":517,"title":"1979 - Remastered 2012","artist":"The Smashing Pumpkins","album":null,"conf":"fuzzy","ms":265000},
+  {"id":640,"title":"Me & My Dog","artist":"boygenius, Julien Baker","album":null,"conf":"none","ms":217000}
+];
+
+const DUPES = [
+  {id:"d1", title:"(Ghost) Riders in the Sky", artist:"Johnny Cash",
+   a:{album:"Silver", secs:224, fmt:"FLAC 16/44.1", size:"31.2 MB", where:"library/Music/Johnny Cash/Silver/05 (Ghost) Riders in the Sky.flac"},
+   b:{album:"The Essential Johnny Cash", secs:222, fmt:"MP3 320", size:"8.9 MB", where:"library/Music/Johnny Cash/The Essential/12 (Ghost) Riders In the Sky.mp3"},
+   match:"Same MusicBrainz recording", verdict:"version"},
+  {id:"d2", title:"Styrofoam", artist:"$uicideboy$",
+   a:{album:"KILL YOURSELF Part XV", secs:131, fmt:"MP3 320", size:"5.2 MB", where:"library/Music/$uicideboy$/KILL YOURSELF Part XV/03 Styrofoam.mp3"},
+   b:{album:"KILL YOURSELF Part XV", secs:131, fmt:"MP3 320", size:"5.2 MB", where:"unsorted/Sunnify/Styrofoam.mp3"},
+   match:"Byte-identical", verdict:"duplicate"}
+];
+
+const COVERS = [
+  {id:"c1", title:"Grey Sheep II", artist:"$uicideboy$",
+   options:[{src:null,label:"Current",note:"embedded in file"},{src:null,label:"Cover Art Archive",note:"1400×1400"},{src:null,label:"Last.fm",note:"600×600"},{src:null,label:"Deezer",note:"1000×1000"}]}
+];
+
+const JOB_TITLES = {identify:"Unknown files", duplicates:"Duplicate pairs", covers:"Cover art", files:"File problems"};
+let job = "identify";
+let cursor = 0;
+const decided = {identify:new Set(), duplicates:new Set(), covers:new Set()};
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const mmss = ms => { const t = Math.round(ms/1000); return Math.floor(t/60)+":"+String(t%60).padStart(2,"0"); };
+
+function listFor(j) {
+  if (j === "identify") return ITEMS;
+  if (j === "duplicates") return DUPES;
+  if (j === "covers") return COVERS;
+  return [];
+}
+
+/* The edition suffix is the whole reason these titles must not be trimmed:
+   "Psycho Killer - Acoustic" and "1979 - Remastered 2012" are distinct
+   recordings, so the page names the suffix as evidence rather than noise. */
+const EDITION = /\s[-–]\s(.+)$|\((?:feat\.?|ft\.?)[^)]*\)/i;
+function editionOf(title) {
+  const m = title.match(/\s[-–]\s(.+)$/);
+  return m ? m[1] : null;
+}
+
+function render() {
+  document.getElementById("queue-title").textContent = JOB_TITLES[job];
+  const list = listFor(job);
+  const left = list.length - decided[job]?.size || 0;
+  document.getElementById("remaining").textContent = list.length ? `${Math.max(left,0)} left` : "";
+
+  const rows = document.getElementById("rows");
+  rows.innerHTML = list.map((it, i) => {
+    const done = decided[job]?.has(it.id);
+    const sub = job === "duplicates" ? `${esc(it.artist)} · 2 copies`
+      : job === "covers" ? `${esc(it.artist)} · ${it.options.length} options`
+      : esc(it.artist);
+    return `<button class="row${done ? " done" : ""}" data-i="${i}" aria-current="${i===cursor}">
+      <span class="art" aria-hidden="true">${job === "covers" ? "▣" : "♪"}</span>
+      <span class="t"><b>${esc(it.title)}</b><small>${sub}</small></span>
+    </button>`;
+  }).join("") || `<div style="padding:16px;color:var(--sc-ink-500);font-size:13px">Nothing here.</div>`;
+
+  rows.querySelectorAll(".row").forEach(b => b.onclick = () => { cursor = +b.dataset.i; render(); });
+
+  const stage = document.getElementById("stage");
+  if (!list.length) { stage.innerHTML = emptyHtml(); return; }
+  if (cursor >= list.length) cursor = list.length - 1;
+  const it = list[cursor];
+  stage.innerHTML = job === "duplicates" ? dupeHtml(it) : job === "covers" ? coverHtml(it) : identifyHtml(it);
+  wire(it);
+}
+
+function emptyHtml() {
+  return `<div class="empty"><div class="empty-in">
+    <div class="mark" aria-hidden="true">✓</div>
+    <h2>Nothing needs you here</h2>
+    <p>File problems appear when a move fails or a file goes missing. The sweeper checks every five minutes.</p>
+  </div></div>`;
+}
+
+function identifyHtml(it) {
+  const ed = editionOf(it.title);
+  return `<div class="pad">
+    <div class="eyebrow">
+      <span>Unknown file</span>
+      <span class="chip ${esc(it.conf)}">${it.conf === "none" ? "no match" : "loose match"}</span>
+      <span>#${it.id}</span>
+    </div>
+    <h1 class="subject">${esc(it.title)}</h1>
+    <p class="byline">${esc(it.artist)} · ${mmss(it.ms)}</p>
+
+    <div class="ask">
+      <p><strong>No album.</strong> Is this a single that never had one, or did the album tag fail to read?</p>
+      <p>Nothing can tell these apart automatically, which is why it is here rather than filed under &ldquo;Unknown album&rdquo;.</p>
+    </div>
+
+    <dl class="evidence">
+      <dt>Artist</dt><dd>${esc(it.artist)}</dd>
+      <dt>Album</dt><dd class="flag">none recorded</dd>
+      <dt>Length</dt><dd>${mmss(it.ms)}</dd>
+      <dt>Confidence</dt><dd>${it.conf === "none" ? "nothing matched" : "matched loosely, not by an identifier"}</dd>
+      ${ed ? `<dt>Edition</dt><dd><strong>${esc(ed)}</strong> — kept, not stripped</dd>` : ""}
+      <dt>File</dt><dd><code>unsorted/${esc(it.title.slice(0,28))}&hellip;.mp3</code></dd>
+    </dl>
+
+    <div class="actions">
+      <button class="btn primary" data-act="single">It&rsquo;s a single <kbd>1</kbd></button>
+      <button class="btn" data-act="search">Search for the album <kbd>2</kbd></button>
+      <button class="btn ghost" data-act="leave">Leave it alone <kbd>3</kbd></button>
+      <button class="btn ghost" data-act="skip">Skip <kbd>S</kbd></button>
+    </div>
+  </div>`;
+}
+
+function dupeHtml(it) {
+  const isVersion = it.verdict === "version";
+  return `<div class="pad">
+    <div class="eyebrow"><span>Duplicate pair</span><span class="chip ${isVersion ? "fuzzy" : "exact"}">${esc(it.match)}</span></div>
+    <h1 class="subject">${esc(it.title)}</h1>
+    <p class="byline">${esc(it.artist)}</p>
+
+    <div class="ask">
+      <p>${isVersion
+        ? "<strong>These look like two versions, not two copies.</strong> Different albums and a two-second difference — the album cut and the compilation."
+        : "<strong>These are the same bytes.</strong> One is filed; the other is still in the staging folder."}</p>
+      <p>${isVersion
+        ? "Keeping both is usually right. A remaster, a single edit and a compilation cut are all distinct recordings."
+        : "Removing the staging copy loses nothing. It goes to the trash and can be restored for 30 days."}</p>
+    </div>
+
+    <div class="versus">
+      <div class="side${isVersion ? "" : " better"}">
+        <h3>${esc(it.a.album)}</h3>
+        <div class="where">${esc(it.a.where)}</div>
+        <dl><dt>Length</dt><dd>${mmss(it.a.secs*1000)}</dd>
+            <dt>Format</dt><dd>${esc(it.a.fmt)}</dd>
+            <dt>Size</dt><dd>${esc(it.a.size)}</dd></dl>
+        ${isVersion ? "" : `<span class="verdict">Keep this</span>`}
+      </div>
+      <div class="vs-mid" aria-hidden="true">vs</div>
+      <div class="side">
+        <h3>${esc(it.b.album)}</h3>
+        <div class="where">${esc(it.b.where)}</div>
+        <dl><dt>Length</dt><dd>${mmss(it.b.secs*1000)}</dd>
+            <dt>Format</dt><dd>${esc(it.b.fmt)}</dd>
+            <dt>Size</dt><dd>${esc(it.b.size)}</dd></dl>
+      </div>
+    </div>
+
+    <div class="actions">
+      ${isVersion
+        ? `<button class="btn primary" data-act="versions">Keep both as versions <kbd>1</kbd></button>
+           <button class="btn" data-act="keepa">Keep only the album cut <kbd>2</kbd></button>`
+        : `<button class="btn primary" data-act="trash">Keep the filed copy, trash the other <kbd>1</kbd></button>
+           <button class="btn" data-act="keepboth">Keep both <kbd>2</kbd></button>`}
+      <button class="btn ghost" data-act="skip">Skip <kbd>S</kbd></button>
+    </div>
+  </div>`;
+}
+
+function coverHtml(it) {
+  return `<div class="pad">
+    <div class="eyebrow"><span>Cover art</span><span>#${esc(it.id)}</span></div>
+    <h1 class="subject">${esc(it.title)}</h1>
+    <p class="byline">${esc(it.artist)}</p>
+
+    <div class="bulk">
+      <span class="safe">42 confident covers</span>
+      <p>Found by an exact match and not in conflict with anything. Accepting them in one go is safe.</p>
+      <button class="btn" data-act="bulkcovers">Accept all 42</button>
+    </div>
+
+    <div class="ask">
+      <p><strong>Which one is right?</strong> Two copies of this album carried different art, so the kept cover is uncertain.</p>
+    </div>
+
+    <div class="covers" role="group" aria-label="Cover options">
+      ${it.options.map((o, i) => `<button class="cover" data-cover="${i}" aria-pressed="${i===0}">
+        <span class="frame"><span>${esc(o.label)}<br>${esc(o.note)}</span></span>
+        <b>${esc(o.label)}</b><small>${esc(o.note)}</small>
+      </button>`).join("")}
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" data-act="usecover">Use the selected cover <kbd>1</kbd></button>
+      <button class="btn" data-act="upload">Upload my own <kbd>2</kbd></button>
+      <button class="btn ghost" data-act="skip">Skip <kbd>S</kbd></button>
+    </div>
+  </div>`;
+}
+
+function wire(it) {
+  document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => act(b.dataset.act, it));
+  document.querySelectorAll("[data-cover]").forEach(b => b.onclick = () => {
+    document.querySelectorAll("[data-cover]").forEach(o => o.setAttribute("aria-pressed", "false"));
+    b.setAttribute("aria-pressed", "true");
+  });
+}
+
+function act(what, it) {
+  if (what !== "skip" && what !== "bulkcovers" && what !== "upload" && what !== "search") {
+    decided[job]?.add(it.id);
+    const n = document.getElementById("n-" + job);
+    if (n) n.textContent = Math.max(0, listFor(job).length - decided[job].size);
+  }
+  const list = listFor(job);
+  if (cursor < list.length - 1) cursor++;
+  render();
+  document.getElementById("stage").focus();
+}
+
+document.querySelectorAll(".job").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".job").forEach(o => o.setAttribute("aria-pressed", "false"));
+  b.setAttribute("aria-pressed", "true");
+  job = b.dataset.job; cursor = 0; render();
+});
+
+addEventListener("keydown", e => {
+  if (e.target.matches("input, textarea")) return;
+  const list = listFor(job);
+  const k = e.key.toLowerCase();
+  if (k === "j" && cursor < list.length - 1) { cursor++; render(); }
+  else if (k === "k" && cursor > 0) { cursor--; render(); }
+  else if (k === "s") { const b = document.querySelector('[data-act="skip"]'); if (b) b.click(); }
+  else if (["1","2","3"].includes(k)) {
+    const btns = [...document.querySelectorAll(".actions .btn")].filter(b => b.dataset.act !== "skip");
+    const b = btns[+k - 1]; if (b) b.click();
+  }
+});
+
+render();
+</script>
+
+<div class="note">
+  <b>Prototype.</b> Real review items from the Mac library (the 80 music tracks currently
+  parked at <code>identified/waiting</code>); the duplicate and cover examples are
+  representative, since that library has none pending. Nothing here writes to the
+  database — it exists to settle the layout before #480 is built.
+</div>
+</body>
+</html>
