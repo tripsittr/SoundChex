@@ -1,8 +1,19 @@
 # Cover art on the review page
 
-Reported: cover art is not showing on the review page.
+Reported: cover art is not showing on the review page. Reported **again** after
+the first fix, with a screenshot — because the first fix only covered half the
+screen.
 
-Two faults, both in the view.
+Three faults, all in the view.
+
+**The queue list drew an icon for every row.** The sidebar — the part actually
+visible in the screenshot — hardcoded a music-note or film icon per row and
+never looked at the artwork at all. So a queue of 89 cover-art questions showed
+89 identical music notes, in the one view where the artwork *is* the thing being
+judged. Fixing the detail pane alone left the screen looking unchanged, which is
+how the owner found it still broken. On the live library that list now renders
+**76 images, 73 of them real artwork**, with 6 placeholders for items that
+genuinely have no cover.
 
 **The cover was drawn only in the cover-art job.** The `<img>` sat inside
 `@if ($job === ReviewQueue::COVERS)`, so artwork appeared on exactly one of the

@@ -400,6 +400,50 @@ class ReviewQueuePageTest extends TestCase
     /** @param array<string, mixed> $state */
     /* ----------------------------------------------------- cover art ----- */
 
+    public function test_the_queue_list_shows_covers_not_a_row_of_identical_icons(): void
+    {
+        // The part the first fix missed. The list drew a type icon for *every*
+        // row regardless of artwork, so a queue of 89 cover-art questions
+        // showed 89 identical music notes -- in the one view where the artwork
+        // is the thing being judged. Fixing the detail pane alone left the
+        // screen looking unchanged, which is how the owner found it still
+        // broken.
+        $first = $this->unidentified('First Track');
+        $first->forceFill(['cover_image_url' => 'artwork/Someone/An Album/First-1.jpg'])->saveQuietly();
+
+        $second = $this->unidentified('Second Track');
+        $second->forceFill(['cover_image_url' => 'artwork/Someone/An Album/Second-2.jpg'])->saveQuietly();
+
+        $html = Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])->html();
+
+        // Both rows, not just the selected one in the detail pane.
+        $this->assertStringContainsString('First-1.jpg', $html);
+        $this->assertStringContainsString('Second-2.jpg', $html);
+
+        // Filament inlines the icon as an <svg>, so the icon *name* never
+        // reaches the HTML -- assert on the placeholder <span> wrapper that
+        // only renders when there is no cover.
+        $this->assertSame(
+            0,
+            substr_count($html, 'items-center justify-center rounded bg-gray-100'),
+            'A row with artwork still fell back to the icon placeholder.',
+        );
+    }
+
+    public function test_a_queue_row_without_artwork_keeps_its_type_icon(): void
+    {
+        // The fallback has to survive: a row with no cover needs *something*,
+        // and an empty 36px gap reads as a broken image.
+        $this->unidentified('No Art Here');
+
+        $html = Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])->html();
+
+        // The placeholder wrapper, which is what distinguishes "no cover"
+        // from "cover" -- the inlined svg itself is identical either way.
+        $this->assertStringContainsString('items-center justify-center rounded bg-gray-100', $html);
+        $this->assertSame(0, preg_match('/<img[^>]*src=""/', $html));
+    }
+
     public function test_the_cover_is_shown_on_every_job_not_only_the_cover_job(): void
     {
         // The reported bug. The cover was drawn inside the `covers` branch

@@ -114,12 +114,29 @@
                         ])
                         @if ($current?->id === $row->id) aria-current="true" @endif
                     >
-                        <span class="flex h-9 w-9 flex-none items-center justify-center rounded bg-gray-100 text-gray-400 dark:bg-white/5">
-                            <x-filament::icon
-                                :icon="$row->type?->value === 'music' ? 'heroicon-m-musical-note' : 'heroicon-m-film'"
-                                class="h-4 w-4"
-                            />
-                        </span>
+                        {{-- The cover, falling back to a type icon only when
+                             there is none. The list drew the icon for *every*
+                             row regardless, so a queue of 89 cover-art
+                             questions showed 89 identical music notes -- the
+                             one view where the artwork is the thing being
+                             judged. Fixing the detail pane alone left this
+                             looking unchanged, which is how the owner found
+                             it. --}}
+                        @if ($row->coverUrl())
+                            <img
+                                src="{{ $row->coverUrl() }}"
+                                alt=""
+                                loading="lazy"
+                                class="h-9 w-9 flex-none rounded bg-gray-100 object-cover dark:bg-white/5"
+                            >
+                        @else
+                            <span class="flex h-9 w-9 flex-none items-center justify-center rounded bg-gray-100 text-gray-400 dark:bg-white/5">
+                                <x-filament::icon
+                                    :icon="$row->type?->value === 'music' ? 'heroicon-m-musical-note' : 'heroicon-m-film'"
+                                    class="h-4 w-4"
+                                />
+                            </span>
+                        @endif
                         <span class="min-w-0">
                             <span class="block truncate text-sm font-medium text-gray-950 dark:text-white">
                                 {{ $row->title }}
