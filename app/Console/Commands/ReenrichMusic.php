@@ -5,6 +5,7 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Jobs\EnrichMediaItemJob;
 use App\Models\MediaItem;
@@ -78,7 +79,10 @@ class ReenrichMusic extends Command
                 $pipeline->run($item);
                 $item->refresh();
 
-                if ($item->match_confidence !== 'none') {
+                // Compared as an enum, not as a string. `$enum !== 'none'`
+                // is always true, so every row counted as matched and the
+                // summary was meaningless however the run went.
+                if ($item->match_confidence !== MatchConfidence::None) {
                     $matched++;
                 }
 
@@ -86,8 +90,12 @@ class ReenrichMusic extends Command
                 // full run touches every title in the library.
                 if ($sample > 0 && $item->title !== $before) {
                     $this->newLine();
+                    // ->value, because interpolating the enum itself throws
+                    // "could not be converted to string" -- which made
+                    // --sample die the moment a title actually changed, i.e.
+                    // exactly when it had something to show.
                     $this->line("  <fg=gray>{$before}</> → <info>{$item->title}</info>"
-                        .' <fg=gray>('.$item->match_confidence.')</>');
+                        .' <fg=gray>('.($item->match_confidence?->value ?? 'none').')</>');
                 }
             } catch (\Throwable $e) {
                 $failed++;
