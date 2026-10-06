@@ -45,7 +45,7 @@ return [
     'movie' => [
         'App\Services\Metadata\Sources\Movie\Tmdb',            // 1 — title, overview, genres, cast, crew, poster
 
-        // 'App\Services\Metadata\Sources\Movie\Omdb',         // 2 — IMDb rating, RT score, awards
+        'App\Services\Metadata\Sources\Movie\Omdb',            // 2 — IMDb rating, RT score, Metacritic, awards
         // 'App\Services\Metadata\Sources\Movie\Trakt',        // 3 — community ratings, watch history
         // 'App\Services\Metadata\Sources\Movie\FanartTv',     // 4 — HD posters, clearart, logos
     ],
@@ -55,6 +55,10 @@ return [
 
         // 'App\Services\Metadata\Sources\Show\TvMaze',        // 2 — episode-level detail, guest cast (no key)
         'App\Services\Metadata\Sources\Show\Tvdb',             // 3 — alternate episode ordering, episode art
+        // One class for both: OMDb answers for a series by IMDb id exactly as
+        // it does for a film, and a show with no scores beside a film that has
+        // them reads as a broken page rather than a gap in the data.
+        'App\Services\Metadata\Sources\Movie\Omdb',            // 4 — IMDb rating, RT score, Metacritic, awards
         // 'App\Services\Metadata\Sources\Show\Trakt',         // 4 — ratings, progress, similar shows
         // 'App\Services\Metadata\Sources\Show\FanartTv',      // 5 — series banners, HD posters, season art
     ],

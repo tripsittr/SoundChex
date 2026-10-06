@@ -40,6 +40,24 @@ class ShowMetadata extends Model
         'episode_number',
         'episode_title',
         'episode_air_date',
+        // Shows get the same scores as films: OMDb answers for a series by
+        // IMDb id, and a show with no ratings beside a film that has them
+        // reads as a broken page rather than a gap in the data (#504).
+        'imdb_id',
+        'imdb_rating',
+        'rt_score',
+        'awards',
+        'metascore',
+    ];
+
+    /**
+     * Typed, so a client is not handed "7.5" where a film gives 7.5. The
+     * movie table has always cast these; this one had no casts at all.
+     */
+    protected $casts = [
+        'imdb_rating' => 'float',
+        'rt_score' => 'float',
+        'metascore' => 'integer',
     ];
 
     public function mediaItem(): BelongsTo

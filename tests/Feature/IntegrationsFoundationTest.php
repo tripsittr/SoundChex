@@ -137,7 +137,10 @@ class IntegrationsFoundationTest extends TestCase
         // page and read by nothing.
         $dead = collect(app(SourceCatalogue::class)->unimplemented())->pluck('key');
 
-        foreach (['omdb_api_key', 'trakt_client_secret', 'discogs_token',
+        // `omdb_api_key` was on this list and no longer is: OMDb is
+        // implemented (#504) and now fills the IMDb rating, the Rotten
+        // Tomatoes score, Metacritic and the awards sentence. Six left.
+        foreach (['trakt_client_secret', 'discogs_token',
             'genius_api_key', 'musixmatch_api_key', 'google_books_api_key',
             'fanart_tv_api_key'] as $key) {
             $this->assertContains($key, $dead, "{$key} is read by nothing but is not declared unimplemented.");

@@ -590,7 +590,10 @@ class IntegrationsPageTest extends TestCase
         // built from what the sources declare, and nothing reads either key
         // (#490). They appear in the "Not built yet" section instead, which is
         // the honest place for a credential the app would ignore.
-        $this->assertSame(['TMDB', 'TVDB'], $labels);
+        // OMDb joins the list now that it is implemented (#504); it sorts
+        // after TMDB, which is the source that supplies the IMDb id it keys
+        // off, and before TVDB.
+        $this->assertSame(['TMDB', 'OMDb', 'TVDB'], $labels);
     }
 
     public function test_setting_up_stores_the_key_encrypted(): void

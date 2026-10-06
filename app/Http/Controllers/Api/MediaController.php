@@ -189,9 +189,19 @@ class MediaController extends Controller
             // them yet -- OMDb is the source and is not implemented (#504) --
             // so these are null on every row today and will fill in without
             // any client needing to change.
-            'imdb_rating' => $movie?->imdb_rating,
-            'rt_score' => $movie?->rt_score,
-            'imdb_id' => $movie?->imdb_id,
+            // Films and shows both: OMDb answers for a series by IMDb id
+            // exactly as it does for a film (#504), and a show with no scores
+            // beside a film that has them reads as a broken page rather than a
+            // gap in the data.
+            'imdb_rating' => $movie?->imdb_rating ?? $show?->imdb_rating,
+            'rt_score' => $movie?->rt_score ?? $show?->rt_score,
+            'metascore' => $movie?->metascore ?? $show?->metascore,
+            // The sentence OMDb writes -- "Nominated for 7 Oscars. 21 wins &
+            // 43 nominations total" -- not parsed into counts, because that is
+            // what a detail page shows and parsing would invent structure the
+            // source does not have.
+            'awards' => $movie?->awards ?? $show?->awards,
+            'imdb_id' => $movie?->imdb_id ?? $show?->imdb_id,
             'tmdb_id' => $movie?->tmdb_id ?? $show?->tmdb_id,
 
             'artist' => $music?->artist,
