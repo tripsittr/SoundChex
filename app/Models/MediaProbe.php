@@ -144,6 +144,84 @@ class MediaProbe extends Model
      * Stereo earns no badge for the same reason SDR does not -- it is the
      * floor, and marking the floor says nothing.
      */
+    /**
+     * Video codecs a browser or AVPlayer will decode.
+     *
+     * **H.264 only.** Everything else is a gamble on the device, the OS
+     * version and sometimes the hardware.
+     *
+     * VP8, VP9 and Theora were on this list and should not have been:
+     * AVFoundation does not decode any of them, so a `.webm` of VP9 passed
+     * both the container and the codec check and went to direct play --
+     * which is the precise failure this whole check exists to prevent.
+     * Safari on the desktop plays VP9 and the phone does not, and the phone
+     * is where it matters.
+     *
+     * HEVC plays on recent Apple hardware and almost nowhere else, which
+     * makes it exactly the "sometimes" that produces a black rectangle on
+     * the one device somebody happens to be holding.
+     */
+    private const PLAYABLE_VIDEO = ['h264', 'avc1'];
+
+    /**
+     * Audio codecs that will come out of a speaker.
+     *
+     * The reason this list exists: nothing checked audio at all, so an `.mp4`
+     * carrying AC-3 or DTS passed as playable on its extension and then
+     * played **silently** — a file that looks like it works and does not,
+     * which is worse than one that plainly fails.
+     *
+     * Opus and Vorbis are deliberately absent. Opus decodes on Apple only
+     * inside a CAF container, not in the mp4 or WebM a library actually
+     * holds, and Vorbis not at all — so listing them would have sent those
+     * files to direct play and produced silence, the same way AC-3 did.
+     */
+    private const PLAYABLE_AUDIO = ['aac', 'mp3', 'flac', 'alac'];
+
+    /**
+     * Whether this file plays as-is, judged on what is actually inside it.
+     *
+     * The extension is not the question. A `.mp4` is a container, and one
+     * holding HEVC video or AC-3 audio is as unplayable as an MKV — it simply
+     * fails later and less obviously, because the container opened fine.
+     *
+     * Null when nothing has been probed: "unknown" is not "fine", and the
+     * caller decides what to do with an unmeasured file rather than being
+     * told it is safe.
+     */
+    public function playsDirectly(): ?bool
+    {
+        if (! $this->isVideo()) {
+            return null;
+        }
+
+        $video = strtolower((string) $this->video_codec);
+
+        if ($video === '') {
+            return null;
+        }
+
+        if (! in_array($video, self::PLAYABLE_VIDEO, true)) {
+            return false;
+        }
+
+        $audio = collect($this->audio_streams ?? [])
+            ->pluck('codec')
+            ->filter()
+            ->map(fn ($codec): string => strtolower((string) $codec));
+
+        // A file with no audio track is fine -- silent by design rather than
+        // silent by accident.
+        if ($audio->isEmpty()) {
+            return true;
+        }
+
+        // **Any** playable track is enough: the transcoder maps one audio
+        // stream, and a player picks a track it can decode. A rip carrying
+        // AC-3 alongside AAC is playable through the AAC.
+        return $audio->contains(fn (string $codec): bool => in_array($codec, self::PLAYABLE_AUDIO, true));
+    }
+
     public function audioLabel(): ?string
     {
         $channels = collect($this->audio_streams ?? [])

@@ -78,6 +78,12 @@ class MediaController extends Controller
     {
         abort_unless(app(ContentGate::class)->allows($item), 404);
 
+        // The decision reads the probe to judge what is actually inside the
+        // file, and an unloaded relation makes it fall back to guessing from
+        // the extension -- which is the thing that sent HEVC-in-mp4 to direct
+        // play and left it black on the device.
+        $item->loadMissing('probe');
+
         $decision = $policy->decide($item, $request);
 
         $this->queueConversionIfWorthwhile($item);

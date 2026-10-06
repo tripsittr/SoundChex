@@ -44,6 +44,9 @@ class HlsController extends Controller
     {
         abort_unless($this->gate->allows($item), 404);
 
+        // Same reason as the API endpoint: the decision reads the probe.
+        $item->loadMissing('probe');
+
         $decision = $this->policy->decide($item, $request);
 
         return response()->json([
@@ -64,6 +67,9 @@ class HlsController extends Controller
     public function playlist(Request $request, MediaItem $item): Response
     {
         abort_unless($this->gate->allows($item), 404);
+
+        // Same reason as the API endpoint: the decision reads the probe.
+        $item->loadMissing('probe');
 
         $decision = $this->policy->decide($item, $request);
         $from = max(0.0, (float) $request->float('from'));
