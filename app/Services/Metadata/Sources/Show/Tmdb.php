@@ -25,8 +25,15 @@ class Tmdb implements MetadataSource
 
     public function __construct(private SettingsService $settings) {}
 
-    public function name(): string { return 'TMDB'; }
-    public function priority(): int { return 1; }
+    public function name(): string
+    {
+        return 'TMDB';
+    }
+
+    public function priority(): int
+    {
+        return 1;
+    }
 
     public function supports(MediaItem $item): bool
     {
@@ -54,7 +61,7 @@ class Tmdb implements MetadataSource
         // Captured before promoteTitle() replaces it. Scoring confidence after
         // promotion compares TMDB's title with itself, so every title-search
         // match read Exact -- the one confidence allowed to refile a file
-        // (#455). resolveShow() searches the title as-is, so this is it.
+        // (#489). resolveShow() searches the title as-is, so this is it.
         $searchedTitle = (string) $item->title;
 
         $show = $this->resolveShow($item);
@@ -64,15 +71,15 @@ class Tmdb implements MetadataSource
         }
 
         $this->fillBlank($item->showMetadata, [
-            'tmdb_id'        => $show['id'] ?? null,
-            'network'        => $show['networks'][0]['name'] ?? null,
-            'creator'        => $show['created_by'][0]['name'] ?? null,
+            'tmdb_id' => $show['id'] ?? null,
+            'network' => $show['networks'][0]['name'] ?? null,
+            'creator' => $show['created_by'][0]['name'] ?? null,
             'first_air_year' => $this->extractYear($show['first_air_date'] ?? null),
-            'last_air_year'  => $this->extractYear($show['last_air_date'] ?? null),
-            'season_count'   => $show['number_of_seasons'] ?? null,
-            'episode_count'  => $show['number_of_episodes'] ?? null,
-            'status'         => $this->normalizeStatus($show['status'] ?? null),
-            'language'       => $show['original_language'] ?? null,
+            'last_air_year' => $this->extractYear($show['last_air_date'] ?? null),
+            'season_count' => $show['number_of_seasons'] ?? null,
+            'episode_count' => $show['number_of_episodes'] ?? null,
+            'status' => $this->normalizeStatus($show['status'] ?? null),
+            'language' => $show['original_language'] ?? null,
         ]);
 
         $this->promoteTitle($item, $show);
@@ -149,7 +156,7 @@ class Tmdb implements MetadataSource
         }
 
         $results = $this->request('/search/tv', [
-            'query'         => $item->title,
+            'query' => $item->title,
             'include_adult' => false,
         ])?->json('results') ?? [];
 
@@ -194,7 +201,7 @@ class Tmdb implements MetadataSource
     }
 
     /**
-     * @param array<string, mixed> $show
+     * @param  array<string, mixed>  $show
      */
     private function promoteTitle(MediaItem $item, array $show): void
     {
@@ -209,7 +216,7 @@ class Tmdb implements MetadataSource
     }
 
     /**
-     * @param array<string, mixed> $show
+     * @param  array<string, mixed>  $show
      */
     private function writeOverview(MediaItem $item, array $show): void
     {

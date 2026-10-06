@@ -68,7 +68,7 @@ class MusicBrainz implements MetadataSource
         // This has to come from the resolver, not from what the file carries.
         // Asking "does the file have an ISRC?" said Exact even when the ISRC
         // search found nothing and the recording came from the text fallback --
-        // so a guess was recorded as certain (#459).
+        // so a guess was recorded as certain (#489).
         $matchedByIdentifier = false;
 
         $recording = $this->resolveRecording($item, $matchedByIdentifier);
@@ -247,7 +247,7 @@ class MusicBrainz implements MetadataSource
      *
      * The edition is only *dropped from the query*. It is never removed from
      * the stored title: "Psycho Killer - Acoustic" and "1979 - Remastered 2012"
-     * are distinct recordings and collapsing them is the loss #476 forbids.
+     * are distinct recordings and collapsing them is the loss #489 forbids.
      *
      * @return array<int, array{0: string, 1: string}>
      */

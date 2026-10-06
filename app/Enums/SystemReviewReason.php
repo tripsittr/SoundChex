@@ -6,7 +6,7 @@
 namespace App\Enums;
 
 /**
- * Why the *system* parked an item for a person (#469).
+ * Why the *system* parked an item for a person (#489).
  *
  * Separate from `ReviewReason`, which is what a **user** picked when they sent
  * something back. That enum is deliberately short and its five values are
@@ -84,7 +84,7 @@ enum SystemReviewReason: string
      *
      * The screen offers four jobs rather than thirteen reasons, because a
      * reason is the system's taxonomy and a job is what somebody sets out to
-     * do (#480). This is the mapping between them.
+     * do (#489). This is the mapping between them.
      */
     public function job(): string
     {

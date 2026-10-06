@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Asks ffprobe what a file actually contains (#467).
+ * Asks ffprobe what a file actually contains (#489).
  *
  * The gap this fills: **no video technical data was stored anywhere.**
  * Resolution, HDR, codecs, channels, languages and bitrate were all absent,

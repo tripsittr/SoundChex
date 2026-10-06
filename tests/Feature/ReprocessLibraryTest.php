@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * Re-running the pipeline over a library that already exists (#470).
+ * Re-running the pipeline over a library that already exists (#489).
  *
  * The riskiest operation in the plan, so the tests here are mostly about what
  * it **refuses** to do: run alongside a live worker, move an item somebody is
@@ -190,7 +190,7 @@ class ReprocessLibraryTest extends TestCase
     public function test_filing_skips_an_item_that_is_waiting_for_a_person(): void
     {
         // Moving a file somebody is mid-decision on pre-empts the answer --
-        // the same rule the filing gate applies (#460).
+        // the same rule the filing gate applies (#489).
         $item = $this->settled();
         $item->forceFill(['pipeline_state' => PipelineState::Waiting])->saveQuietly();
 

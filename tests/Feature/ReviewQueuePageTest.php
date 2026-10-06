@@ -26,7 +26,7 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * The review queue (#480), built to the approved layout (#481).
+ * The review queue (#489), built to the approved layout (#489).
  *
  * What matters here is that the four jobs stay **mutually exclusive** — an
  * item in two jobs means the counts lie and the same decision is offered twice
@@ -280,7 +280,7 @@ class ReviewQueuePageTest extends TestCase
 
     public function test_keeping_both_copies_resolves_the_pair_without_touching_either_file(): void
     {
-        // The rule the user set (#476): if Spotify has fifteen versions, so do
+        // The rule the user set (#489): if Spotify has fifteen versions, so do
         // we. Keeping both must leave both files alone.
         $item = $this->pendingDuplicate();
         $here = $item->absoluteFilePath();
@@ -338,7 +338,7 @@ class ReviewQueuePageTest extends TestCase
         // Three of the real queue's items are "Psycho Killer - Acoustic",
         // "1979 - Remastered 2012" and "Murder on the Dancefloor - triple j
         // Like A Version". Stripping after " - " would merge recordings that
-        // must stay apart (#476), so the page shows it as evidence.
+        // must stay apart (#489), so the page shows it as evidence.
         $item = $this->unidentified('Psycho Killer - Acoustic');
 
         $this->assertSame('Acoustic', $item->editionSuffix());

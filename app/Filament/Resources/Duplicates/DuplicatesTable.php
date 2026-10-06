@@ -669,7 +669,7 @@ class DuplicatesTable
                     // time. "Probably the same track" and "same title and year"
                     // are both deliberately wide -- a differing album or
                     // length, or no provider id at all -- so merging them in
-                    // bulk deletes a different song's or film's file (#461).
+                    // bulk deletes a different song's or film's file (#489).
                     if (! $record->duplicate_match?->allowsBulkResolution()) {
                         $tooLoose++;
 

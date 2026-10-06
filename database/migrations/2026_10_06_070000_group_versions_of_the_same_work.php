@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Versions of one work, kept rather than merged (#457, #475, #476).
+ * Versions of one work, kept rather than merged (#489).
  *
  * The rule the user set: *"If Spotify has 15 versions of a song for an artist,
  * we should too."* So a second copy that differs in any meaningful way is a

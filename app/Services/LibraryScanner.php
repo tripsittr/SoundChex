@@ -17,8 +17,6 @@ use App\Jobs\ImportSubtitlesJob;
 use App\Models\MediaItem;
 use App\Models\Notification;
 use App\Models\User;
-use App\Services\IngestFailed;
-use App\Services\LibraryIngest;
 use App\Services\Pipeline\PipelineRunner;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -133,7 +131,7 @@ class LibraryScanner
                 ['type' => $type, 'title' => $title, 'marker' => $marker, 'seed' => $seed] = $classified;
 
                 if (! $dryRun) {
-                    // One entry point for every import path (#465). The row and
+                    // One entry point for every import path (#489). The row and
                     // its first pipeline stage are created in one transaction,
                     // which closes the window where a crash between the two
                     // left a row hidden with nothing to find it.
@@ -170,7 +168,7 @@ class LibraryScanner
                     }
 
                     // Duplicate detection has MOVED into the pipeline's dedupe
-                    // stage, which runs after identification (#465). Here it ran
+                    // stage, which runs after identification (#489). Here it ran
                     // before any metadata existed, so the ISRC, MusicBrainz,
                     // AcoustID, TMDB and episode passes had nothing to compare
                     // and only byte-identical copies were ever found at import
@@ -642,7 +640,6 @@ class LibraryScanner
 
         return ['type' => $type, 'title' => $title, 'marker' => $marker, 'seed' => $seed];
     }
-
 
     /**
      * The size in bytes of a catalogued file, or null if it cannot be read.

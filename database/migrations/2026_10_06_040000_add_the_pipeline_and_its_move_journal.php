@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * The pipeline's own state, and a journal of every file move (#465).
+ * The pipeline's own state, and a journal of every file move (#489).
  *
  * `processing_status` stays exactly as it is: clients read it, and it remains
  * the visibility summary. These columns record *how far* a file got and *what
@@ -105,7 +105,7 @@ return new class extends Migration
         ];
 
         foreach ($map as $status => [$stage, $state]) {
-            \DB::table('media_items')
+            DB::table('media_items')
                 ->where('processing_status', $status)
                 ->update([
                     'pipeline_stage' => $stage,

@@ -6,7 +6,6 @@
 namespace App\Services\Pipeline\Stages;
 
 use App\Enums\DuplicateStatus;
-use App\Enums\VersionVerdict;
 use App\Jobs\Pipeline\StageOutcome;
 use App\Models\MediaItem;
 use App\Services\DuplicateDetector;
@@ -15,7 +14,7 @@ use App\Services\Versions\VersionGrouper;
 
 /**
  * Compares the item against the library, now that it has been identified
- * (#465), and decides whether a match is a duplicate or a version (#457).
+ * (#489), and decides whether a match is a duplicate or a version (#489).
  *
  * Two fixes in one stage:
  *

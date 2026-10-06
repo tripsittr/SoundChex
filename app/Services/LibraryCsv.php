@@ -209,7 +209,7 @@ class LibraryCsv
             //
             // Said explicitly because the alternative is a row that is neither
             // complete nor in any pipeline, which is exactly the hidden-and-idle
-            // state #465 abolishes: the health check counts those, and a CSV
+            // state #489 abolishes: the health check counts those, and a CSV
             // import would otherwise trip it for every row.
             $item->forceFill([
                 'processing_status' => ProcessingStatus::Complete,

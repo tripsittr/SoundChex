@@ -9,12 +9,13 @@ use App\Enums\MediaItemType;
 use App\Enums\PipelineStage;
 use App\Enums\PipelineState;
 use App\Models\MediaItem;
+use App\Services\LibraryOrganizer;
 use App\Services\Pipeline\PipelineRunner;
 use App\Services\Review\ReviewLog;
 use Illuminate\Console\Command;
 
 /**
- * Runs the rebuilt pipeline over the library that already exists (#470).
+ * Runs the rebuilt pipeline over the library that already exists (#489).
  *
  * The point of the whole plan, and the riskiest single operation in it: 8,335
  * items were catalogued and filed by the old rules, and every fix in phases
@@ -103,7 +104,7 @@ class ReprocessLibrary extends Command
         $wouldMove = 0;
         $alreadyWaiting = 0;
 
-        $organizer = app(\App\Services\LibraryOrganizer::class);
+        $organizer = app(LibraryOrganizer::class);
 
         $bar = $this->output->createProgressBar($total);
         $bar->start();
@@ -287,7 +288,7 @@ class ReprocessLibrary extends Command
 
         // Filing only considers items whose identification has settled. An
         // item still waiting on a person must not be moved out from under
-        // them, which is the same rule the filing gate applies (#460).
+        // them, which is the same rule the filing gate applies (#489).
         if ($mode === 'file') {
             $query->where('pipeline_state', '!=', PipelineState::Waiting->value);
         }

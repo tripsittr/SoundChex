@@ -9,7 +9,7 @@ use App\Enums\MediaItemType;
 use App\Models\MediaItem;
 
 /**
- * The identity of the *work* a file holds (#457).
+ * The identity of the *work* a file holds (#489).
  *
  * Not the identity of the file — that is `content_hash` — and not the identity
  * of the release. Two copies of one recording on different albums share a work

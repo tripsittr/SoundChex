@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
  *
  * Those failures are not failures: a duplicate merged away while its enrich
  * job sat in the queue leaves a job with nothing to do, and the jobs now treat
- * that as a skip (#479). The rows already in `failed_jobs` predate that fix and
+ * that as a skip (#489). The rows already in `failed_jobs` predate that fix and
  * stay there forever, where they read as a broken pipeline — three on this Mac,
  * six on the Windows server.
  *

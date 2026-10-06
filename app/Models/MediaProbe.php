@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * What ffprobe says a file actually contains (#467).
+ * What ffprobe says a file actually contains (#489).
  *
  * Before this, no video technical data was stored anywhere -- which is why
  * keep-best for video compared file sizes, letting a 10% larger file win

@@ -5,6 +5,7 @@
 
 namespace App\Services\Review;
 
+use App\Enums\ProcessingStatus;
 use App\Enums\ReviewReason;
 use App\Enums\SystemReviewReason;
 use App\Models\MediaItem;
@@ -13,7 +14,7 @@ use App\Models\User;
 use App\Services\Pipeline\PipelineRunner;
 
 /**
- * The one way something enters or leaves review (#469).
+ * The one way something enters or leaves review (#489).
  *
  * Every stage opens its review items through here rather than setting a column
  * of its own. That is the whole point: the audit's "lands nowhere" list existed
@@ -159,7 +160,7 @@ class ReviewLog
     public function hiddenWithNothingOpen(): int
     {
         return MediaItem::withoutGlobalScopes()
-            ->where('processing_status', '!=', \App\Enums\ProcessingStatus::Complete->value)
+            ->where('processing_status', '!=', ProcessingStatus::Complete->value)
             ->whereDoesntHave('reviewItems', fn ($query) => $query->open())
             ->count();
     }

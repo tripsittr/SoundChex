@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * One thing that needs a person (#469).
+ * One thing that needs a person (#489).
  *
  * Replaces review-as-a-status. Five columns and a reports table could record
  * THAT something was wrong; none of them could record *why*, *what the

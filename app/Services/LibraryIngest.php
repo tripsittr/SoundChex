@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * The one way a file becomes a row (#465).
+ * The one way a file becomes a row (#489).
  *
  * Five import paths had grown their own versions of "catalogue this file": the
  * scanner, `library:import-music`, the two admin upload actions and the CSV

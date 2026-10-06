@@ -5,7 +5,7 @@
 
 namespace Tests\Feature;
 
-use App\Enums\FileMoveKind;
+use App\Console\Commands\VerifyLibraryManifest;
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
 use App\Models\User;
@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * The integrity check around a bulk reprocess (#470).
+ * The integrity check around a bulk reprocess (#489).
  *
  * a5's review of #280: *"the manifest safety net is untested… the dangerous
  * failure is a **false negative** — a genuinely lost file reported as
@@ -281,8 +281,8 @@ class LibraryManifestTest extends TestCase
             "1\t9\tabc123\tmedia/library/odd\tname.mp3",
         ])."\n");
 
-        $method = new \ReflectionMethod(\App\Console\Commands\VerifyLibraryManifest::class, 'read');
-        $rows = $method->invoke(app(\App\Console\Commands\VerifyLibraryManifest::class), $this->manifest);
+        $method = new \ReflectionMethod(VerifyLibraryManifest::class, 'read');
+        $rows = $method->invoke(app(VerifyLibraryManifest::class), $this->manifest);
 
         $this->assertCount(1, $rows);
         $this->assertSame(

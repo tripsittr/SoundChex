@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Decides whether two copies are versions to keep or a duplicate to resolve
- * (#457, #475, #476).
+ * (#489).
  *
  * The user's rule, which is the whole design: *"If Spotify has 15 versions of a
  * song for an artist, we should too."* So **keep both is the default**, and the
@@ -61,7 +61,7 @@ class VersionGrouper
         $pathB = $b->absoluteFilePath();
 
         // One file, two rows. Not a disk question at all, and answered by
-        // identity rather than string comparison for the reason #454 exists.
+        // identity rather than string comparison for the reason #489 exists.
         if ($pathA !== null && $pathB !== null && FileIdentity::same($pathA, $pathB)) {
             return VersionVerdict::SameFile;
         }
@@ -110,7 +110,7 @@ class VersionGrouper
      *
      * The query behind "also available as" on an item page: all versions
      * visible, none hidden behind a picker, which is what the user asked for
-     * (#475).
+     * (#489).
      *
      * @return Collection<int, MediaItem>
      */

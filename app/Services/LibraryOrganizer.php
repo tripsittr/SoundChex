@@ -80,7 +80,7 @@ class LibraryOrganizer
      * rule 2). But the exemption used to be unconditional -- `true` for all
      * music -- while MusicBrainz enrichment *writes* `artist` and `album`. So a
      * file whose tags said nothing was filed under an API guess, which is the
-     * one thing the gate exists to prevent (#460).
+     * one thing the gate exists to prevent (#489).
      *
      * The rule is now what the exemption always meant: music may be filed when
      * its own embedded tags named the artist its path is built from, or when
@@ -121,7 +121,7 @@ class LibraryOrganizer
 
         $absoluteTarget = Storage::path($target);
 
-        // By identity, for the same reason organize() does (#454): on a
+        // By identity, for the same reason organize() does (#489): on a
         // case-insensitive volume a re-cased name is the same file, and
         // reporting it as unfiled is what sent it down the delete path.
         if ($this->isSamePath($source, $absoluteTarget)) {
@@ -174,7 +174,7 @@ class LibraryOrganizer
         // Already filed — nothing to do. Compared by identity, not by string:
         // on a case-insensitive volume "03 Chicago.mp3" and "03 CHICAGO.mp3"
         // are different strings naming one file, and a string compare here
-        // reported that file as unfiled (#454).
+        // reported that file as unfiled (#489).
         if ($this->isSamePath($source, $absoluteTarget)) {
             return null;
         }
@@ -203,7 +203,7 @@ class LibraryOrganizer
         //
         // This case used to fall into isSameFile() below, which hashed both
         // paths, found equal hashes *because they are one file*, and deleted
-        // "the duplicate" — the user's only copy (#454).
+        // "the duplicate" — the user's only copy (#489).
         if ($this->isSameInode($source, $absoluteTarget)) {
             return $this->recaseInPlace($item, $source, $absoluteTarget);
         }
@@ -226,7 +226,7 @@ class LibraryOrganizer
         // Choosing the name and taking it must be one step. Two workers filing
         // different recordings with the same ideal name would otherwise both
         // see the name free, both pick it, and the second rename would replace
-        // the first worker's file (#462). The lock is per directory, so filing
+        // the first worker's file (#489). The lock is per directory, so filing
         // into different albums still runs in parallel.
         $lock = Cache::lock('library-file:'.md5(dirname($absoluteTarget)), 30);
 
@@ -333,7 +333,7 @@ class LibraryOrganizer
         // Subtitles and artwork that shipped beside the file follow it. Nothing
         // moved them before, so filing a film orphaned its captions: the player
         // looks for them next to the video, and they stayed in the inbox
-        // (#468). Done after the row is saved, because a sidecar that fails to
+        // (#489). Done after the row is saved, because a sidecar that fails to
         // move is a missing subtitle rather than a lost film.
         $this->moveSidecars($item, $source, $absoluteTarget);
 
@@ -485,7 +485,7 @@ class LibraryOrganizer
         // performer but one shelf, and using the track artist scattered them:
         // measured on this library, 160 albums would spread across 429 folders,
         // and the Stranger Things soundtrack split into 14 folders for 14
-        // tracks -- one per track (#468).
+        // tracks -- one per track (#489).
         //
         // The fallback is why most files are unaffected: a single artist's
         // album has no album-artist tag and needs none.
@@ -727,7 +727,7 @@ class LibraryOrganizer
      * Whether the file is already exactly where it belongs.
      *
      * Delegates to {@see FileIdentity}: the question cannot be answered by
-     * comparing path strings, and getting it wrong deleted files (#454).
+     * comparing path strings, and getting it wrong deleted files (#489).
      */
     private function isSamePath(string $a, string $b): bool
     {
@@ -858,8 +858,8 @@ class LibraryOrganizer
 
         // Trashed, not unlinked: this is the branch that deleted the only copy
         // of a file when two spellings of one path were read as two files
-        // (#454). The identity check above now prevents that, and this makes
-        // the next mistake of its kind recoverable rather than final (#464).
+        // (#489). The identity check above now prevents that, and this makes
+        // the next mistake of its kind recoverable rather than final (#489).
         $this->trash->discard($source, reason: 'identical copy already filed');
 
         $this->pruneEmptyParents(dirname($source));
@@ -890,7 +890,7 @@ class LibraryOrganizer
 
         // Returning $path here -- which is occupied, that being why we are in
         // this method -- handed the caller a path it would then overwrite
-        // (#462). A thousand same-named files in one folder is a real problem
+        // (#489). A thousand same-named files in one folder is a real problem
         // worth surfacing, not something to paper over by destroying one.
         throw new \RuntimeException("No free filename after 999 attempts: {$path}");
     }

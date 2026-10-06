@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * What ffprobe says about a file, and anything wrong with it (#467).
+ * What ffprobe says about a file, and anything wrong with it (#489).
  *
  * **No video technical data was stored anywhere.** Resolution, HDR, codecs,
  * channels, languages and bitrate were all absent, which is why keep-best for

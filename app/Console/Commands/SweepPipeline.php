@@ -9,7 +9,7 @@ use App\Services\Pipeline\PipelineSweeper;
 use Illuminate\Console\Command;
 
 /**
- * Finds and restarts pipeline work that was lost (#465).
+ * Finds and restarts pipeline work that was lost (#489).
  *
  * Scheduled every five minutes. It is what makes "no item stays invisible and
  * idle" true rather than aspirational: a crash, a killed worker, a flushed

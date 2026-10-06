@@ -249,7 +249,7 @@ class DuplicateDetectorTest extends TestCase
      */
     public function test_merging_two_spellings_of_one_file_does_not_delete_it(): void
     {
-        // The organizer's #454 bug, in merge(). Two rows can name one file by
+        // The organizer's #489 bug, in merge(). Two rows can name one file by
         // two spellings — a re-import after a case-only rename, or a symlinked
         // root. merge() compared the paths as strings, so it did not take the
         // "one file, two rows" branch; it then asked identical() whether the

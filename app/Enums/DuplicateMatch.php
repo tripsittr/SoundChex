@@ -125,7 +125,7 @@ enum DuplicateMatch: string implements HasColor, HasLabel
      * year with no provider id at all -- and both exist to surface things worth
      * a look, never to decide them. A bulk "merge selected" over them deletes a
      * different song's or film's file, which is exactly what LibraryCleanup.md
-     * ruled out and what the table did anyway (#461).
+     * ruled out and what the table did anyway (#489).
      *
      * An identifier match (bytes, ISRC, MBID, AcoustID, TMDB, episode number)
      * is specific enough to act on en masse. `Fuzzy` requires an equal album

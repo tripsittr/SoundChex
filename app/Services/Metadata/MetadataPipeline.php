@@ -37,7 +37,7 @@ class MetadataPipeline
 
         // A source may have recorded a fact about the run that only it could
         // know -- FileTagger notes whether the file's embedded tags named the
-        // artist, which the organizer's music gate depends on (#460). Those
+        // artist, which the organizer's music gate depends on (#489). Those
         // keys are written during collectRun() above, so replacing the report
         // wholesale here would discard them. The pipeline's own account wins on
         // any key they share.

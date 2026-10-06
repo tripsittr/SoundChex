@@ -73,7 +73,7 @@ class FileTagger implements MetadataSource
         // filed on its own tags because they are authoritative about the file
         // (AGENTS.md rule 2) -- but MusicBrainz also writes `artist`, so after
         // a run nothing distinguished a real tag from an API guess, and files
-        // were moved on the guess (#460). Recorded here because this is the one
+        // were moved on the guess (#489). Recorded here because this is the one
         // source that can tell the difference. Phase 3 replaces it with
         // per-field provenance for every field and source.
         $this->recordTaggedArtist($item, filled($tagged['artist'] ?? null));
@@ -150,7 +150,7 @@ class FileTagger implements MetadataSource
             // performer. Read as its own field rather than only as a fallback:
             // the track artist names who played, the album artist names where
             // it is filed, and conflating them scatters a compilation into one
-            // folder per track (#468).
+            // folder per track (#489).
             'album_artist' => static::stripIndexPrefix(
                 $firstOf('album_artist', 'albumartist', 'album artist', 'band')
             ),

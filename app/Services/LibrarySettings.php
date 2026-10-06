@@ -82,7 +82,7 @@ class LibrarySettings
      * The `report` action promises on the settings page that duplicates are
      * only ever listed -- "never act, even from the review screen". Neither the
      * table actions nor `library:duplicates --merge` checked it, so the promise
-     * held only for the automatic sweep (#461).
+     * held only for the automatic sweep (#489).
      */
     public function mayResolveDuplicates(): bool
     {

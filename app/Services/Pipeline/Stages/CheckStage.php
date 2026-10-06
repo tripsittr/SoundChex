@@ -11,9 +11,9 @@ use App\Services\Pipeline\Stage;
 use App\Services\Quality\QualityChecker;
 
 /**
- * Checks the file is actually any good (#467).
+ * Checks the file is actually any good (#489).
  *
- * Was a pass-through placeholder (#465). Nothing checked quality at all before
+ * Was a pass-through placeholder (#489). Nothing checked quality at all before
  * this: a truncated file, a CAM rip and a file with no audio stream all
  * imported as healthy, and the owner found out when they pressed play.
  *

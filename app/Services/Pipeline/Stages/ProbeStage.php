@@ -5,15 +5,16 @@
 
 namespace App\Services\Pipeline\Stages;
 
+use App\Enums\MediaItemType;
 use App\Jobs\Pipeline\StageOutcome;
 use App\Models\MediaItem;
 use App\Services\Pipeline\Stage;
 use App\Services\Quality\MediaProber;
 
 /**
- * Reads what the file actually contains (#467).
+ * Reads what the file actually contains (#489).
  *
- * Was a pass-through placeholder when the pipeline landed (#465). Now it runs
+ * Was a pass-through placeholder when the pipeline landed (#489). Now it runs
  * ffprobe and stores the result, which is what the quality stage and video
  * keep-best both need -- before this, no video technical data was stored
  * anywhere and keep-best compared file sizes.
@@ -39,7 +40,7 @@ class ProbeStage implements Stage
             // ffprobe refused the file. For a book that is expected -- an EPUB
             // is not media -- so it is only a review item for audio and video,
             // where it means the file is unreadable or not what it claims.
-            return $item->type === \App\Enums\MediaItemType::Book
+            return $item->type === MediaItemType::Book
                 ? StageOutcome::skipped('books carry no streams to probe')
                 : StageOutcome::needsReview('ffprobe could not read this file, so it may be corrupt or not media at all');
         }

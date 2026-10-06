@@ -6,7 +6,7 @@
 namespace App\Enums;
 
 /**
- * What two copies of one work actually are (#457, #476).
+ * What two copies of one work actually are (#489).
  *
  * The user's rule: *"If Spotify has 15 versions of a song for an artist, we
  * should too."* So the default answer is **keep both**, and the burden of proof
@@ -96,7 +96,7 @@ enum VersionVerdict: string
      * What to tell the user, in a sentence.
      *
      * Written for the review screen, which states the question in words rather
-     * than leaving a person to infer it from a table row (#480).
+     * than leaving a person to infer it from a table row (#489).
      */
     public function explanation(): string
     {

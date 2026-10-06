@@ -11,7 +11,7 @@ use App\Services\FileMoveJournal;
 use Illuminate\Console\Command;
 
 /**
- * Puts files back where they were (#465).
+ * Puts files back where they were (#489).
  *
  * The other half of the journal's purpose. Filing 8,000 items is only a
  * reasonable thing to do if it can be undone, and before this there was no

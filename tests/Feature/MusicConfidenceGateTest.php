@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
- * Music was exempt from the confidence gate entirely (#460).
+ * Music was exempt from the confidence gate entirely (#489).
  *
  * The stated reasoning — AGENTS.md rule 2 — is that a music file's artist and
  * album come from its own embedded tags, which are authoritative about the file

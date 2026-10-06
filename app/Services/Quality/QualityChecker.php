@@ -12,7 +12,7 @@ use App\Models\MediaProbe;
 use App\Models\QualityFinding;
 
 /**
- * Finds what is wrong with a file (#467).
+ * Finds what is wrong with a file (#489).
  *
  * Nothing checked quality before this. A truncated file, a CAM rip, a
  * transcoded "FLAC" and a file with no audio stream all imported as healthy,

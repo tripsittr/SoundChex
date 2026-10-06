@@ -17,7 +17,7 @@ use App\Services\WatchProviders;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Fills in everything that follows from a chosen identity (#465).
+ * Fills in everything that follows from a chosen identity (#489).
  *
  * The tidying half of the old one-job design: credits, title cleanup, album
  * normalisation, cover embedding and streaming availability. These were five
@@ -101,7 +101,7 @@ class EnrichStage implements Stage
             'album' => fn (MediaItem $item) => $this->tidying->normalizeAlbum($item),
             'cover' => function (MediaItem $item): void {
                 // Only an exact match earns a rewrite of the user's file, and
-                // only when the cover is not already in it (#463).
+                // only when the cover is not already in it (#489).
                 if ($item->type !== MediaItemType::Music
                     || $item->match_confidence !== MatchConfidence::Exact) {
                     return;

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Deletes a media file by moving it somewhere recoverable (#464).
+ * Deletes a media file by moving it somewhere recoverable (#489).
  *
  * Nothing in the library is unlinked any more. Every delete the app performs on
  * a user's media — a resolved duplicate, a copy the organizer adopts — moves
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Storage;
  * until the scheduled purge removes it, `library.trash_days` later.
  *
  * The reason is the bug this phase exists for: a path-comparison mistake in the
- * organizer deleted the only copy of a file (#454), and there was nothing to
+ * organizer deleted the only copy of a file (#489), and there was nothing to
  * restore from. Verifying before destroying is already the rule (AGENTS.md rule
  * 2), but a verification can be wrong — and a delete that is really a move
  * turns "the file is gone" into "the file is in the trash", which is a support

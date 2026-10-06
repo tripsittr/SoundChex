@@ -6,7 +6,7 @@
 namespace App\Jobs\Pipeline;
 
 /**
- * A stage's verdict, with the reason when there is one (#465).
+ * A stage's verdict, with the reason when there is one (#489).
  *
  * The reason is not decoration: it becomes the item's `pipeline_error` and the
  * text a person reads in the review queue. "Needs review" with no reason is the

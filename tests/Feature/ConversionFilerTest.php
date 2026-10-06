@@ -121,7 +121,7 @@ class ConversionFilerTest extends TestCase
 
         // The item must keep pointing at the file it still has.
         Storage::disk('local')->assertExists(
-            str($item->fresh()->file_path)->after(Storage::disk('local')->path('') . '')->toString(),
+            str($item->fresh()->file_path)->after(Storage::disk('local')->path('').'')->toString(),
         );
     }
 
@@ -132,7 +132,7 @@ class ConversionFilerTest extends TestCase
         // The original has vanished — deleted, moved by hand, on a drive that
         // is not mounted. The item now points at nothing.
         Storage::disk('local')->delete(
-            str($item->file_path)->after(Storage::disk('local')->path('') . '')->toString(),
+            str($item->file_path)->after(Storage::disk('local')->path('').'')->toString(),
         );
 
         $result = $this->filer->promote($item->fresh());
@@ -193,7 +193,7 @@ class ConversionFilerTest extends TestCase
 
     public function test_it_refuses_when_the_conversion_would_land_on_the_original(): void
     {
-        // #458. filedPathFor() is the organizer's target with the conversion's
+        // #489. filedPathFor() is the organizer's target with the conversion's
         // extension. For an original that is ALREADY an .mp4 in its filed
         // location -- HEVC in MP4, which plays nowhere and is converted to
         // H.264 in MP4 -- that is the original's own path.
@@ -284,7 +284,7 @@ class ConversionFilerTest extends TestCase
         $item = $this->item($title, 'mkv');
         $item->movieMetadata()->create(['release_year' => $year]);
 
-        $converted = 'media/converted/' . str($title)->slug() . '.mp4';
+        $converted = 'media/converted/'.str($title)->slug().'.mp4';
         Storage::disk('local')->put($converted, 'playable');
         $item->forceFill(['converted_path' => $converted])->save();
 
@@ -293,7 +293,7 @@ class ConversionFilerTest extends TestCase
 
     private function item(string $title, string $extension): MediaItem
     {
-        $path = 'media/unsorted/' . str($title)->slug() . '.' . $extension;
+        $path = 'media/unsorted/'.str($title)->slug().'.'.$extension;
         Storage::disk('local')->put($path, 'original');
 
         return MediaItem::create([

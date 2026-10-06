@@ -59,7 +59,7 @@ class CoverEmbedder
         // rewrote the whole audio file -- ffmpeg remuxes it to a temporary and
         // renames over the original -- so a library-wide re-enrichment rewrote
         // every track, changed every mtime, and invalidated every stored hash,
-        // all to embed artwork that was already there (#463).
+        // all to embed artwork that was already there (#489).
         if ($this->alreadyEmbedded($audioPath, $coverPath)) {
             return false;
         }

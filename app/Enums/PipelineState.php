@@ -6,7 +6,7 @@
 namespace App\Enums;
 
 /**
- * Where an item stands within its current pipeline stage (#465).
+ * Where an item stands within its current pipeline stage (#489).
  *
  * Separate from the stage itself because "reached identification" and "is
  * running identification right now" are different facts, and the sweeper needs

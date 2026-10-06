@@ -6,7 +6,7 @@
 namespace App\Enums;
 
 /**
- * How far a file has got through the library pipeline (#465).
+ * How far a file has got through the library pipeline (#489).
  *
  * The problem this exists for: enrichment was one job that identified, tidied,
  * normalised, embedded a cover and filed the file, all inside one `handle()`.
@@ -26,7 +26,7 @@ enum PipelineStage: string
     /** The row exists and records where the file is. */
     case Catalogued = 'catalogued';
 
-    /** Technical facts read from the file itself (#467 fills this out). */
+    /** Technical facts read from the file itself (#489 fills this out). */
     case Probed = 'probed';
 
     /** `content_hash` written. Its own stage because hashing a 40 GB remux is slow. */
@@ -41,7 +41,7 @@ enum PipelineStage: string
     /** Compared against the library for duplicates and versions. */
     case Deduped = 'deduped';
 
-    /** Quality checked (#467). */
+    /** Quality checked (#489). */
     case Checked = 'checked';
 
     /** A target path computed and journalled, not yet acted on. */

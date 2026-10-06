@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * One record for everything that needs a person (#469).
+ * One record for everything that needs a person (#489).
  *
  * Review was a **status, not a record**: five columns on `media_items`
  * (`processing_status`, `match_confidence`, `duplicate_status`,

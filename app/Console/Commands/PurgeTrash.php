@@ -12,7 +12,7 @@ use Illuminate\Console\Command;
  * Empties media the app deleted, once it is past the retention window.
  *
  * Deletes in the library are moves to `library.trash_root` rather than
- * unlinks (#464), so something has to eventually remove them or the trash grows
+ * unlinks (#489), so something has to eventually remove them or the trash grows
  * without bound. This is that something, scheduled daily.
  *
  * Retention is `library.trash_days`, 30 by default. Zero disables the purge

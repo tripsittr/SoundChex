@@ -474,7 +474,7 @@ class LibraryScannerTest extends TestCase
 
     public function test_it_starts_the_pipeline_for_a_new_item(): void
     {
-        // The scanner dispatched EnrichMediaItemJob directly before #465. It
+        // The scanner dispatched EnrichMediaItemJob directly before #489. It
         // now hands the file to LibraryIngest, which starts the pipeline at its
         // first stage -- so a crash between cataloguing and dispatching can no
         // longer leave a row with nothing to process it.

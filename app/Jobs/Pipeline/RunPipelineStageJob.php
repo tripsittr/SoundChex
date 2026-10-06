@@ -14,7 +14,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Runs one pipeline stage for one item (#465).
+ * Runs one pipeline stage for one item (#489).
  *
  * One job class rather than ten, because the differences between stages are
  * entirely in what they *do* — the claiming, the outcome handling, the retry
@@ -44,7 +44,7 @@ class RunPipelineStageJob implements ShouldQueue
             ->find($this->mediaItemId);
 
         // Gone -- merged away as a duplicate, or deleted. Nothing to do, and
-        // not a failure (#479).
+        // not a failure (#489).
         if ($item === null) {
             return;
         }

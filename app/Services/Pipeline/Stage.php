@@ -9,7 +9,7 @@ use App\Jobs\Pipeline\StageOutcome;
 use App\Models\MediaItem;
 
 /**
- * One step of the library pipeline (#465).
+ * One step of the library pipeline (#489).
  *
  * Each implementation must be **idempotent**: running it twice has to leave the
  * same state as running it once. That is what makes crash recovery simply

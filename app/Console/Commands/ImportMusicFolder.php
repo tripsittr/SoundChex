@@ -8,10 +8,9 @@ namespace App\Console\Commands;
 use App\Enums\IngestOrigin;
 use App\Enums\MediaItemType;
 use App\Enums\PipelineStage;
-use App\Models\MediaItem;
+use App\Models\User;
 use App\Services\LibraryIngest;
 use App\Services\Pipeline\PipelineRunner;
-use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -100,7 +99,7 @@ class ImportMusicFolder extends Command
                 continue;
             }
 
-            // Through the one entry point (#465). This path used to create the
+            // Through the one entry point (#489). This path used to create the
             // row itself and so skipped the hash, the duplicate check, the
             // intake history, the catalogued event and local artwork -- which
             // is why an imported track behaved differently from a scanned one.

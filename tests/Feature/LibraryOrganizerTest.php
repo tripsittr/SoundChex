@@ -5,13 +5,18 @@
 
 namespace Tests\Feature;
 
+use App\Enums\FileMoveKind;
+use App\Enums\FileMoveState;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
+use App\Models\FileMove;
 use App\Models\MediaItem;
 use App\Models\User;
+use App\Services\FileMoveJournal;
 use App\Services\LibraryOrganizer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -73,7 +78,6 @@ class LibraryOrganizerTest extends TestCase
             $this->organizer->targetPath($item),
         );
     }
-
 
     public function test_music_files_under_artist_and_album(): void
     {
@@ -155,7 +159,7 @@ class LibraryOrganizerTest extends TestCase
         // This used to assert that *all* music was exempt, which is what the
         // rule was taken to mean and not what it says: MusicBrainz writes
         // `artist` too, so unconditional exemption filed music on API guesses
-        // (#460). The tag is now required, which is what "its own tags" meant.
+        // (#489). The tag is now required, which is what "its own tags" meant.
         $item = $this->music('Chicago', artist: 'flipturn', album: 'Heavy Colors');
         $item->forceFill([
             'match_confidence' => MatchConfidence::None,
@@ -268,7 +272,7 @@ class LibraryOrganizerTest extends TestCase
 
     public function test_a_case_only_rename_keeps_the_file(): void
     {
-        // The bug this exists for (tracker #454). On a case-insensitive volume
+        // The bug this exists for (tracker #489). On a case-insensitive volume
         // -- the macOS and Windows default -- a target that differs from the
         // source only in case is a *different string* but the *same file*.
         //
@@ -313,7 +317,7 @@ class LibraryOrganizerTest extends TestCase
 
     public function test_a_corrupted_cross_volume_copy_does_not_delete_the_original(): void
     {
-        // #462. The copy fallback verified by SIZE only, and a copy interrupted
+        // #489. The copy fallback verified by SIZE only, and a copy interrupted
         // and resumed, or written to a failing disk, can be the right length
         // and the wrong bytes -- after which the original was deleted and the
         // library held a corrupt file as the only copy.
@@ -345,7 +349,7 @@ class LibraryOrganizerTest extends TestCase
     {
         // uniquePath() used to return the occupied path after 999 attempts,
         // handing the caller a path it would then overwrite. A thousand
-        // same-named files is a real problem worth surfacing (#462).
+        // same-named files is a real problem worth surfacing (#489).
         $disk = Storage::disk('local');
         $directory = 'media/library/Music/flipturn/Heavy Colors';
 
@@ -374,7 +378,7 @@ class LibraryOrganizerTest extends TestCase
         // Using the track artist scattered compilations: measured on this
         // library, 160 albums would spread across 429 folders, and the
         // Stranger Things soundtrack split into 14 folders for 14 tracks --
-        // one per track (#468).
+        // one per track (#489).
         $first = $this->compilationTrack('Running Up That Hill', 'Kate Bush', 1);
         $second = $this->compilationTrack('Master of Puppets', 'Metallica', 2);
 
@@ -521,7 +525,7 @@ class LibraryOrganizerTest extends TestCase
 
         $this->organizer->organize($item);
 
-        $sidecarMoves = \App\Models\FileMove::where('kind', \App\Enums\FileMoveKind::Sidecar)->get();
+        $sidecarMoves = FileMove::where('kind', FileMoveKind::Sidecar)->get();
 
         $this->assertCount(2, $sidecarMoves, 'Both subtitles should be recorded.');
         $this->assertSame(
@@ -548,10 +552,10 @@ class LibraryOrganizerTest extends TestCase
         $filmPath = $item->fresh()->file_path;
 
         // Force the sidecar's row back to `started`, as a crash mid-move would.
-        \App\Models\FileMove::where('kind', \App\Enums\FileMoveKind::Sidecar)
-            ->update(['state' => \App\Enums\FileMoveState::Started->value]);
+        FileMove::where('kind', FileMoveKind::Sidecar)
+            ->update(['state' => FileMoveState::Started->value]);
 
-        app(\App\Services\FileMoveJournal::class)->reconcile();
+        app(FileMoveJournal::class)->reconcile();
 
         $this->assertSame(
             $filmPath,
@@ -603,7 +607,7 @@ class LibraryOrganizerTest extends TestCase
         ];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('reservedNames')]
+    #[DataProvider('reservedNames')]
     public function test_windows_reserved_names_are_escaped(string $given, string $expected): void
     {
         $this->assertSame($expected, $this->invokeSegment($given));
@@ -693,7 +697,7 @@ class LibraryOrganizerTest extends TestCase
 
     private function item(string $title, MediaItemType $type, string $extension, string $contents = 'x'): MediaItem
     {
-        $path = 'media/unsorted/' . str($title)->slug() . '.' . $extension;
+        $path = 'media/unsorted/'.str($title)->slug().'.'.$extension;
         Storage::disk('local')->put($path, $contents);
 
         return MediaItem::create([

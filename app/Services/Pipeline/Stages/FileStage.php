@@ -14,7 +14,7 @@ use App\Services\LibraryOrganizer;
 use App\Services\Pipeline\Stage;
 
 /**
- * Carries out the plan (#465).
+ * Carries out the plan (#489).
  *
  * Executes whatever `PlanStage` wrote, through the journal -- so the row is
  * flipped to `started` before the first byte moves and to `done` after, and a

@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * Versions are kept, not merged (#457, #475, #476).
+ * Versions are kept, not merged (#489).
  *
  * The rule: *"If Spotify has 15 versions of a song for an artist, we should
  * too."* So **keep both is the default** and the burden of proof is on calling
@@ -122,7 +122,7 @@ class VersionGroupingTest extends TestCase
     public function test_an_artist_name_in_the_title_is_not_an_edition(): void
     {
         // 126 of this library's 772 suffixed titles are the artist's own name
-        // written into the title (#452). Reading those as editions would
+        // written into the title (#489). Reading those as editions would
         // invent 126 editions that do not exist.
         $item = $this->track('Feel It Still - Portugal The Man', artist: 'Portugal. The Man');
 
@@ -177,7 +177,7 @@ class VersionGroupingTest extends TestCase
     public function test_a_stale_hash_does_not_make_two_files_identical(): void
     {
         // 2,298 pairs in this library share a hash across different sizes --
-        // the S-346 stale-fingerprint condition (#487). Trusting the hash
+        // the S-346 stale-fingerprint condition (#491). Trusting the hash
         // alone called a 5,425,567-byte file and a 5,381,369-byte file
         // identical copies of each other.
         $mbid = 'badf0c46-e52b-4534-b59b-0aea31d32d61';
