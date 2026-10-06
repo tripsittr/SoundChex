@@ -41,7 +41,7 @@ class PlaysDirectlyTest extends TestCase
     /**
      * @param  array<int, array<string, mixed>>  $audio
      */
-    private function film(string $extension, ?string $video, array $audio = []): MediaItem
+    private function film(string $extension, ?string $video, array $audio = [], int $bitDepth = 8): MediaItem
     {
         $item = MediaItem::unresolved()->create([
             'user_id' => $this->user->id,
@@ -57,6 +57,7 @@ class PlaysDirectlyTest extends TestCase
                 'probed_at' => now(),
                 'video_codec' => $video,
                 'audio_streams' => $audio,
+                'bit_depth' => $bitDepth,
                 'width' => 1920,
                 'height' => 1080,
             ]);
@@ -130,6 +131,52 @@ class PlaysDirectlyTest extends TestCase
         $film = $this->film('mp4', 'vp9', [['codec' => 'aac', 'channels' => 2]]);
 
         $this->assertFalse($film->isPlayableVideo());
+    }
+
+    /**
+     * 10-bit H.264 is **High 10**, which Apple's hardware decoder refuses.
+     *
+     * The codec name does not catch this: the stream really is `h264` in a
+     * real `.mp4`, so every other check passes and the file direct-plays into
+     * a black rectangle. Verified against a real encode — ffprobe reports
+     * `codec_name=h264, profile=High 10, bits_per_raw_sample=10`.
+     *
+     * This is the same failure #305 fixed on the transcode side, reached by
+     * the other route: there libx264 *produced* High 10 from a 10-bit source;
+     * here a 10-bit file is handed over untouched.
+     */
+    public function test_ten_bit_h264_does_not_play_directly(): void
+    {
+        $film = $this->film('mp4', 'h264', [['codec' => 'aac', 'channels' => 2]], bitDepth: 10);
+
+        $this->assertFalse(
+            $film->isPlayableVideo(),
+            '10-bit H.264 is High 10 profile, which Apple hardware will not decode.',
+        );
+    }
+
+    /**
+     * And 8-bit is unaffected, so this does not transcode the whole library.
+     */
+    public function test_eight_bit_h264_still_plays_directly(): void
+    {
+        $film = $this->film('mp4', 'h264', [['codec' => 'aac', 'channels' => 2]], bitDepth: 8);
+
+        $this->assertTrue($film->isPlayableVideo());
+    }
+
+    /**
+     * A probe that recorded no depth is treated as 8-bit, because that is
+     * overwhelmingly what it is — and assuming otherwise would transcode
+     * every file an older probe measured.
+     */
+    public function test_an_unknown_bit_depth_is_treated_as_eight(): void
+    {
+        $film = $this->film('mp4', 'h264', [['codec' => 'aac', 'channels' => 2]]);
+
+        $film->probe->forceFill(['bit_depth' => null])->saveQuietly();
+
+        $this->assertTrue($film->fresh()->load('probe')->isPlayableVideo());
     }
 
     /* ---------------------------------------------------------- audio --- */

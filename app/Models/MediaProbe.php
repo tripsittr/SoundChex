@@ -205,6 +205,21 @@ class MediaProbe extends Model
             return false;
         }
 
+        // 10-bit H.264 is **High 10**, which Apple's hardware decoder refuses
+        // outright -- the audio plays and the picture stays black.
+        //
+        // The codec name alone does not catch this: the stream is genuinely
+        // `h264` in a genuinely `.mp4`, so every other check passes and the
+        // file direct-plays into a black rectangle. The depth was already
+        // measured and simply never consulted.
+        //
+        // This is the same failure #305 fixed on the *transcode* side, by the
+        // other route: there, libx264 inherited 10-bit from the source and
+        // emitted High 10; here, a 10-bit file is handed over untouched.
+        if (($this->bit_depth ?? 8) > 8) {
+            return false;
+        }
+
         $audio = collect($this->audio_streams ?? [])
             ->pluck('codec')
             ->filter()
