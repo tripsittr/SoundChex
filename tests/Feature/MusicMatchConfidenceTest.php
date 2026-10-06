@@ -87,6 +87,63 @@ class MusicMatchConfidenceTest extends TestCase
         $this->assertSame(MatchConfidence::Fuzzy, $item->fresh()->match_confidence);
     }
 
+    public function test_an_isrc_that_finds_nothing_does_not_make_a_text_match_exact(): void
+    {
+        // #459. $matchedByIdentifier was computed from whether the FILE carried
+        // an ISRC, not from how the recording was actually found. resolveRecording()
+        // tries the ISRC, gets nothing, and falls through to the artist+title
+        // search -- but the confidence had already been decided as Exact.
+        //
+        // So a loose text match on a file that happens to carry an ISRC was
+        // recorded as unambiguous.
+        Http::fake([
+            // The ISRC search finds nothing...
+            'musicbrainz.org/ws/2/recording*isrc*' => Http::response(['recordings' => []]),
+            // ...and the text search then finds something.
+            'musicbrainz.org/*' => Http::response([
+                'recordings' => [[
+                    'id' => 'badf0c46-e52b-4534-b59b-0aea31d32d61',
+                    'title' => 'Stressed Out',
+                    'first-release-date' => '2015-04-28',
+                    'releases' => [[
+                        'title' => 'Blurryface',
+                        'date' => '2015-05-17',
+                        'release-group' => ['primary-type' => 'Album'],
+                    ]],
+                ]],
+            ]),
+        ]);
+
+        $item = $this->track([
+            'artist' => 'Twenty One Pilots',
+            'isrc' => 'USAT21800165',
+        ]);
+
+        app(MusicBrainz::class)->enrich($item);
+
+        $this->assertSame(
+            MatchConfidence::Fuzzy,
+            $item->fresh()->match_confidence,
+            'The ISRC lookup found nothing, so this was a text match and is a guess.',
+        );
+    }
+
+    public function test_an_isrc_that_does_find_the_recording_is_exact(): void
+    {
+        // The other half: when the ISRC genuinely resolves the recording, that
+        // is an unambiguous identifier and must still score Exact.
+        $this->fakeMusicBrainz();
+
+        $item = $this->track([
+            'artist' => 'Twenty One Pilots',
+            'isrc' => 'USAT21800165',
+        ]);
+
+        app(MusicBrainz::class)->enrich($item);
+
+        $this->assertSame(MatchConfidence::Exact, $item->fresh()->match_confidence);
+    }
+
     public function test_itunes_records_fuzzy_but_never_downgrades_exact(): void
     {
         Http::fake(['itunes.apple.com/*' => Http::response(['results' => [
