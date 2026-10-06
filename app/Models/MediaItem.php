@@ -187,6 +187,7 @@ class MediaItem extends Model
         'file_missing' => 'boolean',
         'file_missing_at' => 'datetime',
         'reviewed_at' => 'datetime',
+        'review_snoozed_until' => 'datetime',
         'match_confidence' => MatchConfidence::class,
         'duplicate_status' => DuplicateStatus::class,
         'duplicate_match' => DuplicateMatch::class,

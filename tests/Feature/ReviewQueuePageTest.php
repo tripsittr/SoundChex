@@ -356,6 +356,89 @@ class ReviewQueuePageTest extends TestCase
 
     /* -------------------------------------------------------- helpers --- */
 
+    /* ---------------------------------------------------------- skip ----- */
+
+    public function test_a_skipped_item_leaves_the_queue(): void
+    {
+        // Reported: "when I try to skip them they come back to the top. same
+        // if i search again." skip() called next() and wrote nothing, so the
+        // item stayed exactly where it was -- the queue orders by
+        // duplicate_detected_at then id, neither of which a skip touched.
+        $first = $this->unidentified('Skip Me');
+        $this->unidentified('Keep Me');
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->call('skip', $first->id);
+
+        $remaining = app(ReviewQueue::class)->items(ReviewQueue::IDENTIFY)->pluck('id');
+
+        $this->assertNotContains($first->id, $remaining, 'A skipped item is still in the queue.');
+    }
+
+    public function test_a_skip_is_recorded_on_the_item_not_only_the_review_row(): void
+    {
+        // The queue is built from columns of `media_items`. On a real library
+        // 86 of 124 items in the identify queue had **no review row at all**,
+        // so snoozing only the row would have worked for 38 of them and done
+        // nothing visible for the rest -- the same bug in a new place.
+        $item = $this->unidentified('No Review Row');
+
+        $this->assertSame(0, $item->reviewItems()->count(), 'Premise: this item has no review row.');
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->call('skip', $item->id);
+
+        $this->assertNotNull($item->fresh()->review_snoozed_until);
+        $this->assertNotContains(
+            $item->id,
+            app(ReviewQueue::class)->items(ReviewQueue::IDENTIFY)->pluck('id'),
+        );
+    }
+
+    public function test_a_skipped_item_is_still_an_open_question(): void
+    {
+        // A skip is "not now", not "resolved". The item must not be marked
+        // complete, or skipping would make it vanish from the library *and*
+        // from review -- the exact state this rebuild abolished.
+        $item = $this->unidentified('Put Off');
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->call('skip', $item->id);
+
+        $this->assertNotSame(
+            ProcessingStatus::Complete,
+            $item->fresh()->processing_status,
+            'A skip must not mark the item resolved.',
+        );
+    }
+
+    public function test_a_skip_expires_and_the_question_returns(): void
+    {
+        // Put off for a week, not forever. An item that could never come back
+        // would be a silent delete dressed up as a skip.
+        $item = $this->unidentified('Back Later');
+
+        Livewire::test(ReviewQueuePage::class, ['job' => ReviewQueue::IDENTIFY])
+            ->call('skip', $item->id);
+
+        $this->assertNotContains($item->id, app(ReviewQueue::class)->items(ReviewQueue::IDENTIFY)->pluck('id'));
+
+        $this->travel(8)->days();
+
+        $this->assertContains(
+            $item->id,
+            app(ReviewQueue::class)->items(ReviewQueue::IDENTIFY)->pluck('id'),
+            'The question never came back, so the skip was a silent delete.',
+        );
+
+        // Put back explicitly. Laravel's time travel persists for the rest of
+        // the process, and a later test creating a file "eight days from now"
+        // fails in ways that point nowhere near the cause -- this file's
+        // keep-both test failed exactly once that way, on a file-exists
+        // assertion, which cost a good while to trace back to here.
+        $this->travelBack();
+    }
+
     private function unidentified(string $title = 'Unknown track'): MediaItem
     {
         return $this->item($title, [

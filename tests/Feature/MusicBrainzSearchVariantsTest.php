@@ -8,6 +8,7 @@ namespace Tests\Feature;
 use App\Enums\MatchConfidence;
 use App\Enums\MediaItemType;
 use App\Models\MediaItem;
+use App\Models\MusicMetadata;
 use App\Models\User;
 use App\Services\Metadata\Sources\Music\MusicBrainz;
 use App\Services\SettingsService;
@@ -150,7 +151,7 @@ class MusicBrainzSearchVariantsTest extends TestCase
         $item = new MediaItem(['title' => $title]);
         $item->type = MediaItemType::Music;
 
-        $meta = new \App\Models\MusicMetadata(['artist' => $artist]);
+        $meta = new MusicMetadata(['artist' => $artist]);
 
         $method = new ReflectionMethod(MusicBrainz::class, 'searchVariants');
 
@@ -190,5 +191,48 @@ class MusicBrainzSearchVariantsTest extends TestCase
         $item->forceFill(['match_confidence' => MatchConfidence::None])->saveQuietly();
 
         return $item->fresh();
+    }
+
+    public function test_a_featured_artist_is_dropped_from_the_query(): void
+    {
+        // Measured against the live API on a real unidentified file:
+        // "NYE [Feat Suki Waterhouse]" by "Local Natives, Suki Waterhouse"
+        // matches **nothing**, while "NYE" by "Local Natives" scores 100.
+        // MusicBrainz keeps the guest in the artist credit, not in the
+        // recording title, so a filename's bracketed feature defeats the
+        // search outright.
+        $variants = $this->variantsFor('NYE [Feat Suki Waterhouse]', 'Local Natives, Suki Waterhouse');
+
+        $titles = array_map(fn (array $v): string => $v[0], $variants);
+
+        $this->assertContains('NYE', $titles, 'The feature was never dropped, so this file stays unidentifiable.');
+    }
+
+    public function test_the_bracketless_form_is_dropped_too(): void
+    {
+        // Taggers write both shapes.
+        $titles = array_map(fn (array $v): string => $v[0], $this->variantsFor('Song ft. Someone', 'A Band'));
+
+        $this->assertContains('Song', $titles);
+    }
+
+    public function test_a_title_that_merely_starts_with_feat_is_left_alone(): void
+    {
+        // "Features" is a word. The marker has to be preceded by whitespace or
+        // a bracket, or a real title gets truncated into a different song.
+        $titles = array_map(fn (array $v): string => $v[0], $this->variantsFor('Features', 'A Band'));
+
+        foreach ($titles as $title) {
+            $this->assertSame('Features', $title);
+        }
+    }
+
+    public function test_an_edition_suffix_is_still_not_confused_with_a_feature(): void
+    {
+        // "Psycho Killer - Acoustic" and the studio cut are different
+        // recordings; collapsing them is the loss the version model forbids.
+        $titles = array_map(fn (array $v): string => $v[0], $this->variantsFor('Psycho Killer - Acoustic', 'Talking Heads'));
+
+        $this->assertNotContains('Psycho', $titles);
     }
 }

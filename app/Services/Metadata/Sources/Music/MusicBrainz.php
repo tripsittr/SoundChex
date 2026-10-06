@@ -261,11 +261,25 @@ class MusicBrainz implements MetadataSource
             ? trim(preg_replace('/\s[-\x{2013}]\s.+$/u', '', $title) ?: $title)
             : $title;
 
+        // MusicBrainz stores the guest in the artist credit, not in the
+        // recording title, so "NYE [Feat Suki Waterhouse]" matches nothing at
+        // all while "NYE" by "Local Natives" scores 100. Measured against the
+        // live API on a real unidentified file.
+        $noFeature = $this->withoutFeaturedArtist($title);
+        $bareNoFeature = $this->withoutFeaturedArtist($bareTitle);
+
         $candidates = [
             [$title, $artist],
             [$title, $primary],
             [$bareTitle, $artist],
             [$bareTitle, $primary],
+            // The feature dropped from the title. Paired with the primary
+            // artist as well as the full credit, because a credit naming both
+            // ("Local Natives, Suki Waterhouse") also fails -- verified: only
+            // title *and* artist cleaned together produce the match.
+            [$noFeature, $artist],
+            [$noFeature, $primary],
+            [$bareNoFeature, $primary],
         ];
 
         $variants = [];
@@ -287,6 +301,38 @@ class MusicBrainz implements MetadataSource
         }
 
         return $variants;
+    }
+
+    /**
+     * The title without a featured-artist marker.
+     *
+     * Filenames carry the guest in the title; MusicBrainz carries them in the
+     * artist credit. So the stored title keeps its marker -- it is what the
+     * file says and what a person recognises -- and only the *query* drops it.
+     *
+     * Handles the shapes that actually occur in this library: `(feat. X)`,
+     * `[Feat X]`, `(ft X)`, `(with X)`, and the same without brackets at the
+     * end of a title. The marker must be preceded by whitespace, so a song
+     * genuinely called "Features" or a title ending in "Left" is untouched.
+     *
+     * Returns the original when stripping would leave nothing -- a title that
+     * is only a feature credit is better searched whole than as an empty
+     * string.
+     */
+    private function withoutFeaturedArtist(string $title): string
+    {
+        $stripped = preg_replace(
+            '/\s*[\(\[]\s*(?:feat|ft|featuring|with)\b[^\)\]]*[\)\]]/iu',
+            '',
+            $title,
+        );
+
+        // The unbracketed form, "Song feat. Someone", which taggers also write.
+        $stripped = preg_replace('/\s+(?:feat|ft|featuring)\.?\s+.+$/iu', '', (string) $stripped);
+
+        $stripped = trim((string) $stripped);
+
+        return $stripped !== '' ? $stripped : $title;
     }
 
     /**

@@ -35,7 +35,7 @@ class ReviewItem extends Model
     protected $fillable = [
         'media_item_id', 'source', 'reason', 'user_id', 'profile_id',
         'note', 'details', 'suggested_action', 'status', 'resolution',
-        'resolved_by', 'resolved_at',
+        'resolved_by', 'resolved_at', 'snoozed_until',
     ];
 
     protected $casts = [
@@ -43,6 +43,7 @@ class ReviewItem extends Model
         'suggested_action' => 'array',
         'resolution' => 'array',
         'resolved_at' => 'datetime',
+        'snoozed_until' => 'datetime',
     ];
 
     public function mediaItem(): BelongsTo
@@ -58,6 +59,33 @@ class ReviewItem extends Model
     public function scopeOpen(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_OPEN);
+    }
+
+    /**
+     * Open, and not put off until later.
+     *
+     * Separate from `open()` on purpose. A snoozed item is still open -- the
+     * question stands and `hiddenWithNothingOpen()` must keep counting it, or
+     * skipping something would make it vanish from the library *and* from
+     * review, which is precisely the state this whole rebuild abolished. It is
+     * only hidden from the queue a person is working through.
+     */
+    public function scopeDueNow(Builder $query): Builder
+    {
+        return $query->open()->where(fn (Builder $q) => $q
+            ->whereNull('snoozed_until')
+            ->orWhere('snoozed_until', '<=', now()));
+    }
+
+    /** Puts the question off without answering it. */
+    public function snooze(\DateTimeInterface $until): void
+    {
+        $this->forceFill(['snoozed_until' => $until])->save();
+    }
+
+    public function isSnoozed(): bool
+    {
+        return $this->snoozed_until !== null && $this->snoozed_until->isFuture();
     }
 
     /**
