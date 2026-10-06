@@ -64,6 +64,21 @@ Both named in the audit and both verified:
   string"*, so `--sample` died the moment a title actually changed — exactly
   when it had something to show.
 
+### Scope is any identifier MusicBrainz resolves by (a5's review)
+
+Either a recording id **or** an ISRC, because both are routes
+`resolveRecording()` resolves by and both therefore earn `Exact` when they
+land.
+
+a5 asked whether ISRC-only rows were meant to be in scope. On this library the
+answer is moot — all 3,598 rows with an ISRC also carry an MBID, and there are
+**zero** ISRC-only and zero AcoustID-only rows — but that is a coincidence of
+one library rather than a guarantee, and a scope that is only accidentally
+complete is the kind that silently misses rows on somebody else's.
+
+AcoustID stays out: resolving a fingerprint means computing it from the file
+with `fpcalc`, which is #466's work rather than a database re-score.
+
 ## Worth knowing
 
 - **The re-score has not been run in full.** 7 rows were promoted while

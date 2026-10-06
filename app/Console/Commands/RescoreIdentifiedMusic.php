@@ -60,16 +60,18 @@ class RescoreIdentifiedMusic extends Command
 
         $take = $limit > 0 ? min($limit, $total) : $total;
 
-        $this->info("{$total} row(s) carry a MusicBrainz id but read as a loose match.");
+        $this->info("{$total} row(s) carry an identifier but read as a loose match.");
 
         if ($dryRun) {
             $this->table(
-                ['id', 'title', 'recording id', 'now'],
+                ['id', 'title', 'identifier', 'now'],
                 $query->clone()->with('musicMetadata')->limit($take)->get()
                     ->map(fn (MediaItem $item): array => [
                         $item->id,
                         \Illuminate\Support\Str::limit($item->title, 36),
-                        substr((string) $item->musicMetadata?->musicbrainz_recording_id, 0, 8),
+                        filled($item->musicMetadata?->musicbrainz_recording_id)
+                            ? 'mb:'.substr((string) $item->musicMetadata->musicbrainz_recording_id, 0, 8)
+                            : 'isrc:'.$item->musicMetadata?->isrc,
                         $item->match_confidence?->value ?? 'none',
                     ])->all(),
             );
@@ -138,10 +140,24 @@ class RescoreIdentifiedMusic extends Command
     }
 
     /**
-     * Rows that have an identifier and do not score exactly.
+     * Rows that carry an identifier and do not score exactly.
      *
-     * Unscoped: a row awaiting review is exactly the kind this is for, and
-     * `ResolvedScope` hides it.
+     * **Either** a MusicBrainz recording id **or** an ISRC, because both are
+     * routes `MusicBrainz::resolveRecording()` resolves by and both therefore
+     * earn `Exact` when they land. a5 asked on review whether ISRC-only rows
+     * were meant to be in scope; on this library the answer is moot — all
+     * 3,598 rows with an ISRC also carry an MBID, and there are zero
+     * ISRC-only and zero AcoustID-only rows — but that is a coincidence of one
+     * library rather than a guarantee, and a scope that is only accidentally
+     * complete is the kind that silently misses rows on somebody else's.
+     *
+     * AcoustID is deliberately out. Resolving a fingerprint means computing it
+     * from the file with `fpcalc`, which is #466's work and not a database
+     * re-score — and this library has no row where it would be the only
+     * identifier anyway.
+     *
+     * Unscoped, because a row awaiting review is exactly the kind this is for
+     * and `ResolvedScope` hides it.
      */
     private function candidates()
     {
@@ -150,8 +166,11 @@ class RescoreIdentifiedMusic extends Command
             ->where(fn ($q) => $q->whereNull('match_confidence')
                 ->orWhere('match_confidence', '!=', MatchConfidence::Exact->value))
             ->whereHas('musicMetadata', fn ($q) => $q
-                ->whereNotNull('musicbrainz_recording_id')
-                ->where('musicbrainz_recording_id', '!=', ''))
+                ->where(fn ($inner) => $inner
+                    ->where(fn ($id) => $id->whereNotNull('musicbrainz_recording_id')
+                        ->where('musicbrainz_recording_id', '!=', ''))
+                    ->orWhere(fn ($isrc) => $isrc->whereNotNull('isrc')
+                        ->where('isrc', '!=', ''))))
             ->orderBy('id');
     }
 }

@@ -148,10 +148,67 @@ class RescoreIdentifiedMusicTest extends TestCase
         $this->artisan('music:rescore', ['--sleep' => 0])->assertSuccessful();
     }
 
-    /** A MusicBrainz that resolves any id to one recording. */
+    public function test_an_isrc_only_row_is_in_scope_too(): void
+    {
+        // a5's review note. On the Mac library this is moot -- all 3,598 rows
+        // with an ISRC also carry an MBID, and there are zero ISRC-only rows --
+        // but that is a coincidence of one library, and a scope that is only
+        // accidentally complete silently misses rows on somebody else's.
+        //
+        // Both are routes MusicBrainz::resolveRecording() resolves by, so both
+        // earn Exact when they land.
+        $this->fakeMusicBrainzHit();
+
+        $item = MediaItem::create([
+            'user_id' => $this->user->id,
+            'type' => MediaItemType::Music,
+            'title' => 'Stressed Out',
+            'owned' => true,
+        ]);
+
+        $item->musicMetadata()->create([
+            'artist' => 'Twenty One Pilots',
+            'musicbrainz_recording_id' => null,
+            'isrc' => 'USAT21800165',
+        ]);
+
+        $item->forceFill(['match_confidence' => MatchConfidence::Fuzzy])->saveQuietly();
+
+        $this->artisan('music:rescore', ['--sleep' => 0])
+            ->expectsOutputToContain('Promoted 1 to exact')
+            ->assertSuccessful();
+
+        $this->assertSame(MatchConfidence::Exact, $item->fresh()->match_confidence);
+    }
+
+    public function test_a_row_with_no_identifier_at_all_is_still_out_of_scope(): void
+    {
+        // Widening to ISRC must not widen to everything: a row with neither is
+        // the genuinely-unmatched case that needs the scorer, not a re-score.
+        Http::fake();
+
+        $this->track(MatchConfidence::Fuzzy, null);
+
+        $this->artisan('music:rescore', ['--sleep' => 0])
+            ->expectsOutputToContain('Nothing to re-score')
+            ->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
+
+    /**
+     * A MusicBrainz that resolves one recording, by either route.
+     *
+     * Both shapes in one payload, because the two paths read different keys: a
+     * by-id lookup takes the recording resource at the top level, while the
+     * ISRC path goes through `searchRecordings()` and reads `recordings`. A
+     * fake with only the former makes an ISRC search silently find nothing --
+     * which is what my first version of this did, and the ISRC test failed for
+     * that reason rather than any fault in the command.
+     */
     private function fakeMusicBrainzHit(): void
     {
-        Http::fake(['musicbrainz.org/*' => Http::response([
+        $recording = [
             'id' => 'badf0c46-e52b-4534-b59b-0aea31d32d61',
             'title' => 'Stressed Out',
             'first-release-date' => '2015-04-28',
@@ -160,7 +217,9 @@ class RescoreIdentifiedMusicTest extends TestCase
                 'date' => '2015-05-17',
                 'release-group' => ['primary-type' => 'Album'],
             ]],
-        ])]);
+        ];
+
+        Http::fake(['musicbrainz.org/*' => Http::response($recording + ['recordings' => [$recording]])]);
     }
 
     private function track(MatchConfidence $confidence, ?string $recordingId): MediaItem
