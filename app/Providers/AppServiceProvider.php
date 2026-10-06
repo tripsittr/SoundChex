@@ -8,6 +8,7 @@ namespace App\Providers;
 use App\Filesystem\WindowsSafeFilesystem;
 use App\Services\CurrentProfile;
 use App\Services\QueueControl;
+use App\Services\QueueInspector;
 use App\Services\ScheduleInspector;
 use Composer\CaBundle\CaBundle;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -41,6 +42,18 @@ class AppServiceProvider extends ServiceProvider
         // ran that query 126 times, `/app` 28, for a value that cannot change
         // within a request.
         $this->app->singleton(CurrentProfile::class);
+
+        // One per request, for the same reason and with a sharper edge: the
+        // inspector memoises the throughput so that asking twice in one render
+        // does not write a second sample and compare against a zero-second-old
+        // one. Without this binding every `app()` call built a fresh instance
+        // with an empty memo, so the widget's `throughput()` and
+        // `minutesRemaining()` were separate measurements -- and the second
+        // always returned null.
+        //
+        // The visible effect was a dashboard that said "about 47 a minute" and
+        // never said how long that would take.
+        $this->app->singleton(QueueInspector::class);
 
         // Windows cannot rename a file over one another thread holds open, and
         // Laravel's `replace()` is a temp-file-plus-rename. Under FrankenPHP,
