@@ -109,6 +109,17 @@ class LibraryController extends Controller
             // client that has not been updated still renders posters and a
             // client that has can fall back when a frame is absent.
             'resume_frames' => $this->resumeFrames($watching),
+            // Seconds into each item, keyed by item id.
+            //
+            // The shelf already knew this -- it is what picks the frame -- but
+            // only the frame was sent, so a client could show the right still
+            // and still not draw a progress bar or say "18m remaining". Sent
+            // as its own map for the same reason as the frames: an older
+            // client ignores a key it does not know.
+            'resume_positions' => $watching
+                ->filter(fn ($item) => (int) ($item->resume_position ?? 0) > 0)
+                ->mapWithKeys(fn ($item) => [$item->id => (int) $item->resume_position])
+                ->all(),
             'watching' => MediaItemResource::collection($watching),
             'reading' => MediaItemResource::collection($reading),
         ]);
@@ -271,7 +282,7 @@ class LibraryController extends Controller
             // `plays` too: the resource reports when this profile last played
             // an item, and reading that from an unloaded relation would be a
             // query per row — or, worse, silently null on every one (S-391).
-            ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata', 'plays'])
+            ->with(['musicMetadata', 'movieMetadata', 'showMetadata', 'bookMetadata', 'plays', 'parent:id,title,cover_image_url', 'probe'])
             ->orderBy('media_items.id');
     }
 

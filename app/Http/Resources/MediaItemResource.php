@@ -59,6 +59,11 @@ class MediaItemResource extends JsonResource
             // relation rather than queried, so a list of 200 does not become
             // 200 queries — callers that want this eager-load `plays`.
             'last_played_at' => $this->lastPlayedAt($item),
+            // How far into this the profile is, in seconds. Null for anything
+            // unwatched or finished. Same rule as `last_played_at`: read from
+            // the loaded relation, never queried, so a list of 200 does not
+            // become 200 queries. Lets an episode row draw a progress bar.
+            'resume_position' => $this->resumePosition($item),
             'meta' => $this->metadata($item),
         ];
 
@@ -97,6 +102,58 @@ class MediaItemResource extends JsonResource
         return $item->plays
             ->where('profile_id', $profileId)
             ->max('created_at')?->toIso8601String();
+    }
+
+    /**
+     * Seconds into this item for the current profile, or null.
+     *
+     * Null for something never started, and for something finished -- a
+     * completed episode is not "in progress", and showing a full progress bar
+     * on it would say the opposite of what it means.
+     *
+     * Read from the already-loaded `plays` relation for the same reason as
+     * `lastPlayedAt`: a query here is a query per row.
+     */
+    private function resumePosition(MediaItem $item): ?int
+    {
+        if (! $item->relationLoaded('plays')) {
+            return null;
+        }
+
+        $profileId = app(CurrentProfile::class)->id();
+
+        // Never fall back to the unfiltered set: two people share a login, and
+        // that would report someone else's position as this profile's.
+        if ($profileId === null) {
+            return null;
+        }
+
+        $play = $item->plays
+            ->where('profile_id', $profileId)
+            ->where('completed', false)
+            ->sortByDesc('updated_at')
+            ->first(fn ($play) => $play->position_seconds > 0);
+
+        return $play?->position_seconds;
+    }
+
+    /**
+     * An item's length in whole minutes, from the probe.
+     *
+     * The probe measures the file rather than repeating what a metadata source
+     * claimed, which is the number that matches what actually plays. Rounded,
+     * because "52m" is the unit every episode list uses and a seconds-accurate
+     * runtime would be noise.
+     */
+    private function runtimeMinutes(MediaItem $item): ?int
+    {
+        $ms = $item->probe?->duration_ms;
+
+        if ($ms === null || $ms <= 0) {
+            return null;
+        }
+
+        return max(1, (int) round($ms / 60000));
     }
 
     private function metadata(MediaItem $item): array
@@ -143,6 +200,17 @@ class MediaItemResource extends JsonResource
             ], fn ($value) => $value !== null),
 
             'show' => array_filter([
+                // The series this episode belongs to, by name.
+                //
+                // An episode row carries its own number and title but nothing
+                // saying *what it is an episode of*, so a Continue Watching
+                // card could only ever show "But at Last Came a Knock" with no
+                // way to know it was Shameless. `parent_id` was already sent,
+                // but a client would have to have the parent loaded to resolve
+                // it, and that shelf fetches episodes without their series.
+                //
+                // Null for a series row itself, which is its own title.
+                'series_title' => $item->parent?->title,
                 'season_number' => $item->showMetadata?->season_number,
                 'episode_number' => $item->showMetadata?->episode_number,
                 'episode_title' => $item->showMetadata?->episode_title,
@@ -155,6 +223,17 @@ class MediaItemResource extends JsonResource
                 'episode_count' => $item->showMetadata?->episode_count,
                 'status' => $item->showMetadata?->status,
                 'episode_air_date' => $item->showMetadata?->episode_air_date,
+                // What the episode is about, and how long it runs.
+                //
+                // An episode list that is a number and a title is a file
+                // listing; the streaming apps show a still, a duration and a
+                // sentence, and those last two live here. The synopsis is in
+                // `notes` (the detail endpoint already calls it `overview`),
+                // and the duration comes from the probe because `show_metadata`
+                // has no runtime column -- the real file length is better than
+                // a nominal one anyway.
+                'overview' => $item->notes,
+                'runtime_minutes' => $this->runtimeMinutes($item),
             ], fn ($value) => $value !== null),
 
             'book' => array_filter([

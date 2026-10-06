@@ -3,14 +3,42 @@
 @php
     $subtitle = $item->subtitle();
     $year = $item->year();
+
+    // An episode is named by its series, not by its own title. A Continue
+    // Watching card reading "But at Last Came a Knock" says nothing about
+    // what is being watched; the episode is the detail, and it goes on the
+    // line below as "S1:E9 ...".
+    // Only from relations the caller eager-loaded. Reading an unloaded one
+    // here is a query per tile on a page of them -- which the home-page cost
+    // guard catches, and which is why both are checked rather than assumed.
+    $show = $item->relationLoaded('showMetadata') ? $item->showMetadata : null;
+    $series = $item->relationLoaded('parent') ? $item->parent?->title : null;
+
+    $season = $show?->season_number;
+    $number = $show?->episode_number;
+    $episodeTitle = $show?->episode_title ?? $item->title;
+
+    $headline = $series ?? $item->title;
+
+    $episodeLine = null;
+
+    if ($series !== null) {
+        $marker = match (true) {
+            $season !== null && $number !== null => "S{$season}:E{$number}",
+            $number !== null => "E{$number}",
+            default => '',
+        };
+
+        $episodeLine = trim($marker.' '.$episodeTitle);
+    }
 @endphp
 
 <a href="{{ route('media.show', $item) }}"
    class="poster group focus:outline-none">
 
     <div class="{{ $item->artworkAspect() }} w-full">
-        @if ($item->coverUrl())
-            <img src="{{ $item->coverUrl() }}"
+        @if ($cover = $item->coverUrl())
+            <img src="{{ $cover }}"
                  alt=""
                  loading="lazy"
                  decoding="async"
@@ -26,15 +54,28 @@
     {{-- Title overlay, always present so cards read without hovering. --}}
     <div class="scrim absolute inset-x-0 bottom-0 p-2.5 pt-8">
         <p class="line-clamp-2 text-sm font-semibold leading-tight text-ink-100">
-            {{ $item->title }}
+            {{ $headline }}
         </p>
 
-        @if ($subtitle || $year)
+        @if ($episodeLine)
+            <p class="mt-0.5 line-clamp-1 text-xs text-ink-300">{{ $episodeLine }}</p>
+        @elseif ($subtitle || $year)
             <p class="mt-0.5 line-clamp-1 text-xs text-ink-300">
                 {{ collect([$subtitle, $year])->filter()->implode(' • ') }}
             </p>
         @endif
     </div>
+
+    {{--
+        How far through this the viewer is. Drawn only where the length is
+        known as well: a fraction of an unknown duration is a guess presented
+        as fact.
+    --}}
+    @if (($percent = $item->resumePercent()) !== null)
+        <span class="absolute inset-x-0 bottom-0 h-[3px] bg-white/25">
+            <span class="block h-full bg-accent" style="width: {{ $percent }}%"></span>
+        </span>
+    @endif
 
     {{-- Hover-to-play, the way a streaming app surfaces playback without a
          permanent button cluttering every tile. Desktop only: on touch there
