@@ -10,6 +10,7 @@ use App\Enums\MediaItemType;
 use App\Enums\MediaTagSource;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
+use App\Models\MusicMetadata;
 use App\Services\Metadata\Contracts\MetadataSource;
 use App\Services\Metadata\LookupCache;
 use App\Services\MusicCredits;
@@ -180,32 +181,112 @@ class MusicBrainz implements MetadataSource
         }
 
         if (filled($meta?->artist) && filled($item->title)) {
-            $title = $this->escapeLucene($item->title);
-            $artist = $this->escapeLucene($meta->artist);
+            // Several shapes of the same query, widest-fitting first. A file's
+            // title and artist are as its tagger wrote them, and MusicBrainz
+            // matches them literally -- so an edition suffix or a second
+            // credited artist makes a findable recording unfindable.
+            //
+            // Measured against the live API before writing this:
+            //
+            //   "The Modern Age - Rough Trade Version" / The Strokes  -> nothing
+            //   "The Modern Age"                       / The Strokes  -> FOUND
+            //   "In Spite of Ourselves" / "Viagra Boys, Amy Taylor"   -> nothing
+            //   "In Spite of Ourselves" / "Viagra Boys"               -> FOUND
+            //
+            // 360 of this library's 642 unmatched rows have a comma-joined
+            // artist and 155 carry an edition suffix, so this is most of them.
+            foreach ($this->searchVariants($item, $meta) as [$title, $artist]) {
+                // Constrained to official studio albums first. Without that the
+                // result set is dominated by bootlegs and live recordings that
+                // tie with the original on text relevance.
+                $canonical = $this->searchRecordings(sprintf(
+                    'recording:"%s" AND artist:"%s" AND status:official AND primarytype:album AND NOT secondarytype:live AND NOT secondarytype:compilation',
+                    $title,
+                    $artist,
+                ));
 
-            // Constrain to official studio albums server-side. Without this the
-            // result set is dominated by bootlegs and live recordings that tie
-            // with the original on text relevance.
-            $canonical = $this->searchRecordings(sprintf(
-                'recording:"%s" AND artist:"%s" AND status:official AND primarytype:album AND NOT secondarytype:live AND NOT secondarytype:compilation',
-                $title,
-                $artist,
-            ));
+                if (! empty($canonical)) {
+                    return $canonical;
+                }
 
-            if (! empty($canonical)) {
-                return $canonical;
+                // Not everything lives on a studio album (singles, EPs, DJ
+                // mixes), so try unconstrained before widening the terms.
+                $any = $this->searchRecordings(sprintf(
+                    'recording:"%s" AND artist:"%s"',
+                    $title,
+                    $artist,
+                ));
+
+                if (! empty($any)) {
+                    return $any;
+                }
             }
-
-            // Not everything lives on a studio album (singles, EPs, DJ mixes),
-            // so fall back to an unconstrained search.
-            return $this->searchRecordings(sprintf(
-                'recording:"%s" AND artist:"%s"',
-                $title,
-                $artist,
-            ));
         }
 
         return null;
+    }
+
+    /**
+     * The title/artist pairs to try, most faithful to the file first.
+     *
+     * Each step drops something the *tagger* added rather than something
+     * MusicBrainz knows about:
+     *
+     *  1. Exactly what the file says. Right for a well-tagged file, and tried
+     *     first so a precise match is never passed over for a looser one.
+     *  2. The primary artist alone. "Viagra Boys, Amy Taylor" is one credit
+     *     string for a collaboration MusicBrainz indexes under the first
+     *     artist.
+     *  3. The title without its edition suffix. "The Modern Age - Rough Trade
+     *     Version" is a release's wording for a recording MusicBrainz calls
+     *     "The Modern Age".
+     *  4. Both dropped.
+     *
+     * Deduplicated, so a file with neither problem costs exactly one search
+     * and nothing is queried twice -- at 1 req/s that matters.
+     *
+     * The edition is only *dropped from the query*. It is never removed from
+     * the stored title: "Psycho Killer - Acoustic" and "1979 - Remastered 2012"
+     * are distinct recordings and collapsing them is the loss #476 forbids.
+     *
+     * @return array<int, array{0: string, 1: string}>
+     */
+    private function searchVariants(MediaItem $item, MusicMetadata $meta): array
+    {
+        $title = (string) $item->title;
+        $artist = (string) $meta->artist;
+
+        $primary = $meta->primary_artist ?: app(MusicCredits::class)->primaryFor($artist);
+        $bareTitle = $item->editionSuffix() !== null
+            ? trim(preg_replace('/\s[-\x{2013}]\s.+$/u', '', $title) ?: $title)
+            : $title;
+
+        $candidates = [
+            [$title, $artist],
+            [$title, $primary],
+            [$bareTitle, $artist],
+            [$bareTitle, $primary],
+        ];
+
+        $variants = [];
+        $seen = [];
+
+        foreach ($candidates as [$t, $a]) {
+            if (blank($t) || blank($a)) {
+                continue;
+            }
+
+            $key = mb_strtolower($t.'\0'.$a);
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $variants[] = [$this->escapeLucene($t), $this->escapeLucene($a)];
+        }
+
+        return $variants;
     }
 
     /**
