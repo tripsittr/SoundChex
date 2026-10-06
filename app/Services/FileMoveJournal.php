@@ -200,7 +200,9 @@ class FileMoveJournal
         // that is now empty.
         $item = $move->mediaItem;
 
-        if ($item !== null) {
+        // Same exclusion as reconcile(): undoing a sidecar's move must not
+        // point the item at the sidecar.
+        if ($item !== null && $move->kind !== FileMoveKind::Sidecar) {
             $item->forceFill(['file_path' => $from, 'content_hash' => null])->saveQuietly();
         }
 
@@ -244,7 +246,12 @@ class FileMoveJournal
 
                 $item = $move->mediaItem;
 
-                if ($item !== null && $move->kind !== FileMoveKind::Trash) {
+                // Not for a trashed file (its row keeps the surviving copy's
+                // path) and not for a sidecar: a journalled sidecar carries
+                // the media item's id because that is what relates them, and
+                // repointing file_path would leave the catalogue aimed at a
+                // .srt rather than the film (a5's review of #278).
+                if ($item !== null && ! in_array($move->kind, [FileMoveKind::Trash, FileMoveKind::Sidecar], true)) {
                     $item->forceFill(['file_path' => $to, 'content_hash' => null])->saveQuietly();
                 }
 

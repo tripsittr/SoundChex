@@ -505,6 +505,62 @@ class LibraryOrganizerTest extends TestCase
         $this->assertFileExists($unrelated);
     }
 
+    public function test_sidecar_moves_are_journalled(): void
+    {
+        // a5's note on #278: raw rename() left an asymmetry -- a crash between
+        // the journalled media move and the sidecar moves would orphan a
+        // subtitle in the old folder, present and logged but invisible to the
+        // reconciler. Journalling them means the sweeper can finish or reverse
+        // them like anything else.
+        $item = $this->movie('Backrooms', year: 2026);
+        $source = $item->absoluteFilePath();
+        $stem = pathinfo($source, PATHINFO_FILENAME);
+
+        file_put_contents(dirname($source).'/'.$stem.'.srt', 'WEBVTT');
+        file_put_contents(dirname($source).'/'.$stem.'.en.srt', 'english');
+
+        $this->organizer->organize($item);
+
+        $sidecarMoves = \App\Models\FileMove::where('kind', \App\Enums\FileMoveKind::Sidecar)->get();
+
+        $this->assertCount(2, $sidecarMoves, 'Both subtitles should be recorded.');
+        $this->assertSame(
+            1,
+            $sidecarMoves->pluck('batch_id')->unique()->count(),
+            'One batch, so an undo puts a film\'s captions back together.',
+        );
+    }
+
+    public function test_reconciling_a_sidecar_does_not_repoint_the_item_at_it(): void
+    {
+        // The hazard journalling introduces, and why Sidecar is its own kind.
+        // A journalled sidecar carries the media item's id -- that is what
+        // relates a subtitle to its film -- and reconcile() repoints
+        // `file_path` for any non-trash move with an item attached. Without
+        // the exclusion the catalogue would end up aimed at a .srt.
+        $item = $this->movie('Backrooms', year: 2026);
+        $source = $item->absoluteFilePath();
+        $stem = pathinfo($source, PATHINFO_FILENAME);
+        file_put_contents(dirname($source).'/'.$stem.'.srt', 'WEBVTT');
+
+        $this->organizer->organize($item);
+
+        $filmPath = $item->fresh()->file_path;
+
+        // Force the sidecar's row back to `started`, as a crash mid-move would.
+        \App\Models\FileMove::where('kind', \App\Enums\FileMoveKind::Sidecar)
+            ->update(['state' => \App\Enums\FileMoveState::Started->value]);
+
+        app(\App\Services\FileMoveJournal::class)->reconcile();
+
+        $this->assertSame(
+            $filmPath,
+            $item->fresh()->file_path,
+            'The item must still point at the film, not at its subtitle.',
+        );
+        $this->assertStringEndsNotWith('.srt', (string) $item->fresh()->file_path);
+    }
+
     /* ----------------------------------------------------- path safety -- */
 
     public function test_a_long_title_is_truncated_by_bytes_not_characters(): void

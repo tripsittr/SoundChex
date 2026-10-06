@@ -50,6 +50,30 @@ The real cause is **787 groups of rows sharing artist + album + track + title**
 suffix is a symptom of an unresolved duplicate, and disc folders would not have
 touched it. Deferred as #488 rather than built blind.
 
+### Sidecar moves are journalled (a5's review)
+
+a5 noted the asymmetry: the media move went through `FileMoveJournal` while
+sidecars used raw `rename()`, so a crash between them would orphan a subtitle
+in the old folder — present and logged, but invisible to the reconciler.
+
+They are journalled now, in **one batch** per media file, so
+`library:undo-moves --batch` puts a film's captions back with it rather than one
+at a time.
+
+That introduced a hazard worth naming. A journalled sidecar carries the **media
+item's id**, because that is what relates a subtitle to its film — and
+`reconcile()` repoints `file_path` for any non-trash move with an item attached.
+Without an exclusion, reconciling an interrupted sidecar move would leave the
+catalogue pointing at a `.srt`. Verified by removing the guard:
+
+```
+Expected: media/library/Movies/Backrooms (2026)/Backrooms (2026).mkv
+Actual:   ...Backrooms (2026).srt
+```
+
+`FileMoveKind::Sidecar` exists for exactly that, and both `reconcile()` and
+`undo()` skip repointing for it.
+
 ## Worth knowing
 
 - **No migration backfills `album_artist`.** It is read on each file's next

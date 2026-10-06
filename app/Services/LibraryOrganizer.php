@@ -5,6 +5,7 @@
 
 namespace App\Services;
 
+use App\Enums\FileMoveKind;
 use App\Enums\MediaItemType;
 use App\Enums\ProcessingStatus;
 use App\Models\MediaItem;
@@ -12,6 +13,7 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Moves catalogued files into an organized Artist/Album/## Track tree.
@@ -22,7 +24,10 @@ use Illuminate\Support\Facades\Storage;
  */
 class LibraryOrganizer
 {
-    public function __construct(private MediaTrash $trash) {}
+    public function __construct(
+        private MediaTrash $trash,
+        private FileMoveJournal $journal,
+    ) {}
 
     /**
      * Whether an item is ready to be filed.
@@ -330,7 +335,7 @@ class LibraryOrganizer
         // looks for them next to the video, and they stayed in the inbox
         // (#468). Done after the row is saved, because a sidecar that fails to
         // move is a missing subtitle rather than a lost film.
-        $this->moveSidecars($source, $absoluteTarget);
+        $this->moveSidecars($item, $source, $absoluteTarget);
 
         $this->pruneEmptyParents(dirname($source));
 
@@ -356,8 +361,18 @@ class LibraryOrganizer
      *
      * Never overwrites: a sidecar already at the target is left alone, because
      * it is more likely to be the right one than the stray this is carrying.
+     *
+     * Journalled, like the media move itself. a5 noted on review that raw
+     * `rename()` here left an asymmetry: a crash between the journalled media
+     * move and these would orphan a sidecar in the old folder -- present and
+     * logged, not lost, but invisible to the reconciler. Recording them means
+     * the sweeper can finish or reverse them like anything else.
+     *
+     * The journal rows carry the media item's id, because that is what relates
+     * a subtitle to its film -- and `FileMoveKind::Sidecar` is why that does
+     * not make the reconciler repoint `file_path` at a `.srt`.
      */
-    private function moveSidecars(string $source, string $target): void
+    private function moveSidecars(MediaItem $item, string $source, string $target): void
     {
         $directory = dirname($source);
         $stem = pathinfo($source, PATHINFO_FILENAME);
@@ -368,6 +383,10 @@ class LibraryOrganizer
 
         $targetDirectory = dirname($target);
         $targetStem = pathinfo($target, PATHINFO_FILENAME);
+
+        // One batch for the whole set, so `library:undo-moves --batch` puts a
+        // film's captions back with it rather than one at a time.
+        $batchId = (string) Str::uuid();
 
         foreach ((array) scandir($directory) as $entry) {
             if (! is_string($entry) || $entry === '.' || $entry === '..') {
@@ -396,14 +415,9 @@ class LibraryOrganizer
                 continue;
             }
 
-            if (! @rename($from, $to)) {
-                // Named rather than silent: a missing subtitle is a support
-                // question, and "it was there before I organised" is the clue.
-                Log::warning('Could not move a sidecar file with its media', [
-                    'from' => $from,
-                    'to' => $to,
-                ]);
-            }
+            // The journal logs its own failures with both paths, which is the
+            // clue behind "it was there before I organised".
+            $this->journal->move($item, $from, $to, FileMoveKind::Sidecar, $batchId);
         }
     }
 
