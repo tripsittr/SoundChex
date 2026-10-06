@@ -40,11 +40,30 @@ called once per row on listings and a lazy read would be a query each. The
 endpoints that decide playback load it explicitly; a listing falls back to the
 container, which is the cheap and safe answer.
 
+## The lists are narrower than they first were
+
+The first version of this listed VP8, VP9 and Theora as playable video, Opus
+and Vorbis as playable audio, and `.webm`/`.ogv` as playable containers —
+because a desktop browser plays all of them.
+
+**The browser is not the client that breaks.** AVFoundation opens neither WebM
+nor Ogg, and decodes none of those codecs, so a `.webm` of VP9 passed both
+checks and went to direct play: a black rectangle on the phone, which is the
+precise failure this check exists to prevent. Opus decodes on Apple only inside
+a CAF container, not the mp4 a library actually holds, so it would have produced
+silence exactly as AC-3 did.
+
+So: **H.264 only** for video, AAC/MP3/FLAC/ALAC for audio, and mp4/m4v/mov for
+containers. Anything else transcodes, which always works.
+
 ## Testing
 
-11 new tests, **372 pass** across the playback, streaming, media and probe
+15 new tests, **382 pass** across the playback, streaming, media and probe
 suites. Both halves confirmed to fail when removed: judging on the extension
 alone (4 tests fail), and ignoring audio codecs (2 fail).
 
-Worth noting the container check was added *because* a test caught its
-absence — H.264-in-MKV reported playable when only codecs were checked.
+Worth noting two of these were found by checking rather than assuming: the
+container check was added *because* a test caught H.264-in-MKV reporting
+playable when only codecs were checked, and the over-wide codec lists were
+caught by reading them back against what AVFoundation actually decodes. Both
+would have shipped as "fixed".

@@ -868,7 +868,12 @@ class MediaItem extends Model
         // the device while looking perfectly ordinary here.
         $extension = strtolower(pathinfo((string) $this->file_path, PATHINFO_EXTENSION));
 
-        if (! in_array($extension, ['mp4', 'm4v', 'webm', 'mov', 'ogv'], true)) {
+        // WebM and Ogg are deliberately absent: AVFoundation opens neither,
+        // so a `.webm` reaching direct play is a black rectangle on every
+        // phone however good the codec inside it is. They were on this list
+        // because a browser plays them -- but the browser is not the client
+        // that breaks.
+        if (! in_array($extension, ['mp4', 'm4v', 'mov'], true)) {
             return false;
         }
 

@@ -95,6 +95,43 @@ class PlaysDirectlyTest extends TestCase
         $this->assertFalse($film->isPlayableVideo());
     }
 
+    /**
+     * A `.webm` of VP9 is not playable, however good the codec sounds.
+     *
+     * This passed both checks before: `.webm` was on the container list and
+     * `vp9` on the codec list, so it went to direct play and showed a black
+     * rectangle on the phone. Both entries were there because a *desktop
+     * browser* plays WebM — but the browser is not the client that breaks.
+     * AVFoundation opens neither WebM nor Ogg.
+     */
+    public function test_webm_does_not_play_directly(): void
+    {
+        $film = $this->film('webm', 'vp9', [['codec' => 'opus', 'channels' => 2]]);
+
+        $this->assertFalse(
+            $film->isPlayableVideo(),
+            'AVFoundation cannot open WebM at all, whatever is inside it.',
+        );
+    }
+
+    public function test_ogg_video_does_not_play_directly(): void
+    {
+        $film = $this->film('ogv', 'theora', [['codec' => 'vorbis', 'channels' => 2]]);
+
+        $this->assertFalse($film->isPlayableVideo());
+    }
+
+    /**
+     * And the codecs are refused on their own merits too, so a VP9 track that
+     * somehow arrives inside an mp4 is still not direct-played.
+     */
+    public function test_vp9_in_mp4_does_not_play_directly(): void
+    {
+        $film = $this->film('mp4', 'vp9', [['codec' => 'aac', 'channels' => 2]]);
+
+        $this->assertFalse($film->isPlayableVideo());
+    }
+
     /* ---------------------------------------------------------- audio --- */
 
     /**
@@ -141,6 +178,18 @@ class PlaysDirectlyTest extends TestCase
         $film = $this->film('mp4', 'h264', []);
 
         $this->assertTrue($film->isPlayableVideo());
+    }
+
+    /**
+     * Opus decodes on Apple only inside a CAF container — not the mp4 a
+     * library actually holds — and Vorbis not at all. Listing them would
+     * have produced silence, exactly as AC-3 did.
+     */
+    public function test_opus_audio_does_not_play_directly(): void
+    {
+        $film = $this->film('mp4', 'h264', [['codec' => 'opus', 'channels' => 2]]);
+
+        $this->assertFalse($film->isPlayableVideo());
     }
 
     /* -------------------------------------------------- the unmeasured --- */
