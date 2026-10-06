@@ -20,6 +20,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class LibraryOrganizer
 {
+    public function __construct(private MediaTrash $trash) {}
+
     /**
      * Whether an item is ready to be filed.
      *
@@ -640,7 +642,11 @@ class LibraryOrganizer
 
         $this->repointPeersForSharedSource($item, $storedSource, $relative);
 
-        @unlink($source);
+        // Trashed, not unlinked: this is the branch that deleted the only copy
+        // of a file when two spellings of one path were read as two files
+        // (#454). The identity check above now prevents that, and this makes
+        // the next mistake of its kind recoverable rather than final (#464).
+        $this->trash->discard($source, reason: 'identical copy already filed');
 
         $this->pruneEmptyParents(dirname($source));
 

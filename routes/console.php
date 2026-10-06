@@ -58,6 +58,21 @@ Schedule::command('db:backup')
     ->runInBackground();
 
 /*
+| Empty the media trash past its retention window.
+|
+| Deletes in the library are moves to `media/.trash` rather than unlinks, so a
+| wrong merge stays recoverable (#464) -- but something has to remove them
+| eventually. Retention is `library.trash_days`, 30 by default; zero disables
+| this entirely and the command then does nothing.
+|
+| After the backup, so a night's run never competes with it for disk.
+*/
+Schedule::command('library:purge-trash')
+    ->dailyAt('04:30')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+/*
 | Notifications are "what happened while you were away", not a permanent log.
 | A device that has not opened in a month does not want a month of history, and
 | an unbounded table on a server that scans every few minutes grows forever.

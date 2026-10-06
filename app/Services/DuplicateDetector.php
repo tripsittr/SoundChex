@@ -65,7 +65,10 @@ class DuplicateDetector
      */
     private const LIKELY_DURATION_LIMIT_MS = 12_000;
 
-    public function __construct(private LibrarySettings $settings) {}
+    public function __construct(
+        private LibrarySettings $settings,
+        private MediaTrash $trash,
+    ) {}
 
     /**
      * Hashes a file, cheaply and safely.
@@ -914,43 +917,25 @@ class DuplicateDetector
     }
 
     /**
-     * Delete a file, clearing the read-only attribute first on Windows.
+     * Removes a redundant copy — by moving it to the trash, not unlinking it.
      *
-     * `unlink()` will not remove a file marked read-only on Windows, and 285
-     * of the 2,843 files in one real library carry that attribute -- arrived
-     * with it, from a copy off another machine. Every merge of one of those
-     * failed, the row stayed pending, and the duplicate came back at the next
-     * sweep: "I merged it and they came back".
-     *
-     * `chmod` is how PHP clears that attribute on Windows. Done only after the
-     * caller has decided to delete, so nothing is made writable that is not
-     * already about to go.
+     * Two things live in MediaTrash now, and both were learned here. Deletes go
+     * to `library.trash_root` for `trash_days` so a wrong merge is recoverable
+     * (#464). And the read-only attribute is cleared first: `unlink()` will not
+     * remove a read-only file on Windows, and 285 of the 2,843 files in one real
+     * library carry that attribute — arrived with it, from a copy off another
+     * machine. Every merge of one of those failed, the row stayed pending, and
+     * the duplicate came back at the next sweep: "I merged it and they came
+     * back". A move is refused for the same reason, so the same `chmod` applies.
      */
     private function deleteFile(string $path): bool
     {
-        if (@unlink($path)) {
-            return true;
-        }
-
-        // Read-only is the common reason and the recoverable one.
-        if (@chmod($path, 0666) && @unlink($path)) {
-            Log::info('Cleared the read-only attribute to delete a duplicate', [
-                'path' => $path,
-            ]);
-
-            return true;
-        }
-
-        // Said out loud, because the alternative is a toast that reports a
-        // missing file for something that is present and locked.
-        Log::error('Could not delete a duplicate copy', [
-            'path' => $path,
-            'exists' => is_file($path),
-            'writable' => is_writable($path),
-            'hint' => 'On Windows a read-only file cannot be unlinked; a file held open by another process cannot either.',
-        ]);
-
-        return false;
+        // Moved to the trash rather than unlinked, so a wrong merge is
+        // recoverable for `library.trash_days` (#464). MediaTrash handles the
+        // read-only case Windows otherwise refuses, and logs its own failures
+        // with the path -- the alternative being a toast that reports a missing
+        // file for something present and locked.
+        return $this->trash->discard($path, reason: 'duplicate resolved') !== null;
     }
 
     /**
