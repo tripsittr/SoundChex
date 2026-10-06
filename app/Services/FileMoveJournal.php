@@ -291,6 +291,32 @@ class FileMoveJournal
      */
     private function moveFile(string $from, string $to): bool
     {
+        // Never over an occupant. `rename()` on POSIX replaces the target
+        // silently and still returns true -- verified:
+        //
+        //     before: from.txt = "the file that reappeared"
+        //     rename() returned: true
+        //     after : from.txt = "the moved file coming back"
+        //
+        // `execute()` already refuses an occupied target, but `undo()` reaches
+        // here through `isReversible()`, which checks the path and then hands
+        // off -- so anything appearing in between was destroyed without a word
+        // (a5's review of #271). The guard belongs at the rename, which is the
+        // last moment before the bytes move, rather than at a caller that then
+        // has to hold the fact true.
+        //
+        // Identity-equal is allowed through: that is one file under two
+        // spellings, which is a rename to perform rather than a collision
+        // (#454).
+        if (file_exists($to) && ! FileIdentity::same($from, $to)) {
+            Log::warning('Refused to move a file onto something else', [
+                'from' => $from,
+                'to' => $to,
+            ]);
+
+            return false;
+        }
+
         if (@rename($from, $to)) {
             return true;
         }

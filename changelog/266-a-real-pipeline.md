@@ -116,6 +116,31 @@ by stage timeout is safe with any number, because every stage is idempotent and
 An item hidden with no stage is invisible to every other report, so the number
 that matters most had nothing watching it.
 
+### A move never lands on an occupant (a5's review)
+
+`rename()` on POSIX replaces its target silently and still returns true.
+`execute()` already refused an occupied target, but `undo()` reached the move
+through `isReversible()`, which checks the old path and then hands off — so a
+file appearing in that window was destroyed without a word.
+
+Verified by hand before fixing:
+
+```
+isReversible() -> true
+occupant written at the old path
+moveFile() -> true
+old path now holds: the audio      <- the occupant was gone
+```
+
+The guard now sits at the rename itself, which is the last moment before the
+bytes move, rather than at a caller that then has to keep the fact true.
+Identity-equal paths still pass, because that is one file under two spellings —
+a rename to perform, not a collision (#454).
+
+Narrow in practice: `undo` is the manual `library:undo-moves`, not something
+concurrent with ingestion. Fixed anyway because it is the same class of bug as
+#454, and this phase exists to end that class.
+
 ## Worth knowing
 
 - **Migration included and run on the Mac.** All 8,326 rows were backfilled by

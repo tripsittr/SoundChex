@@ -197,6 +197,77 @@ class FileMoveJournalTest extends TestCase
         $this->assertFileExists($target, 'The moved file stays where it is.');
     }
 
+    public function test_a_move_refuses_to_overwrite_an_occupant_that_appeared_mid_flight(): void
+    {
+        // a5's review of #271, note 1 — a real TOCTOU, verified by hand.
+        //
+        // `isReversible()` checks `! file_exists(from)` and then hands off to
+        // `moveFile()`, which calls `rename()`. On POSIX that replaces the
+        // target silently and returns true:
+        //
+        //     isReversible() -> true
+        //     occupant written at the old path
+        //     moveFile() -> true
+        //     old path now holds: the audio      <- the occupant was destroyed
+        //
+        // So the guard has to sit at the rename, not at the caller: anything
+        // appearing between the check and the move was lost without a word.
+        // Narrow in practice (undo is the manual `library:undo-moves`), but it
+        // is the same class of bug as #454 and this phase exists to end it.
+        //
+        // Driving `moveFile()` directly is deliberate. Calling `undo()` here
+        // would pass for the wrong reason: `isReversible()` re-reads the disk
+        // at call time and would catch the occupant itself, never reaching the
+        // window this covers.
+        [$item, $source] = $this->fileAt('media/unsorted/track.mp3', 'the audio');
+        $target = Storage::path('media/library/Music/A/One/track.mp3');
+
+        $this->journal->move($item, $source, $target);
+
+        $move = FileMove::first();
+        $this->assertTrue($move->isReversible(), 'Precondition: at this instant the undo looks safe.');
+
+        // The window: something takes the old path after that check passed.
+        Storage::disk('local')->put('media/unsorted/track.mp3', 'a different file arrived here');
+
+        $moveFile = new \ReflectionMethod($this->journal, 'moveFile');
+
+        $this->assertFalse(
+            $moveFile->invoke($this->journal, $target, $source),
+            'The move must refuse rather than replace the occupant.',
+        );
+        $this->assertSame(
+            'a different file arrived here',
+            file_get_contents($source),
+            'The file occupying the old path must survive.',
+        );
+        $this->assertFileExists($target, 'And the moved file stays where it is.');
+    }
+
+    public function test_a_move_still_completes_a_case_only_rename(): void
+    {
+        // The guard must not block one file under two spellings, which is a
+        // rename to perform rather than a collision (#454). Identity-equal
+        // paths are let through.
+        $disk = Storage::disk('local');
+        $disk->put('media/library/Music/A/One/Track.mp3', 'the audio');
+
+        $absolute = $disk->path('media/library/Music/A/One/Track.mp3');
+        $recased = dirname($absolute).'/TRACK.mp3';
+
+        if (! file_exists($recased)) {
+            $this->markTestSkipped('The test volume is case-sensitive, so the two spellings are two files.');
+        }
+
+        $moveFile = new \ReflectionMethod($this->journal, 'moveFile');
+
+        $this->assertTrue(
+            $moveFile->invoke($this->journal, $absolute, $recased),
+            'A case-only rename is one file under two names, not an occupied target.',
+        );
+        $this->assertSame('the audio', $disk->get('media/library/Music/A/One/TRACK.mp3'));
+    }
+
     public function test_a_trashed_file_is_journalled_and_restorable(): void
     {
         // MediaTrash keeps the file; the journal records where it came from,
