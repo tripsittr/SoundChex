@@ -7,6 +7,11 @@ namespace App\Filament\Pages;
 
 use App\Filament\Concerns\RestrictsToServerAdmins;
 use App\Services\ArrServices;
+use App\Services\Metadata\CredentialTester;
+use App\Services\Metadata\SourceCatalogue;
+use App\Services\Oauth\OauthFlow;
+use App\Services\Oauth\OauthProvider;
+use App\Services\Oauth\TokenStore;
 use App\Services\SettingsService;
 use App\Services\WebhookNotifier;
 use BackedEnum;
@@ -68,6 +73,14 @@ class Integrations extends Page
     public string $editingKey = '';
 
     /**
+     * The second credential being typed, for a source that needs two.
+     *
+     * Spotify needs a client id and a secret. One field would have meant
+     * either two cards for one service or a key silently half-saved.
+     */
+    public string $editingSecondKey = '';
+
+    /**
      * The address being typed in the modal.
      *
      * Pre-filled, unlike the key: it is not a secret, and someone correcting a
@@ -108,6 +121,8 @@ class Integrations extends Page
 
         $this->editing = $key;
         $this->editingKey = '';
+        $this->editingSecondKey = '';
+        $this->testResult = null;
 
         // Acquisition apps carry an address; a webhook is *only* an address (the
         // URL the events POST to). A metadata provider is a fixed public API, so
@@ -131,6 +146,8 @@ class Integrations extends Page
     {
         $this->editing = null;
         $this->editingKey = '';
+        $this->editingSecondKey = '';
+        $this->testResult = null;
         $this->editingUrl = '';
 
         $this->dispatch('close-modal', id: 'integration');
@@ -180,6 +197,18 @@ class Integrations extends Page
 
         $key = trim($this->editingKey);
         $isApp = array_key_exists($this->editing, config('arr.apps', []));
+
+        // A metadata source declaring two settings saves both at once. Done
+        // before the single-key path so a half-filled pair cannot be stored as
+        // if it were complete -- the state that left this install showing
+        // Spotify connected with no client id.
+        $declared = $this->editingRow()['keys'] ?? null;
+
+        if (! $isApp && is_array($declared) && count($declared) > 1) {
+            $this->saveDeclaredKeys($declared);
+
+            return;
+        }
 
         // The address is saved on its own, because a wrong one is the more
         // likely fault: these apps are installed natively, on a NAS, in
@@ -356,6 +385,7 @@ class Integrations extends Page
 
         return $rows;
     }
+
     /**
      * The groups, in the order they should be read.
      *
@@ -374,6 +404,7 @@ class Integrations extends Page
         'Lyrics',
         'Books',
         'Artwork',
+        'Subtitles',
         'Communication',
     ];
 
@@ -392,7 +423,17 @@ class Integrations extends Page
 
         $out = [];
 
-        foreach (self::GROUP_ORDER as $group) {
+        // Known groups first, in the order above; then anything it has not
+        // heard of. This used to iterate GROUP_ORDER alone, which made the
+        // list a *filter* -- OpenSubtitles built a card in a "Subtitles" group
+        // that was not on the list, and the page silently rendered 12 of 13
+        // rows. A new group must appear in the wrong place rather than vanish.
+        $ordered = [
+            ...self::GROUP_ORDER,
+            ...array_diff($grouped->keys()->all(), self::GROUP_ORDER),
+        ];
+
+        foreach ($ordered as $group) {
             if (! $grouped->has($group)) {
                 continue;
             }
@@ -486,65 +527,167 @@ class Integrations extends Page
     }
 
     /**
-     * The metadata providers, configured here.
+     * The metadata providers, built from what each source declares (#490).
      *
      * Folded in from the old standalone "Metadata Sources" page: enriching the
      * catalogue is library administration, and these read-only API keys live
      * alongside the acquisition apps now so there is one place for every
      * external service.
      *
+     * **Derived, not listed.** This used to hold its own list of thirteen
+     * providers, while `requiredSettings()` -- which is on the contract
+     * precisely to drive this page -- went unread. The two drifted, and seven
+     * of those thirteen keys turned out to be read by nothing at all. A source
+     * now gets a card by declaring a setting, and a key with no source behind
+     * it appears in its own section saying so.
+     *
      * @return array<int, array<string, mixed>>
      */
     private function metadataRows(): array
     {
-        $settings = app(SettingsService::class);
-
-        // Grouped by what they are *for*, not alphabetically. Twelve providers
-        // in one flat list is a wall of names — someone here is asking "what
-        // improves my films?", and the grouping answers that directly.
-        //
-        // Within each group, the most useful first: TMDB before OMDb because
-        // it covers both films and television, MusicBrainz-adjacent sources
-        // before lyrics, and so on. Order is a recommendation.
-        $sources = [
-            'tmdb_api_key' => ['TMDB', 'Films and television', 'Film & TV'],
-            'tvdb_api_key' => ['TVDB', 'Television', 'Film & TV'],
-            'omdb_api_key' => ['OMDb', 'Films, ratings', 'Film & TV'],
-            'trakt_client_secret' => ['Trakt', 'Watch history', 'Film & TV'],
-
-            'spotify_client_secret' => ['Spotify', 'Albums and artists', 'Music'],
-            'discogs_token' => ['Discogs', 'Releases and credits', 'Music'],
-            'lastfm_api_key' => ['Last.fm', 'Listening data', 'Music'],
-            'acoustid_api_key' => ['AcoustID', 'Identifies untagged audio', 'Music'],
-
-            'genius_api_key' => ['Genius', 'Lyrics', 'Lyrics'],
-            'musixmatch_api_key' => ['Musixmatch', 'Lyrics', 'Lyrics'],
-
-            'opensubtitles_api_key' => ['OpenSubtitles', 'Subtitles', 'Subtitles'],
-
-            'google_books_api_key' => ['Google Books', 'Books', 'Books'],
-
-            'fanart_tv_api_key' => ['Fanart.tv', 'Posters and backdrops', 'Artwork'],
-        ];
-
         $rows = [];
 
-        foreach ($sources as $key => [$label, $detail, $group]) {
-            $connected = filled($settings->get($key));
+        foreach (app(SourceCatalogue::class)->credentialled() as $source) {
+            $keys = $source['keys'];
 
             $rows[] = [
-                'key' => $key,
-                'group' => $group,
-                'label' => $label,
-                'detail' => $detail,
-                'connected' => $connected,
-                'warnings' => [],
+                // The first key identifies the card. Spotify needs two and is
+                // one integration -- two cards would ask somebody to connect
+                // the same service twice.
+                'key' => (string) array_key_first($keys),
+                'keys' => $keys,
+                'group' => $source['group'],
+                'label' => $source['name'],
+                'detail' => $source['adds'],
+                'connected' => $source['configured'],
+                // Half-configured is its own state. This install has a Spotify
+                // secret and no client id, which the old page showed as
+                // connected while `supports()` returned false -- green card,
+                // nothing happening.
+                'partial' => $source['partial'],
+                'warnings' => $source['partial']
+                    ? ['Half set up: '.$this->missingKeyLabels($keys).' still needed.']
+                    : [],
                 'connected_url' => null,
-                'unlinkable' => $connected,
+                'unlinkable' => $source['configured'] || $source['partial'],
             ];
         }
 
         return $rows;
+    }
+
+    /**
+     * Sources that need no key, for the "already working" section.
+     *
+     * @return array<int, array{name: string, group: string, adds: string}>
+     */
+    public function keylessSources(): array
+    {
+        return app(SourceCatalogue::class)->keyless();
+    }
+
+    /**
+     * Keys this page used to collect that nothing reads.
+     *
+     * Shown rather than quietly dropped. Somebody who wants lyrics should be
+     * able to see that we know lyrics are missing, and somebody who already
+     * pasted a Discogs token needs telling it is doing nothing.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function unimplementedSources(): array
+    {
+        return app(SourceCatalogue::class)->unimplemented();
+    }
+
+    /** Whether any dead key is still stored, so the page can say so. */
+    public function hasStoredDeadKeys(): bool
+    {
+        return collect($this->unimplementedSources())->contains('stored', true);
+    }
+
+    /** Forgets a key for a source that was never built. */
+    public function forgetDeadKey(string $key): void
+    {
+        if (! app(SourceCatalogue::class)->isUnimplemented($key)) {
+            return;
+        }
+
+        app(SettingsService::class)->forget($key);
+
+        Notification::make()->title('Removed. Nothing was reading it.')->success()->send();
+    }
+
+    /** The labels of whichever keys are still missing, for the warning text. */
+    private function missingKeyLabels(array $keys): string
+    {
+        $settings = app(SettingsService::class);
+
+        $missing = [];
+
+        foreach ($keys as $key => $label) {
+            if (blank($settings->get($key))) {
+                $missing[] = $label;
+            }
+        }
+
+        return implode(' and ', $missing);
+    }
+
+    /**
+     * Saves a source that needs more than one credential.
+     *
+     * Both or neither, in the order declared. Storing one of a pair is what
+     * produces a card that says Connected while `supports()` returns false,
+     * and an integration that silently does nothing is the fault this whole
+     * change is about.
+     *
+     * An already-stored value is kept when its field is left blank, so
+     * correcting a mistyped secret does not mean re-pasting the client id --
+     * neither is readable from the page to copy.
+     *
+     * @param  array<string, string>  $declared
+     */
+    private function saveDeclaredKeys(array $declared): void
+    {
+        $settings = app(SettingsService::class);
+        $typed = [trim($this->editingKey), trim($this->editingSecondKey)];
+
+        $values = [];
+        $i = 0;
+
+        foreach ($declared as $key => $label) {
+            $given = $typed[$i] ?? '';
+            $i++;
+
+            // Blank means "leave what is there", not "clear it".
+            $values[$key] = $given !== '' ? $given : (string) $settings->get($key);
+        }
+
+        $missing = array_keys(array_filter($values, fn (string $v): bool => $v === ''));
+
+        if ($missing !== []) {
+            $labels = implode(' and ', array_map(fn (string $k): string => $declared[$k], $missing));
+
+            Notification::make()
+                ->title('Both are needed')
+                ->body($labels.' is still empty, and the source does nothing without it.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        foreach ($values as $key => $value) {
+            $settings->set($key, $value, encrypt: true);
+        }
+
+        $label = $this->editingRow()['label'] ?? 'Integration';
+
+        $this->closeModal();
+        $this->load();
+
+        Notification::make()->title($label.' connected.')->success()->send();
     }
 
     /**
@@ -575,7 +718,17 @@ class Integrations extends Page
         // collide with one.
         $isApp = array_key_exists($key, config('arr.apps', []));
 
-        $settings->forget($isApp ? "arr.{$key}.api_key" : $key);
+        if (! $isApp) {
+            // Every key the source declares, not just the one naming the card.
+            // Forgetting one of a pair leaves an orphan credential behind --
+            // which is exactly how this install ended up holding a Spotify
+            // secret with no client id.
+            foreach ($this->declaredKeysFor($key) as $declared) {
+                $settings->forget($declared);
+            }
+        } else {
+            $settings->forget("arr.{$key}.api_key");
+        }
 
         if ($isApp) {
             app(ArrServices::class)->forget();
@@ -584,6 +737,25 @@ class Integrations extends Page
         $this->load();
 
         Notification::make()->title('Unlinked.')->success()->send();
+    }
+
+    /**
+     * Every settings key belonging to the card a key names.
+     *
+     * Falls back to the key itself, so a webhook, a toggle or anything not
+     * coming from the catalogue behaves exactly as before.
+     *
+     * @return array<int, string>
+     */
+    private function declaredKeysFor(string $key): array
+    {
+        foreach (app(SourceCatalogue::class)->credentialled() as $source) {
+            if (array_key_exists($key, $source['keys'])) {
+                return array_keys($source['keys']);
+            }
+        }
+
+        return [$key];
     }
 
     /** Whether a key is a keyless on/off integration rather than a credential. */
@@ -602,6 +774,106 @@ class Integrations extends Page
     public function isWebhook(string $key): bool
     {
         return array_key_exists($key, WebhookNotifier::DESTINATIONS);
+    }
+
+    /**
+     * The services that need signing in to, not just a key (#490).
+     *
+     * Separate from the key cards because the question is different: a key is
+     * pasted once and belongs to the install, while a sign-in belongs to a
+     * person and expires. Trakt's whole purpose is one particular person's
+     * watch history, and no pasted secret can stand in for that -- which is
+     * why a Trakt key field was among the seven that could never work.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function signInSources(): array
+    {
+        $flow = app(OauthFlow::class);
+        $tokens = app(TokenStore::class);
+
+        $out = [];
+
+        foreach (OauthProvider::cases() as $provider) {
+            $out[] = [
+                'slug' => $provider->value,
+                'label' => $provider->label(),
+                'adds' => $provider->adds(),
+                'registered' => $flow->isRegistered($provider),
+                'connected' => $tokens->isConnected($provider),
+                'expires_at' => $tokens->expiresAt($provider)?->diffForHumans(),
+                'redirect_uri' => $flow->redirectUri($provider),
+            ];
+        }
+
+        return $out;
+    }
+
+    /** Signs a service out on this install. */
+    public function signOut(string $slug): void
+    {
+        $provider = OauthProvider::tryFromSlug($slug);
+
+        if ($provider === null) {
+            return;
+        }
+
+        app(TokenStore::class)->forget($provider);
+
+        Notification::make()->title($provider->label().' signed out.')->success()->send();
+    }
+
+    /**
+     * The result of the last credential test, or null.
+     *
+     * Kept on the page rather than shown as a toast: a toast disappears while
+     * somebody is still reading a key off another screen, and the one thing
+     * they need to see is whether this one worked.
+     *
+     * @var array{ok: bool, message: string}|null
+     */
+    public ?array $testResult = null;
+
+    /** Whether the open modal's credential can be checked against its service. */
+    public function canTestEditing(): bool
+    {
+        if ($this->editing === null) {
+            return false;
+        }
+
+        return app(CredentialTester::class)->canTest($this->editing);
+    }
+
+    /**
+     * Checks the key currently typed in the modal against its service.
+     *
+     * Tests what is **typed**, not what is stored, so a bad paste never has to
+     * become a stored credential first. Nothing is saved either way -- the
+     * question is only whether this key works.
+     */
+    public function testCredential(): void
+    {
+        if ($this->editing === null) {
+            return;
+        }
+
+        $declared = $this->editingRow()['keys'] ?? [$this->editing => ''];
+        $typed = [trim($this->editingKey), trim($this->editingSecondKey)];
+
+        $settings = app(SettingsService::class);
+        $values = [];
+        $i = 0;
+
+        foreach (array_keys($declared) as $key) {
+            $given = $typed[$i] ?? '';
+            $i++;
+
+            // An untouched field falls back to what is stored, so "test" works
+            // on a saved key as well as on a newly pasted one.
+            $values[$key] = $given !== '' ? $given : (string) $settings->get($key);
+        }
+
+        $this->testResult = app(CredentialTester::class)->test($this->editing, $values);
     }
 
     /**

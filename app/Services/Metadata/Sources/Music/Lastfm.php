@@ -59,7 +59,9 @@ class Lastfm implements MetadataSource
 
     public function requiredSettings(): array
     {
-        return ['lastfm_api_key'];
+        // key => label, not a bare list. A list makes the key the label, so
+        // the settings page would have asked for "0" (#490).
+        return ['lastfm_api_key' => 'Last.fm API Key'];
     }
 
     public function supports(MediaItem $item): bool
