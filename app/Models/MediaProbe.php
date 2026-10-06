@@ -69,6 +69,97 @@ class MediaProbe extends Model
         };
     }
 
+    /**
+     * What the file can do, as the short labels a player shows.
+     *
+     * The badges on a streaming service's detail page -- HD, Dolby Vision,
+     * 5.1 -- answer "will this look and sound good on my setup", which is a
+     * different question from the numbers in the facts table and is answered
+     * at a glance rather than read.
+     *
+     * Derived from the probe rather than stored, so a re-probe corrects them
+     * and nothing can drift out of step with the file.
+     *
+     * Ordered by what someone scans for first: picture, then dynamic range,
+     * then sound. Empty for an unprobed file, which is the honest answer --
+     * absent badges mean "not measured", and inventing "HD" from a filename
+     * would be a guess presented as a fact.
+     *
+     * @return array<int, string>
+     */
+    public function capabilities(): array
+    {
+        if (! $this->isVideo()) {
+            return [];
+        }
+
+        $badges = [];
+
+        if ($label = $this->resolutionLabel()) {
+            // "4K" rather than "2160p": it is what the box said, and what
+            // somebody is looking for.
+            $badges[] = $label === '2160p' ? '4K' : ($label === '1080p' ? 'HD' : $label);
+        }
+
+        if ($hdr = $this->hdrLabel()) {
+            $badges[] = $hdr;
+        }
+
+        if ($audio = $this->audioLabel()) {
+            $badges[] = $audio;
+        }
+
+        if (($this->subtitle_streams ?? []) !== []) {
+            $badges[] = 'CC';
+        }
+
+        return $badges;
+    }
+
+    /**
+     * The dynamic-range badge, or null for ordinary video.
+     *
+     * `none` is a real stored value meaning "measured, and it is SDR" -- as
+     * opposed to null, which means "never probed". Neither earns a badge:
+     * every file was SDR once, so saying so is noise.
+     */
+    public function hdrLabel(): ?string
+    {
+        return match ($this->hdr) {
+            'dv' => 'Dolby Vision',
+            'hdr10plus' => 'HDR10+',
+            'hdr10' => 'HDR10',
+            'hlg' => 'HLG',
+            default => null,
+        };
+    }
+
+    /**
+     * The best audio the file offers, as a channel count.
+     *
+     * The *best* rather than a list: a file with a 5.1 track and a stereo
+     * fallback is a 5.1 file, and showing both would describe the packaging
+     * rather than the capability.
+     *
+     * Stereo earns no badge for the same reason SDR does not -- it is the
+     * floor, and marking the floor says nothing.
+     */
+    public function audioLabel(): ?string
+    {
+        $channels = collect($this->audio_streams ?? [])
+            ->pluck('channels')
+            ->filter(fn ($value): bool => is_numeric($value))
+            ->map(fn ($value): int => (int) $value)
+            ->max();
+
+        return match (true) {
+            $channels === null || $channels <= 2 => null,
+            $channels >= 8 => '7.1',
+            $channels >= 6 => '5.1',
+            default => $channels.'.0',
+        };
+    }
+
     /** Whether any audio stream exists at all. */
     public function hasAudio(): bool
     {
