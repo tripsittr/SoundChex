@@ -6,6 +6,7 @@
 namespace App\Services\Streaming;
 
 use App\Models\MediaItem;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
@@ -30,6 +31,15 @@ class HlsSegmenter
 {
     /** Where a session's segments live, relative to the local disk. */
     private const SESSION_ROOT = 'hls';
+
+    /**
+     * How many encodes one viewing may have running at once.
+     *
+     * One for the playback itself, and a few for seeks. Dragging a scrubber
+     * asks for many positions in a second, and an ffmpeg per position costs
+     * far more than the seeks save.
+     */
+    private const ENCODES_PER_SESSION = 3;
 
     /**
      * Starts producing a stream, returning its session id.
@@ -68,6 +78,16 @@ class HlsSegmenter
         // is ready rather than waiting for the encode.
         Process::timeout(config('transcode.timeout_seconds', 21600))
             ->start($command);
+
+        // What this session is encoding, so a later segment request can
+        // produce a part the encoder has not reached. The id is a hash, so
+        // the item cannot be recovered from it -- and the segment route is
+        // given only the session.
+        Cache::put(
+            self::sessionKey($session),
+            ['item' => $item->id, 'max_height' => $maxHeight],
+            now()->addHours(12),
+        );
 
         Log::info('HLS: started a stream', [
             'item' => $item->id,
@@ -139,6 +159,152 @@ class HlsSegmenter
     }
 
     /** A file inside a session, or null when the name is not one we wrote. */
+    /** Where a session's details are remembered. */
+    private static function sessionKey(string $session): string
+    {
+        return 'hls.session.'.$session;
+    }
+
+    /**
+     * What a session is encoding, or null if it is unknown or expired.
+     *
+     * @return array{item: int, max_height: int}|null
+     */
+    public function detailsFor(string $session): ?array
+    {
+        $details = Cache::get(self::sessionKey($session));
+
+        return is_array($details) && isset($details['item'], $details['max_height'])
+            ? ['item' => (int) $details['item'], 'max_height' => (int) $details['max_height']]
+            : null;
+    }
+
+    /**
+     * A segment the encoder has not reached, produced on demand.
+     *
+     * The playlist now promises the whole film up front, so a viewer can seek
+     * anywhere — including minutes past where the encode has got to. Without
+     * this that seek waits for the encoder to arrive, which for a seek near
+     * the end of a film is not a wait anybody will sit through.
+     *
+     * So a request for a segment that does not exist starts a **second**
+     * encode positioned at exactly that segment's offset. It writes into the
+     * same directory, so the first encode's output and this one's interleave
+     * into one coherent set, and whichever reaches a given segment first
+     * wins.
+     *
+     * Bounded by `ENCODES_PER_SESSION`, because a viewer dragging a scrubber
+     * can ask for a dozen positions in a second and each one is an ffmpeg.
+     *
+     * Returns the path once the segment exists, or null if it does not arrive
+     * in time — the player retries, and a null is a short stall rather than a
+     * failure.
+     */
+    public function produce(MediaItem $item, string $session, string $name, int $maxHeight): ?string
+    {
+        if (preg_match('/^seg(\d{3,})\.ts$/', $name, $match) !== 1) {
+            return null;
+        }
+
+        $existing = $this->fileIn($session, $name);
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $source = $item->playbackPath();
+
+        if ($source === null) {
+            return null;
+        }
+
+        $directory = $this->directoryFor($session);
+        $segmentLength = max(2, (int) config('transcode.hls.segment_seconds', 6));
+        $index = (int) $match[1];
+        $offset = (float) ($index * $segmentLength);
+
+        if (! $this->claimEncode($session, $index)) {
+            // Already being produced, or too many running. Either way the
+            // answer is to wait rather than to start another.
+            return $this->waitFor($directory.'/'.$name);
+        }
+
+        // `-segment_start_number` so this encode writes the segment numbers
+        // it is actually producing rather than starting again at zero and
+        // overwriting the beginning of the film.
+        $command = $this->command($source, $directory, $maxHeight, $offset);
+        $command = $this->withStartNumber($command, $index);
+
+        Process::timeout(config('transcode.timeout_seconds', 21600))->start($command);
+
+        Log::info('HLS: encoding ahead for a seek', [
+            'item' => $item->id,
+            'session' => $session,
+            'segment' => $index,
+            'offset' => $offset,
+        ]);
+
+        return $this->waitFor($directory.'/'.$name);
+    }
+
+    /**
+     * Whether this request should start an encode for a segment.
+     *
+     * One encode per segment, and a ceiling per session: dragging a scrubber
+     * asks for many positions in a moment, and starting an ffmpeg for each
+     * would cost more than the seek saves.
+     */
+    private function claimEncode(string $session, int $index): bool
+    {
+        $key = 'hls.encoding.'.$session;
+        $running = (array) Cache::get($key, []);
+
+        // Expired claims are dropped: an encode that died must not block the
+        // segment it was producing for ever.
+        $running = array_filter($running, fn (int $at): bool => $at > time() - 120);
+
+        if (isset($running[$index])) {
+            return false;
+        }
+
+        if (count($running) >= self::ENCODES_PER_SESSION) {
+            return false;
+        }
+
+        $running[$index] = time();
+
+        Cache::put($key, $running, now()->addMinutes(10));
+
+        return true;
+    }
+
+    /** Adds the starting segment number to an encode command. */
+    private function withStartNumber(array $command, int $index): array
+    {
+        $output = array_pop($command);
+
+        return array_merge($command, ['-start_number', (string) $index], [$output]);
+    }
+
+    /**
+     * Waits briefly for a segment to appear.
+     *
+     * Short: the player is holding a request open, and a stall it can retry
+     * is better than one that times out the connection.
+     */
+    private function waitFor(string $path): ?string
+    {
+        for ($attempt = 0; $attempt < 40; $attempt++) {
+            if (is_file($path) && filesize($path) > 0) {
+                return $path;
+            }
+
+            usleep(250_000);
+        }
+
+        return null;
+    }
+
     public function fileIn(string $session, string $name): ?string
     {
         // Only the shapes ffmpeg produces. Anything else is someone walking

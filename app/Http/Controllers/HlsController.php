@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MediaItem;
 use App\Services\ContentGate;
+use App\Services\Streaming\HlsPlaylist;
 use App\Services\Streaming\HlsSegmenter;
 use App\Services\Streaming\StreamPolicy;
 use Illuminate\Http\JsonResponse;
@@ -73,6 +74,7 @@ class HlsController extends Controller
 
         $decision = $this->policy->decide($item, $request);
         $from = max(0.0, (float) $request->float('from'));
+        $signed = $this->signsSegments($request);
 
         $session = $this->segmenter->start(
             $item,
@@ -82,41 +84,38 @@ class HlsController extends Controller
 
         abort_if($session === null, 503, 'Could not start the stream.');
 
-        $playlist = $this->waitForPlaylist($session);
-
-        abort_if($playlist === null, 504, 'The stream did not start in time.');
-
-        // Rewritten so each segment is fetched through this app rather than
-        // from a path on disk the player cannot reach.
+        // The whole timeline, written from the measured duration rather than
+        // read back from ffmpeg's partial output.
         //
-        // Which route depends on who is asking. A browser carries its session
-        // cookie on every segment, so the web route is right for it. A native
-        // player does **not**: `AVURLAssetHTTPHeaderFieldsKey` applies to the
-        // playlist request and AVFoundation does not propagate those headers
-        // to the `.ts` fetches, so a segment arrives with no credentials at
-        // all, the auth middleware answers `302 -> /login`, AVPlayer follows
-        // it and decodes HTML as video. The result is a black picture with a
-        // running clock, because the playlist (which did carry the header)
-        // supplied the duration.
-        //
-        // So a token caller gets **signed** segment URLs instead: the
-        // signature travels in the URL, which is the one thing the player
-        // reliably keeps. The session id cannot do that job itself -- it is a
-        // deterministic hash of (item, height, start), so it is guessable and
-        // is not a credential.
-        $signed = $this->signsSegments($request);
+        // ffmpeg writes its playlist as it encodes, so reading it moments
+        // after the start lists only the few segments that exist -- and that
+        // is all the player believes the film to be. Seeking past them
+        // stalled, and even seeking backwards re-buffered, because each
+        // reload handed the player a different, longer playlist to reconcile.
+        $segmentUrl = fn (string $file): string => $signed
+            ? URL::temporarySignedRoute(
+                'api.hls.segment',
+                now()->addHours(12),
+                ['session' => $session, 'file' => $file],
+            )
+            : route('media.hls.segment', ['session' => $session, 'file' => $file]);
 
-        $body = preg_replace_callback(
-            '/^(seg\d+\.ts)$/m',
-            fn (array $m): string => $signed
-                ? URL::temporarySignedRoute(
-                    'api.hls.segment',
-                    now()->addHours(12),
-                    ['session' => $session, 'file' => $m[1]],
-                )
-                : route('media.hls.segment', ['session' => $session, 'file' => $m[1]]),
-            (string) file_get_contents($playlist),
-        );
+        $body = app(HlsPlaylist::class)->forItem($item, $session, $segmentUrl);
+
+        if ($body === null) {
+            // No measured duration, so the timeline cannot be derived. Fall
+            // back to ffmpeg's own playlist, which is what shipped before --
+            // partial, but better than refusing to play.
+            $playlist = $this->waitForPlaylist($session);
+
+            abort_if($playlist === null, 504, 'The stream did not start in time.');
+
+            $body = preg_replace_callback(
+                '/^(seg\d+\.ts)$/m',
+                fn (array $m): string => $segmentUrl($m[1]),
+                (string) file_get_contents($playlist),
+            );
+        }
 
         return response((string) $body, 200, [
             'Content-Type' => 'application/vnd.apple.mpegurl',
@@ -145,6 +144,27 @@ class HlsController extends Controller
     public function segment(string $session, string $file): BinaryFileResponse
     {
         $path = $this->segmenter->fileIn($session, $file);
+
+        // Not there yet: the playlist promises the whole film, so a viewer
+        // can seek minutes past where the encode has reached. Producing the
+        // segment on request is what makes that seek fast instead of a wait
+        // for the encoder to arrive.
+        if ($path === null) {
+            $details = $this->segmenter->detailsFor($session);
+
+            if ($details !== null) {
+                $item = MediaItem::unresolved()->find($details['item']);
+
+                if ($item !== null && $this->gate->allows($item)) {
+                    $path = $this->segmenter->produce(
+                        $item,
+                        $session,
+                        $file,
+                        $details['max_height'],
+                    );
+                }
+            }
+        }
 
         abort_if($path === null, 404);
 
