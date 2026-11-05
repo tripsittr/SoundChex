@@ -73,6 +73,13 @@ pub fn parse(args: &[String]) -> Invocation {
         .any(|a| a == "--headless" || a == "serve");
 
     if !headless {
+        // `soundchex-server --help` is what anyone writing a run script tries
+        // first. Read as "open the window", it aborted on GTK with no display
+        // — which is how CI's first check of the package failed.
+        if args.len() == 1 && (args[0] == "--help" || args[0] == "-h") {
+            return Invocation::Help;
+        }
+
         return Invocation::Window;
     }
 
@@ -429,6 +436,9 @@ mod tests {
     #[test]
     fn help_is_help() {
         assert_eq!(parse(&args(&["serve", "--help"])), Invocation::Help);
+        // On its own too: it must never reach the window, which needs a display.
+        assert_eq!(parse(&args(&["--help"])), Invocation::Help);
+        assert_eq!(parse(&args(&["-h"])), Invocation::Help);
     }
 
     #[test]

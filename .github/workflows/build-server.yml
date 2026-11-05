@@ -13,6 +13,16 @@ name: Build bundled server runtime
 
 on:
   workflow_dispatch:
+    inputs:
+      # The runtime (static PHP, Caddy, ffmpeg) is half of every run and
+      # changes rarely. Naming an earlier run here skips rebuilding it and
+      # builds only the apps against that run's runtime archives -- about ten
+      # minutes instead of twenty when the change is to the app. Leave empty
+      # for a full build; tagged releases always build everything.
+      reuse_runtime_from_run:
+        description: 'Reuse the runtime from this earlier run id (empty: build it)'
+        required: false
+        default: ''
   push:
     tags:
       - 'server-v*'
@@ -28,6 +38,7 @@ env:
 jobs:
   # POSIX targets: php-fpm behind Caddy, the proven flow.
   build:
+    if: ${{ !inputs.reuse_runtime_from_run }}
     strategy:
       fail-fast: false
       matrix:
@@ -130,6 +141,7 @@ jobs:
   # DLLs it is linked against. That bundle could not start. Downloading the
   # archive whole is both correct and minutes rather than tens of minutes.
   build-windows:
+    if: ${{ !inputs.reuse_runtime_from_run }}
     runs-on: windows-latest
     timeout-minutes: 60
     name: windows-x86_64
@@ -164,6 +176,13 @@ jobs:
   # build-client.yml.
   app:
     needs: [build, build-windows]
+    # Runs when the runtime jobs succeeded, or were skipped because an earlier
+    # run's runtime is being reused. A plain `needs` would skip this whenever
+    # they are skipped.
+    if: >-
+      !cancelled()
+      && (needs.build.result == 'success' || needs.build.result == 'skipped')
+      && (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -230,10 +249,14 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      # From this run, or from the run named in reuse_runtime_from_run. An
+      # empty run-id means this run, so one step covers both.
       - uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.runtime }}
           path: runtime-archive
+          run-id: ${{ inputs.reuse_runtime_from_run || github.run_id }}
+          github-token: ${{ github.token }}
 
       # src-tauri/runtime is gitignored, so a fresh checkout has none and the
       # bundle would be built without the resources that are its whole point.
@@ -372,28 +395,50 @@ jobs:
           cp "$deb" "release-assets/${base}.deb"
           cp "$appimage" "release-assets/${base}.AppImage"
 
-          # The binary the package installs must be the one a run script
-          # calls, and it must answer --help without a display.
-          # dpkg-deb lists paths with or without a leading "./" depending on
-          # how the archive was built; tauri's has none, and requiring one
-          # failed a correct package.
-          dpkg-deb -c "release-assets/${base}.deb" | grep -E ' (\./)?usr/bin/soundchex-server$' \
-            || { echo "the .deb does not install /usr/bin/soundchex-server"; dpkg-deb -c "release-assets/${base}.deb" | grep usr/bin; exit 1; }
-          dpkg-deb -x "release-assets/${base}.deb" deb-unpacked
-          env -u DISPLAY -u WAYLAND_DISPLAY deb-unpacked/usr/bin/soundchex-server --help
-
           cd release-assets
           for f in "${base}.deb" "${base}.AppImage"; do
             sha256sum "$f" > "$f.sha256"
           done
           cat ./*.sha256
 
+      # Uploaded before the checks below, so a failing check still leaves the
+      # packages to download and look at. The release job only publishes when
+      # this whole job succeeded, so nothing unchecked reaches a release.
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
           name: release-app-linux-${{ matrix.arch }}
           path: release-assets/*
           if-no-files-found: error
+
+      # The binary the package installs must be the one a run script calls,
+      # and headless mode must work with no display: a runit service at boot
+      # has none, and anything that reached GTK first would abort there.
+      - name: Check the Linux package
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          deb="release-assets/soundchex-server-app-linux-${{ matrix.arch }}.deb"
+
+          # dpkg-deb lists paths with or without a leading "./" depending on
+          # how the archive was built; tauri's has none, and requiring one
+          # failed a correct package.
+          dpkg-deb -c "$deb" | grep -E ' (\./)?usr/bin/soundchex-server$' \
+            || { echo "the .deb does not install /usr/bin/soundchex-server"; dpkg-deb -c "$deb" | grep usr/bin; exit 1; }
+
+          dpkg-deb -x "$deb" deb-unpacked
+          bin=deb-unpacked/usr/bin/soundchex-server
+
+          env -u DISPLAY -u WAYLAND_DISPLAY "$bin" --help
+          env -u DISPLAY -u WAYLAND_DISPLAY "$bin" --headless --help
+
+          # A bad argument must be refused by the parser (exit 2) before
+          # anything starts -- not reach the window and abort on GTK.
+          set +e
+          env -u DISPLAY -u WAYLAND_DISPLAY "$bin" --headless --listen nowhere
+          code=$?
+          set -e
+          [ "$code" = 2 ] || { echo "expected exit 2 for a bad --listen, got $code"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         if: success()

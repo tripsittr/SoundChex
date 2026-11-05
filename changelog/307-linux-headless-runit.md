@@ -115,6 +115,11 @@ plugin aborts when `ldd` fails on the bundled `tailwindcss`; on x86_64 the
 package was fine but the release step's check expected `./usr/bin/…` where
 `dpkg-deb` lists `usr/bin/…`. Both are fixed: the .deb and AppImage are built
 separately, and the check accepts either form.
+The fourth run built all four Linux packages; its smoke test then ran a bare
+`soundchex-server --help`, which was read as "open the window" and aborted on
+GTK with no display. A bare `--help` now prints the usage. The packages are
+uploaded before the checks, so a failing check still leaves them to download,
+and `reuse_runtime_from_run` on a manual run skips rebuilding the runtime.
 
 Rust: 32 pass (new: argument parsing, stale state files, `sv status` parsing).
 PHP: 1,818 pass in a clean worktree. The one failure there is the Tailwind CLI
