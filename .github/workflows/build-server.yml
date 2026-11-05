@@ -6,7 +6,8 @@
 # cli+fpm -> package (adds Caddy + cacert.pem + templates + notices).
 #
 # Artifacts: soundchex-server-<os>-<arch>.(tar.gz|zip) + .sha256, uploaded per
-# job (and attached to a release when tagged server-v*).
+# job (and attached to a release when tagged server-v*). The Linux Server app is
+# attached too, as soundchex-server-app-linux-<arch>.(deb|AppImage) + .sha256.
 
 name: Build bundled server runtime
 
@@ -169,7 +170,11 @@ jobs:
         include:
           - { os: macos-latest,   label: macOS,   runtime: soundchex-server-macos-aarch64 }
           - { os: windows-latest, label: Windows, runtime: soundchex-server-windows-x86_64 }
-          - { os: ubuntu-latest,  label: Linux,   runtime: soundchex-server-linux-x86_64 }
+          # aarch64 only for now: it is what HatCOS is tested on, in the native
+          # ARM VM on the Mac. The x86_64 Linux app is held back deliberately
+          # rather than dropped -- its runtime still builds above, and adding
+          # it back is this one line with ubuntu-latest and linux-x86_64.
+          - { os: ubuntu-24.04-arm, label: Linux, runtime: soundchex-server-linux-aarch64, arch: aarch64 }
     runs-on: ${{ matrix.os }}
     # Every job gets one. A missing runner otherwise sits 24 hours and reports
     # itself "cancelled" — which is how no server release ever published
@@ -203,8 +208,11 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # By runner OS, not by image name: the Linux leg is ubuntu-24.04-arm now,
+      # and a check against 'ubuntu-latest' would silently skip this and fail
+      # the build on a missing webkit header.
       - name: Install Linux system dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -294,8 +302,60 @@ jobs:
       - name: Package the application
         run: php scripts/package-app-payload.php
 
+      # Linux adds an overlay: the binary is named `soundchex-server` rather
+      # than the crate's `soundchex`, which is also what the client package
+      # installs to /usr/bin -- the two would overwrite each other -- and is
+      # the name a runit `run` script calls (`soundchex-server --headless`).
+      # Only deb and AppImage, which is what is published.
+      #
+      # Not applied to macOS or Windows: renaming their executable would break
+      # the Windows Run-key autostart of every existing install, which points
+      # at the old file name.
       - name: Build the Server app
-        run: npm run build:server
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            npm run build:server -- --config src-tauri/tauri.server.linux.conf.json
+          else
+            npm run build:server
+          fi
+
+      # Fixed names, checksummed, for the release. HatCOS's package downloads
+      # a fixed URL and checks it against the .sha256 beside it; Tauri's own
+      # names carry the version and a space ("SoundChex Server_0.2.0_arm64.deb")
+      # which GitHub rewrites on upload, so neither is predictable.
+      - name: Collect Linux release assets
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          deb=$(find src-tauri/target/release/bundle/deb -maxdepth 1 -name '*.deb' | head -1 || true)
+          appimage=$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' | head -1 || true)
+          [ -n "$deb" ] || { echo "no .deb was built"; ls -R src-tauri/target/release/bundle; exit 1; }
+          [ -n "$appimage" ] || { echo "no .AppImage was built"; ls -R src-tauri/target/release/bundle; exit 1; }
+
+          base="soundchex-server-app-linux-${{ matrix.arch }}"
+          cp "$deb" "release-assets/${base}.deb"
+          cp "$appimage" "release-assets/${base}.AppImage"
+
+          # The binary the package installs must be the one a run script
+          # calls, and it must answer --help without a display.
+          dpkg-deb -c "release-assets/${base}.deb" | grep -E ' \./usr/bin/soundchex-server$' \
+            || { echo "the .deb does not install /usr/bin/soundchex-server"; dpkg-deb -c "release-assets/${base}.deb" | grep usr/bin; exit 1; }
+          dpkg-deb -x "release-assets/${base}.deb" deb-unpacked
+          env -u DISPLAY -u WAYLAND_DISPLAY deb-unpacked/usr/bin/soundchex-server --help
+
+          cd release-assets
+          for f in "${base}.deb" "${base}.AppImage"; do
+            sha256sum "$f" > "$f.sha256"
+          done
+          cat ./*.sha256
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: release-app-linux-${{ matrix.arch }}
+          path: release-assets/*
+          if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: success()
@@ -312,13 +372,41 @@ jobs:
     # permission (S-421).
     permissions:
       contents: write
-    if: startsWith(github.ref, 'refs/tags/server-v')
-    needs: [build, build-windows]
+    #
+    # Waits for the app builds too, because the Linux app is published here.
+    # `!cancelled()` plus the runtime results rather than plain success: a
+    # macOS or Windows app failure must not hold back a release whose runtime
+    # built. The Linux app is still required -- its download below fails the
+    # job when it is missing -- because HatCOS fetches it from a fixed URL and
+    # a release without it would 404 there with nothing here saying why.
+    if: >-
+      !cancelled()
+      && startsWith(github.ref, 'refs/tags/server-v')
+      && needs.build.result == 'success'
+      && needs.build-windows.result == 'success'
+    needs: [build, build-windows, app]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      # Runtime archives only. Without a pattern this also pulled every app
+      # bundle -- the dmg, msi and exe -- just to throw them away.
       - uses: actions/download-artifact@v4
-        with: { path: dist, merge-multiple: true }
+        with:
+          path: dist
+          pattern: soundchex-server-[lmw]*
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: release-app-linux-*
+          merge-multiple: true
+
+      - name: Check the Linux app is present
+        run: |
+          ls -la dist
+          ls dist/soundchex-server-app-linux-*.deb dist/soundchex-server-app-linux-*.AppImage >/dev/null
+          cd dist && sha256sum -c soundchex-server-app-linux-*.sha256
       - uses: softprops/action-gh-release@v2
         with:
           # A tag carrying -beta/-alpha/-rc marks the release as a
@@ -330,4 +418,6 @@ jobs:
           files: |
             dist/soundchex-server-*.tar.gz
             dist/soundchex-server-*.zip
+            dist/soundchex-server-*.deb
+            dist/soundchex-server-*.AppImage
             dist/soundchex-server-*.sha256
