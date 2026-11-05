@@ -97,6 +97,13 @@ holds the runtime release back. x86_64 Linux is held for now.
 
 ## Tests
 
+CI on the branch (run 42118908535) first failed in two places, both fixed
+here: the arm64 runner image has no `xdg-utils`, which AppImage packaging
+needs, and Windows did not compile because `current_user_home` existed only
+on Unix. Windows cannot be type-checked from a Mac (`ring` needs the Windows C
+headers), so the Unix-only items were checked against their `cfg` guards by
+hand. CI is what confirms it.
+
 Rust: 32 pass (new: argument parsing, stale state files, `sv status` parsing).
 PHP: 1,818 pass in a clean worktree. The one failure there is the Tailwind CLI
 check, which needs `node_modules`, absent from that worktree. In the main

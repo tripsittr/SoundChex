@@ -29,7 +29,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(unix)]
+use std::time::Instant;
 
 /// How long a child is given to exit on SIGTERM before it is killed.
 ///
@@ -855,6 +857,13 @@ fn passwd_field(pick: impl Fn(&libc::passwd) -> *mut libc::c_char) -> Option<Str
 
 #[cfg(not(unix))]
 fn current_user_name() -> Option<String> {
+    None
+}
+
+/// Windows has no passwd database; headless mode is refused there before this
+/// is asked, but the signature has to exist for it to compile.
+#[cfg(not(unix))]
+pub fn current_user_home() -> Option<PathBuf> {
     None
 }
 
