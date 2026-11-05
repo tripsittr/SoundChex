@@ -92,6 +92,9 @@ holds the runtime release back.
   the packaged app.
 - `storage/logs/laravel.log`, Caddy's access log and php-fpm's error log still
   go to files, not stdout.
+- The arm64 AppImage leaves out the bundled `tailwindcss`. linuxdeploy aborts
+  when `ldd` fails on that Bun executable on arm64. Without it, plugins keep
+  the CSS they ship. The arm64 `.deb` and both x86_64 packages include it.
 - An AppImage under runit needs FUSE or `--appimage-extract-and-run`; the .deb
   is the better fit for a service.
 
@@ -107,7 +110,11 @@ hand. CI is what confirms it.
 The second run built the arm64 .deb, then the AppImage failed in linuxdeploy
 with no detail. The Linux build now sets `NO_STRIP=true` (linuxdeploy's old
 `strip` is the known cause on Ubuntu 24.04) and `--verbose`, so another failure
-there says why.
+there says why. The third run showed two causes: on arm64, linuxdeploy's gtk
+plugin aborts when `ldd` fails on the bundled `tailwindcss`; on x86_64 the
+package was fine but the release step's check expected `./usr/bin/…` where
+`dpkg-deb` lists `usr/bin/…`. Both are fixed: the .deb and AppImage are built
+separately, and the check accepts either form.
 
 Rust: 32 pass (new: argument parsing, stale state files, `sv status` parsing).
 PHP: 1,818 pass in a clean worktree. The one failure there is the Tailwind CLI

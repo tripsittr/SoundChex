@@ -325,7 +325,31 @@ jobs:
             # linuxdeploy". Nothing is lost: Cargo's release profile already
             # strips our binary. --verbose, because without it tauri swallows
             # linuxdeploy's output and a failure there says nothing about why.
-            NO_STRIP=true npm run build:server -- --verbose --config src-tauri/tauri.server.linux.conf.json
+            #
+            # The .deb and the AppImage are built separately. linuxdeploy runs
+            # ldd on every ELF file in the AppImage, and on arm64 ldd exits 1 on
+            # the bundled tailwindcss (a Bun single-file executable); the gtk
+            # plugin then aborts rather than skipping it, as it does skip the
+            # static php. So the .deb -- what runs under runit -- is built
+            # complete, and only the arm64 AppImage leaves tailwindcss out.
+            # Without it, plugins keep the CSS they ship, which is the
+            # documented behaviour when the CLI is absent (S-350).
+            linux_build() {
+              NO_STRIP=true npm run build:server -- --verbose \
+                --config src-tauri/tauri.server.linux.conf.json --bundles "$1"
+            }
+
+            linux_build deb
+
+            if [ "${{ matrix.arch }}" = "aarch64" ]; then
+              mv src-tauri/runtime/bin/tailwindcss "$RUNNER_TEMP/tailwindcss"
+            fi
+
+            linux_build appimage
+
+            if [ -f "$RUNNER_TEMP/tailwindcss" ]; then
+              mv "$RUNNER_TEMP/tailwindcss" src-tauri/runtime/bin/tailwindcss
+            fi
           else
             npm run build:server
           fi
@@ -350,7 +374,10 @@ jobs:
 
           # The binary the package installs must be the one a run script
           # calls, and it must answer --help without a display.
-          dpkg-deb -c "release-assets/${base}.deb" | grep -E ' \./usr/bin/soundchex-server$' \
+          # dpkg-deb lists paths with or without a leading "./" depending on
+          # how the archive was built; tauri's has none, and requiring one
+          # failed a correct package.
+          dpkg-deb -c "release-assets/${base}.deb" | grep -E ' (\./)?usr/bin/soundchex-server$' \
             || { echo "the .deb does not install /usr/bin/soundchex-server"; dpkg-deb -c "release-assets/${base}.deb" | grep usr/bin; exit 1; }
           dpkg-deb -x "release-assets/${base}.deb" deb-unpacked
           env -u DISPLAY -u WAYLAND_DISPLAY deb-unpacked/usr/bin/soundchex-server --help
