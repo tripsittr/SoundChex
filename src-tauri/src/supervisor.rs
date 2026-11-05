@@ -28,7 +28,17 @@ use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+/// How long a child is given to exit on SIGTERM before it is killed.
+///
+/// Long enough for php-fpm and Caddy to close their listeners and for a queue
+/// worker between jobs to exit; deliberately not long enough to wait out a
+/// transcode, which can run for an hour. runit's own `sv down` waits seven
+/// seconds before reporting a timeout, so this stays close to that.
+#[cfg(unix)]
+const STOP_GRACE: Duration = Duration::from_secs(10);
 
 /// The processes, in start order.
 ///
@@ -56,6 +66,16 @@ pub struct Layout {
     pub run_dir: PathBuf,
     /// The address Caddy binds, e.g. `:8000`.
     pub listen: String,
+    /// Pipe each child's output through a `[name]` prefix rather than letting
+    /// it inherit the parent's. Headless mode sets this: four processes writing
+    /// to one stdout are unreadable in a service log without it. The window
+    /// leaves it off, so nothing about the GUI's own output changes.
+    pub prefix_output: bool,
+    /// Where php-fpm listens and Caddy proxies to. `127.0.0.1:9100` unless
+    /// `SOUNDCHEX_FPM` says otherwise, so a second stack (a test, or a
+    /// headless one beside a window on another port) need not collide with the
+    /// first on a port nobody sees.
+    pub fpm: String,
 }
 
 impl Layout {
@@ -77,6 +97,9 @@ pub struct Supervisor {
     running: Arc<AtomicBool>,
     stopper: Mutex<Option<Sender<()>>>,
     liveness: Arc<Mutex<HashMap<String, bool>>>,
+    /// The watcher thread, so a caller that must not exit before the children
+    /// do (headless mode, on SIGTERM) can wait for it.
+    watcher: Mutex<Option<JoinHandle<()>>>,
 }
 
 /// The public status of the supervised stack.
@@ -107,7 +130,25 @@ impl Supervisor {
 
         let running = self.running.clone();
         let liveness = self.liveness.clone();
-        std::thread::spawn(move || watch(running, liveness, rx, layout));
+        let handle = std::thread::spawn(move || watch(running, liveness, rx, layout));
+        *self.watcher.lock().map_err(lock_err)? = Some(handle);
+        Ok(())
+    }
+
+    /// Stop, and block until every child has exited.
+    ///
+    /// `stop` only signals the watcher, which is right for a window that stays
+    /// open. A headless process that returned from `main` straight after it
+    /// would take the watcher down mid-shutdown and leave the children behind.
+    pub fn stop_and_wait(&self) -> Result<(), String> {
+        self.stop()?;
+
+        if let Some(handle) = self.watcher.lock().map_err(lock_err)?.take() {
+            handle
+                .join()
+                .map_err(|_| "the supervisor thread panicked while stopping".to_string())?;
+        }
+
         Ok(())
     }
 
@@ -195,13 +236,90 @@ fn watch(
         }
     }
 
-    // Stopping: kill everything.
-    for (_, mut child) in children.drain() {
+    // Stopping, in reverse start order: the workers first, so nothing new is
+    // picked up while the web server is going away, and php-fpm last, so Caddy
+    // is never proxying to something already gone.
+    let mut ordered: Vec<(&str, Child)> = Vec::new();
+
+    for name in PROCESSES.iter().rev() {
+        if let Some(child) = children.remove(name) {
+            ordered.push((name, child));
+        }
+    }
+
+    shutdown(ordered);
+
+    if let Ok(mut m) = liveness.lock() {
+        m.clear();
+    }
+}
+
+/// End every child: SIGTERM to each one's process group, a grace period, then
+/// SIGKILL for whatever is left.
+///
+/// This used to be `Child::kill`, which is SIGKILL — fine for a window being
+/// closed, wrong for a service. php-fpm and Caddy close their listeners on
+/// TERM, a queue worker finishes the job in hand, and the scheduler exits
+/// between ticks. KILL skips all of that, and on the queue it also skipped the
+/// workers `queue:workers` had spawned, which are its children rather than
+/// ours and were left running against the SQLite file.
+///
+/// The signal goes to the process *group*, which `spawn` made each child the
+/// leader of, so a child's own children are reached without it having to
+/// forward anything.
+#[cfg(unix)]
+fn shutdown(mut children: Vec<(&str, Child)>) {
+    for (name, child) in &children {
+        signal_group(child, libc::SIGTERM, name);
+    }
+
+    let deadline = Instant::now() + STOP_GRACE;
+
+    while Instant::now() < deadline {
+        children.retain_mut(|(_, child)| !matches!(child.try_wait(), Ok(Some(_))));
+
+        if children.is_empty() {
+            return;
+        }
+
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    for (name, child) in &mut children {
+        eprintln!(
+            "soundchex-supervisor: {name} did not exit within {}s of SIGTERM; killing it",
+            STOP_GRACE.as_secs()
+        );
+        signal_group(child, libc::SIGKILL, name);
+        let _ = child.wait();
+    }
+}
+
+/// Windows has no TERM to send. The job object already takes the children's
+/// own children with them, so a kill is both the only option and sufficient.
+#[cfg(not(unix))]
+fn shutdown(children: Vec<(&str, Child)>) {
+    for (_, mut child) in children {
         let _ = child.kill();
         let _ = child.wait();
     }
-    if let Ok(mut m) = liveness.lock() {
-        m.clear();
+}
+
+#[cfg(unix)]
+fn signal_group(child: &Child, signal: libc::c_int, name: &str) {
+    let pid = child.id() as libc::pid_t;
+
+    // SAFETY: `kill` takes plain integers. A negative pid addresses the group
+    // led by that pid, which `spawn` created; a group that has already gone
+    // returns ESRCH, which is the outcome being asked for.
+    let sent = unsafe { libc::kill(-pid, signal) };
+
+    if sent != 0 {
+        let error = std::io::Error::last_os_error();
+
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            eprintln!("soundchex-supervisor: could not signal {name} (pid {pid}): {error}");
+        }
     }
 }
 
@@ -281,8 +399,31 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
     };
     hide_console(&mut cmd);
     cmd.current_dir(&layout.app_dir);
+
+    // The bundled binaries first on PATH. `config/transcode.php` finds ffmpeg
+    // beside PHP on its own, but subtitle import, OCR and fingerprinting look a
+    // command up by bare name — and under a service manager PATH is minimal
+    // (runit hands a service little more than /usr/bin:/bin), so the bundled
+    // ffmpeg was invisible to them and they reported it missing.
+    cmd.env("PATH", path_with(&layout.bin_dir));
+
+    // Each child leads its own process group, so stopping reaches whatever it
+    // spawned (see `shutdown`). It also keeps a Ctrl-C in the terminal running
+    // headless mode from hitting every child at once, before the supervisor
+    // has decided the order they stop in.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        cmd.process_group(0);
+    }
+
+    if layout.prefix_output {
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+    }
     cmd.env("SOUNDCHEX_ROOT", layout.app_dir.join("public"));
-    cmd.env("SOUNDCHEX_FPM", "127.0.0.1:9100");
+    cmd.env("SOUNDCHEX_FPM", &layout.fpm);
     cmd.env("SOUNDCHEX_LISTEN", &layout.listen);
     cmd.env("SOUNDCHEX_RUN", &layout.run_dir);
     cmd.env("SOUNDCHEX_LOG", layout.run_dir.join("caddy-access.log"));
@@ -296,14 +437,66 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
         cmd.env("PHPRC", layout.run_dir.join("php.ini"));
     }
 
-    let child = cmd.spawn()?;
+    let mut child = cmd.spawn()?;
 
     // Into the job before anything else, so a crash between here and the
     // watcher's bookkeeping still cannot leave it behind.
     #[cfg(windows)]
     tree::adopt(&child);
 
+    if layout.prefix_output {
+        if let Some(out) = child.stdout.take() {
+            relay(name, out, false);
+        }
+        if let Some(err) = child.stderr.take() {
+            relay(name, err, true);
+        }
+    }
+
     Ok(child)
+}
+
+/// Copy a child's output to ours a line at a time, tagged with its name.
+///
+/// The thread ends when the child closes the pipe, which it does on exit.
+fn relay(name: &str, source: impl std::io::Read + Send + 'static, to_stderr: bool) {
+    use std::io::{BufRead, Write};
+
+    let tag = format!("[{name}] ");
+
+    std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(source);
+
+        // `split` rather than `lines`: a child writing something that is not
+        // UTF-8 would end `lines` at the first bad byte and its later output
+        // would be lost, along with the one line that explained the failure.
+        for line in reader.split(b'\n').map_while(Result::ok) {
+            let text = String::from_utf8_lossy(&line);
+
+            // Written through a lock per line so two children cannot interleave
+            // inside one line.
+            if to_stderr {
+                let _ = writeln!(std::io::stderr().lock(), "{tag}{text}");
+            } else {
+                let _ = writeln!(std::io::stdout().lock(), "{tag}{text}");
+            }
+        }
+    });
+}
+
+/// PATH with `bin_dir` in front, keeping whatever the parent had.
+fn path_with(bin_dir: &Path) -> std::ffi::OsString {
+    let mut dirs = vec![bin_dir.to_path_buf()];
+
+    if let Some(existing) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&existing));
+    } else if cfg!(unix) {
+        // Nothing inherited at all: give the system directories rather than
+        // only the bundle, or `sh`, `which` and every OCR tool vanish.
+        dirs.extend(["/usr/local/bin", "/usr/bin", "/bin"].map(PathBuf::from));
+    }
+
+    std::env::join_paths(dirs).unwrap_or_else(|_| bin_dir.as_os_str().to_os_string())
 }
 
 /// Write the Caddyfile and php-fpm.conf into the run dir from the bundled
@@ -319,7 +512,18 @@ fn render_config(layout: &Layout) -> Result<(), String> {
         return write_windows_php_ini(&layout.bin_dir, &layout.run_dir).map(|_| ());
     }
 
-    let templates = layout.app_dir.join("server").join("templates");
+    // The bundle's own `runtime/templates` (beside `runtime/bin`) first, then a
+    // checkout's `server/templates`. Only the second was ever read, and the
+    // unpacked app payload does not carry `server/` — so a packaged install
+    // that was not pointed at a checkout failed every start with "missing
+    // template", window and headless alike. The Mac this was built on always
+    // served from a checkout, which is why nobody saw it.
+    let bundled = layout
+        .bin_dir
+        .parent()
+        .map(|runtime| runtime.join("templates"))
+        .filter(|dir| dir.join("Caddyfile").is_file());
+    let templates = bundled.unwrap_or_else(|| layout.app_dir.join("server").join("templates"));
     let caddy_tpl = read_template(&templates.join("Caddyfile"))?;
     let fpm_tpl = read_template(&templates.join("php-fpm.conf"))?;
 
@@ -328,7 +532,7 @@ fn render_config(layout: &Layout) -> Result<(), String> {
 
     let caddy = caddy_tpl
         .replace("{$SOUNDCHEX_ROOT}", &public.to_string_lossy())
-        .replace("{$SOUNDCHEX_FPM}", "127.0.0.1:9100")
+        .replace("{$SOUNDCHEX_FPM}", &layout.fpm)
         .replace("{$SOUNDCHEX_LISTEN}", &layout.listen)
         .replace(
             "{$SOUNDCHEX_LOG}",
@@ -337,7 +541,7 @@ fn render_config(layout: &Layout) -> Result<(), String> {
 
     let fpm = fpm_tpl
         .replace("{$SOUNDCHEX_RUN}", &layout.run_dir.to_string_lossy())
-        .replace("{$SOUNDCHEX_FPM}", "127.0.0.1:9100")
+        .replace("{$SOUNDCHEX_FPM}", &layout.fpm)
         .replace("{$SOUNDCHEX_USER}", &user)
         .replace("{$SOUNDCHEX_GROUP}", &group);
 
@@ -596,13 +800,62 @@ fn read_template(path: &Path) -> Result<String, String> {
 /// normal desktop case) these are ignored by php-fpm, so the current user is a
 /// safe default that also satisfies a privileged launch.
 fn fpm_identity() -> (String, String) {
-    let user = std::env::var("USER").unwrap_or_else(|_| "nobody".into());
+    // A service is often started with no USER at all (runit's `chpst -u` sets
+    // the uid and nothing else), so ask the passwd database before falling
+    // back to `nobody`.
+    let user = std::env::var("USER")
+        .ok()
+        .filter(|u| !u.is_empty())
+        .or_else(current_user_name)
+        .unwrap_or_else(|| "nobody".into());
     let group = if cfg!(target_os = "macos") {
         "staff".into()
     } else {
         "nogroup".into()
     };
     (user, group)
+}
+
+/// The login name of the current uid, from the passwd database.
+#[cfg(unix)]
+pub fn current_user_name() -> Option<String> {
+    passwd_field(|entry| entry.pw_name)
+}
+
+/// The home directory of the current uid, from the passwd database — set even
+/// when the environment is not, which is the usual case under a service
+/// manager.
+#[cfg(unix)]
+pub fn current_user_home() -> Option<PathBuf> {
+    passwd_field(|entry| entry.pw_dir).map(PathBuf::from)
+}
+
+#[cfg(unix)]
+fn passwd_field(pick: impl Fn(&libc::passwd) -> *mut libc::c_char) -> Option<String> {
+    // SAFETY: `getpwuid` returns null or a pointer to static storage valid
+    // until the next call; the field is copied out before returning.
+    unsafe {
+        let entry = libc::getpwuid(libc::getuid());
+
+        if entry.is_null() {
+            return None;
+        }
+
+        let field = pick(&*entry);
+
+        if field.is_null() {
+            return None;
+        }
+
+        let text = std::ffi::CStr::from_ptr(field).to_string_lossy().into_owned();
+
+        (!text.is_empty()).then_some(text)
+    }
+}
+
+#[cfg(not(unix))]
+fn current_user_name() -> Option<String> {
+    None
 }
 
 fn lock_err<T>(_: T) -> String {
