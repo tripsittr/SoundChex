@@ -157,12 +157,12 @@ source — one relocatable PHP per platform, no system dependency.
    `<data>/server/headless.json` (pid, listen) and a runit service through
    `sv status`, and shows it with Start/Stop/Restart instead of starting a
    second stack. The admin Services page drives the same service with `sv`.
-   Published as `soundchex-server-app-linux-aarch64.{deb,AppImage}` + `.sha256`
-   on each `server-v*` release; x86_64 Linux is held for now.
+   Published as `soundchex-server-app-linux-{x86_64,aarch64}.{deb,AppImage}` +
+   `.sha256` on each `server-v*` release.
 
    Not yet verified: any of it on Linux. Headless start, provisioning, the
    double-start refusal and the SIGTERM shutdown were exercised on macOS
-   against a scratch data directory; the aarch64 CI build, the packages and
+   against a scratch data directory; the Linux CI builds, the packages and
    runit itself are first seen on HatCOS.
 
 ## Risks, in order

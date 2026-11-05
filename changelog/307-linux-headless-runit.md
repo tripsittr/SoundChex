@@ -4,8 +4,8 @@
 
 SoundChex Server can now run with no window, `soundchex-server --headless`, so
 a service manager can keep the library up with nobody logged in. HatCOS (Void
-Linux, runit) is the first host. The Linux arm64 app is built in CI and
-attached to every `server-v*` release with checksums.
+Linux, runit) is the first host. The Linux app is built for x86_64 and
+arm64 in CI and attached to every `server-v*` release with checksums.
 
 ## What changed
 
@@ -50,15 +50,15 @@ request it only accepted. Stopping warns that it takes this page down. The log
 button reads `/var/log/soundchex-server/current` (`SOUNDCHEX_RUNIT_LOG`). The
 service name is `SOUNDCHEX_RUNIT_SERVICE`.
 
-### Linux release assets (arm64)
+### Linux release assets (x86_64 and arm64)
 
-`build-server.yml` builds the Linux Server app on `ubuntu-24.04-arm` and
-attaches `soundchex-server-app-linux-aarch64.deb` and `.AppImage`, each with a
-`.sha256`, to the release. The names are fixed because HatCOS fetches a fixed
+`build-server.yml` builds the Linux Server app on `ubuntu-latest` and
+`ubuntu-24.04-arm` and attaches `soundchex-server-app-linux-<arch>.deb` and
+`.AppImage` (`x86_64`, `aarch64`), each with a `.sha256`, to the release. The names are fixed because HatCOS fetches a fixed
 URL. A Linux-only config overlay names the binary `soundchex-server`; it was
 `soundchex`, the same path the client package installs. The release job now
 fails if the Linux app is missing, but a macOS or Windows app failure no longer
-holds the runtime release back. x86_64 Linux is held for now.
+holds the runtime release back.
 
 ## Worth knowing
 
@@ -86,7 +86,7 @@ holds the runtime release back. x86_64 Linux is held for now.
 - Nothing here has run on Linux yet. Headless start, first-run provisioning,
   the double-start refusal, the PATH change and the SIGTERM shutdown (including
   the queue's worker grandchild) were exercised on macOS against a scratch data
-  directory. The aarch64 CI build, the .deb/AppImage and runit control are first
+  directory. The CI builds, the .deb/AppImage and runit control are first
   seen on HatCOS.
 - The window's managed view was checked in a browser with Tauri mocked, not in
   the packaged app.
@@ -103,6 +103,11 @@ needs, and Windows did not compile because `current_user_home` existed only
 on Unix. Windows cannot be type-checked from a Mac (`ring` needs the Windows C
 headers), so the Unix-only items were checked against their `cfg` guards by
 hand. CI is what confirms it.
+
+The second run built the arm64 .deb, then the AppImage failed in linuxdeploy
+with no detail. The Linux build now sets `NO_STRIP=true` (linuxdeploy's old
+`strip` is the known cause on Ubuntu 24.04) and `--verbose`, so another failure
+there says why.
 
 Rust: 32 pass (new: argument parsing, stale state files, `sv status` parsing).
 PHP: 1,818 pass in a clean worktree. The one failure there is the Tailwind CLI

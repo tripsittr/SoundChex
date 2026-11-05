@@ -170,11 +170,11 @@ jobs:
         include:
           - { os: macos-latest,   label: macOS,   runtime: soundchex-server-macos-aarch64 }
           - { os: windows-latest, label: Windows, runtime: soundchex-server-windows-x86_64 }
-          # aarch64 only for now: it is what HatCOS is tested on, in the native
-          # ARM VM on the Mac. The x86_64 Linux app is held back deliberately
-          # rather than dropped -- its runtime still builds above, and adding
-          # it back is this one line with ubuntu-latest and linux-x86_64.
-          - { os: ubuntu-24.04-arm, label: Linux, runtime: soundchex-server-linux-aarch64, arch: aarch64 }
+          # Both architectures: HatCOS ships for x86_64 and is tested in the
+          # native ARM VM on the Mac. The labels differ because the label names
+          # the uploaded artifact, and two legs called "Linux" would collide.
+          - { os: ubuntu-latest,    label: Linux-x86_64,  runtime: soundchex-server-linux-x86_64,  arch: x86_64 }
+          - { os: ubuntu-24.04-arm, label: Linux-aarch64, runtime: soundchex-server-linux-aarch64, arch: aarch64 }
     runs-on: ${{ matrix.os }}
     # Every job gets one. A missing runner otherwise sits 24 hours and reports
     # itself "cancelled" — which is how no server release ever published
@@ -319,7 +319,13 @@ jobs:
       - name: Build the Server app
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
-            npm run build:server -- --config src-tauri/tauri.server.linux.conf.json
+            # NO_STRIP: linuxdeploy's bundled strip is older than Ubuntu
+            # 24.04's toolchain and fails on its libraries, which on the
+            # arm64 runner ended the AppImage with only "failed to run
+            # linuxdeploy". Nothing is lost: Cargo's release profile already
+            # strips our binary. --verbose, because without it tauri swallows
+            # linuxdeploy's output and a failure there says nothing about why.
+            NO_STRIP=true npm run build:server -- --verbose --config src-tauri/tauri.server.linux.conf.json
           else
             npm run build:server
           fi
@@ -407,11 +413,19 @@ jobs:
           pattern: release-app-linux-*
           merge-multiple: true
 
+      # Each architecture by name: a glob would pass with one of the two
+      # missing, and HatCOS would 404 on the other.
       - name: Check the Linux app is present
         run: |
           ls -la dist
-          ls dist/soundchex-server-app-linux-*.deb dist/soundchex-server-app-linux-*.AppImage >/dev/null
-          cd dist && sha256sum -c soundchex-server-app-linux-*.sha256
+          cd dist
+          for arch in x86_64 aarch64; do
+            for ext in deb AppImage; do
+              f="soundchex-server-app-linux-${arch}.${ext}"
+              [ -s "$f" ] || { echo "missing $f"; exit 1; }
+              sha256sum -c "$f.sha256"
+            done
+          done
       - uses: softprops/action-gh-release@v2
         with:
           # A tag carrying -beta/-alpha/-rc marks the release as a
