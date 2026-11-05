@@ -1,0 +1,27 @@
+#!/bin/sh
+# SoundChex Server as a runit service (Void Linux / HatCOS).
+#
+# A reference, not something the app installs: the HatCOS package owns
+# /etc/sv/soundchex-server and its supervise/ permissions. One service, not
+# four -- `soundchex-server --headless` is the supervisor for php-fpm, Caddy,
+# the queue worker and the scheduler, the same one the window runs, and stops
+# all of them cleanly on the SIGTERM `sv down` sends.
+#
+# The user must be the one the Server app runs as, if the window is ever used
+# on this machine: both read and write the same data directory, and the
+# window finds this service through it rather than starting a second stack.
+exec 2>&1
+
+USER_NAME=soundchex
+
+# chpst sets the uid and nothing else, so HOME is set for the data directory
+# (~/.local/share/net.soundchex.server). soundchex-server would fall back to the
+# passwd entry without it; this just makes the choice visible.
+export HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+
+# The bundled ffmpeg/ffprobe are found by soundchex-server itself; these are
+# the optional system tools the app looks up on PATH (chromaprint, tesseract,
+# poppler, which).
+export PATH=/usr/local/bin:/usr/bin:/bin
+
+exec chpst -u "$USER_NAME" /usr/bin/soundchex-server --headless --listen :8000

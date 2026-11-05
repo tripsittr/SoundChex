@@ -146,6 +146,25 @@ source — one relocatable PHP per platform, no system dependency.
    (launchd / systemd / Windows service). Shares the runtime artifacts and the
    Caddyfile with path 1; differs only in having no window.
 
+   **Linux, built (tracker #521–#524).** Rather than a separate installer, the
+   Server app itself runs without a window: `soundchex-server --headless` (or
+   `serve`) uses the same supervisor, provisioning and config rendering as the
+   window, in the foreground, logging to stdout/stderr with each line tagged by
+   process, and stops all four processes on SIGTERM/SIGINT/SIGHUP (TERM to each
+   process group, ten seconds' grace, then KILL). HatCOS runs it as the runit
+   service `soundchex-server`; `server/supervisor/runit/` is a reference
+   `run`/`log/run`. The window finds a headless stack through
+   `<data>/server/headless.json` (pid, listen) and a runit service through
+   `sv status`, and shows it with Start/Stop/Restart instead of starting a
+   second stack. The admin Services page drives the same service with `sv`.
+   Published as `soundchex-server-app-linux-aarch64.{deb,AppImage}` + `.sha256`
+   on each `server-v*` release; x86_64 Linux is held for now.
+
+   Not yet verified: any of it on Linux. Headless start, provisioning, the
+   double-start refusal and the SIGTERM shutdown were exercised on macOS
+   against a scratch data directory; the aarch64 CI build, the packages and
+   runit itself are first seen on HatCOS.
+
 ## Risks, in order
 
 1. **The single-threaded assumptions.** php-fpm is concurrent. Re-test S-123,
