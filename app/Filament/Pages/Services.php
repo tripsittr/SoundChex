@@ -46,6 +46,9 @@ class Services extends Page
 
     public bool $supported = true;
 
+    /** `launchd` or `runit`, when this page manages the services itself. */
+    public ?string $manager = null;
+
     /**
      * How this platform keeps the background processes alive, when it is not
      * launchd.
@@ -97,7 +100,8 @@ class Services extends Page
     {
         $host = app(HostServices::class);
 
-        $this->supported = $host->supported();
+        $this->manager = $host->manager();
+        $this->supported = $this->manager !== null;
         $this->platform = $host->platformSupervision();
         $this->services = $this->supported ? $host->all() : [];
         $this->checkedAt = now()->format('H:i:s');
@@ -152,6 +156,7 @@ class Services extends Page
 
         Notification::make()
             ->title($stopped ? 'Service stopped' : 'Could not stop it')
+            ->body($stopped ? null : app(HostServices::class)->lastError)
             ->{$stopped ? 'success' : 'danger'}()
             ->send();
     }

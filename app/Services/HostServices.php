@@ -19,6 +19,12 @@ use Illuminate\Support\Facades\DB;
  * Managed through launchd on macOS. The agents restart themselves and survive a
  * reboot, which is the point — a process started by hand in a terminal does
  * neither.
+ *
+ * On a runit host (HatCOS) the whole stack is one service —
+ * `soundchex-server --headless`, which supervises all four processes itself —
+ * so the page shows that one service and drives it with `sv`. HatCOS lets the
+ * service's own user do that without root, through runit's `supervise/`
+ * permissions.
  */
 class HostServices
 {
@@ -46,6 +52,10 @@ class HostServices
      */
     public function all(): array
     {
+        if ($this->manager() === 'runit') {
+            return ['server' => $this->runitService()];
+        }
+
         $out = [];
 
         foreach (self::SERVICES as $key => $service) {
@@ -89,6 +99,14 @@ class HostServices
 
         if ($service === null) {
             $this->lastError = "Unknown service: {$key}";
+
+            return false;
+        }
+
+        if ($this->manager() === 'runit') {
+            // Installed by the HatCOS package, which owns the service directory
+            // under /etc/sv; a web page writing there would need root.
+            $this->lastError = 'The runit service is installed by the system package, not from here.';
 
             return false;
         }
@@ -143,6 +161,10 @@ class HostServices
 
     public function start(string $key): bool
     {
+        if ($this->manager() === 'runit') {
+            return $key === 'server' && $this->runitControl('up');
+        }
+
         $service = self::SERVICES[$key] ?? null;
 
         if ($service === null) {
@@ -169,6 +191,10 @@ class HostServices
      */
     public function stop(string $key): bool
     {
+        if ($this->manager() === 'runit') {
+            return $key === 'server' && $this->runitControl('down');
+        }
+
         $service = self::SERVICES[$key] ?? null;
 
         if ($service === null) {
@@ -194,6 +220,21 @@ class HostServices
      */
     public function log(string $key, int $lines = 40): string
     {
+        if ($this->manager() === 'runit') {
+            if ($key !== 'server') {
+                return '';
+            }
+
+            $path = (string) config('soundchex.runit.log');
+
+            // svlogd's directory is often root's; say where to look rather
+            // than a bare "nothing logged".
+            return is_readable($path)
+                ? $this->tail($path, $lines)
+                : "Cannot read {$path}. The service logs through its log/run (svlogd); "
+                    .'check that file, or SOUNDCHEX_RUNIT_LOG if the host keeps it elsewhere.';
+        }
+
         $service = self::SERVICES[$key] ?? null;
 
         if ($service === null) {
@@ -219,6 +260,12 @@ class HostServices
             return 'Nothing logged yet.';
         }
 
+        return $this->tail($path, $lines);
+    }
+
+    /** The last lines of a file, read from the end. */
+    private function tail(string $path, int $lines): string
+    {
         $handle = @fopen($path, 'r');
 
         if ($handle === false) {
@@ -249,7 +296,168 @@ class HostServices
     /** Whether service management is available on this platform. */
     public function supported(): bool
     {
-        return PHP_OS_FAMILY === 'Darwin';
+        return $this->manager() !== null;
+    }
+
+    /**
+     * What this page manages services through: `launchd`, `runit`, or null.
+     *
+     * runit only where SoundChex is actually one of its services. A Linux box
+     * running runit for other things, with SoundChex started some other way,
+     * is not offered buttons that address a service that does not exist.
+     */
+    public function manager(): ?string
+    {
+        if (PHP_OS_FAMILY === 'Darwin') {
+            return 'launchd';
+        }
+
+        if (PHP_OS_FAMILY === 'Linux' && $this->runitPresent() && $this->runitStatus() !== null) {
+            return 'runit';
+        }
+
+        return null;
+    }
+
+    /** runit is the init, or at least `sv` is installed. */
+    protected function runitPresent(): bool
+    {
+        if (is_dir('/run/runit')) {
+            return true;
+        }
+
+        foreach (explode(PATH_SEPARATOR, (string) getenv('PATH')) as $dir) {
+            if ($dir !== '' && is_executable($dir.'/sv')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Run `sv` and return its exit code and everything it printed.
+     *
+     * The one place the page touches runit, so tests can stand in for it: a
+     * test that ran `sv down` for real would stop the server running it.
+     *
+     * @param  array<int, string>  $arguments
+     * @return array{0: int, 1: string}
+     */
+    protected function sv(array $arguments): array
+    {
+        $process = @proc_open(
+            ['sv', ...$arguments],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+        );
+
+        if (! is_resource($process)) {
+            return [127, 'Could not run sv.'];
+        }
+
+        $out = (string) stream_get_contents($pipes[1]).(string) stream_get_contents($pipes[2]);
+
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        return [proc_close($process), trim($out)];
+    }
+
+    /**
+     * What `sv status` says about the service, or null when runit has no such
+     * service.
+     *
+     *   run: soundchex-server: (pid 1234) 56s; run: log: (pid 1233) 56s
+     *   down: soundchex-server: 12s, normally up
+     *   fail: soundchex-server: unable to change to service directory: file does not exist
+     *   warning: soundchex-server: unable to open supervise/ok: access denied
+     *
+     * @return array{state: string, pid: int|null, line: string, controllable: bool}|null
+     */
+    public function runitStatus(): ?array
+    {
+        [, $output] = $this->sv(['status', (string) config('soundchex.runit.service')]);
+
+        $line = trim(strtok($output, "\n") ?: '');
+
+        if ($line === '' || (str_starts_with($line, 'fail:') && str_contains($line, 'unable to change to service directory'))) {
+            return null;
+        }
+
+        // The service's own part; the log service's follows a `;`.
+        $own = trim(explode(';', $line)[0]);
+        $state = trim(explode(':', $own)[0]);
+
+        preg_match('/\(pid (\d+)\)/', $own, $pid);
+
+        $known = in_array($state, ['run', 'down', 'finish'], true);
+
+        return [
+            'state' => $known ? $state : 'unknown',
+            'pid' => isset($pid[1]) ? (int) $pid[1] : null,
+            'line' => $line,
+            // `warning:`/`fail:` here is sv failing to open supervise/ — the
+            // service exists but this user may not drive it.
+            'controllable' => $known,
+        ];
+    }
+
+    /** @return array{name: string, hint: string, installed: bool, running: bool, detail: string} */
+    private function runitService(): array
+    {
+        $status = $this->runitStatus();
+        $running = ($status['state'] ?? null) === 'run';
+
+        $detail = match (true) {
+            $status === null => 'The runit service is gone.',
+            ! $status['controllable'] => 'This user may not control it: '.$status['line'],
+            $running => 'Running'.($status['pid'] ? " (pid {$status['pid']})" : '').'. '
+                .'Web server, queue worker and scheduler run together under it.',
+            default => 'Stopped. Nothing is serving the library.',
+        };
+
+        return [
+            'name' => 'SoundChex Server ('.config('soundchex.runit.service').')',
+            'hint' => 'php-fpm, Caddy, the queue worker and the scheduler, kept up by runit.',
+            'installed' => $status !== null,
+            'running' => $running,
+            'detail' => $detail,
+        ];
+    }
+
+    /**
+     * `sv up` or `sv down`, then confirm the state actually changed.
+     *
+     * sv exits zero for a request it merely accepted, so the status is read
+     * back rather than trusting the exit code — the same reason launchd's is.
+     */
+    private function runitControl(string $action): bool
+    {
+        $this->lastError = null;
+
+        [$code, $output] = $this->sv([$action, (string) config('soundchex.runit.service')]);
+
+        if ($code !== 0 || str_starts_with($output, 'fail:') || str_starts_with($output, 'warning:')) {
+            $this->lastError = $output !== '' ? $output : "sv {$action} failed.";
+
+            return false;
+        }
+
+        $state = $this->runitStatus()['state'] ?? null;
+
+        // `sv up`/`sv down` wait up to seven seconds and then print
+        // `timeout:` while still in progress; anything but the wanted state
+        // after that is reported with what sv said.
+        $wanted = $action === 'up' ? 'run' : 'down';
+
+        if ($state !== $wanted) {
+            $this->lastError = $output !== '' ? $output : "Still {$state} after sv {$action}.";
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -268,7 +476,7 @@ class HostServices
      */
     public function platformSupervision(): ?array
     {
-        if (PHP_OS_FAMILY === 'Darwin') {
+        if ($this->manager() !== null) {
             return null;
         }
 
@@ -286,6 +494,24 @@ class HostServices
                 'autostart' => 'Start with Windows is in the Server app, which adds it to the '
                     .'per-user Run key. A Windows service would run without a desktop session '
                     .'and could not show the app window.',
+            ];
+        }
+
+        // A runit host without the service installed: say what it would be,
+        // rather than describe systemd on a machine that does not have it.
+        if (PHP_OS_FAMILY === 'Linux' && $this->runitPresent()) {
+            return [
+                'manager' => 'runit',
+                'summary' => 'This machine uses runit, but there is no '.config('soundchex.runit.service')
+                    .' service yet, so the server is running some other way. Install the system '
+                    .'package to have runit start it at boot and keep it up; this page then controls it.',
+                'processes' => [
+                    'caddy and php-fpm — serve the library over HTTP',
+                    'queue:work — enrichment, artwork, transcoding',
+                    'schedule:work — the scheduled jobs on the dashboard',
+                ],
+                'autostart' => 'runit, through the service the package installs '
+                    .'(soundchex-server --headless).',
             ];
         }
 
@@ -422,7 +648,7 @@ class HostServices
      */
     private function runWithError(array $command): string
     {
-        if (! $this->supported()) {
+        if (PHP_OS_FAMILY !== 'Darwin') {
             return 'Not macOS.';
         }
 
@@ -455,7 +681,7 @@ class HostServices
      */
     private function run(array $command): ?string
     {
-        if (! $this->supported()) {
+        if (PHP_OS_FAMILY !== 'Darwin') {
             return null;
         }
 

@@ -81,8 +81,14 @@
         <x-filament::section>
             <x-slot name="heading">Background services</x-slot>
             <x-slot name="description">
-                Kept alive by launchd, so they restart themselves and survive a
-                reboot. A process started by hand in a terminal does neither.
+                @if ($manager === 'runit')
+                    Kept alive by runit, which starts the server at boot with
+                    nobody logged in and restarts it if it exits. Controlled with
+                    <code>sv</code>.
+                @else
+                    Kept alive by launchd, so they restart themselves and survive a
+                    reboot. A process started by hand in a terminal does neither.
+                @endif
                 @if ($checkedAt)
                     <span class="text-gray-400 dark:text-gray-500">Checked at {{ $checkedAt }}.</span>
                 @endif
@@ -141,13 +147,27 @@
                                     <span wire:loading wire:target="startService('{{ $key }}')">Starting…</span>
                                 </x-filament::button>
 
-                                <x-filament::button size="sm" color="gray" wire:click="stopService('{{ $key }}')"
-                                                    :disabled="! $service['running']"
-                                                    wire:loading.attr="disabled"
-                                                    wire:target="stopService('{{ $key }}')">
-                                    <span wire:loading.remove wire:target="stopService('{{ $key }}')">Stop</span>
-                                    <span wire:loading wire:target="stopService('{{ $key }}')">Stopping…</span>
-                                </x-filament::button>
+                                {{-- On runit this page is served by the service it
+                                     would stop, so it says so first: the page goes
+                                     away and cannot bring it back. --}}
+                                @if ($manager === 'runit')
+                                    <x-filament::button size="sm" color="gray" wire:click="stopService('{{ $key }}')"
+                                                        wire:confirm="This stops the server serving this page. Start it again from the SoundChex Server app, or with sv up {{ config('soundchex.runit.service') }}."
+                                                        :disabled="! $service['running']"
+                                                        wire:loading.attr="disabled"
+                                                        wire:target="stopService('{{ $key }}')">
+                                        <span wire:loading.remove wire:target="stopService('{{ $key }}')">Stop</span>
+                                        <span wire:loading wire:target="stopService('{{ $key }}')">Stopping…</span>
+                                    </x-filament::button>
+                                @else
+                                    <x-filament::button size="sm" color="gray" wire:click="stopService('{{ $key }}')"
+                                                        :disabled="! $service['running']"
+                                                        wire:loading.attr="disabled"
+                                                        wire:target="stopService('{{ $key }}')">
+                                        <span wire:loading.remove wire:target="stopService('{{ $key }}')">Stop</span>
+                                        <span wire:loading wire:target="stopService('{{ $key }}')">Stopping…</span>
+                                    </x-filament::button>
+                                @endif
                             @endif
 
                             <x-filament::button size="sm" color="gray" outlined
@@ -180,9 +200,16 @@
                     backup is ever taken.
                 </p>
                 <p>
-                    Installing them registers a launchd agent per service, which
-                    restarts the process if it exits and starts it again after a
-                    reboot.
+                    @if ($manager === 'runit')
+                        On this machine they run together as one runit service,
+                        <code>soundchex-server --headless</code>, installed by the
+                        system package. runit restarts it if it exits and starts it
+                        at boot.
+                    @else
+                        Installing them registers a launchd agent per service, which
+                        restarts the process if it exits and starts it again after a
+                        reboot.
+                    @endif
                 </p>
             </div>
         </x-filament::section>
