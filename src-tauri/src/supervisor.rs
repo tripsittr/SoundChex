@@ -37,10 +37,14 @@ use std::time::Instant;
 ///
 /// Long enough for php-fpm and Caddy to close their listeners and for a queue
 /// worker between jobs to exit; deliberately not long enough to wait out a
-/// transcode, which can run for an hour. runit's own `sv down` waits seven
-/// seconds before reporting a timeout, so this stays close to that.
+/// transcode, which can run for an hour.
+///
+/// Under runit's seven seconds, and that is the point. Void's shutdown runs
+/// `sv force-stop`, which SIGKILLs the service once seven seconds pass; at ten,
+/// every reboot killed the supervisor before its own KILL fallback, and the
+/// headless children -- each in its own group -- were left holding the ports.
 #[cfg(unix)]
-const STOP_GRACE: Duration = Duration::from_secs(10);
+const STOP_GRACE: Duration = Duration::from_secs(6);
 
 /// The processes, in start order.
 ///
@@ -68,11 +72,17 @@ pub struct Layout {
     pub run_dir: PathBuf,
     /// The address Caddy binds, e.g. `:8000`.
     pub listen: String,
-    /// Pipe each child's output through a `[name]` prefix rather than letting
-    /// it inherit the parent's. Headless mode sets this: four processes writing
-    /// to one stdout are unreadable in a service log without it. The window
-    /// leaves it off, so nothing about the GUI's own output changes.
-    pub prefix_output: bool,
+    /// Headless mode: run under a service manager rather than the window.
+    ///
+    /// Each child's output is piped through a `[name]` prefix (four processes
+    /// writing to one stdout are unreadable in a service log otherwise), each
+    /// child leads its own process group so a stop reaches what it spawned,
+    /// and on Linux each is told to exit if the supervisor dies.
+    ///
+    /// Off for the window, which keeps its children in its own group: there a
+    /// Ctrl-C on `tauri dev` reaches all of them, as it always has, and its
+    /// output is not changed.
+    pub headless: bool,
     /// Where php-fpm listens and Caddy proxies to. `127.0.0.1:9100` unless
     /// `SOUNDCHEX_FPM` says otherwise, so a second stack (a test, or a
     /// headless one beside a window on another port) need not collide with the
@@ -238,26 +248,17 @@ fn watch(
         }
     }
 
-    // Stopping, in reverse start order: the workers first, so nothing new is
-    // picked up while the web server is going away, and php-fpm last, so Caddy
-    // is never proxying to something already gone.
-    let mut ordered: Vec<(&str, Child)> = Vec::new();
+    let all: Vec<(&str, Child)> = children.drain().collect();
 
-    for name in PROCESSES.iter().rev() {
-        if let Some(child) = children.remove(name) {
-            ordered.push((name, child));
-        }
-    }
-
-    shutdown(ordered);
+    shutdown(all, layout.headless);
 
     if let Ok(mut m) = liveness.lock() {
         m.clear();
     }
 }
 
-/// End every child: SIGTERM to each one's process group, a grace period, then
-/// SIGKILL for whatever is left.
+/// End every child: SIGTERM, a grace period, then SIGKILL for whatever is
+/// left. All are signalled together; nothing here depends on an order.
 ///
 /// This used to be `Child::kill`, which is SIGKILL — fine for a window being
 /// closed, wrong for a service. php-fpm and Caddy close their listeners on
@@ -266,41 +267,74 @@ fn watch(
 /// workers `queue:workers` had spawned, which are its children rather than
 /// ours and were left running against the SQLite file.
 ///
-/// The signal goes to the process *group*, which `spawn` made each child the
-/// leader of, so a child's own children are reached without it having to
-/// forward anything.
+/// Headless, the signal goes to each child's process *group*, which `spawn`
+/// made it the leader of, so a child's own children are reached without it
+/// having to forward anything -- and the wait lasts until the whole group is
+/// gone, not just its leader, so a worker outliving `queue:workers` is still
+/// killed at the deadline. The window signals the child itself: its children
+/// share the window's group, and `queue:workers` stops its own pool on TERM.
 #[cfg(unix)]
-fn shutdown(mut children: Vec<(&str, Child)>) {
-    for (name, child) in &children {
-        signal_group(child, libc::SIGTERM, name);
+fn shutdown(mut children: Vec<(&str, Child)>, groups: bool) {
+    // pid, or -pid for the group it leads. Recorded before anything exits:
+    // a reaped leader's group can still have members to kill.
+    let targets: Vec<(&str, libc::pid_t)> = children
+        .iter()
+        .map(|(name, child)| {
+            let pid = child.id() as libc::pid_t;
+            (*name, if groups { -pid } else { pid })
+        })
+        .collect();
+
+    for (name, target) in &targets {
+        signal(*target, libc::SIGTERM, name);
     }
 
     let deadline = Instant::now() + STOP_GRACE;
 
-    while Instant::now() < deadline {
+    loop {
+        // Reap what has exited: an unreaped leader is a zombie that keeps its
+        // group, and the probe below, alive.
         children.retain_mut(|(_, child)| !matches!(child.try_wait(), Ok(Some(_))));
 
-        if children.is_empty() {
+        let remaining = targets.iter().any(|(_, target)| exists(*target));
+
+        if !remaining && children.is_empty() {
             return;
+        }
+
+        if Instant::now() >= deadline {
+            break;
         }
 
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    for (name, child) in &mut children {
-        eprintln!(
-            "soundchex-supervisor: {name} did not exit within {}s of SIGTERM; killing it",
-            STOP_GRACE.as_secs()
-        );
-        signal_group(child, libc::SIGKILL, name);
+    for (name, target) in &targets {
+        if exists(*target) {
+            eprintln!(
+                "soundchex-supervisor: {name} did not exit within {}s of SIGTERM; killing it",
+                STOP_GRACE.as_secs()
+            );
+            signal(*target, libc::SIGKILL, name);
+        }
+    }
+
+    for (_, child) in &mut children {
         let _ = child.wait();
     }
+}
+
+/// Whether a pid (or, negative, a process group) still has anything in it.
+#[cfg(unix)]
+fn exists(target: libc::pid_t) -> bool {
+    // SAFETY: signal 0 delivers nothing; it only checks.
+    unsafe { libc::kill(target, 0) == 0 }
 }
 
 /// Windows has no TERM to send. The job object already takes the children's
 /// own children with them, so a kill is both the only option and sufficient.
 #[cfg(not(unix))]
-fn shutdown(children: Vec<(&str, Child)>) {
+fn shutdown(children: Vec<(&str, Child)>, _groups: bool) {
     for (_, mut child) in children {
         let _ = child.kill();
         let _ = child.wait();
@@ -308,19 +342,17 @@ fn shutdown(children: Vec<(&str, Child)>) {
 }
 
 #[cfg(unix)]
-fn signal_group(child: &Child, signal: libc::c_int, name: &str) {
-    let pid = child.id() as libc::pid_t;
-
-    // SAFETY: `kill` takes plain integers. A negative pid addresses the group
-    // led by that pid, which `spawn` created; a group that has already gone
+fn signal(target: libc::pid_t, signal: libc::c_int, name: &str) {
+    // SAFETY: `kill` takes plain integers. A negative target addresses the
+    // group led by that pid, which `spawn` created; one that has already gone
     // returns ESRCH, which is the outcome being asked for.
-    let sent = unsafe { libc::kill(-pid, signal) };
+    let sent = unsafe { libc::kill(target, signal) };
 
     if sent != 0 {
         let error = std::io::Error::last_os_error();
 
         if error.raw_os_error() != Some(libc::ESRCH) {
-            eprintln!("soundchex-supervisor: could not signal {name} (pid {pid}): {error}");
+            eprintln!("soundchex-supervisor: could not signal {name} ({target}): {error}");
         }
     }
 }
@@ -409,18 +441,42 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
     // ffmpeg was invisible to them and they reported it missing.
     cmd.env("PATH", path_with(&layout.bin_dir));
 
-    // Each child leads its own process group, so stopping reaches whatever it
-    // spawned (see `shutdown`). It also keeps a Ctrl-C in the terminal running
-    // headless mode from hitting every child at once, before the supervisor
-    // has decided the order they stop in.
+    // Headless: each child leads its own process group, so stopping reaches
+    // whatever it spawned (see `shutdown`), and a Ctrl-C in the terminal goes
+    // to the supervisor alone, which then stops them itself.
+    //
+    // That also means a supervisor killed outright -- `sv force-stop`, the OOM
+    // killer -- no longer takes its children with it, and they would keep the
+    // ports. On Linux the kernel can be asked to send each child TERM when its
+    // parent dies, which closes that gap. macOS has no equivalent, and is not
+    // where headless runs as a service.
     #[cfg(unix)]
-    {
+    if layout.headless {
         use std::os::unix::process::CommandExt;
 
         cmd.process_group(0);
+
+        #[cfg(target_os = "linux")]
+        // SAFETY: runs in the child between fork and exec, and calls only
+        // prctl/getppid, which are async-signal-safe.
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+
+                // The parent may have died between fork and prctl; the
+                // signal would then never come.
+                if libc::getppid() == 1 {
+                    return Err(std::io::Error::other("supervisor exited during spawn"));
+                }
+
+                Ok(())
+            });
+        }
     }
 
-    if layout.prefix_output {
+    if layout.headless {
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
     }
@@ -446,7 +502,7 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
     #[cfg(windows)]
     tree::adopt(&child);
 
-    if layout.prefix_output {
+    if layout.headless {
         if let Some(out) = child.stdout.take() {
             relay(name, out, false);
         }
@@ -514,18 +570,27 @@ fn render_config(layout: &Layout) -> Result<(), String> {
         return write_windows_php_ini(&layout.bin_dir, &layout.run_dir).map(|_| ());
     }
 
-    // The bundle's own `runtime/templates` (beside `runtime/bin`) first, then a
-    // checkout's `server/templates`. Only the second was ever read, and the
-    // unpacked app payload does not carry `server/` — so a packaged install
-    // that was not pointed at a checkout failed every start with "missing
-    // template", window and headless alike. The Mac this was built on always
-    // served from a checkout, which is why nobody saw it.
-    let bundled = layout
-        .bin_dir
-        .parent()
-        .map(|runtime| runtime.join("templates"))
-        .filter(|dir| dir.join("Caddyfile").is_file());
-    let templates = bundled.unwrap_or_else(|| layout.app_dir.join("server").join("templates"));
+    // A checkout's `server/templates` first, then the bundle's own
+    // `runtime/templates` (beside `runtime/bin`). Only the first was ever
+    // read, and the unpacked app payload does not carry `server/` -- so a
+    // packaged install not pointed at a checkout failed every start with
+    // "missing template", window and headless alike.
+    //
+    // The checkout wins where there is one: it is the current copy, and a
+    // locally built app's `runtime/templates` is whatever was staged when it
+    // was built. Preferring that served a September Caddyfile with an
+    // unquoted root -- broken by the space in "SoundChex App" -- and the old
+    // 25 MB upload cap.
+    let checkout = layout.app_dir.join("server").join("templates");
+    let templates = if checkout.join("Caddyfile").is_file() {
+        checkout
+    } else {
+        layout
+            .bin_dir
+            .parent()
+            .map(|runtime| runtime.join("templates"))
+            .unwrap_or(checkout)
+    };
     let caddy_tpl = read_template(&templates.join("Caddyfile"))?;
     let fpm_tpl = read_template(&templates.join("php-fpm.conf"))?;
 

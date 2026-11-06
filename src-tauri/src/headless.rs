@@ -23,10 +23,21 @@ use std::path::{Path, PathBuf};
 
 use crate::{provision, supervisor};
 
-/// What the window reads to know a headless stack owns the port. Written into
-/// the run directory on start and removed on a clean stop; a stale one (after
-/// a crash or a SIGKILL) is recognised by its pid no longer being alive.
+/// What a running headless stack says about itself (pid, listen address), for
+/// the window to show. Describes the stack; does not decide whether one runs —
+/// `LOCK_FILE` does that.
 pub const STATE_FILE: &str = "headless.json";
+
+/// Held with an exclusive `flock` for the whole life of a headless process.
+///
+/// This is what "a headless stack is running" means. It used to be the pid in
+/// `STATE_FILE` being alive, which a power cut or a SIGKILL left behind — and
+/// on the next boot pids come out in nearly the same order, so the stale pid
+/// was very likely some other live process. Headless then refused to start,
+/// runit restarted it every second, and the library stayed down until someone
+/// deleted the file. The kernel drops a lock when its holder dies, however it
+/// dies, and a reused pid cannot hold it.
+pub const LOCK_FILE: &str = "headless.lock";
 
 /// The runit service name HatCOS installs, and the one `sv` is asked about.
 pub const RUNIT_SERVICE: &str = "soundchex-server";
@@ -192,13 +203,21 @@ fn serve(options: Options, context: &tauri::Context<tauri::Wry>) -> Result<(), S
     };
 
     let mut layout = crate::layout_from(&resource_dir, &data_dir, options.listen.clone());
-    layout.prefix_output = true;
+    layout.headless = true;
 
     println!("soundchex-server: resources {}", resource_dir.display());
     println!("soundchex-server: data      {}", data_dir.display());
     println!("soundchex-server: app       {}", layout.app_dir.display());
 
-    refuse_if_already_serving(&layout)?;
+    // Claimed before anything else, and before provisioning: a window opened
+    // during a first-run unpack (tens of seconds) must already see this stack,
+    // or it provisions the same directory and starts a second one.
+    let _ownership = claim(&layout.run_dir)?;
+
+    refuse_if_ports_taken(&layout)?;
+
+    let state = layout.run_dir.join(STATE_FILE);
+    write_state(&state, &options.listen);
 
     // Signals first, so a TERM during a first-run unpack (tens of seconds) is
     // noticed as soon as it finishes rather than killing it half way.
@@ -221,15 +240,13 @@ fn serve(options: Options, context: &tauri::Context<tauri::Wry>) -> Result<(), S
     )?;
 
     if signals::stopping() {
+        let _ = std::fs::remove_file(&state);
         println!("soundchex-server: stopped before starting");
         return Ok(());
     }
 
     let sup = supervisor::Supervisor::default();
     sup.start(layout.clone())?;
-
-    let state = layout.run_dir.join(STATE_FILE);
-    write_state(&state, &options.listen);
 
     println!(
         "soundchex-server: serving on {} (pid {})",
@@ -256,13 +273,7 @@ fn serve(options: Options, context: &tauri::Context<tauri::Wry>) -> Result<(), S
 /// Two stacks on one port would fight forever: the second Caddy cannot bind,
 /// exits, and its supervisor respawns it every two seconds. Say so once and
 /// exit instead, which a service manager reports and a person can act on.
-fn refuse_if_already_serving(layout: &supervisor::Layout) -> Result<(), String> {
-    if let Some(pid) = live_headless_pid(&layout.run_dir) {
-        return Err(format!(
-            "already running headless (pid {pid}); stop that one first"
-        ));
-    }
-
+fn refuse_if_ports_taken(layout: &supervisor::Layout) -> Result<(), String> {
     let port = port_of(&layout.listen).ok_or("listen address has no port")?;
 
     if std::net::TcpListener::bind(("0.0.0.0", port)).is_err() {
@@ -296,34 +307,118 @@ fn write_state(path: &Path, listen: &str) {
         "started": started,
     });
 
-    // Advisory: the server works without it, the window just cannot tell who
-    // owns the port. Logged, because that is the thing that would be confusing.
-    if let Err(e) = std::fs::write(path, body.to_string()) {
+    // Written beside and renamed over, so the window never reads half a file.
+    // Advisory: the server works without it, the window just cannot say which
+    // pid it is. Logged, because that is the thing that would be confusing.
+    let partial = path.with_extension("json.partial");
+
+    let written = std::fs::write(&partial, body.to_string())
+        .and_then(|()| std::fs::rename(&partial, path));
+
+    if let Err(e) = written {
         eprintln!("soundchex-server: could not write {}: {e}", path.display());
     }
 }
 
-/// The pid in the run directory's state file, if that process is alive.
+/// Proof of being the headless stack for a run directory. Dropping it (the
+/// process ending, by any means) releases the lock.
+pub struct Ownership {
+    _file: std::fs::File,
+}
+
+/// Take the run directory's lock, or say who has it.
+///
+/// Retried for a second rather than tried once: the window probes the same
+/// lock to ask whether one is held, and a start that happened to land in that
+/// instant would otherwise refuse with nothing actually running.
+pub fn claim(run_dir: &Path) -> Result<Ownership, String> {
+    std::fs::create_dir_all(run_dir)
+        .map_err(|e| format!("cannot create {}: {e}", run_dir.display()))?;
+
+    let path = run_dir.join(LOCK_FILE);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|e| format!("cannot open {}: {e}", path.display()))?;
+
+    for _ in 0..10 {
+        match lock::try_exclusive(&file) {
+            Ok(true) => return Ok(Ownership { _file: file }),
+            Ok(false) => std::thread::sleep(std::time::Duration::from_millis(100)),
+            Err(e) => return Err(format!("cannot lock {}: {e}", path.display())),
+        }
+    }
+
+    Err(match recorded_pid(run_dir) {
+        Some(pid) => format!("already running headless (pid {pid}); stop that one first"),
+        None => "already running headless; stop that one first".to_string(),
+    })
+}
+
+/// The pid of the headless stack running on this run directory, if one is.
+///
+/// Running means the lock is held — not that a recorded pid is alive, which
+/// is what survived reboots and wedged the service. The pid comes from the
+/// state file the holder writes straight after taking the lock, so it is the
+/// holder's own.
 pub fn live_headless_pid(run_dir: &Path) -> Option<u32> {
+    if !lock::held(&run_dir.join(LOCK_FILE)) {
+        return None;
+    }
+
+    recorded_pid(run_dir)
+}
+
+fn recorded_pid(run_dir: &Path) -> Option<u32> {
     let text = std::fs::read_to_string(run_dir.join(STATE_FILE)).ok()?;
     let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    let pid = u32::try_from(value.get("pid")?.as_u64()?).ok()?;
 
-    (pid != std::process::id() && alive(pid)).then_some(pid)
+    u32::try_from(value.get("pid")?.as_u64()?).ok()
 }
 
 #[cfg(unix)]
-pub fn alive(pid: u32) -> bool {
-    // SAFETY: signal 0 checks existence and permission without delivering
-    // anything. EPERM means it exists but belongs to someone else.
-    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
+mod lock {
+    use std::os::unix::io::AsRawFd;
 
-    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    /// `Ok(false)` when someone else holds it.
+    pub fn try_exclusive(file: &std::fs::File) -> std::io::Result<bool> {
+        // SAFETY: a valid descriptor owned by `file` for the call.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+            return Ok(true);
+        }
+
+        let error = std::io::Error::last_os_error();
+
+        if error.raw_os_error() == Some(libc::EWOULDBLOCK) {
+            Ok(false)
+        } else {
+            Err(error)
+        }
+    }
+
+    /// Whether another open file description holds the lock. Probes by trying
+    /// to take it; a probe that succeeds releases it at once by closing.
+    pub fn held(path: &std::path::Path) -> bool {
+        let Ok(file) = std::fs::File::open(path) else {
+            return false;
+        };
+
+        matches!(try_exclusive(&file), Ok(false))
+    }
 }
 
+/// Headless is refused on Windows before any of this is reached.
 #[cfg(not(unix))]
-pub fn alive(_pid: u32) -> bool {
-    false
+mod lock {
+    pub fn try_exclusive(_file: &std::fs::File) -> std::io::Result<bool> {
+        Err(std::io::Error::other("headless mode needs a POSIX system"))
+    }
+
+    pub fn held(_path: &std::path::Path) -> bool {
+        false
+    }
 }
 
 /// SIGTERM, SIGINT and SIGHUP all mean "stop cleanly".
@@ -450,26 +545,65 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn a_stale_state_file_is_not_a_running_server() {
-        let dir = std::env::temp_dir().join(format!("scx-headless-{}", std::process::id()));
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("scx-headless-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
-        // No file.
-        assert_eq!(live_headless_pid(&dir), None);
+    /// The bug the lock exists for: a state file left by a power cut, naming
+    /// a pid that is alive again after reboot as something else entirely. It
+    /// wedged the service; with nobody holding the lock it must mean nothing.
+    #[cfg(unix)]
+    #[test]
+    fn a_leftover_state_file_naming_a_live_pid_is_not_a_running_server() {
+        let dir = scratch("stale");
 
-        // A pid that cannot exist (beyond pid_max on Linux and macOS).
-        std::fs::write(dir.join(STATE_FILE), r#"{"pid": 4000000000}"#).unwrap();
-        assert_eq!(live_headless_pid(&dir), None);
-
-        // Garbage.
-        std::fs::write(dir.join(STATE_FILE), "not json").unwrap();
-        assert_eq!(live_headless_pid(&dir), None);
-
-        // A live process that is not us: our parent (cargo test's runner).
+        // Our parent: certainly alive, certainly not a headless server.
         let parent = std::os::unix::process::parent_id();
         std::fs::write(dir.join(STATE_FILE), format!(r#"{{"pid": {parent}}}"#)).unwrap();
-        assert_eq!(live_headless_pid(&dir), Some(parent));
+        std::fs::write(dir.join(LOCK_FILE), "").unwrap();
+
+        assert_eq!(live_headless_pid(&dir), None);
+
+        // And a new start is not refused because of it.
+        let ownership = claim(&dir).expect("a leftover file must not block a start");
+        drop(ownership);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_held_lock_is_a_running_server_and_refuses_a_second() {
+        let dir = scratch("held");
+
+        let ownership = claim(&dir).expect("first claim");
+        write_state(&dir.join(STATE_FILE), ":8000");
+
+        assert_eq!(live_headless_pid(&dir), Some(std::process::id()));
+
+        let refused = claim(&dir).err().expect("a second claim must be refused");
+        assert!(refused.contains(&std::process::id().to_string()), "{refused}");
+
+        // Released with its holder, by any means: here, by being dropped.
+        drop(ownership);
+        assert_eq!(live_headless_pid(&dir), None);
+        assert!(claim(&dir).is_ok());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nothing_on_disk_is_nothing_running() {
+        let dir = scratch("empty");
+
+        assert_eq!(live_headless_pid(&dir), None);
+
+        std::fs::write(dir.join(STATE_FILE), "not json").unwrap();
+        assert_eq!(live_headless_pid(&dir), None);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

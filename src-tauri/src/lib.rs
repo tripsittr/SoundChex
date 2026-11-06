@@ -159,7 +159,7 @@ fn layout_from(
         app_dir,
         run_dir: data_dir.join("server"),
         listen,
-        prefix_output: false,
+        headless: false,
         fpm: std::env::var("SOUNDCHEX_FPM")
             .ok()
             .filter(|v| !v.is_empty())
