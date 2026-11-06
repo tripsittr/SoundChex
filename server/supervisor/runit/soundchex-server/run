@@ -24,4 +24,7 @@ export HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 # poppler, which).
 export PATH=/usr/local/bin:/usr/bin:/bin
 
-exec chpst -u "$USER_NAME" /usr/bin/soundchex-server --headless --listen :8000
+# user:group[:extra...] -- chpst sets no supplementary groups unless named,
+# so a library readable through a shared group (e.g. `media`) must be listed
+# here or every file in it is permission-denied.
+exec chpst -u "$USER_NAME:$USER_NAME" /usr/bin/soundchex-server --headless --listen :8000

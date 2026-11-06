@@ -151,10 +151,11 @@ source — one relocatable PHP per platform, no system dependency.
    `serve`) uses the same supervisor, provisioning and config rendering as the
    window, in the foreground, logging to stdout/stderr with each line tagged by
    process, and stops all four processes on SIGTERM/SIGINT/SIGHUP (TERM to each
-   process group, ten seconds' grace, then KILL). HatCOS runs it as the runit
+   process group, six seconds' grace — under runit's seven — then KILL). HatCOS runs it as the runit
    service `soundchex-server`; `server/supervisor/runit/` is a reference
    `run`/`log/run`. The window finds a headless stack through
-   `<data>/server/headless.json` (pid, listen) and a runit service through
+   the `flock` on `<data>/server/headless.lock` (pid and listen in
+   `headless.json`) and a runit service through
    `sv status`, and shows it with Start/Stop/Restart instead of starting a
    second stack. The admin Services page drives the same service with `sv`.
    Published as `soundchex-server-app-linux-{x86_64,aarch64}.{deb,AppImage}` +

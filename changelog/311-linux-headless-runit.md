@@ -1,4 +1,4 @@
-# 307 — Run SoundChex Server headless under runit, and publish it for Linux arm64
+# 311 — Run SoundChex Server headless under runit, and publish it for Linux arm64
 
 **Merged** — · **Issues** #521, #522, #523, #524
 
@@ -24,13 +24,31 @@ stop everything. It refuses to start when a headless stack is already running
 or when the HTTP or php-fpm port is taken, instead of respawning a Caddy that
 can never bind.
 
+### Knowing a headless stack is running
+
+A headless process holds an exclusive `flock` on `<data>/server/headless.lock`
+for its whole life, taken before first-run setup, and that lock is what
+"running" means. The first version trusted a pid recorded in `headless.json`.
+A power cut left that file behind, and after a reboot the pid was likely to
+belong to some other live process. Headless then refused to start, runit
+restarted it every second, and the library stayed down until someone deleted
+the file. The kernel releases a lock however its holder dies. `headless.json`
+still records the pid and address for the window to show, and is now written
+atomically.
+
 ### Stopping cleanly, window included
 
-The supervisor used to SIGKILL its children. Now each child leads its own
-process group and stopping sends SIGTERM to the group, waits ten seconds, then
-SIGKILLs what is left, in reverse start order. Before, the queue's own workers
-(children of `queue:workers`, not of the supervisor) were not reached at all.
-Windows is unchanged: its job object already does this.
+The supervisor used to SIGKILL its children. Now it sends SIGTERM, waits six
+seconds, then SIGKILLs whatever is left. Six is under the seven seconds runit's
+`sv force-stop` allows at shutdown; at ten, every reboot SIGKILLed the
+supervisor first.
+
+Headless, each child leads its own process group, so the signals reach the
+queue's own workers, which the old kill never touched. The wait lasts until
+the whole group is gone. On Linux each child also gets a parent-death signal,
+so a supervisor killed outright cannot leave the stack holding the ports. The
+window keeps its children in its own group as before, so Ctrl-C on `tauri dev`
+still reaches them. Windows is unchanged: its job object already does this.
 
 ### The window defers to a stack it did not start
 
@@ -63,11 +81,16 @@ holds the runtime release back.
 ## Worth knowing
 
 - **A packaged POSIX install could not start.** `render_config` read templates
-  from `<app>/server/templates`, and the unpacked payload has no `server/`, so
-  any install not pointed at a checkout failed with "missing template", in the
-  window as well. It now reads the bundle's own `runtime/templates` first. The
-  Mac it was built on always served from a checkout, which is why it never
-  showed.
+  only from `<app>/server/templates`, and the unpacked payload has no
+  `server/`, so any install not pointed at a checkout failed with "missing
+  template", in the window as well. It now falls back to the bundle's own
+  `runtime/templates`. A checkout's copy still wins where there is one, because
+  a locally built app's bundled copy is whatever was staged when it was built:
+  on this Mac, a September Caddyfile with an unquoted root and the old 25 MB
+  cap.
+- The Services page now shows why a start or stop failed. It read `lastError`
+  from a second, fresh `HostServices` and always showed nothing. Refused `sv`
+  calls are logged with the action and what `sv` printed.
 - The bundled `bin/` is now first on every child's `PATH`. Subtitle import
   calls `ffmpeg`/`ffprobe` by bare name and so never found the bundled ones. On
   macOS it now uses the bundled ffmpeg rather than Homebrew's.
@@ -121,10 +144,20 @@ GTK with no display. A bare `--help` now prints the usage. The packages are
 uploaded before the checks, so a failing check still leaves them to download,
 and `reuse_runtime_from_run` on a manual run skips rebuilding the runtime.
 
-Rust: 32 pass (new: argument parsing, stale state files, `sv status` parsing).
-PHP: 1,818 pass in a clean worktree. The one failure there is the Tailwind CLI
-check, which needs `node_modules`, absent from that worktree. In the main
-checkout, untracked duplicate `… 2.php` migrations break the suite independently
-of this change. Breaking the runit read-back guard on purpose turns
-`HostServicesRunitTest` red. Vitest: 127 pass. Playwright: not run, since
-nothing under `resources/` changed.
+A review of the PR found the stale-pid wedge, the 10 s grace outliving runit's
+7 s, the template order, the state file arriving after first-run setup, and the
+lost `lastError`. All are fixed above.
+
+Rust: 34 pass (new: argument parsing, the lock, `sv status` parsing). Breaking
+the lock check on purpose turns both lock tests red. On this Mac, a leftover
+`headless.json` naming a live pid no longer blocks a start, a second instance
+is refused with the holder's pid, and SIGTERM stops everything in under a
+second.
+PHP: 1,826 pass, 30 skipped, none fail, in a clean worktree of this branch. In
+the main checkout, untracked duplicate `… 2.php` migrations break the suite
+independently of this change. `HostServicesRunitTest` (14) passes,
+including a render of the runit branch of the Services view and the page
+reporting why a stop failed. That test fails with the old `lastError` code put
+back. Breaking the runit read-back guard on purpose also turns it red.
+Vitest: 127 pass. Playwright: not run. The Services view did change, but no
+browser spec covers that page, so the render test stands in for it.
