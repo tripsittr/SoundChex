@@ -6,6 +6,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The background processes a host needs running.
@@ -441,6 +442,13 @@ class HostServices
         if ($code !== 0 || str_starts_with($output, 'fail:') || str_starts_with($output, 'warning:')) {
             $this->lastError = $output !== '' ? $output : "sv {$action} failed.";
 
+            Log::warning('runit: sv refused', [
+                'action' => $action,
+                'service' => config('soundchex.runit.service'),
+                'exit' => $code,
+                'output' => $output,
+            ]);
+
             return false;
         }
 
@@ -453,6 +461,14 @@ class HostServices
 
         if ($state !== $wanted) {
             $this->lastError = $output !== '' ? $output : "Still {$state} after sv {$action}.";
+
+            Log::warning('runit: service did not reach the wanted state', [
+                'action' => $action,
+                'service' => config('soundchex.runit.service'),
+                'wanted' => $wanted,
+                'state' => $state,
+                'output' => $output,
+            ]);
 
             return false;
         }

@@ -5,7 +5,14 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\Services;
+use App\Models\Profile;
+use App\Models\User;
 use App\Services\HostServices;
+use Filament\Facades\Filament;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -19,6 +26,8 @@ use Tests\TestCase;
  */
 class HostServicesRunitTest extends TestCase
 {
+    use RefreshDatabase;
+
     /**
      * A HostServices that believes it is on Linux with runit, and answers `sv`
      * from a script of replies.
@@ -144,6 +153,100 @@ class HostServicesRunitTest extends TestCase
 
         $this->assertFalse($host->stop('server'));
         $this->assertStringContainsString('access denied', $host->lastError);
+    }
+
+    /** A control that failed is logged with what sv said (AGENTS.md rule 7). */
+    public function test_a_refused_control_is_logged(): void
+    {
+        Log::spy();
+
+        $host = $this->host([
+            [0, 'run: soundchex-server: (pid 99) 9s'],
+            [1, 'fail: soundchex-server: unable to open supervise/control: access denied'],
+        ]);
+
+        $host->stop('server');
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(fn (string $message, array $context): bool => str_starts_with($message, 'runit:')
+                && $context['action'] === 'down'
+                && str_contains($context['output'], 'access denied'))
+            ->once();
+    }
+
+    /**
+     * The runit branch of the view compiles and renders: the one service, the
+     * runit wording, and the warning before a stop that takes this page down.
+     * No browser test covers the Services page, so this is where a Blade
+     * mistake in that branch would show.
+     */
+    public function test_the_page_renders_the_runit_service(): void
+    {
+        $user = User::factory()->create();
+        Profile::create(['user_id' => $user->id, 'name' => 'Owner', 'is_owner' => true]);
+        $this->actingAs($user);
+        Filament::setCurrentPanel('admin');
+
+        $this->app->bind(HostServices::class, fn () => new class extends HostServices
+        {
+            public function manager(): ?string
+            {
+                return 'runit';
+            }
+
+            protected function sv(array $arguments): array
+            {
+                return [0, 'run: soundchex-server: (pid 7) 3s'];
+            }
+        });
+
+        Livewire::test(Services::class)
+            ->assertSet('manager', 'runit')
+            ->assertSee('SoundChex Server (soundchex-server)')
+            ->assertSee('Kept alive by runit')
+            ->assertSeeHtml('wire:confirm="This stops the server serving this page.')
+            ->assertDontSee('Install all');
+    }
+
+    /**
+     * The page says why a stop failed. It used to ask the container for a
+     * second HostServices to read `lastError` from — a fresh instance, so the
+     * reason was always empty and the notification said nothing.
+     */
+    public function test_the_page_reports_why_a_stop_failed(): void
+    {
+        $user = User::factory()->create();
+        Profile::create(['user_id' => $user->id, 'name' => 'Owner', 'is_owner' => true]);
+        $this->actingAs($user);
+        Filament::setCurrentPanel('admin');
+
+        // A new instance per resolve, as the container really does it.
+        $this->app->bind(HostServices::class, fn () => new class extends HostServices
+        {
+            public function manager(): ?string
+            {
+                return 'runit';
+            }
+
+            protected function sv(array $arguments): array
+            {
+                return $arguments[0] === 'status'
+                    ? [0, 'run: soundchex-server: (pid 7) 3s']
+                    : [1, 'fail: soundchex-server: unable to open supervise/control: access denied'];
+            }
+        });
+
+        Livewire::test(Services::class)->call('stopService', 'server');
+
+        // Filament moves notifications to `claimed_notifications` once a
+        // Livewire request has rendered them, so both are read.
+        $bodies = collect(session('filament.notifications', []))
+            ->merge(session('filament.claimed_notifications', []))
+            ->pluck('body')
+            ->filter()
+            ->implode(' ');
+
+        $this->assertStringContainsString('access denied', $bodies);
     }
 
     public function test_only_the_one_service_can_be_addressed(): void
