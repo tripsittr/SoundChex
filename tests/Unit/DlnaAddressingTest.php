@@ -386,4 +386,31 @@ class DlnaAddressingTest extends TestCase
         $this->assertFalse(DlnaServe::woke(50, 1), 'a small NTP step forward');
         $this->assertFalse(DlnaServe::woke(-3600, 1), 'the clock stepped back');
     }
+
+    /**
+     * A wide LAN must not swallow a VPN or uplink inside it: the most
+     * specific subnet decides. The own-subnet-first rule answered both.
+     */
+    public function test_a_wide_lan_does_not_swallow_a_narrower_other_network(): void
+    {
+        $interfaces = [
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '10.0.0.5', 'netmask' => '255.0.0.0']]],
+            'tun0' => ['unicast' => [['family' => 2, 'address' => '10.2.0.2', 'netmask' => '255.255.255.255', 'ptp' => '10.2.0.1']]],
+            'wan0' => ['unicast' => [['family' => 2, 'address' => '10.200.0.2', 'netmask' => '255.255.255.252']]],
+        ];
+
+        $this->assertTrue(DlnaServe::foreignSource('10.2.0.1', 'eth0', $interfaces), 'the VPN peer');
+        $this->assertTrue(DlnaServe::foreignSource('10.200.0.1', 'eth0', $interfaces), 'the uplink peer');
+        $this->assertFalse(DlnaServe::foreignSource('10.4.5.6', 'eth0', $interfaces), 'an ordinary LAN host');
+    }
+
+    /** Swarm's gateway bridge and macOS's VM bridges are virtual; bridge0 is not. */
+    public function test_more_virtual_bridges_are_recognised(): void
+    {
+        $this->assertTrue(DlnaServe::isVirtual('docker_gwbridge', []));
+        $this->assertTrue(DlnaServe::isVirtual('bridge100', []));
+        $this->assertFalse(DlnaServe::isVirtual('bridge0', []));
+        $this->assertTrue(DlnaServe::isVirtual('{E}', ['description' => 'Tailscale Tunnel']));
+        $this->assertTrue(DlnaServe::isVirtual('{F}', ['description' => 'Wintun Userspace Tunnel']));
+    }
 }

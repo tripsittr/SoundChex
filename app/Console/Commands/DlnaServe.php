@@ -57,6 +57,12 @@ class DlnaServe extends Command
      */
     private const SETTINGS_SECONDS = 5;
 
+    /** How long after a wake to announce, for the network to come back. */
+    private const WAKE_SETTLE_SECONDS = 20;
+
+    /** At most this many sources are logged as ignored; then one line says so. */
+    private const IGNORED_SOURCES_LOGGED = 256;
+
     /** Linux's IP_MULTICAST_ALL; PHP has no constant for it. */
     private const LINUX_IP_MULTICAST_ALL = 49;
 
@@ -166,7 +172,11 @@ class DlnaServe extends Command
             $wall = time();
 
             if ($lastTick !== null && self::woke($wall - $wallAt, $now - $lastTick)) {
-                $announcedAt = $now - self::REANNOUNCE_SECONDS;
+                // Twenty seconds from now rather than at once: the first pass
+                // after a wake runs before Wi-Fi has rejoined and DHCP has
+                // answered, and an alive sent then is lost — after which the
+                // next would be fifteen minutes away.
+                $announcedAt = $now - self::REANNOUNCE_SECONDS + self::WAKE_SETTLE_SECONDS;
             }
 
             $wallAt = $wall;
@@ -428,7 +438,9 @@ class DlnaServe extends Command
         // `br-` plus Docker's twelve hex digits only: OpenWrt's LAN bridge is
         // `br-lan`, and that router is exactly where the warning matters.
         // `bridge0` on macOS is often a real Thunderbolt link, so not skipped.
-        if (preg_match('/^(docker\d|br-[0-9a-f]{12}$|veth|virbr|lxdbr|lxcbr|vnic|vmnet|vboxnet|cni|flannel|podman|zt)/i', $name) === 1) {
+        // `bridge` plus three digits: macOS's Internet Sharing and
+        // Virtualization.framework (UTM, Lima) bridges are bridge100 and up.
+        if (preg_match('/^(docker(\d|_gwbridge)|br-[0-9a-f]{12}$|bridge\d{3}|veth|virbr|lxdbr|lxcbr|vnic|vmnet|vboxnet|cni|flannel|podman|zt)/i', $name) === 1) {
             return true;
         }
 
@@ -439,7 +451,7 @@ class DlnaServe extends Command
         // switch shares the virtual adapter's description, so that host can
         // still miss the warning — it is advisory, and erring quiet there is
         // the lesser harm than warning every WSL machine.
-        return preg_match('/hyper-v|\bwsl\b|wireguard|\btap-windows\b|virtualbox|vmware|\bloopback\b|anyconnect|zerotier/i', $description) === 1;
+        return preg_match('/hyper-v|\bwsl\b|wireguard|\btap-windows\b|virtualbox|vmware|\bloopback\b|anyconnect|zerotier|openvpn|wintun|pangp|fortinet|tailscale/i', $description) === 1;
     }
 
     /** RFC 1918 only: not loopback, link-local or CGNAT (100.64/10). */
@@ -496,27 +508,31 @@ class DlnaServe extends Command
      */
     public static function foreignSource(string $from, ?string $ours, array $interfaces): bool
     {
-        // On our own network first. Another interface's subnet can overlap
-        // ours — Docker's 172.17/16 over a LAN that later turned out to be
-        // 172.17.5.x, a k3s 10.0/16 over 10.0.1.x — and checked the other way
-        // round, every TV on our own LAN was ignored.
-        foreach ($ours !== null ? ($interfaces[$ours]['unicast'] ?? []) : [] as $entry) {
-            $own = $entry['address'] ?? null;
-
-            if (is_string($own) && filter_var($own, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
-                $subnet = self::subnetOf($own, $interfaces[$ours]);
-
-                if ($subnet !== null && self::inRange($from, $subnet)) {
+        // Exact matches first, before any subnet. Our own address on any
+        // interface is a client on this machine (VLC, say) whose search left
+        // by the VPN, and it can reach the LAN address. A tunnel's far end is
+        // another network, which a /32 netmask on the tunnel would not cover.
+        foreach ($interfaces as $name => $details) {
+            foreach ($details['unicast'] ?? [] as $entry) {
+                if (($entry['address'] ?? null) === $from) {
                     return false;
+                }
+
+                if ((string) $name !== $ours && ($entry['ptp'] ?? null) === $from) {
+                    return true;
                 }
             }
         }
 
-        foreach ($interfaces as $name => $details) {
-            if ((string) $name === $ours) {
-                continue;
-            }
+        // Then the most specific subnet containing the source decides whose
+        // network it is on. Neither order alone works: checking ours first
+        // let a wide LAN (a 10/8) swallow a VPN or uplink peer inside it, and
+        // checking the others first let Docker's 172.17/16 swallow a LAN on
+        // 172.17.5.x. Longest prefix handles both.
+        $bestPrefix = -1;
+        $bestOwner = null;
 
+        foreach ($interfaces as $name => $details) {
             foreach ($details['unicast'] ?? [] as $entry) {
                 $address = $entry['address'] ?? null;
 
@@ -529,33 +545,28 @@ class DlnaServe extends Command
                     continue;
                 }
 
-                // Our own address on that interface is a client on this
-                // machine (VLC, say) whose search left by the VPN, and it can
-                // reach the LAN address perfectly well.
-                if ($address === $from) {
-                    return false;
-                }
-
-                // A tunnel's far end, which a /32 netmask would not cover.
-                if (($entry['ptp'] ?? null) === $from) {
-                    return true;
-                }
-
-                // Any prefix: a /31 is typically an ISP uplink, and its far
-                // end is exactly a source not to answer. Only *other*
-                // interfaces are checked, so a /32 on our own interface no
-                // longer means every search is dropped.
                 $subnet = self::subnetOf($address, $details);
 
-                // Shorter than /8 is not a network anyone sits on; a /0 from
-                // a misreported netmask would make every source foreign.
-                if ($subnet !== null && (int) explode('/', $subnet)[1] >= 8 && self::inRange($from, $subnet)) {
-                    return true;
+                if ($subnet === null) {
+                    continue;
                 }
+
+                $prefix = (int) explode('/', $subnet)[1];
+
+                // Shorter than /8 is not a network anyone sits on; a /0 from
+                // a misreported netmask would otherwise claim every source.
+                if ($prefix < 8 || $prefix <= $bestPrefix || ! self::inRange($from, $subnet)) {
+                    continue;
+                }
+
+                $bestPrefix = $prefix;
+                $bestOwner = (string) $name;
             }
         }
 
-        return false;
+        // On none of our networks: routed or relayed (an IoT VLAN behind an
+        // SSDP relay) — answered, as it always was.
+        return $bestOwner !== null && $bestOwner !== $ours;
     }
 
     /** Whether an IPv4 address is inside "network/prefix". */
@@ -786,12 +797,19 @@ class DlnaServe extends Command
             // Once per source at warning: a TV that never finds the server
             // because of this rule should be findable in the log, and a
             // chatty uplink should not fill it.
-            if (! isset($this->ignoredSources[$from])) {
+            // Capped: a busy /8 uplink could otherwise grow this, and the
+            // log, by one entry per address it has.
+            if (! isset($this->ignoredSources[$from]) && count($this->ignoredSources) <= self::IGNORED_SOURCES_LOGGED) {
                 $this->ignoredSources[$from] = true;
-                Log::warning('DLNA: ignoring searches from another of this machine\'s networks', [
-                    'from' => $from,
-                    'advertising_on' => $interface,
-                ]);
+
+                if (count($this->ignoredSources) > self::IGNORED_SOURCES_LOGGED) {
+                    Log::warning('DLNA: ignoring searches from more sources on other networks; no longer logging each');
+                } else {
+                    Log::warning('DLNA: ignoring searches from another of this machine\'s networks', [
+                        'from' => $from,
+                        'advertising_on' => $interface,
+                    ]);
+                }
             }
 
             return;

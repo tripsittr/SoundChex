@@ -27,10 +27,12 @@ are all read inside the loop through `readOr()`:
 
 These no longer count as LANs:
 - interfaces that are down;
-- container and VM bridges: `docker0`, Docker's `br-` plus twelve hex
-  digits, `virbr0`, `vnic0` and ZeroTier;
-- Windows' Hyper-V, WSL, WireGuard and AnyConnect adapters, recognised by
-  description, since Windows marks nothing point-to-point.
+- container and VM bridges: `docker0`, Swarm's `docker_gwbridge`, Docker's
+  `br-` plus twelve hex digits, macOS's `bridge100` and up (Internet Sharing,
+  UTM, Lima), `virbr0`, `vnic0` and ZeroTier;
+- Windows' Hyper-V, WSL, WireGuard, AnyConnect, OpenVPN, Wintun, GlobalProtect,
+  Fortinet and Tailscale adapters, recognised by description, since Windows
+  marks nothing point-to-point.
 
 OpenWrt's `br-lan` and macOS's `bridge0` still count, because both are often
 real networks. A real LAN behind a Hyper-V external switch shares the virtual
@@ -42,21 +44,30 @@ adapter's description, so that host can miss the warning.
 relayed from an IoT VLAN, which used to be answered, and every search on a
 /32. Now a search is ignored only when it comes from one of this machine's
 *other* networks: the uplink's subnet, a VPN's far end, or a /31 uplink's
-peer. Some sources are always answered:
-- **Our own subnet.** It is checked first, so Docker's 172.17/16 over a
-  172.17.5.x LAN cannot hide the LAN's TVs.
-- **This machine's own addresses.** A local client whose search leaves by
-  the VPN can still reach the LAN address.
+peer.
 
-A prefix shorter than /8 on another interface is ignored. The first ignored
-search from each source is logged as a warning.
+The rules, in order:
+1. **This machine's own addresses are answered.** A local client whose search
+   leaves by the VPN can still reach the LAN address.
+2. **A tunnel's far end is ignored.**
+3. **Otherwise the most specific subnet containing the source decides whose
+   network it is on.** Docker's 172.17/16 cannot hide a LAN on 172.17.5.x,
+   and a LAN on a 10/8 cannot swallow a VPN or uplink peer inside it. The
+   second review's fix (our own subnet first) got the first case right and
+   the second wrong; the third review caught it.
+4. **A source on none of our networks is answered.** This covers routed and
+   relayed searches.
+
+Subnets shorter than /8 are ignored. The first 256 ignored sources are each
+logged as a warning; after that, one line says logging has stopped.
 
 ### Clocks
 
 The loop uses a monotonic clock, so a wall-clock step on a router with no RTC
 cannot stall it. That clock stops during sleep, so a wake is detected when the
-wall clock has run more than a minute ahead of it, and the server announces
-at once.
+wall clock has run more than a minute ahead of it. The server then announces
+20 seconds later rather than at once, because the first pass after a wake runs
+before Wi-Fi has rejoined, and an alive sent then is lost.
 
 ### Smaller
 
@@ -77,19 +88,24 @@ and the HTTP port from the LAN.
 
 - Discovery has never run on a real network, on Linux or on Windows.
 - The loop's wiring in `handle()` is not under test; its decisions are pure
-  functions that are.
+  functions that are. That includes the wake: `woke()` is tested, the line
+  that acts on it is not.
+- The interfaces are read once at start, so an address that changes later,
+  including during sleep, is not picked up.
+- On macOS a `utun` tunnel reports its own address as its peer, so a real VPN
+  peer there is not recognised as foreign. This predates #312.
 - `ssdp:all` gets one reply rather than one per type, and `ST: uuid:…` is not
   answered. Both predate #312.
 - The Server window does not show the `dlna` process.
 
 ## Tests
 
-A subagent reviewed this code twice on the #314 branch, and this PR answers
-both reviews. `DlnaAddressingTest` (33) and `DlnaSettingsReadTest` (3) cover:
+A subagent reviewed this code three times: twice on the #314 branch, then a
+third time on the commits brought here. This PR answers all three reviews. `DlnaAddressingTest` (35) and `DlnaSettingsReadTest` (3) cover:
 - the join fallback and the settings read;
 - the bridge and Windows-adapter exclusions;
-- the foreign-source rules: overlapping subnets, a relayed VLAN, a tunnel
-  peer, a /31 uplink, our own address, a /0 netmask;
+- the foreign-source rules: overlapping subnets either way round, a relayed
+  VLAN, a tunnel peer, a /31 uplink, our own address, a /0 netmask;
 - wake detection and the prefix clamp.
 
 Each of these mutations turns them red:
@@ -101,8 +117,9 @@ Each of these mutations turns them red:
 - removing the re-announce;
 - removing the point-to-point check;
 - removing the own-subnet-first rule;
-- removing the /8 floor.
+- removing the /8 floor;
+- letting the last matching subnet win instead of the most specific.
 
-The full PHP suite in a clean worktree: 1,861 pass. One fails,
+The full PHP suite in a clean worktree: 1,863 pass. One fails,
 `ServerHealthCheckTest`, from this Mac's low disk space; it fails the same way
 without this change. Rust: 36 pass.
