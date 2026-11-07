@@ -244,7 +244,10 @@ cp "$HERE/templates/README.runtime.txt" "$STAGE/README.txt" 2>/dev/null || true
 # --- sanity: the built php reports the required extensions ------------------
 echo "==> verifying extensions"
 if [ "$OS" != "windows" ]; then
-  REQUIRED="curl intl mbstring openssl pdo_sqlite sqlite3 gd exif zip pcntl session tokenizer"
+  # sockets: DLNA discovery (dlna:serve) exits at once without it. Built by
+  # the EXTENSIONS list in build-server.yml; checked here so a build that
+  # drops it fails rather than shipping.
+  REQUIRED="curl intl mbstring openssl pdo_sqlite sqlite3 gd exif zip pcntl session sockets tokenizer"
   MODS="$("$STAGE/bin/php" -m | tr '[:upper:]' '[:lower:]')"
   MISSING=""
   for e in $REQUIRED; do echo "$MODS" | grep -qx "$e" || MISSING="$MISSING $e"; done
@@ -256,7 +259,7 @@ else
   # they cannot be checked by running php here -- no ini, nothing loaded. Check
   # instead that the DLLs are present and that the binaries actually execute,
   # which is what shipping frankenphp.exe alone silently failed.
-  REQUIRED_EXT="curl exif fileinfo gd intl mbstring openssl pdo_sqlite sodium sqlite3 zip"
+  REQUIRED_EXT="curl exif fileinfo gd intl mbstring openssl pdo_sqlite sockets sodium sqlite3 zip"
   MISSING=""
   for e in $REQUIRED_EXT; do
     [ -s "$STAGE/bin/ext/php_${e}.dll" ] || MISSING="$MISSING $e"

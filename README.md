@@ -69,7 +69,7 @@ adding one does not mean rebuilding the server. See
 
 |              |                                                        |
 | ------------ | ------------------------------------------------------ |
-| **Server**   | Laravel 13, PHP 8.3+, SQLite                           |
+| **Server**   | Laravel 13, PHP 8.4.1+, SQLite                         |
 | **Admin**    | Filament 5                                             |
 | **Frontend** | Blade, Tailwind v4, Alpine, vanilla ES modules         |
 | **Apps**     | Tauri 2 — macOS, Windows, Linux                        |
@@ -87,7 +87,9 @@ offline shell live inside the binary, and those need a reinstall.
 
 ## Getting it running
 
-Requires PHP 8.3+, Node 22+, Composer, and FFmpeg on the path.
+Requires PHP 8.4.1+, Node 22+, Composer, and FFmpeg on the path. PHP 8.3
+(Ubuntu 24.04's default) is not enough: the Symfony 8 packages Laravel 13
+locks to need 8.4.1, and `composer install` refuses.
 
 ```bash
 git clone https://github.com/tripsittr/SoundChex.git

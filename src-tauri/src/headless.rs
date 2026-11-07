@@ -43,8 +43,8 @@ pub const LOCK_FILE: &str = "headless.lock";
 pub const RUNIT_SERVICE: &str = "soundchex-server";
 
 const USAGE: &str = "\
-Usage: soundchex-server --headless [--listen ADDR] [--data-dir DIR]
-       soundchex-server serve      [--listen ADDR] [--data-dir DIR]
+Usage: soundchex-server --headless [--listen ADDR] [--data-dir DIR] [--dlna]
+       soundchex-server serve      [--listen ADDR] [--data-dir DIR] [--dlna]
 
 Runs the SoundChex server (php-fpm, Caddy, queue worker, scheduler) with no
 window, in the foreground, logging to stdout/stderr. SIGTERM, SIGINT or SIGHUP
@@ -54,12 +54,18 @@ stops all of it cleanly.
   --data-dir DIR   where the app, database and run files live (default: the
                    same directory the SoundChex Server window uses, or
                    $SOUNDCHEX_DATA_DIR)
+  --dlna           also run DLNA discovery (artisan dlna:serve), or
+                   SOUNDCHEX_DLNA=1. Off by default: leave it off where the
+                   host runs dlna:serve itself. The address it advertises
+                   is DLNA_ADDRESS in the app's .env, else the default
+                   route's.
 ";
 
 #[derive(Debug, PartialEq)]
 pub struct Options {
     pub listen: String,
     pub data_dir: Option<PathBuf>,
+    pub dlna: bool,
 }
 
 /// What the command line asked for.
@@ -102,6 +108,7 @@ pub fn parse(args: &[String]) -> Invocation {
         .filter(|v| !v.is_empty())
         .map(PathBuf::from);
 
+    let mut dlna = false;
     let mut iter = args.iter();
 
     while let Some(arg) = iter.next() {
@@ -112,6 +119,7 @@ pub fn parse(args: &[String]) -> Invocation {
 
         match key {
             "--headless" | "serve" => {}
+            "--dlna" if inline.is_none() => dlna = true,
             "-h" | "--help" => return Invocation::Help,
             "--listen" | "--data-dir" => {
                 let Some(value) = inline.or_else(|| iter.next().cloned()) else {
@@ -136,7 +144,11 @@ pub fn parse(args: &[String]) -> Invocation {
         return Invocation::Invalid(format!("--listen {listen:?} has no port"));
     }
 
-    Invocation::Headless(Options { listen, data_dir })
+    Invocation::Headless(Options {
+        listen,
+        data_dir,
+        dlna,
+    })
 }
 
 /// The port of a Caddy listen address — `:8000`, `0.0.0.0:8000`, `[::1]:8000`.
@@ -204,6 +216,7 @@ fn serve(options: Options, context: &tauri::Context<tauri::Wry>) -> Result<(), S
 
     let mut layout = crate::layout_from(&resource_dir, &data_dir, options.listen.clone());
     layout.headless = true;
+    layout.dlna = layout.dlna || options.dlna;
 
     println!("soundchex-server: resources {}", resource_dir.display());
     println!("soundchex-server: data      {}", data_dir.display());
@@ -511,6 +524,7 @@ mod tests {
         let want = Invocation::Headless(Options {
             listen: ":9000".into(),
             data_dir: Some(PathBuf::from("/srv/sc")),
+            dlna: false,
         });
 
         assert_eq!(separate, want);
@@ -526,6 +540,22 @@ mod tests {
         assert!(matches!(parse(&args(&["serve", "--listen="])), Invocation::Invalid(_)));
         assert!(matches!(parse(&args(&["serve", "--listen", "localhost"])), Invocation::Invalid(_)));
         assert!(matches!(parse(&args(&["serve", "--listen", ":0"])), Invocation::Invalid(_)));
+    }
+
+    /// Opt-in, so a host running its own dlna:serve does not get two.
+    #[test]
+    fn dlna_is_off_unless_asked_for() {
+        match parse(&args(&["serve"])) {
+            Invocation::Headless(o) => assert!(!o.dlna),
+            other => panic!("{other:?}"),
+        }
+
+        match parse(&args(&["serve", "--dlna"])) {
+            Invocation::Headless(o) => assert!(o.dlna),
+            other => panic!("{other:?}"),
+        }
+
+        assert!(matches!(parse(&args(&["serve", "--dlna=yes"])), Invocation::Invalid(_)));
     }
 
     #[test]

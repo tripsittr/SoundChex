@@ -29,7 +29,10 @@ on:
 
 env:
   PHP_VERSION: '8.4'
-  EXTENSIONS: 'bcmath,ctype,curl,dom,exif,fileinfo,filter,gd,gmp,iconv,intl,mbstring,opcache,openssl,pcntl,pdo,pdo_sqlite,phar,session,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib'
+  # `sockets` for DLNA discovery: `dlna:serve` holds a UDP multicast socket and
+  # exits at once without it, which it did on every bundled install.
+  # package-runtime.sh checks the built PHP has it.
+  EXTENSIONS: 'bcmath,ctype,curl,dom,exif,fileinfo,filter,gd,gmp,iconv,intl,mbstring,opcache,openssl,pcntl,pdo,pdo_sqlite,phar,session,sockets,sodium,sqlite3,tokenizer,xml,xmlreader,xmlwriter,zip,zlib'
   # spc queries the GitHub API for hosted release assets; unauthenticated it hits
   # the 60/hr rate limit and 403s. The Actions-provided token raises that to
   # 5000/hr. spc reads GITHUB_TOKEN from the environment.

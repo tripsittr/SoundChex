@@ -17,6 +17,12 @@
 		<string>{{APP_DIR}}/artisan</string>
 		<string>dlna:serve</string>
 	</array>
+	<!-- The port it advertises is the one Caddy listens on. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>SOUNDCHEX_LISTEN</key>
+		<string>{{LISTEN}}</string>
+	</dict>
 	<key>KeepAlive</key>
 	<true/>
 	<key>RunAtLoad</key>

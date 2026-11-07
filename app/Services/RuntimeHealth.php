@@ -65,6 +65,7 @@ class RuntimeHealth
         'gmp' => 'faster UUID generation (ramsey/uuid); not built on Windows',
         'opcache' => 'bytecode caching — a large performance win in production',
         'sodium' => 'modern crypto primitives',
+        'sockets' => 'DLNA discovery — without it TVs and consoles cannot find the server',
     ];
 
     /**

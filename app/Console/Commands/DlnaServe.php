@@ -30,7 +30,8 @@ use Illuminate\Support\Facades\Log;
 class DlnaServe extends Command
 {
     protected $signature = 'dlna:serve
-        {--port=8200 : The HTTP port to advertise}
+        {--port= : The HTTP port to advertise (default: the port in SOUNDCHEX_LISTEN, else 8000)}
+        {--address= : The LAN address to advertise and multicast on (default: DLNA_ADDRESS, else the default route\'s)}
         {--once : Answer what is waiting and exit, for testing}';
 
     protected $description = 'Announce the DLNA media server on the local network';
@@ -50,28 +51,44 @@ class DlnaServe extends Command
             return self::FAILURE;
         }
 
-        $address = $network->lanAddress();
+        $explicit = $this->option('address') ?: config('soundchex.dlna.address');
 
-        if ($address === null) {
-            $this->error('No LAN address found — nothing to advertise.');
+        if ($explicit !== null && $explicit !== '' && filter_var($explicit, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            $this->error("Not an IPv4 address: {$explicit}");
 
             return self::FAILURE;
         }
 
-        $socket = $this->openSocket();
+        $address = $explicit ?: $network->lanAddress();
+
+        if ($address === null) {
+            $this->error('No LAN address found — nothing to advertise. Pass --address or set DLNA_ADDRESS.');
+
+            return self::FAILURE;
+        }
+
+        // The interface holding that address, so multicast goes out on the
+        // network being advertised to. Joined on "interface 0" — whatever the
+        // default route uses — a router announced itself on the wrong network
+        // entirely, and never heard the searches from the right one.
+        $interface = self::interfaceFor($address, net_get_interfaces() ?: []);
+
+        if ($interface === null && $explicit) {
+            $this->error("No network interface has the address {$explicit}.");
+
+            return self::FAILURE;
+        }
+
+        $socket = $this->openSocket($interface);
 
         if ($socket === null) {
             return self::FAILURE;
         }
 
-        $base = sprintf('http://%s:%d', $address, (int) $this->option('port'));
+        $port = self::advertisedPort($this->option('port'), getenv('SOUNDCHEX_LISTEN') ?: null);
+        $base = sprintf('http://%s:%d', $address, $port);
 
-        $this->info("Advertising {$settings->friendlyName()} at {$base}");
-
-        // Announce on start. A device that was already listening learns about
-        // the server without waiting to search again, which for a TV left on
-        // is the difference between appearing now and appearing in an hour.
-        $this->notify($socket, $settings, $base, 'ssdp:alive');
+        $this->info("Advertising {$settings->friendlyName()} at {$base}".($interface ? " on {$interface}" : ''));
 
         $running = true;
 
@@ -87,7 +104,25 @@ class DlnaServe extends Command
             }
         }
 
+        // Announced while DLNA is on, and only then. It used to announce at
+        // start whatever the setting, so a supervisor that runs this on every
+        // machine advertised a server that then answered nothing. Checked each
+        // loop, so switching it on in Settings appears within a second or two
+        // and switching it off sends the byebye.
+        //
+        // The first announcement matters: a device already listening learns
+        // about the server without searching again, which for a TV left on is
+        // the difference between appearing now and appearing in an hour.
+        $announced = false;
+
         while ($running) {
+            $wanted = $settings->shouldRun();
+
+            if ($wanted !== $announced) {
+                $this->notify($socket, $settings, $base, $wanted ? 'ssdp:alive' : 'ssdp:byebye');
+                $announced = $wanted;
+            }
+
             $this->answerSearches($socket, $settings, $base);
 
             if ($this->option('once')) {
@@ -95,15 +130,61 @@ class DlnaServe extends Command
             }
         }
 
-        $this->notify($socket, $settings, $base, 'ssdp:byebye');
+        if ($announced) {
+            $this->notify($socket, $settings, $base, 'ssdp:byebye');
+        }
 
         socket_close($socket);
 
         return self::SUCCESS;
     }
 
+    /**
+     * The HTTP port to advertise: `--port`, else the port Caddy was told to
+     * listen on, else 8000.
+     *
+     * The default was 8200 while Caddy listens on 8000, and no service unit
+     * passed a port, so every install advertised a port nothing answered on.
+     * The supervisors already put SOUNDCHEX_LISTEN in this process's
+     * environment, so following it keeps the two in step.
+     */
+    public static function advertisedPort(mixed $option, ?string $listen): int
+    {
+        if (is_numeric($option) && (int) $option > 0 && (int) $option < 65536) {
+            return (int) $option;
+        }
+
+        if ($listen !== null && preg_match('/:(\d+)$/', trim($listen), $match) === 1) {
+            $port = (int) $match[1];
+
+            if ($port > 0 && $port < 65536) {
+                return $port;
+            }
+        }
+
+        return 8000;
+    }
+
+    /**
+     * The interface holding an IPv4 address, from `net_get_interfaces()`.
+     *
+     * @param  array<string, array{unicast?: array<int, array{family?: int, address?: string}>}>  $interfaces
+     */
+    public static function interfaceFor(string $address, array $interfaces): ?string
+    {
+        foreach ($interfaces as $name => $details) {
+            foreach ($details['unicast'] ?? [] as $entry) {
+                if (($entry['address'] ?? null) === $address) {
+                    return (string) $name;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /** The multicast socket, or null with the reason reported. */
-    private function openSocket()
+    private function openSocket(?string $interface = null)
     {
         $socket = @socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
 
@@ -124,10 +205,29 @@ class DlnaServe extends Command
             return null;
         }
 
-        @socket_set_option($socket, IPPROTO_IP, MCAST_JOIN_GROUP, [
+        $joined = @socket_set_option($socket, IPPROTO_IP, MCAST_JOIN_GROUP, [
             'group' => self::MULTICAST_ADDRESS,
-            'interface' => 0,
+            'interface' => $interface ?? 0,
         ]);
+
+        if ($joined === false) {
+            // Not fatal: replies to a search still work without it. But a
+            // server that never hears searches looks exactly like one that is
+            // off, so the reason is written down.
+            Log::warning('DLNA: could not join the SSDP multicast group', [
+                'interface' => $interface ?? 'default',
+                'error' => socket_strerror(socket_last_error($socket)),
+            ]);
+        }
+
+        // Announcements leave on the chosen network rather than the default
+        // route's.
+        if ($interface !== null && ! @socket_set_option($socket, IPPROTO_IP, IP_MULTICAST_IF, $interface)) {
+            Log::warning('DLNA: could not send multicast on the chosen interface', [
+                'interface' => $interface,
+                'error' => socket_strerror(socket_last_error($socket)),
+            ]);
+        }
 
         // A second of patience per read, so the loop can notice a stop signal
         // and a settings change rather than blocking forever on a quiet LAN.

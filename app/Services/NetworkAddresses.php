@@ -238,14 +238,33 @@ class NetworkAddresses
         }
 
         if (PHP_OS_FAMILY === 'Linux') {
-            $found = trim((string) @shell_exec("ip route get 1.1.1.1 2>/dev/null | awk '{print \$7; exit}'"));
-
-            return $found === '' ? null : $found;
+            return self::routeSource((string) @shell_exec('ip route get 1.1.1.1 2>/dev/null'));
         }
 
         $found = trim((string) @shell_exec('ipconfig getifaddr en0 2>/dev/null'));
 
         return $found === '' ? null : $found;
+    }
+
+    /**
+     * The address after `src` in `ip route get` output, or null.
+     *
+     * Read by keyword, not position. This was `awk '{print $7}'`, which is
+     * right only when the route has a gateway:
+     *
+     *     1.1.1.1 via 192.168.1.1 dev eth0 src 192.168.1.5 uid 0
+     *     1.1.1.1 dev wg0 src 10.2.0.2 uid 0
+     *
+     * In the second shape, a directly connected route such as a VPN tunnel,
+     * field 7 is the uid, so the server advertised itself at "0".
+     */
+    public static function routeSource(string $output): ?string
+    {
+        if (preg_match('/\bsrc\s+(\S+)/', $output, $match) !== 1) {
+            return null;
+        }
+
+        return filter_var($match[1], FILTER_VALIDATE_IP) !== false ? $match[1] : null;
     }
 
     /**

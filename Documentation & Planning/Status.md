@@ -140,5 +140,5 @@ filtering would need a new column and a rule in the gate.
   film into the library root.
 - **Avatars are host-local.** They live on the public disk and are gitignored,
   so they don't travel with the repo.
-- **Herd may serve PHP 8.3** while dependencies need 8.4+. The CLI is 8.4.13;
-  if the site errors where the CLI doesn't, check the Herd GUI.
+- **Herd may serve PHP 8.3** while dependencies need 8.4.1+ (composer.json
+  says `^8.4.1`). If the site errors where the CLI doesn't, check the Herd GUI.

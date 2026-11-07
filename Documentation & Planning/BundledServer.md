@@ -161,6 +161,14 @@ source — one relocatable PHP per platform, no system dependency.
    Published as `soundchex-server-app-linux-{x86_64,aarch64}.{deb,AppImage}` +
    `.sha256` on each `server-v*` release.
 
+   **DLNA discovery (tracker #525, PR #312).** The runtime is now built with
+   `sockets`, which `dlna:serve` needs and the bundled PHP never had, and
+   `package-runtime.sh` refuses a PHP without it. The advertised port follows
+   `SOUNDCHEX_LISTEN`, set by every supervisor and service unit. The address
+   is `--address` or `DLNA_ADDRESS`, else the default route's `src`, and
+   multicast goes out on the interface that holds it. Headless runs it only
+   with `--dlna` (or `SOUNDCHEX_DLNA=1`), because HatCOS runs its own.
+
    Not yet verified: any of it on Linux. Headless start, provisioning, the
    double-start refusal and the SIGTERM shutdown were exercised on macOS
    against a scratch data directory; the Linux CI builds, the packages and

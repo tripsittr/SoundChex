@@ -26,6 +26,18 @@ on this Mac. The iOS provisioning profile now expires **21 August 2027**.
 Funnel hostname `macbookair.tail7e590c.ts.net`. Clients learn all three from the
 server and prefer direct routes.
 
+**Linux server (HatCOS), 6 November 2026.** SoundChex Server runs headless
+(`soundchex-server --headless`, optionally `--dlna`) under the runit service
+`soundchex-server`. The Linux app is built for x86_64 and aarch64, and each
+`server-v*` release carries `soundchex-server-app-linux-<arch>.deb` and
+`.AppImage` with `.sha256` files. PR #311 (headless, runit, Linux packages) and
+#312 (DLNA in the bundled server, PHP ≥ 8.4.1) are open and green in CI, and
+not merged. Neither has a5's approval. The release `server-v0.2.0-beta.2` is
+not tagged yet, so HatCOS has no fixed URL until it is. Headless, runit
+control and DLNA discovery have not run on Linux: the HatCOS VM (aarch64) and
+a5 (x86_64) are where they are first seen. Details are in
+[BundledServer.md](BundledServer.md) and changelogs 311 and 312.
+
 ---
 
 ## Known issues

@@ -160,6 +160,9 @@ fn layout_from(
         run_dir: data_dir.join("server"),
         listen,
         headless: false,
+        // SOUNDCHEX_DLNA=1 runs DLNA discovery under this supervisor too;
+        // headless also takes --dlna.
+        dlna: std::env::var("SOUNDCHEX_DLNA").is_ok_and(|v| v == "1" || v == "true"),
         fpm: std::env::var("SOUNDCHEX_FPM")
             .ok()
             .filter(|v| !v.is_empty())
