@@ -27,10 +27,13 @@ now warns, on screen and in the log, with the fix, when that address:
 - is not RFC 1918 (Starlink's CGNAT `100.64/10`, for example), or
 - is one of several LANs.
 
-Interfaces that are down, container and VM bridges (`docker0`, `br-*`,
-`virbr0`, `vnic0` and similar), and Windows' Hyper-V, WSL and WireGuard
-adapters (recognised by description, since Windows marks nothing
-point-to-point) do not count as LANs. Without that, every machine running
+Interfaces that are down, container and VM bridges (`docker0`, Docker's
+`br-` plus twelve hex digits, `virbr0`, `vnic0`, ZeroTier and similar), and
+Windows' Hyper-V, WSL, WireGuard and AnyConnect adapters (recognised by
+description, since Windows marks nothing point-to-point) do not count as
+LANs. OpenWrt's `br-lan` and macOS's `bridge0` do count; both are often real
+networks. A real LAN behind a Hyper-V external switch shares the virtual
+adapter's description, so that host can miss the warning. Without that, every machine running
 Docker or WSL warned on every start. Checked against this Mac's real
 interfaces: the LAN gets no warning, and the VPN (`10.2.0.2`) and Tailscale
 are flagged.
@@ -56,16 +59,32 @@ first version, and the review showed it dropped searches relayed from
 another VLAN (a common IoT setup that used to work), and every search on a
 /32 address.
 
+Some sources are always answered:
+- **Our own subnet.** It is checked first, so a Docker /16 or a k3s range
+  overlapping the LAN cannot hide the LAN's TVs.
+- **This machine's own addresses.** A local client whose search leaves by
+  the VPN can still reach the LAN address.
+- **Anything, if another interface's prefix is shorter than /8.** Such a
+  prefix (a misreported netmask) is ignored rather than making every source
+  foreign.
+
+The first ignored search from each source is logged as a warning, so a TV
+that never finds the server can be traced in the log.
+
 ### Quieter, and survives a bad read
 
 The settings are read every 5 seconds instead of every loop and every packet,
-timed by a monotonic clock so a wall-clock jump cannot stall it. Every
+timed by a monotonic clock so a wall-clock jump cannot stall it. That clock
+stops while the machine sleeps, so a wake is detected when the wall clock has
+run more than a minute ahead of it, and the server announces at once instead
+of after fifteen more minutes. Every
 settings read is guarded, including the server's UUID, which is *written* on
 first use, and its name. A failure (a locked SQLite file, or an unmigrated
 first boot) keeps the last known state instead of killing the process into a
 two-second restart loop. It also does not switch advertising off: that would
 have sent a byebye, then an alive five seconds later, to every TV. A run of
-failures is logged once. Until the UUID can be read, nothing is announced.
+failures is logged once. The two reads (identity and settings) are tracked
+separately. Until the UUID can be read, nothing is announced.
 Socket failures log PHP's own message, with the socket error cleared before
 each call so an old errno is not reported, and a failed reply is logged.
 
@@ -95,23 +114,28 @@ also accepts `yes`, `on` and any case.
 
 ## Tests
 
-The PR was reviewed twice by a subagent. The second review found that the
-first version of these fixes half-handled exceptions, sent a byebye on a
-failed read, warned on every Docker or WSL machine, and dropped VLAN-relayed
-searches. All of that is fixed here, and the tests below cover it.
+A subagent reviewed the PR three times:
+1. The first review found that the first version half-handled exceptions,
+   sent a byebye on a failed read, warned on every Docker or WSL machine, and
+   dropped VLAN-relayed searches.
+2. The second found that an overlapping subnet hid the whole LAN, that a wake
+   from sleep went unannounced, and that `br-lan` was skipped.
+
+All of that is fixed here, and the tests below cover it.
 
 The refusal tests no longer run the command, which would have bound UDP 1900
 on a real network had a refusal regressed. They test pure functions instead,
 as do the new rules for announcing, subnets and doubtful guesses.
-`DlnaAddressingTest` (29) and `DlnaSettingsReadTest` (3) cover the join
+`DlnaAddressingTest` (33) and `DlnaSettingsReadTest` (3) cover the join
 fallback, the settings read, the bridge and Windows-adapter exclusions, the
 foreign-source rule (including a relayed VLAN, a tunnel peer and a /31
 uplink) and the prefix clamp. Each of these mutations turns them red:
 removing the fallback join, returning `false` on a failed read, logging every
 failure, not skipping down interfaces, ignoring the tunnel peer, removing the
-re-announce, and removing the point-to-point check. One mutation survived and
+re-announce, removing the point-to-point check, removing the own-subnet-first
+rule, and removing the /8 floor. One mutation survived and
 showed a wrong rule (a /31 exemption carried into the other-networks check),
 which is now removed and tested. The full PHP suite in a clean worktree:
-1,857 pass. One fails, `ServerHealthCheckTest`, from this Mac's low disk
+1,861 pass. One fails, `ServerHealthCheckTest`, from this Mac's low disk
 space; it fails the same way without this change. Rust: 36 pass (new:
 `SOUNDCHEX_DLNA` parsing).
