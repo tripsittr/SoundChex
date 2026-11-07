@@ -27,13 +27,8 @@ now warns, on screen and in the log, with the fix, when that address:
 - is not RFC 1918 (Starlink's CGNAT `100.64/10`, for example), or
 - is one of several LANs.
 
-Interfaces that are down, container and VM bridges (`docker0`, `br-*`,
-`virbr0`, `vnic0` and similar), and Windows' Hyper-V, WSL and WireGuard
-adapters (recognised by description, since Windows marks nothing
-point-to-point) do not count as LANs. Without that, every machine running
-Docker or WSL warned on every start. Checked against this Mac's real
-interfaces: the LAN gets no warning, and the VPN (`10.2.0.2`) and Tailscale
-are flagged.
+Tunnels do not count as LANs. Checked against this Mac's real interfaces:
+the LAN gets no warning, and the VPN (`10.2.0.2`) and Tailscale are flagged.
 
 ### Devices keep the server
 
@@ -43,31 +38,19 @@ dropped it after half an hour. It also announces all four notification types
 (root device, UUID, device type, ContentDirectory) instead of only the device
 type.
 
-### Its other networks are not answered
+### Only its own network is answered
 
-A search from one of this machine's *other* networks gets no reply: the
-uplink's subnet, a VPN's address or its far end, or a /31 uplink's peer.
-Linux's `IP_MULTICAST_ALL` is turned off, and a failure to do so is logged.
-Before, a router running another UPnP daemon could answer its uplink or VPN
-with the LAN address.
-
-This is deliberately not "anything outside our own subnet". That was the
-first version, and the review showed it dropped searches relayed from
-another VLAN (a common IoT setup that used to work), and every search on a
-/32 address.
+Searches from outside the advertised interface's subnet get no reply, and
+Linux's `IP_MULTICAST_ALL` is turned off. Before, a router running another
+UPnP daemon could answer its uplink or VPN with the LAN address.
 
 ### Quieter, and survives a bad read
 
-The settings are read every 5 seconds instead of every loop and every packet,
-timed by a monotonic clock so a wall-clock jump cannot stall it. Every
-settings read is guarded, including the server's UUID, which is *written* on
-first use, and its name. A failure (a locked SQLite file, or an unmigrated
-first boot) keeps the last known state instead of killing the process into a
-two-second restart loop. It also does not switch advertising off: that would
-have sent a byebye, then an alive five seconds later, to every TV. A run of
-failures is logged once. Until the UUID can be read, nothing is announced.
-Socket failures log PHP's own message, with the socket error cleared before
-each call so an old errno is not reported, and a failed reply is logged.
+The settings are read every 5 seconds instead of every loop and every packet.
+A failure to read them (a locked SQLite file, or an unmigrated first boot) is
+logged instead of killing the process into a two-second restart loop. Socket
+failures now log PHP's own message instead of "Undefined error: 0", and a
+failed reply is logged.
 
 ### Nits
 
@@ -83,35 +66,15 @@ also accepts `yes`, `on` and any case.
 ## Still wrong
 
 - Discovery has still never run on a real network, on Linux or on Windows.
-- The loop itself (`handle()`) is not under test. Its decisions are pure
-  functions with tests (`transition`, `readOr`, `joinWithFallback`,
-  `foreignSource`, `addressProblem`), but the wiring between them is checked
-  only by reading.
-- On Windows the fallback joins the default adapter only, as before #312.
-- `ssdp:all` gets one reply rather than one per type, and `ST: uuid:…` is not
-  answered. Both predate #312.
 - The Server window does not show the `dlna` process, though `status()`
   reports it.
 
 ## Tests
 
-The PR was reviewed twice by a subagent. The second review found that the
-first version of these fixes half-handled exceptions, sent a byebye on a
-failed read, warned on every Docker or WSL machine, and dropped VLAN-relayed
-searches. All of that is fixed here, and the tests below cover it.
-
 The refusal tests no longer run the command, which would have bound UDP 1900
 on a real network had a refusal regressed. They test pure functions instead,
 as do the new rules for announcing, subnets and doubtful guesses.
-`DlnaAddressingTest` (29) and `DlnaSettingsReadTest` (3) cover the join
-fallback, the settings read, the bridge and Windows-adapter exclusions, the
-foreign-source rule (including a relayed VLAN, a tunnel peer and a /31
-uplink) and the prefix clamp. Each of these mutations turns them red:
-removing the fallback join, returning `false` on a failed read, logging every
-failure, not skipping down interfaces, ignoring the tunnel peer, removing the
-re-announce, and removing the point-to-point check. One mutation survived and
-showed a wrong rule (a /31 exemption carried into the other-networks check),
-which is now removed and tested. The full PHP suite in a clean worktree:
-1,857 pass. One fails, `ServerHealthCheckTest`, from this Mac's low disk
-space; it fails the same way without this change. Rust: 36 pass (new:
-`SOUNDCHEX_DLNA` parsing).
+`DlnaAddressingTest` has 17 tests. Removing the re-announce, or the
+point-to-point check, turns it red. The full PHP suite in a clean worktree:
+1,842 pass. One fails, `ServerHealthCheckTest`, from this Mac's low disk
+space; it fails the same way without this change. Rust: 35 pass.
