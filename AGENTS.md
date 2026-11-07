@@ -275,9 +275,18 @@ an actionable message naming the install command.
 
 | Binary | Used for |
 |---|---|
-| `ffmpeg` / `ffprobe` | transcoding, subtitle extraction |
+| `ffmpeg` / `ffprobe` | transcoding, subtitle extraction (bundled in the Server app's runtime) |
+| `fpcalc` (Chromaprint) | acoustic fingerprints for AcoustID (not bundled on any platform) |
 | `tesseract` | OCR of scanned pages |
 | `pdftoppm` / `pdftotext` / `pdfinfo` / `pdfimages` / `pdftohtml` | book text, images, outline |
+| `which` | how several of the above are probed for |
+
+The bundled runtime's `bin/` is first on `PATH` for everything the Server app
+supervises, so a bare `ffmpeg` finds the bundled one. Under a service manager
+`PATH` is otherwise minimal: anything not bundled must be in `/usr/bin` or
+similar. The bundled PHP's extensions are listed in `build-server.yml`
+(`EXTENSIONS`) and checked by `server/scripts/package-runtime.sh`; DLNA
+discovery needs `sockets`.
 
 ---
 
