@@ -43,6 +43,23 @@ class DlnaServe extends Command
     /** How long a device should consider the advertisement valid. */
     private const CACHE_SECONDS = 1800;
 
+    /**
+     * How often to announce again while running: half the cache time, as the
+     * SSDP spec advises. Announcing only once meant a device that listens
+     * rather than searches dropped the server after half an hour.
+     */
+    private const REANNOUNCE_SECONDS = 900;
+
+    /**
+     * How often to re-read the DLNA settings. Every loop was once a second,
+     * forever, plus once per packet on a busy network: two cache reads and a
+     * profile query each time.
+     */
+    private const SETTINGS_SECONDS = 5;
+
+    /** Linux's IP_MULTICAST_ALL; PHP has no constant for it. */
+    private const LINUX_IP_MULTICAST_ALL = 49;
+
     public function handle(DlnaSettings $settings, NetworkAddresses $network): int
     {
         if (! extension_loaded('sockets')) {
@@ -51,15 +68,18 @@ class DlnaServe extends Command
             return self::FAILURE;
         }
 
-        $explicit = $this->option('address') ?: config('soundchex.dlna.address');
+        $explicit = self::explicitAddress($this->option('address'), config('soundchex.dlna.address'));
+        $interfaces = net_get_interfaces() ?: [];
 
-        if ($explicit !== null && $explicit !== '' && filter_var($explicit, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
-            $this->error("Not an IPv4 address: {$explicit}");
+        $problem = self::addressProblem($explicit, $interfaces);
+
+        if ($problem !== null) {
+            $this->error($problem);
 
             return self::FAILURE;
         }
 
-        $address = $explicit ?: $network->lanAddress();
+        $address = $explicit ?? $network->lanAddress();
 
         if ($address === null) {
             $this->error('No LAN address found — nothing to advertise. Pass --address or set DLNA_ADDRESS.');
@@ -71,13 +91,25 @@ class DlnaServe extends Command
         // network being advertised to. Joined on "interface 0" — whatever the
         // default route uses — a router announced itself on the wrong network
         // entirely, and never heard the searches from the right one.
-        $interface = self::interfaceFor($address, net_get_interfaces() ?: []);
+        $interface = self::interfaceFor($address, $interfaces);
 
-        if ($interface === null && $explicit) {
-            $this->error("No network interface has the address {$explicit}.");
+        // A guessed address on a machine with several networks is probably
+        // the wrong one, and the result — no TV ever finds the server — says
+        // nothing about why. Said once, loudly, with the fix.
+        if ($explicit === null) {
+            $doubt = self::autoAddressDoubt($address, $interface, $interfaces);
 
-            return self::FAILURE;
+            if ($doubt !== null) {
+                $this->warn("{$doubt} Set DLNA_ADDRESS (or --address) to the address of the network your TVs are on.");
+                Log::warning('DLNA: the guessed address is probably the wrong network', [
+                    'address' => $address,
+                    'interface' => $interface,
+                    'reason' => $doubt,
+                ]);
+            }
         }
+
+        $subnet = $interface !== null ? self::subnetOf($address, $interfaces[$interface] ?? []) : null;
 
         $socket = $this->openSocket($interface);
 
@@ -106,24 +138,36 @@ class DlnaServe extends Command
 
         // Announced while DLNA is on, and only then. It used to announce at
         // start whatever the setting, so a supervisor that runs this on every
-        // machine advertised a server that then answered nothing. Checked each
-        // loop, so switching it on in Settings appears within a second or two
-        // and switching it off sends the byebye.
+        // machine advertised a server that then answered nothing. Switching
+        // it on in Settings appears within a few seconds, switching it off
+        // sends the byebye, and while on it announces again every fifteen
+        // minutes (see `transition`).
         //
         // The first announcement matters: a device already listening learns
         // about the server without searching again, which for a TV left on is
         // the difference between appearing now and appearing in an hour.
         $announced = false;
+        $announcedAt = 0;
+        $wanted = false;
+        $checkedAt = 0;
 
         while ($running) {
-            $wanted = $settings->shouldRun();
+            $now = time();
 
-            if ($wanted !== $announced) {
-                $this->notify($socket, $settings, $base, $wanted ? 'ssdp:alive' : 'ssdp:byebye');
-                $announced = $wanted;
+            if ($now - $checkedAt >= self::SETTINGS_SECONDS) {
+                $wanted = $this->wanted($settings);
+                $checkedAt = $now;
             }
 
-            $this->answerSearches($socket, $settings, $base);
+            $nts = self::transition($announced, $wanted, $now - $announcedAt);
+
+            if ($nts !== null) {
+                $this->notify($socket, $settings, $base, $nts);
+                $announced = $nts === 'ssdp:alive';
+                $announcedAt = $now;
+            }
+
+            $this->answerSearches($socket, $settings, $base, $wanted, $subnet);
 
             if ($this->option('once')) {
                 break;
@@ -137,6 +181,191 @@ class DlnaServe extends Command
         socket_close($socket);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Whether DLNA should be advertised now. Never throws: a locked SQLite
+     * file or an unmigrated database on first boot used to kill the process,
+     * and the supervisor restarted it every two seconds into the same error.
+     */
+    private function wanted(DlnaSettings $settings): bool
+    {
+        try {
+            return $settings->shouldRun();
+        } catch (\Throwable $e) {
+            Log::warning('DLNA: could not read the DLNA settings; not advertising', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    /**
+     * What to send now, given whether it is announced, whether it should be,
+     * and how long since the last announcement: `ssdp:alive`, `ssdp:byebye`,
+     * or null for nothing.
+     */
+    public static function transition(bool $announced, bool $wanted, int $sinceAnnounce): ?string
+    {
+        if ($wanted && (! $announced || $sinceAnnounce >= self::REANNOUNCE_SECONDS)) {
+            return 'ssdp:alive';
+        }
+
+        if (! $wanted && $announced) {
+            return 'ssdp:byebye';
+        }
+
+        return null;
+    }
+
+    /** `--address`, else DLNA_ADDRESS, as a trimmed string or null for "guess". */
+    public static function explicitAddress(mixed $option, mixed $configured): ?string
+    {
+        foreach ([$option, $configured] as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                return trim($candidate);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Why an explicitly chosen address cannot be used, or null.
+     *
+     * Checked before any socket opens: advertising an address the machine
+     * does not have sends every device somewhere that never answers.
+     *
+     * @param  array<string, array<string, mixed>>  $interfaces  from `net_get_interfaces()`
+     */
+    public static function addressProblem(?string $explicit, array $interfaces): ?string
+    {
+        if ($explicit === null) {
+            return null;
+        }
+
+        if (filter_var($explicit, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return "Not an IPv4 address: {$explicit}";
+        }
+
+        if (self::interfaceFor($explicit, $interfaces) === null) {
+            return "No network interface has the address {$explicit}.";
+        }
+
+        return null;
+    }
+
+    /**
+     * Why a guessed address is probably the wrong network, or null.
+     *
+     * The guess is the default route's address. On a machine that routes
+     * between networks (HatCOS: Starlink, Wi-Fi, a VPN) that is the uplink or
+     * the tunnel, not the LAN the TVs are on.
+     *
+     * @param  array<string, array<string, mixed>>  $interfaces  from `net_get_interfaces()`
+     */
+    public static function autoAddressDoubt(string $address, ?string $interface, array $interfaces): ?string
+    {
+        foreach ($interfaces[$interface] ?? [] as $entries) {
+            if (! is_array($entries)) {
+                continue;
+            }
+
+            foreach ($entries as $entry) {
+                if (is_array($entry) && ($entry['address'] ?? null) === $address && isset($entry['ptp'])) {
+                    return "{$address} is on {$interface}, a point-to-point link (a VPN or tunnel).";
+                }
+            }
+        }
+
+        if (! self::isPrivateLan($address)) {
+            return "{$address} is not a private LAN address.";
+        }
+
+        $lans = [];
+
+        foreach ($interfaces as $name => $details) {
+            foreach ($details['unicast'] ?? [] as $entry) {
+                $candidate = $entry['address'] ?? null;
+
+                // A tunnel is not a network a TV sits on, even with a private
+                // address: a VPN's 10.x would otherwise make every machine
+                // running one look like it had two LANs.
+                if (isset($entry['ptp'])) {
+                    continue;
+                }
+
+                if (is_string($candidate) && filter_var($candidate, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && self::isPrivateLan($candidate)) {
+                    $lans[$name] = $candidate;
+                }
+            }
+        }
+
+        if (count($lans) > 1) {
+            $list = implode(', ', array_map(fn ($name, $ip) => "{$name} {$ip}", array_keys($lans), $lans));
+
+            return "Guessed {$address}, but this machine is on several networks ({$list}).";
+        }
+
+        return null;
+    }
+
+    /** RFC 1918 only: not loopback, link-local or CGNAT (100.64/10). */
+    private static function isPrivateLan(string $address): bool
+    {
+        foreach (['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] as $range) {
+            if (self::inRange($address, $range)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The interface's network for an address, as "network/prefix", or null
+     * when `net_get_interfaces()` gave no netmask.
+     *
+     * @param  array<string, mixed>  $details  one interface from `net_get_interfaces()`
+     */
+    public static function subnetOf(string $address, array $details): ?string
+    {
+        foreach ($details['unicast'] ?? [] as $entry) {
+            if (($entry['address'] ?? null) !== $address || ! is_string($entry['netmask'] ?? null)) {
+                continue;
+            }
+
+            $mask = ip2long($entry['netmask']);
+            $ip = ip2long($address);
+
+            if ($mask === false || $ip === false) {
+                return null;
+            }
+
+            $prefix = substr_count(decbin($mask & 0xFFFFFFFF), '1');
+
+            return long2ip($ip & $mask).'/'.$prefix;
+        }
+
+        return null;
+    }
+
+    /** Whether an IPv4 address is inside "network/prefix". */
+    public static function inRange(string $address, string $range): bool
+    {
+        [$network, $prefix] = array_pad(explode('/', $range, 2), 2, '32');
+
+        $ip = ip2long($address);
+        $net = ip2long($network);
+
+        if ($ip === false || $net === false) {
+            return false;
+        }
+
+        $mask = (int) $prefix === 0 ? 0 : (~0 << (32 - (int) $prefix)) & 0xFFFFFFFF;
+
+        return ($ip & $mask) === ($net & $mask);
     }
 
     /**
@@ -205,28 +434,37 @@ class DlnaServe extends Command
             return null;
         }
 
-        $joined = @socket_set_option($socket, IPPROTO_IP, MCAST_JOIN_GROUP, [
-            'group' => self::MULTICAST_ADDRESS,
-            'interface' => $interface ?? 0,
-        ]);
+        // Joined on the chosen interface by name, falling back to the default
+        // interface. The fallback is what keeps Windows working:
+        // net_get_interfaces() names a Windows adapter by its GUID, which
+        // if_nametoindex() does not accept, so the join by name fails there
+        // and without it the server would never hear a search.
+        $byName = $interface !== null && $this->join($socket, $interface);
 
-        if ($joined === false) {
-            // Not fatal: replies to a search still work without it. But a
-            // server that never hears searches looks exactly like one that is
-            // off, so the reason is written down.
-            Log::warning('DLNA: could not join the SSDP multicast group', [
-                'interface' => $interface ?? 'default',
-                'error' => socket_strerror(socket_last_error($socket)),
-            ]);
+        if (! $byName) {
+            $this->join($socket, 0);
         }
 
         // Announcements leave on the chosen network rather than the default
-        // route's.
-        if ($interface !== null && ! @socket_set_option($socket, IPPROTO_IP, IP_MULTICAST_IF, $interface)) {
-            Log::warning('DLNA: could not send multicast on the chosen interface', [
-                'interface' => $interface,
-                'error' => socket_strerror(socket_last_error($socket)),
-            ]);
+        // route's — only where the interface's name was usable at all.
+        if ($byName) {
+            error_clear_last();
+
+            if (! @socket_set_option($socket, IPPROTO_IP, IP_MULTICAST_IF, $interface)) {
+                Log::warning('DLNA: could not send multicast on the chosen interface', [
+                    'interface' => $interface,
+                    'error' => $this->lastSocketError($socket),
+                ]);
+            }
+        }
+
+        // Linux delivers a group's traffic from every interface where any
+        // process joined it, not only ours — so on a router running another
+        // UPnP daemon, searches from the uplink or the VPN arrived here and
+        // were answered with the LAN address. Off, it hears only its own
+        // join. Not fatal: the subnet check in answerSearches covers it too.
+        if (PHP_OS_FAMILY === 'Linux') {
+            @socket_set_option($socket, IPPROTO_IP, self::LINUX_IP_MULTICAST_ALL, 0);
         }
 
         // A second of patience per read, so the loop can notice a stop signal
@@ -237,13 +475,57 @@ class DlnaServe extends Command
     }
 
     /**
+     * Join the SSDP group on an interface (a name, or 0 for the default).
+     * A failure is logged and is not fatal — replies to a search still work —
+     * but a server that never hears searches looks exactly like one that is
+     * off, so the reason is written down.
+     */
+    private function join($socket, string|int $interface): bool
+    {
+        error_clear_last();
+
+        $joined = @socket_set_option($socket, IPPROTO_IP, MCAST_JOIN_GROUP, [
+            'group' => self::MULTICAST_ADDRESS,
+            'interface' => $interface,
+        ]);
+
+        if ($joined === false) {
+            Log::warning('DLNA: could not join the SSDP multicast group', [
+                'interface' => $interface === 0 ? 'default' : $interface,
+                'error' => $this->lastSocketError($socket),
+            ]);
+        }
+
+        return $joined !== false;
+    }
+
+    /**
+     * What went wrong with the last socket call.
+     *
+     * PHP reports some failures — "No interface with name … could be found"
+     * among them — as a warning, which `@` hides and which leaves the socket
+     * error at 0. Logging only socket_strerror() then said "Undefined error:
+     * 0", which explains nothing.
+     */
+    private function lastSocketError($socket): string
+    {
+        $code = socket_last_error($socket);
+
+        if ($code !== 0) {
+            return socket_strerror($code);
+        }
+
+        return error_get_last()['message'] ?? 'unknown error';
+    }
+
+    /**
      * Answers M-SEARCH requests that want a media server.
      *
      * A reply goes to the address the search came from, not to multicast: the
      * device asked, and broadcasting the answer to the whole network is noise
      * every other device has to parse.
      */
-    private function answerSearches($socket, DlnaSettings $settings, string $base): void
+    private function answerSearches($socket, DlnaSettings $settings, string $base, bool $wanted, ?string $subnet): void
     {
         $buffer = '';
         $from = '';
@@ -259,9 +541,15 @@ class DlnaServe extends Command
             return;
         }
 
-        // Switched off since the last search: stop answering immediately
-        // rather than at the next restart.
-        if (! $settings->shouldRun()) {
+        // Switched off: no answer. Read from the loop's last check rather
+        // than per packet, which on a busy network was a query per packet.
+        if (! $wanted) {
+            return;
+        }
+
+        // Only searches from the network being advertised to. One from the
+        // uplink or a VPN would be answered with an address it cannot reach.
+        if ($subnet !== null && ! self::inRange($from, $subnet)) {
             return;
         }
 
@@ -273,7 +561,13 @@ class DlnaServe extends Command
 
         $response = $this->response($settings, $base, $target === 'ssdp:all' ? $this->deviceType() : $target);
 
-        @socket_sendto($socket, $response, strlen($response), 0, $from, $port);
+        if (@socket_sendto($socket, $response, strlen($response), 0, $from, $port) === false) {
+            Log::warning('DLNA: could not answer a search', [
+                'to' => "{$from}:{$port}",
+                'target' => $target,
+                'error' => $this->lastSocketError($socket),
+            ]);
+        }
     }
 
     /** The ST header — what the device is looking for. */
@@ -318,34 +612,62 @@ class DlnaServe extends Command
     }
 
     /**
-     * A multicast NOTIFY — "here I am" on start, "I am going" on stop.
+     * The multicast NOTIFYs — "here I am" while on, "I am going" on stop.
      *
-     * Sent three times because SSDP is UDP over multicast and a dropped packet
-     * means the server simply never appears; the spec expects the redundancy.
+     * One per notification type a device may be watching for: the root
+     * device, the device's UUID, its device type and its ContentDirectory
+     * service. Only the device type went out before, and a client keyed on
+     * `upnp:rootdevice` never saw the server announce itself.
+     *
+     * Each sent three times because SSDP is UDP over multicast and a dropped
+     * packet means the server simply never appears; the spec expects the
+     * redundancy.
      */
     private function notify($socket, DlnaSettings $settings, string $base, string $type): void
     {
-        $message = $this->headers([
-            'NOTIFY * HTTP/1.1',
-            'HOST: '.self::MULTICAST_ADDRESS.':'.self::MULTICAST_PORT,
-            'CACHE-CONTROL: max-age='.self::CACHE_SECONDS,
-            'LOCATION: '.$base.'/dlna/device.xml',
-            'NT: '.$this->deviceType(),
-            'NTS: '.$type,
-            'SERVER: '.$this->serverHeader(),
-            'USN: uuid:'.$settings->uuid().'::'.$this->deviceType(),
-        ]);
+        foreach (self::notifications($settings->uuid()) as [$nt, $usn]) {
+            $message = $this->headers([
+                'NOTIFY * HTTP/1.1',
+                'HOST: '.self::MULTICAST_ADDRESS.':'.self::MULTICAST_PORT,
+                'CACHE-CONTROL: max-age='.self::CACHE_SECONDS,
+                'LOCATION: '.$base.'/dlna/device.xml',
+                'NT: '.$nt,
+                'NTS: '.$type,
+                'SERVER: '.$this->serverHeader(),
+                'USN: '.$usn,
+            ]);
 
-        for ($i = 0; $i < 3; $i++) {
-            if (@socket_sendto($socket, $message, strlen($message), 0, self::MULTICAST_ADDRESS, self::MULTICAST_PORT) === false) {
-                Log::warning('DLNA: could not send an SSDP notification', [
-                    'type' => $type,
-                    'error' => socket_strerror(socket_last_error($socket)),
-                ]);
+            for ($i = 0; $i < 3; $i++) {
+                if (@socket_sendto($socket, $message, strlen($message), 0, self::MULTICAST_ADDRESS, self::MULTICAST_PORT) === false) {
+                    Log::warning('DLNA: could not send an SSDP notification', [
+                        'type' => $type,
+                        'nt' => $nt,
+                        'error' => $this->lastSocketError($socket),
+                    ]);
 
-                return;
+                    return;
+                }
             }
         }
+    }
+
+    /**
+     * The NT and USN pairs a root device announces, per UPnP Device
+     * Architecture 1.0 §1.1.2.
+     *
+     * @return array<int, array{0: string, 1: string}>
+     */
+    public static function notifications(string $uuid): array
+    {
+        $device = 'urn:schemas-upnp-org:device:MediaServer:1';
+        $service = 'urn:schemas-upnp-org:service:ContentDirectory:1';
+
+        return [
+            ['upnp:rootdevice', "uuid:{$uuid}::upnp:rootdevice"],
+            ["uuid:{$uuid}", "uuid:{$uuid}"],
+            [$device, "uuid:{$uuid}::{$device}"],
+            [$service, "uuid:{$uuid}::{$service}"],
+        ];
     }
 
     private function serverHeader(): string
