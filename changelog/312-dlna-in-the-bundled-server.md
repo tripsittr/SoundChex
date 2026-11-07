@@ -56,6 +56,17 @@ also honours) adds `dlna:serve` to the supervised processes. It is off by
 default because HatCOS runs `dlna:serve` itself, and two copies answering
 under one UUID would confuse devices.
 
+### composer.json requires PHP 8.4.1
+
+It declared `"php": "^8.3"`, but the lock holds Symfony 8 packages that need
+PHP 8.4.1 or later. So `composer install` failed on PHP 8.3, Ubuntu 24.04's
+default, and the requirement said otherwise (#526). It is now `^8.4.1`. The
+bundled runtime and every CI workflow already use 8.4. The lock was refreshed
+with `composer update --lock`, which changed no package versions: only the
+content hash, the platform line, and phpdotenv's repository URL (the project
+moved organisations; same commit). The README, the Windows setup guide and
+Status.md no longer say 8.3.
+
 ## Worth knowing
 
 - HatCOS can now drop any port workaround. To advertise the Wi-Fi network,
@@ -74,6 +85,9 @@ under one UUID would confuse devices.
   restarts it every two seconds with the same error, because there is no
   backoff.
 - macOS still finds its address as `en0`'s only.
+- `composer update --lock` reported 44 security advisories across 12 locked
+  packages. They predate this change, which updates no packages; they need
+  their own look.
 
 ## Tests
 

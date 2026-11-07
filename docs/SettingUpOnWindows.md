@@ -15,7 +15,7 @@ anyone has watched succeed. Where something is likely to be wrong, it says so.
 
 | | | |
 | --- | --- | --- |
-| **PHP 8.4+** | [windows.php.net](https://windows.php.net/download) or `winget install PHP.PHP` | 8.3 satisfies composer.json, but everything has been tested on 8.4 |
+| **PHP 8.4.1+** | [windows.php.net](https://windows.php.net/download) or `winget install PHP.PHP` | 8.3 will not do: the locked Symfony 8 packages need 8.4.1, and composer.json now says so |
 | **Composer** | [getcomposer.org](https://getcomposer.org/download/) | |
 | **Node 22+** | `winget install OpenJS.NodeJS` | |
 | **FFmpeg** | `winget install Gyan.FFmpeg` | Transcoding, captions and durations all shell out to it |
