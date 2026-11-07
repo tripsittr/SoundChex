@@ -207,7 +207,7 @@ class DlnaAddressingTest extends TestCase
         $interfaces = [
             'eth0' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '192.168.1.10', 'netmask' => '255.255.255.0']]],
             'docker0' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '172.17.0.1', 'netmask' => '255.255.0.0']]],
-            'br-3f2a9c' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '172.18.0.1', 'netmask' => '255.255.0.0']]],
+            'br-3f2a9c0d1e2b' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '172.18.0.1', 'netmask' => '255.255.0.0']]],
             'virbr0' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '192.168.122.1', 'netmask' => '255.255.255.0']]],
         ];
 
@@ -251,7 +251,8 @@ class DlnaAddressingTest extends TestCase
 
         $this->assertTrue(DlnaServe::foreignSource('100.64.1.1', 'wlan0', $router));
         $this->assertTrue(DlnaServe::foreignSource('10.2.0.1', 'wlan0', $router), 'the tunnel peer');
-        $this->assertTrue(DlnaServe::foreignSource('10.2.0.2', 'wlan0', $router), 'our own VPN address');
+        // Our own VPN address is a client on this machine; it can reach us.
+        $this->assertFalse(DlnaServe::foreignSource('10.2.0.2', 'wlan0', $router), 'our own VPN address');
         $this->assertFalse(DlnaServe::foreignSource('192.168.50.77', 'wlan0', $router));
     }
 
@@ -337,5 +338,52 @@ class DlnaAddressingTest extends TestCase
         });
 
         $this->assertSame([0], $tried);
+    }
+
+    /**
+     * Another interface's subnet overlapping ours must not hide our own LAN.
+     * Docker's 172.17/16 over a LAN on 172.17.5.x dropped every TV.
+     */
+    public function test_our_own_lan_wins_over_an_overlapping_subnet(): void
+    {
+        $interfaces = [
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '172.17.5.10', 'netmask' => '255.255.255.0']]],
+            'docker0' => ['unicast' => [['family' => 2, 'address' => '172.17.0.1', 'netmask' => '255.255.0.0']]],
+        ];
+
+        $this->assertFalse(DlnaServe::foreignSource('172.17.5.20', 'eth0', $interfaces));
+        // Outside our /24 but inside the bridge's /16: that one is foreign.
+        $this->assertTrue(DlnaServe::foreignSource('172.17.9.9', 'eth0', $interfaces));
+    }
+
+    /** A /0 from a misreported netmask must not make everything foreign. */
+    public function test_a_zero_netmask_on_another_interface_is_ignored(): void
+    {
+        $interfaces = [
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '192.168.1.10', 'netmask' => '255.255.255.0']]],
+            'odd0' => ['unicast' => [['family' => 2, 'address' => '10.9.9.9', 'netmask' => '0.0.0.0']]],
+        ];
+
+        $this->assertFalse(DlnaServe::foreignSource('192.168.7.7', 'eth0', $interfaces));
+    }
+
+    /** OpenWrt's LAN bridge is a real LAN; Docker's are not. */
+    public function test_br_lan_is_not_mistaken_for_a_docker_bridge(): void
+    {
+        $this->assertFalse(DlnaServe::isVirtual('br-lan', []));
+        $this->assertTrue(DlnaServe::isVirtual('br-3f2a9c0d1e2b', []));
+        $this->assertTrue(DlnaServe::isVirtual('docker0', []));
+        $this->assertTrue(DlnaServe::isVirtual('ztabcdef12', []));
+        $this->assertFalse(DlnaServe::isVirtual('bridge0', []), 'often a real Thunderbolt link on macOS');
+        $this->assertFalse(DlnaServe::isVirtual('{X}', ['description' => 'Intel Ethernet (VPN-ready)']));
+    }
+
+    /** Wall time far ahead of monotonic time is a wake; a backwards step is not. */
+    public function test_a_wake_from_sleep_is_noticed(): void
+    {
+        $this->assertTrue(DlnaServe::woke(3600, 1), 'an hour asleep');
+        $this->assertFalse(DlnaServe::woke(1, 1), 'an ordinary second');
+        $this->assertFalse(DlnaServe::woke(50, 1), 'a small NTP step forward');
+        $this->assertFalse(DlnaServe::woke(-3600, 1), 'the clock stepped back');
     }
 }

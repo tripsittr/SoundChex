@@ -147,6 +147,8 @@ class DlnaServe extends Command
         $wanted = false;
         $checkedAt = null;
         $uuid = null;
+        $wallAt = time();
+        $lastTick = null;
 
         while ($running) {
             // Monotonic, not the wall clock: a router with no RTC steps its
@@ -155,6 +157,21 @@ class DlnaServe extends Command
             // re-announced until the clock caught up.
             $now = intdiv(hrtime(true), 1_000_000_000);
 
+            // The monotonic clock stops while the machine sleeps; the wall
+            // clock does not. After a sleep longer than the devices' cache
+            // they have dropped the server, and waiting out fifteen awake
+            // minutes to say so again left listening devices without it.
+            // Wall time running well ahead of monotonic time is a wake:
+            // announce now.
+            $wall = time();
+
+            if ($lastTick !== null && self::woke($wall - $wallAt, $now - $lastTick)) {
+                $announcedAt = $now - self::REANNOUNCE_SECONDS;
+            }
+
+            $wallAt = $wall;
+            $lastTick = $now;
+
             if ($checkedAt === null || $now - $checkedAt >= self::SETTINGS_SECONDS) {
                 // The server's UUID and name are read here too, under the
                 // same guard, rather than once before the loop: on first use
@@ -162,7 +179,7 @@ class DlnaServe extends Command
                 // file refuses. Unguarded, that killed the process into a
                 // two-second restart loop.
                 $uuid ??= $this->identity($settings, $base, $interface);
-                $wanted = $uuid !== null && self::readOr(fn (): bool => $settings->shouldRun(), $wanted, $this->readFailing);
+                $wanted = $uuid !== null && self::readOr(fn (): bool => $settings->shouldRun(), $wanted, $this->settingsFailing);
                 $checkedAt = $now;
             }
 
@@ -194,8 +211,17 @@ class DlnaServe extends Command
         return self::SUCCESS;
     }
 
-    /** Whether the last settings read failed, so a run of failures logs once. */
-    private bool $readFailing = false;
+    /**
+     * Whether each kind of read last failed, so a run of failures logs once.
+     * Separate, so one read recovering does not log "readable again" while
+     * the other is still failing.
+     */
+    private bool $identityFailing = false;
+
+    private bool $settingsFailing = false;
+
+    /** @var array<string, true> sources already logged as ignored */
+    private array $ignoredSources = [];
 
     /**
      * The server's UUID, read once, with the "Advertising …" line printed
@@ -203,7 +229,7 @@ class DlnaServe extends Command
      */
     private function identity(DlnaSettings $settings, string $base, ?string $interface): ?string
     {
-        $read = self::readOr(fn (): array => [$settings->uuid(), $settings->friendlyName()], null, $this->readFailing);
+        $read = self::readOr(fn (): array => [$settings->uuid(), $settings->friendlyName()], null, $this->identityFailing);
 
         if ($read === null) {
             return null;
@@ -254,6 +280,17 @@ class DlnaServe extends Command
         $failing = false;
 
         return $value;
+    }
+
+    /**
+     * Whether the gap between two loop passes means the machine slept: the
+     * wall clock moved on more than a minute beyond the monotonic clock. A
+     * backwards wall-clock step (NTP correcting a router with no RTC) is not
+     * a wake.
+     */
+    public static function woke(int $wallElapsed, int $monotonicElapsed): bool
+    {
+        return $wallElapsed - $monotonicElapsed > 60;
     }
 
     /**
@@ -388,13 +425,21 @@ class DlnaServe extends Command
             return true;
         }
 
-        if (preg_match('/^(docker|br-|veth|virbr|lxdbr|lxcbr|vnic|vmnet|vboxnet|bridge\d|cni|flannel|podman|tap|tun)/i', $name) === 1) {
+        // `br-` plus Docker's twelve hex digits only: OpenWrt's LAN bridge is
+        // `br-lan`, and that router is exactly where the warning matters.
+        // `bridge0` on macOS is often a real Thunderbolt link, so not skipped.
+        if (preg_match('/^(docker\d|br-[0-9a-f]{12}$|veth|virbr|lxdbr|lxcbr|vnic|vmnet|vboxnet|cni|flannel|podman|zt)/i', $name) === 1) {
             return true;
         }
 
         $description = (string) ($details['description'] ?? '');
 
-        return preg_match('/hyper-v|vethernet|wsl|wireguard|tap-|tap adapter|virtualbox|vmware|loopback|vpn/i', $description) === 1;
+        // Words, not substrings: "VPN" alone also matched adapters merely
+        // described as VPN-capable. A real LAN behind a Hyper-V external
+        // switch shares the virtual adapter's description, so that host can
+        // still miss the warning — it is advisory, and erring quiet there is
+        // the lesser harm than warning every WSL machine.
+        return preg_match('/hyper-v|\bwsl\b|wireguard|\btap-windows\b|virtualbox|vmware|\bloopback\b|anyconnect|zerotier/i', $description) === 1;
     }
 
     /** RFC 1918 only: not loopback, link-local or CGNAT (100.64/10). */
@@ -451,6 +496,22 @@ class DlnaServe extends Command
      */
     public static function foreignSource(string $from, ?string $ours, array $interfaces): bool
     {
+        // On our own network first. Another interface's subnet can overlap
+        // ours — Docker's 172.17/16 over a LAN that later turned out to be
+        // 172.17.5.x, a k3s 10.0/16 over 10.0.1.x — and checked the other way
+        // round, every TV on our own LAN was ignored.
+        foreach ($ours !== null ? ($interfaces[$ours]['unicast'] ?? []) : [] as $entry) {
+            $own = $entry['address'] ?? null;
+
+            if (is_string($own) && filter_var($own, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+                $subnet = self::subnetOf($own, $interfaces[$ours]);
+
+                if ($subnet !== null && self::inRange($from, $subnet)) {
+                    return false;
+                }
+            }
+        }
+
         foreach ($interfaces as $name => $details) {
             if ((string) $name === $ours) {
                 continue;
@@ -468,8 +529,15 @@ class DlnaServe extends Command
                     continue;
                 }
 
+                // Our own address on that interface is a client on this
+                // machine (VLC, say) whose search left by the VPN, and it can
+                // reach the LAN address perfectly well.
+                if ($address === $from) {
+                    return false;
+                }
+
                 // A tunnel's far end, which a /32 netmask would not cover.
-                if (($entry['ptp'] ?? null) === $from || $address === $from) {
+                if (($entry['ptp'] ?? null) === $from) {
                     return true;
                 }
 
@@ -479,7 +547,9 @@ class DlnaServe extends Command
                 // longer means every search is dropped.
                 $subnet = self::subnetOf($address, $details);
 
-                if ($subnet !== null && self::inRange($from, $subnet)) {
+                // Shorter than /8 is not a network anyone sits on; a /0 from
+                // a misreported netmask would make every source foreign.
+                if ($subnet !== null && (int) explode('/', $subnet)[1] >= 8 && self::inRange($from, $subnet)) {
                     return true;
                 }
             }
@@ -597,7 +667,8 @@ class DlnaServe extends Command
         // process joined it, not only ours — so on a router running another
         // UPnP daemon, searches from the uplink or the VPN arrived here and
         // were answered with the LAN address. Off, it hears only its own
-        // join. Not fatal: the subnet check in answerSearches covers it too.
+        // join. Not fatal: foreignSource() in answerSearches also ignores
+        // searches from this machine's other networks.
         if (PHP_OS_FAMILY === 'Linux') {
             error_clear_last();
             socket_clear_error($socket);
@@ -712,7 +783,16 @@ class DlnaServe extends Command
         // Not searches from this machine's other networks: one from the
         // uplink or a VPN would be answered with an address it cannot reach.
         if (self::foreignSource($from, $interface, $interfaces)) {
-            Log::debug('DLNA: ignored a search from another of this machine\'s networks', ['from' => $from]);
+            // Once per source at warning: a TV that never finds the server
+            // because of this rule should be findable in the log, and a
+            // chatty uplink should not fill it.
+            if (! isset($this->ignoredSources[$from])) {
+                $this->ignoredSources[$from] = true;
+                Log::warning('DLNA: ignoring searches from another of this machine\'s networks', [
+                    'from' => $from,
+                    'advertising_on' => $interface,
+                ]);
+            }
 
             return;
         }
