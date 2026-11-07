@@ -53,7 +53,7 @@ class DlnaDiscoveryTest extends TestCase
 
     private function searchResponse(string $target = 'urn:schemas-upnp-org:device:MediaServer:1'): string
     {
-        return $this->invoke('response', [$this->settings, 'http://192.168.1.5:8200', $target]);
+        return $this->invoke('response', [$this->settings->uuid(), 'http://192.168.1.5:8200', $target]);
     }
 
     public function test_a_search_reply_carries_the_headers_a_device_needs(): void

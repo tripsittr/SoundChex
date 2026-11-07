@@ -200,4 +200,244 @@ class DlnaAddressingTest extends TestCase
     {
         $this->assertNull(DlnaServe::subnetOf('192.168.1.10', ['unicast' => [['family' => 2, 'address' => '192.168.1.10']]]));
     }
+
+    /** Linux with Docker: the bridge is not a second LAN. Every such box warned. */
+    public function test_container_and_vm_bridges_are_not_lans(): void
+    {
+        $interfaces = [
+            'eth0' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '192.168.1.10', 'netmask' => '255.255.255.0']]],
+            'docker0' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '172.17.0.1', 'netmask' => '255.255.0.0']]],
+            'br-3f2a9c0d1e2b' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '172.18.0.1', 'netmask' => '255.255.0.0']]],
+            'virbr0' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '192.168.122.1', 'netmask' => '255.255.255.0']]],
+        ];
+
+        $this->assertNull(DlnaServe::autoAddressDoubt('192.168.1.10', 'eth0', $interfaces));
+    }
+
+    /** Windows: no ptp flag and adapters listed while down; known by description. */
+    public function test_windows_virtual_and_down_adapters_are_not_lans(): void
+    {
+        $interfaces = [
+            '{A1}' => ['up' => true, 'description' => 'Intel(R) Wi-Fi 6 AX201', 'unicast' => [['family' => 2, 'address' => '192.168.1.20']]],
+            '{B2}' => ['up' => true, 'description' => 'Hyper-V Virtual Ethernet Adapter', 'unicast' => [['family' => 2, 'address' => '172.29.16.1']]],
+            '{C3}' => ['up' => true, 'description' => 'WireGuard Tunnel', 'unicast' => [['family' => 2, 'address' => '10.2.0.2']]],
+            '{D4}' => ['up' => false, 'description' => 'Realtek PCIe GbE', 'unicast' => [['family' => 2, 'address' => '192.168.0.5']]],
+        ];
+
+        $this->assertNull(DlnaServe::autoAddressDoubt('192.168.1.20', '{A1}', $interfaces));
+    }
+
+    /** A real second LAN still warns: two physical networks, both up. */
+    public function test_two_physical_lans_still_warn(): void
+    {
+        $interfaces = [
+            'eth0' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '192.168.1.10']]],
+            'wlan0' => ['up' => true, 'unicast' => [['family' => 2, 'address' => '192.168.50.1']]],
+        ];
+
+        $this->assertStringContainsString('several networks', DlnaServe::autoAddressDoubt('192.168.1.10', 'eth0', $interfaces));
+    }
+
+    /** No interface found for the guessed address: no deprecation, no crash. */
+    public function test_a_guess_with_no_interface_is_handled(): void
+    {
+        $this->assertNull(DlnaServe::autoAddressDoubt('192.168.1.10', null, []));
+    }
+
+    /** HatCOS: searches from the uplink and the VPN are not answered. */
+    public function test_searches_from_our_other_networks_are_foreign(): void
+    {
+        $router = $this->router();
+
+        $this->assertTrue(DlnaServe::foreignSource('100.64.1.1', 'wlan0', $router));
+        $this->assertTrue(DlnaServe::foreignSource('10.2.0.1', 'wlan0', $router), 'the tunnel peer');
+        // Our own VPN address is a client on this machine; it can reach us.
+        $this->assertFalse(DlnaServe::foreignSource('10.2.0.2', 'wlan0', $router), 'our own VPN address');
+        $this->assertFalse(DlnaServe::foreignSource('192.168.50.77', 'wlan0', $router));
+    }
+
+    /**
+     * A TV on an IoT VLAN, relayed in by an SSDP relay, used to be answered
+     * and must still be. The first version of the filter dropped it.
+     */
+    public function test_relayed_searches_from_another_vlan_are_answered(): void
+    {
+        $this->assertFalse(DlnaServe::foreignSource('192.168.60.25', 'wlan0', $this->router()));
+    }
+
+    /** Loopback is not "another network"; a /32 does not swallow everything. */
+    public function test_loopback_and_host_routes_do_not_filter(): void
+    {
+        $this->assertFalse(DlnaServe::foreignSource('127.0.0.1', 'wlan0', $this->router()));
+
+        $hostRoute = [
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '192.168.1.10', 'netmask' => '255.255.255.255']]],
+            'eth1' => ['unicast' => [['family' => 2, 'address' => '192.168.2.10', 'netmask' => '255.255.255.255']]],
+        ];
+
+        $this->assertFalse(DlnaServe::foreignSource('192.168.1.77', 'eth0', $hostRoute));
+        $this->assertFalse(DlnaServe::foreignSource('192.168.2.77', 'eth0', $hostRoute));
+    }
+
+    /** A /31 uplink's far end is another of our networks. */
+    public function test_the_far_end_of_a_31_uplink_is_foreign(): void
+    {
+        $interfaces = [
+            'wan0' => ['unicast' => [['family' => 2, 'address' => '203.0.113.10', 'netmask' => '255.255.255.254']]],
+            'lan0' => ['unicast' => [['family' => 2, 'address' => '192.168.1.1', 'netmask' => '255.255.255.0']]],
+        ];
+
+        $this->assertTrue(DlnaServe::foreignSource('203.0.113.11', 'lan0', $interfaces));
+    }
+
+    public function test_a_prefix_out_of_range_is_clamped_not_an_error(): void
+    {
+        $this->assertTrue(DlnaServe::inRange('10.0.0.1', '10.0.0.1/40'));
+        $this->assertTrue(DlnaServe::inRange('8.8.8.8', '0.0.0.0/0'));
+        $this->assertFalse(DlnaServe::inRange('10.0.0.2', '10.0.0.1/32'));
+    }
+
+    /**
+     * The Windows fix: a join by name that fails falls back to the default
+     * interface, and IP_MULTICAST_IF is then not given the unusable name.
+     */
+    public function test_a_failed_join_by_name_falls_back_to_the_default_interface(): void
+    {
+        $tried = [];
+        $byName = DlnaServe::joinWithFallback('{GUID-1234}', function (string|int $on) use (&$tried): bool {
+            $tried[] = $on;
+
+            return $on === 0;
+        });
+
+        $this->assertFalse($byName);
+        $this->assertSame(['{GUID-1234}', 0], $tried);
+    }
+
+    public function test_a_join_by_name_that_works_does_not_also_join_the_default(): void
+    {
+        // Joining 0 after a named join fails with EADDRINUSE on Linux.
+        $tried = [];
+        $byName = DlnaServe::joinWithFallback('eth0', function (string|int $on) use (&$tried): bool {
+            $tried[] = $on;
+
+            return true;
+        });
+
+        $this->assertTrue($byName);
+        $this->assertSame(['eth0'], $tried);
+    }
+
+    public function test_no_interface_joins_the_default(): void
+    {
+        $tried = [];
+        DlnaServe::joinWithFallback(null, function (string|int $on) use (&$tried): bool {
+            $tried[] = $on;
+
+            return true;
+        });
+
+        $this->assertSame([0], $tried);
+    }
+
+    /**
+     * Another interface's subnet overlapping ours must not hide our own LAN.
+     * Docker's 172.17/16 over a LAN on 172.17.5.x dropped every TV.
+     */
+    public function test_our_own_lan_wins_over_an_overlapping_subnet(): void
+    {
+        $interfaces = [
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '172.17.5.10', 'netmask' => '255.255.255.0']]],
+            'docker0' => ['unicast' => [['family' => 2, 'address' => '172.17.0.1', 'netmask' => '255.255.0.0']]],
+        ];
+
+        $this->assertFalse(DlnaServe::foreignSource('172.17.5.20', 'eth0', $interfaces));
+        // Outside our /24 but inside the bridge's /16: that one is foreign.
+        $this->assertTrue(DlnaServe::foreignSource('172.17.9.9', 'eth0', $interfaces));
+    }
+
+    /** A /0 from a misreported netmask must not make everything foreign. */
+    public function test_a_zero_netmask_on_another_interface_is_ignored(): void
+    {
+        $interfaces = [
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '192.168.1.10', 'netmask' => '255.255.255.0']]],
+            'odd0' => ['unicast' => [['family' => 2, 'address' => '10.9.9.9', 'netmask' => '0.0.0.0']]],
+        ];
+
+        $this->assertFalse(DlnaServe::foreignSource('192.168.7.7', 'eth0', $interfaces));
+    }
+
+    /** OpenWrt's LAN bridge is a real LAN; Docker's are not. */
+    public function test_br_lan_is_not_mistaken_for_a_docker_bridge(): void
+    {
+        $this->assertFalse(DlnaServe::isVirtual('br-lan', []));
+        $this->assertTrue(DlnaServe::isVirtual('br-3f2a9c0d1e2b', []));
+        $this->assertTrue(DlnaServe::isVirtual('docker0', []));
+        $this->assertTrue(DlnaServe::isVirtual('ztabcdef12', []));
+        $this->assertFalse(DlnaServe::isVirtual('bridge0', []), 'often a real Thunderbolt link on macOS');
+        $this->assertFalse(DlnaServe::isVirtual('{X}', ['description' => 'Intel Ethernet (VPN-ready)']));
+    }
+
+    /** Wall time far ahead of monotonic time is a wake; a backwards step is not. */
+    public function test_a_wake_from_sleep_is_noticed(): void
+    {
+        $this->assertTrue(DlnaServe::woke(3600, 1), 'an hour asleep');
+        $this->assertFalse(DlnaServe::woke(1, 1), 'an ordinary second');
+        $this->assertFalse(DlnaServe::woke(50, 1), 'a small NTP step forward');
+        $this->assertFalse(DlnaServe::woke(-3600, 1), 'the clock stepped back');
+    }
+
+    /**
+     * A wide LAN must not swallow a VPN or uplink inside it: the most
+     * specific subnet decides. The own-subnet-first rule answered both.
+     */
+    public function test_a_wide_lan_does_not_swallow_a_narrower_other_network(): void
+    {
+        $interfaces = [
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '10.0.0.5', 'netmask' => '255.0.0.0']]],
+            'tun0' => ['unicast' => [['family' => 2, 'address' => '10.2.0.2', 'netmask' => '255.255.255.255', 'ptp' => '10.2.0.1']]],
+            'wan0' => ['unicast' => [['family' => 2, 'address' => '10.200.0.2', 'netmask' => '255.255.255.252']]],
+        ];
+
+        $this->assertTrue(DlnaServe::foreignSource('10.2.0.1', 'eth0', $interfaces), 'the VPN peer');
+        $this->assertTrue(DlnaServe::foreignSource('10.200.0.1', 'eth0', $interfaces), 'the uplink peer');
+        $this->assertFalse(DlnaServe::foreignSource('10.4.5.6', 'eth0', $interfaces), 'an ordinary LAN host');
+    }
+
+    /** Swarm's gateway bridge and macOS's VM bridges are virtual; bridge0 is not. */
+    public function test_more_virtual_bridges_are_recognised(): void
+    {
+        $this->assertTrue(DlnaServe::isVirtual('docker_gwbridge', []));
+        $this->assertTrue(DlnaServe::isVirtual('bridge100', []));
+        $this->assertFalse(DlnaServe::isVirtual('bridge0', []));
+        $this->assertTrue(DlnaServe::isVirtual('{E}', ['description' => 'Tailscale Tunnel']));
+        $this->assertTrue(DlnaServe::isVirtual('{F}', ['description' => 'Wintun Userspace Tunnel']));
+    }
+
+    /**
+     * Wi-Fi and Ethernet on one LAN, advertising on the one listed second:
+     * a tie went to the first, and every TV was ignored.
+     */
+    public function test_a_tie_on_a_shared_lan_goes_to_our_interface(): void
+    {
+        $interfaces = [
+            'en0' => ['unicast' => [['family' => 2, 'address' => '192.168.1.20', 'netmask' => '255.255.255.0']]],
+            'en7' => ['unicast' => [['family' => 2, 'address' => '192.168.1.21', 'netmask' => '255.255.255.0']]],
+        ];
+
+        $this->assertFalse(DlnaServe::foreignSource('192.168.1.50', 'en7', $interfaces));
+        $this->assertFalse(DlnaServe::foreignSource('192.168.1.50', 'en0', $interfaces));
+    }
+
+    /** No netmask on our interface, or no interface: answer rather than drop. */
+    public function test_without_our_own_subnet_nothing_is_foreign_by_subnet(): void
+    {
+        $interfaces = [
+            'en0' => ['unicast' => [['family' => 2, 'address' => '10.1.2.5']]],
+            'utun3' => ['unicast' => [['family' => 2, 'address' => '10.0.0.2', 'netmask' => '255.0.0.0']]],
+        ];
+
+        $this->assertFalse(DlnaServe::foreignSource('10.1.2.50', 'en0', $interfaces));
+        $this->assertFalse(DlnaServe::foreignSource('10.1.2.50', null, $interfaces));
+    }
 }
