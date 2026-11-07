@@ -122,6 +122,14 @@ pub fn headless_main() -> Option<i32> {
     }
 }
 
+/// Whether `SOUNDCHEX_DLNA` asks for DLNA discovery: 1, true, yes or on, in
+/// any case. Anything else, or unset, is off — the default, because a host
+/// that runs its own `dlna:serve` must not get a second.
+#[cfg(desktop)]
+fn dlna_enabled(value: Option<&str>) -> bool {
+    value.is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+}
+
 /// The runtime layout for a resource and data directory — shared by the window
 /// and headless mode, so the two cannot drift into serving different installs.
 #[cfg(desktop)]
@@ -162,8 +170,7 @@ fn layout_from(
         headless: false,
         // SOUNDCHEX_DLNA=1 runs DLNA discovery under this supervisor too;
         // headless also takes --dlna.
-        dlna: std::env::var("SOUNDCHEX_DLNA")
-            .is_ok_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")),
+        dlna: dlna_enabled(std::env::var("SOUNDCHEX_DLNA").ok().as_deref()),
         fpm: std::env::var("SOUNDCHEX_FPM")
             .ok()
             .filter(|v| !v.is_empty())
@@ -1501,6 +1508,19 @@ mod tests {
     }
 
     use super::runit;
+
+    #[test]
+    fn soundchex_dlna_is_off_unless_clearly_on() {
+        for on in ["1", "true", "TRUE", "yes", "On", " yes "] {
+            assert!(super::dlna_enabled(Some(on)), "{on:?} should enable DLNA");
+        }
+
+        for off in ["", "0", "false", "no", "off", "2", "enabled"] {
+            assert!(!super::dlna_enabled(Some(off)), "{off:?} should not enable DLNA");
+        }
+
+        assert!(!super::dlna_enabled(None));
+    }
 
     #[test]
     fn sv_status_reads_a_running_service() {
