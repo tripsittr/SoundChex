@@ -61,6 +61,24 @@ const PROCESSES: &[&str] = &["php-fpm", "caddy", "queue", "scheduler"];
 #[cfg(windows)]
 const PROCESSES: &[&str] = &["frankenphp", "queue", "scheduler"];
 
+/// The processes this layout runs: the platform's set, plus DLNA discovery
+/// when asked for.
+///
+/// DLNA is opt-in rather than always on. A host that already runs
+/// `dlna:serve` itself (HatCOS does) would otherwise get a second copy, and two
+/// servers answering every search under one UUID confuse the devices they are
+/// meant to help. It costs little left running: it only advertises while DLNA
+/// is switched on in Settings.
+fn processes(layout: &Layout) -> Vec<&'static str> {
+    let mut names = PROCESSES.to_vec();
+
+    if layout.dlna {
+        names.push("dlna");
+    }
+
+    names
+}
+
 /// Where the bundled binaries and the app live. Resolved once at start.
 #[derive(Clone)]
 pub struct Layout {
@@ -88,6 +106,8 @@ pub struct Layout {
     /// headless one beside a window on another port) need not collide with the
     /// first on a port nobody sees.
     pub fpm: String,
+    /// Also run `artisan dlna:serve` (see `processes`).
+    pub dlna: bool,
 }
 
 impl Layout {
@@ -180,8 +200,11 @@ impl Supervisor {
     pub fn status(&self) -> Status {
         let running = self.running.load(Ordering::SeqCst);
         let live = self.liveness.lock().map(|m| m.clone()).unwrap_or_default();
+        // DLNA only when it is one of this run's processes, which the
+        // watcher records in `liveness` as soon as it starts.
         let processes = PROCESSES
             .iter()
+            .chain(live.contains_key("dlna").then_some(&"dlna"))
             .map(|name| ProcessStatus {
                 name: name.to_string(),
                 running: live.get(*name).copied().unwrap_or(false),
@@ -200,9 +223,10 @@ fn watch(
     layout: Layout,
 ) {
     let mut children: HashMap<&str, Child> = HashMap::new();
+    let names = processes(&layout);
 
     // Initial start, in order.
-    for name in PROCESSES {
+    for name in names.iter().copied() {
         match spawn(name, &layout) {
             Ok(child) => {
                 children.insert(name, child);
@@ -228,7 +252,7 @@ fn watch(
         }
 
         // Respawn anything that has exited.
-        for name in PROCESSES {
+        for name in names.iter().copied() {
             let exited = match children.get_mut(name) {
                 Some(c) => matches!(c.try_wait(), Ok(Some(_))),
                 None => true,
@@ -422,6 +446,13 @@ fn spawn(name: &str, layout: &Layout) -> std::io::Result<Child> {
         "scheduler" => {
             let mut c = Command::new(layout.exe("php"));
             c.arg(layout.app_dir.join("artisan")).arg("schedule:work");
+            c
+        }
+        // The port it advertises comes from SOUNDCHEX_LISTEN, set below for
+        // every child, so it always names the port Caddy is on.
+        "dlna" => {
+            let mut c = Command::new(layout.exe("php"));
+            c.arg(layout.app_dir.join("artisan")).arg("dlna:serve");
             c
         }
         other => {
@@ -796,6 +827,8 @@ pub fn write_windows_php_ini(bin_dir: &Path, dir: &Path) -> Result<PathBuf, Stri
         "mbstring",
         "openssl",
         "pdo_sqlite",
+        // DLNA discovery holds a UDP multicast socket.
+        "sockets",
         "sodium",
         "sqlite3",
         "zip",
