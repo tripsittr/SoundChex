@@ -83,8 +83,11 @@ Install-CommandService -Name 'SoundChexScheduler' -DisplayName 'SoundChex Schedu
 # DLNA discovery (S-7): holds a UDP socket on port 1900 so TVs and consoles
 # find the media server. Harmless when DLNA is switched off — the command
 # checks the setting on every loop and simply does not answer.
+# The port it advertises is the one FrankenPHP/Caddy listens on: the
+# command's own default did not match, and devices were sent nowhere.
+$dlnaPort = ($Listen -split ':')[-1]
 Install-CommandService -Name 'SoundChexDlna' -DisplayName 'SoundChex DLNA Discovery' `
-    -Exe $php -Arguments "`"$artisan`" dlna:serve"
+    -Exe $php -Arguments "`"$artisan`" dlna:serve --port=$dlnaPort"
 
 # HTTP front:
 if (Test-Path $phpCgi) {

@@ -30,6 +30,21 @@ return [
     | the HatCOS package's choices, overridable where a host differs.
     |
     */
+    /*
+    |--------------------------------------------------------------------------
+    | DLNA discovery
+    |--------------------------------------------------------------------------
+    |
+    | The LAN address `dlna:serve` advertises and multicasts on. Empty means the
+    | address of the default route, which is wrong on a machine that routes
+    | between networks (HatCOS: the Starlink side, the Wi-Fi network, a VPN):
+    | set the address of the network the TVs are on. `--address` overrides it.
+    |
+    */
+    'dlna' => [
+        'address' => env('DLNA_ADDRESS'),
+    ],
+
     'runit' => [
         'service' => env('SOUNDCHEX_RUNIT_SERVICE', 'soundchex-server'),
         'log' => env('SOUNDCHEX_RUNIT_LOG', '/var/log/soundchex-server/current'),

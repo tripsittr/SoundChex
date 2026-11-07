@@ -10,6 +10,9 @@ After=network.target
 
 [Service]
 Type=simple
+# The port it advertises is the one Caddy listens on; without this it fell
+# back to a default that did not match, and devices were sent nowhere.
+Environment=SOUNDCHEX_LISTEN={{LISTEN}}
 ExecStart={{RUNTIME_DIR}}/bin/php {{APP_DIR}}/artisan dlna:serve
 WorkingDirectory={{APP_DIR}}
 Restart=always
