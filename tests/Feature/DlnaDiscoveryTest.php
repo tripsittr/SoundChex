@@ -116,33 +116,4 @@ class DlnaDiscoveryTest extends TestCase
         $this->assertSame('', $this->invoke('searchTarget', ["M-SEARCH * HTTP/1.1\r\nHOST: x\r\n\r\n"]));
         $this->assertFalse($this->invoke('wantsUs', ['']));
     }
-
-    /**
-     * A wrong address is refused before any socket is opened, so neither of
-     * these touches port 1900. Advertising an address the machine does not
-     * have would send every device somewhere that never answers.
-     */
-    public function test_an_address_that_is_not_an_ipv4_address_is_refused(): void
-    {
-        $this->artisan('dlna:serve', ['--address' => 'not-an-ip', '--once' => true])
-            ->expectsOutputToContain('Not an IPv4 address')
-            ->assertFailed();
-    }
-
-    public function test_an_address_no_interface_has_is_refused(): void
-    {
-        // TEST-NET-3: documentation only, never assigned to a real interface.
-        $this->artisan('dlna:serve', ['--address' => '203.0.113.77', '--once' => true])
-            ->expectsOutputToContain('No network interface has the address 203.0.113.77')
-            ->assertFailed();
-    }
-
-    public function test_the_address_can_come_from_configuration(): void
-    {
-        config(['soundchex.dlna.address' => '203.0.113.78']);
-
-        $this->artisan('dlna:serve', ['--once' => true])
-            ->expectsOutputToContain('203.0.113.78')
-            ->assertFailed();
-    }
 }

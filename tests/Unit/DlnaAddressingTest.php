@@ -79,4 +79,125 @@ class DlnaAddressingTest extends TestCase
         $this->assertNull(DlnaServe::interfaceFor('192.168.1.99', $interfaces));
         $this->assertNull(DlnaServe::interfaceFor('192.168.50.1', []));
     }
+
+    /** The shape net_get_interfaces() returns on Linux, for a router like HatCOS. */
+    private function router(): array
+    {
+        return [
+            'lo' => ['unicast' => [['family' => 2, 'address' => '127.0.0.1', 'netmask' => '255.0.0.0']]],
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '100.64.1.20', 'netmask' => '255.192.0.0']]],
+            'wlan0' => ['unicast' => [['family' => 2, 'address' => '192.168.50.1', 'netmask' => '255.255.255.0']]],
+            'wg0' => ['unicast' => [['family' => 2, 'address' => '10.2.0.2', 'netmask' => '255.255.255.255', 'ptp' => '10.2.0.1']]],
+        ];
+    }
+
+    /**
+     * Refusals decided without opening a socket. They used to be tested by
+     * running the command, which would have bound UDP 1900 on the developer's
+     * real network the moment a refusal regressed.
+     */
+    public function test_an_unusable_explicit_address_is_refused(): void
+    {
+        $this->assertStringContainsString('Not an IPv4 address', DlnaServe::addressProblem('not-an-ip', $this->router()));
+        $this->assertStringContainsString('Not an IPv4 address', DlnaServe::addressProblem('fe80::1', $this->router()));
+        $this->assertStringContainsString('No network interface has the address 203.0.113.7', DlnaServe::addressProblem('203.0.113.7', $this->router()));
+        $this->assertNull(DlnaServe::addressProblem('192.168.50.1', $this->router()));
+        $this->assertNull(DlnaServe::addressProblem(null, $this->router()));
+    }
+
+    public function test_the_option_wins_over_configuration_and_blank_means_guess(): void
+    {
+        $this->assertSame('192.168.50.1', DlnaServe::explicitAddress('192.168.50.1', '10.0.0.5'));
+        $this->assertSame('10.0.0.5', DlnaServe::explicitAddress(null, ' 10.0.0.5 '));
+        $this->assertSame('10.0.0.5', DlnaServe::explicitAddress('', '10.0.0.5'));
+        $this->assertNull(DlnaServe::explicitAddress(null, null));
+        $this->assertNull(DlnaServe::explicitAddress('  ', ''));
+    }
+
+    /** The cases that made a router advertise the wrong network, silently. */
+    public function test_a_guessed_address_on_the_wrong_network_is_doubted(): void
+    {
+        $this->assertStringContainsString('point-to-point', DlnaServe::autoAddressDoubt('10.2.0.2', 'wg0', $this->router()));
+        $this->assertStringContainsString('not a private LAN address', DlnaServe::autoAddressDoubt('100.64.1.20', 'eth0', $this->router()));
+    }
+
+    public function test_a_guess_is_doubted_when_there_are_several_lans(): void
+    {
+        $interfaces = [
+            'eth0' => ['unicast' => [['family' => 2, 'address' => '192.168.1.10']]],
+            'wlan0' => ['unicast' => [['family' => 2, 'address' => '192.168.50.1']]],
+        ];
+
+        $this->assertStringContainsString('several networks', DlnaServe::autoAddressDoubt('192.168.1.10', 'eth0', $interfaces));
+    }
+
+    /**
+     * A VPN alongside one LAN is still one LAN. This Mac runs exactly that,
+     * and the first version warned about "several networks" on it.
+     */
+    public function test_a_tunnel_does_not_count_as_a_second_lan(): void
+    {
+        $interfaces = [
+            'en0' => ['unicast' => [['family' => 2, 'address' => '192.168.1.155', 'netmask' => '255.255.255.0']]],
+            'utun5' => ['unicast' => [['family' => 2, 'address' => '10.2.0.2', 'netmask' => '255.255.255.255', 'ptp' => '10.2.0.2']]],
+        ];
+
+        $this->assertNull(DlnaServe::autoAddressDoubt('192.168.1.155', 'en0', $interfaces));
+    }
+
+    /** One ordinary LAN: no warning to cry wolf on every home server. */
+    public function test_an_ordinary_single_lan_guess_is_not_doubted(): void
+    {
+        $interfaces = [
+            'lo0' => ['unicast' => [['family' => 2, 'address' => '127.0.0.1']]],
+            'en0' => ['unicast' => [['family' => 2, 'address' => '192.168.1.10'], ['family' => 30, 'address' => 'fe80::1']]],
+        ];
+
+        $this->assertNull(DlnaServe::autoAddressDoubt('192.168.1.10', 'en0', $interfaces));
+    }
+
+    public function test_announcing_follows_the_setting_and_repeats(): void
+    {
+        // Switched on: announce now.
+        $this->assertSame('ssdp:alive', DlnaServe::transition(false, true, 0));
+        // On and announced recently: nothing.
+        $this->assertNull(DlnaServe::transition(true, true, 899));
+        // On for fifteen minutes since the last: again, so a listening device
+        // does not drop it when its thirty-minute cache runs out.
+        $this->assertSame('ssdp:alive', DlnaServe::transition(true, true, 900));
+        // Switched off while announced: say goodbye.
+        $this->assertSame('ssdp:byebye', DlnaServe::transition(true, false, 10));
+        // Off and never announced: silence, whatever the time.
+        $this->assertNull(DlnaServe::transition(false, false, 5000));
+    }
+
+    public function test_every_notification_type_is_announced(): void
+    {
+        $sent = DlnaServe::notifications('abc');
+
+        $this->assertSame([
+            ['upnp:rootdevice', 'uuid:abc::upnp:rootdevice'],
+            ['uuid:abc', 'uuid:abc'],
+            ['urn:schemas-upnp-org:device:MediaServer:1', 'uuid:abc::urn:schemas-upnp-org:device:MediaServer:1'],
+            ['urn:schemas-upnp-org:service:ContentDirectory:1', 'uuid:abc::urn:schemas-upnp-org:service:ContentDirectory:1'],
+        ], $sent);
+    }
+
+    /** Searches from the uplink or the VPN are not answered with the LAN address. */
+    public function test_searches_are_answered_only_from_the_advertised_network(): void
+    {
+        $subnet = DlnaServe::subnetOf('192.168.50.1', $this->router()['wlan0']);
+
+        $this->assertSame('192.168.50.0/24', $subnet);
+        $this->assertTrue(DlnaServe::inRange('192.168.50.77', $subnet));
+        $this->assertFalse(DlnaServe::inRange('100.64.1.1', $subnet));
+        $this->assertFalse(DlnaServe::inRange('10.2.0.1', $subnet));
+        $this->assertFalse(DlnaServe::inRange('not-an-ip', $subnet));
+    }
+
+    /** No netmask to go on: no subnet, and so no filtering rather than dropping everything. */
+    public function test_without_a_netmask_there_is_no_subnet_filter(): void
+    {
+        $this->assertNull(DlnaServe::subnetOf('192.168.1.10', ['unicast' => [['family' => 2, 'address' => '192.168.1.10']]]));
+    }
 }
