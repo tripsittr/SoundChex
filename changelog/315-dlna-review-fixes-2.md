@@ -57,9 +57,10 @@ The rules, in order:
    second review's fix (our own subnet first) got the first case right and
    the second wrong; the third review caught it.
 4. **A source on none of our networks is answered.** This covers routed and
-   relayed searches. So is every source when our own interface, or its
-   netmask, is unknown: with nothing to compare against, answering is the
-   safe side.
+   relayed searches. When our own interface, or its netmask, is unknown, every
+   source except a tunnel's far end is answered: with nothing to compare
+   against, answering is the safe side. In practice this does not arise,
+   because Windows, macOS and Linux all report a netmask.
 
 Subnets shorter than /8 are ignored. The first 256 ignored sources are each
 logged as a warning; after that, one line says logging has stopped.
@@ -100,13 +101,19 @@ and the HTTP port from the LAN.
 - `ssdp:all` gets one reply rather than one per type, and `ST: uuid:…` is not
   answered. Both predate #312.
 - The Server window does not show the `dlna` process.
+- If our own interface reported a 0.0.0.0 netmask, another interface's subnet
+  could still make a LAN source foreign. No OS is known to report that.
+- Windows' `net_get_interfaces()` lists only Ethernet, Wi-Fi and loopback
+  adapters, so WireGuard and Wintun never appear there, and those description
+  patterns match only elsewhere.
 
 ## Tests
 
-A subagent reviewed this code four times: twice on the #314 branch, then twice
-on this branch. The fourth review found that the longest-prefix rule let a tie
-go to whichever interface was listed first. That is fixed and tested. This PR
-answers all four reviews. `DlnaAddressingTest` (37) and `DlnaSettingsReadTest` (3) cover:
+A subagent reviewed this code five times: twice on the #314 branch, then three
+times on this branch. The fourth review found that the longest-prefix rule let
+a tie go to whichever interface was listed first. That is fixed and tested.
+The fifth found no blocking or behavioural problems; its wording fixes are
+applied and its two edge cases are listed above. `DlnaAddressingTest` (37) and `DlnaSettingsReadTest` (3) cover:
 - the join fallback and the settings read;
 - the bridge and Windows-adapter exclusions;
 - the foreign-source rules: overlapping subnets either way round, a relayed
@@ -122,6 +129,7 @@ Each of these mutations turns them red:
 - removing the re-announce;
 - removing the point-to-point check;
 - breaking a tie in favour of the first interface listed;
+- removing the early answer when our own subnet is unknown;
 - removing the /8 floor;
 - letting the last matching subnet win instead of the most specific.
 

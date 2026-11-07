@@ -524,11 +524,6 @@ class DlnaServe extends Command
             }
         }
 
-        // Then the most specific subnet containing the source decides whose
-        // network it is on. Neither order alone works: checking ours first
-        // let a wide LAN (a 10/8) swallow a VPN or uplink peer inside it, and
-        // checking the others first let Docker's 172.17/16 swallow a LAN on
-        // 172.17.5.x. Longest prefix handles both.
         // Without our own interface, or without its netmask, there is no way
         // to tell our network from another one; answering is the safe side,
         // since dropping every TV is the failure that cannot be seen.
@@ -536,6 +531,11 @@ class DlnaServe extends Command
             return false;
         }
 
+        // Then the most specific subnet containing the source decides whose
+        // network it is on. Neither order alone works: checking ours first
+        // let a wide LAN (a 10/8) swallow a VPN or uplink peer inside it, and
+        // checking the others first let Docker's 172.17/16 swallow a LAN on
+        // 172.17.5.x. Longest prefix handles both.
         $bestPrefix = -1;
         $bestOwner = null;
 
