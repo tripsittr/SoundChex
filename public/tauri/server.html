@@ -181,6 +181,17 @@
         #status[data-error='true'] {
             color: var(--bad);
         }
+
+        .managed[hidden] {
+            display: none;
+        }
+
+        .managed__detail {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.75rem;
+            color: var(--ink-500);
+            word-break: break-all;
+        }
     </style>
 </head>
 
@@ -188,6 +199,34 @@
     <main>
         <h1>SoundChex Server</h1>
         <p class="lede">The host for your library. This is where it runs, not where you watch.</p>
+
+        <!--
+          Shown when the server is run by something other than this window: a
+          headless `soundchex-server --headless`, or the runit service HatCOS
+          installs. Starting a second stack beside it would fight it for the
+          port, so this window reports on it and controls it instead.
+        -->
+        <div class="card managed" id="managed" hidden>
+            <h2>Running as a service</h2>
+
+            <div class="row">
+                <span class="row__name">
+                    <span id="managed-title">SoundChex Server</span>
+                    <span class="row__hint" id="managed-hint"></span>
+                    <span class="row__hint managed__detail" id="managed-detail"></span>
+                </span>
+                <span class="state">
+                    <span class="dot" data-state="unknown" id="managed-dot" aria-hidden="true"></span>
+                    <span id="managed-state">Checking…</span>
+                </span>
+            </div>
+
+            <div class="actions">
+                <button type="button" data-control="up" hidden>Start</button>
+                <button type="button" data-control="restart" hidden>Restart</button>
+                <button type="button" data-control="down" hidden>Stop</button>
+            </div>
+        </div>
 
         <div class="card">
             <h2>Services</h2>
@@ -263,6 +302,110 @@
         const ORIGIN = 'http://127.0.0.1:8000';
 
         const invoke = (command, args) => window.__TAURI__?.core?.invoke?.(command, args);
+
+        /**
+         * A server this window did not start, or null.
+         *
+         * `{ headless_pid, listen, runit: { state, pid, detail, controllable }, service }`
+         * -- either part may be absent. Asked before anything is started: a
+         * second stack beside a headless one would lose the port and respawn
+         * forever, and the window used to start one on every launch.
+         */
+        let managedBy = null;
+
+        async function external() {
+            if (!invoke) {
+                return null;
+            }
+
+            try {
+                const found = await invoke('server_external');
+
+                return found && (found.headless_pid || found.runit) ? found : null;
+            } catch (error) {
+                console.warn('Could not ask about an external server', error);
+
+                return null;
+            }
+        }
+
+        /** Show the external server's state, and only the controls that can work. */
+        function renderManaged(found) {
+            const card = document.getElementById('managed');
+
+            managedBy = found;
+            card.hidden = !found;
+
+            if (!found) {
+                return;
+            }
+
+            const runit = found.runit;
+            const show = (action, visible) => {
+                const button = card.querySelector(`[data-control="${action}"]`);
+
+                if (button) {
+                    button.hidden = !visible;
+                    button.disabled = false;
+                }
+            };
+
+            if (runit) {
+                const up = runit.state === 'run';
+
+                document.getElementById('managed-title').textContent = `runit service ${found.service}`;
+                document.getElementById('managed-hint').textContent = runit.controllable
+                    ? 'Started at boot by runit and kept running with nobody logged in.'
+                    : 'Run by runit, but this user may not control it (no access to its supervise/ directory).';
+                document.getElementById('managed-detail').textContent = runit.detail ?? '';
+                document.getElementById('managed-dot').dataset.state = up ? 'up' : (runit.state === 'down' ? 'down' : 'unknown');
+                document.getElementById('managed-state').textContent = up
+                    ? `Running${runit.pid ? ` (pid ${runit.pid})` : ''}`
+                    : (runit.state === 'down' ? 'Stopped' : 'Unknown');
+
+                show('up', runit.controllable && !up);
+                show('restart', runit.controllable && up);
+                show('down', runit.controllable && up);
+
+                return;
+            }
+
+            // Headless, started by hand: it can be stopped, but nothing here
+            // could bring it back the way it was started.
+            document.getElementById('managed-title').textContent = 'Headless server';
+            document.getElementById('managed-hint').textContent =
+                'Started with soundchex-server --headless, outside this window.';
+            document.getElementById('managed-detail').textContent =
+                `pid ${found.headless_pid}${found.listen ? ` · listening on ${found.listen}` : ''}`;
+            document.getElementById('managed-dot').dataset.state = 'up';
+            document.getElementById('managed-state').textContent = 'Running';
+
+            show('up', false);
+            show('restart', false);
+            show('down', true);
+        }
+
+        async function control(action, button = null) {
+            if (button) {
+                button.disabled = true;
+            }
+
+            try {
+                const said = await invoke('server_control', { action });
+
+                status(said || 'Done.');
+            } catch (error) {
+                status(`Could not ${action === 'down' ? 'stop' : action === 'up' ? 'start' : 'restart'} the service: ${error}`, true);
+            }
+
+            // runit acts within a second or two; Caddy takes a moment more to
+            // answer on the port.
+            setTimeout(async () => {
+                renderManaged(await external());
+                refresh();
+            }, 2000);
+        }
+
         const listen = (event, handler) => window.__TAURI__?.event?.listen?.(event, handler);
 
         /**
@@ -467,9 +610,29 @@
         document.getElementById('recheck').addEventListener('click', refresh);
 
         document.addEventListener('click', (event) => {
+            const managedButton = event.target.closest('[data-control]');
+
+            if (managedButton) {
+                control(managedButton.dataset.control, managedButton);
+
+                return;
+            }
+
             const button = event.target.closest('[data-start]');
 
-            if (button) startRuntime(button);
+            if (!button) {
+                return;
+            }
+
+            // A stopped service is started the way it is run, not with a
+            // second stack from this window.
+            if (managedBy?.runit) {
+                control('up', button);
+
+                return;
+            }
+
+            startRuntime(button);
         });
         document.getElementById('open-admin').addEventListener('click', () => {
             window.location.href = `${ORIGIN}/admin`;
@@ -490,6 +653,18 @@
          * which is the one case this page exists for.
          */
         async function openOrExplain() {
+            // Before anything else: a headless server or a runit service owns
+            // this machine's server, so show it rather than open the panel or
+            // start a stack of our own beside it.
+            const found = await external();
+
+            if (found) {
+                renderManaged(found);
+                await refresh();
+
+                return;
+            }
+
             const identity = await serverIdentity();
 
             if (identity) {
@@ -509,6 +684,15 @@
         // Kept checking, so starting the server elsewhere brings this window back to
         // the panel without anyone having to reopen it.
         setInterval(async () => {
+            const found = await external();
+
+            if (found || managedBy) {
+                renderManaged(found);
+                refresh();
+
+                return;
+            }
+
             const identity = await serverIdentity();
 
             if (identity) {

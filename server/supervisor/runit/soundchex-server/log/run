@@ -1,0 +1,7 @@
+#!/bin/sh
+# Collects soundchex-server's stdout/stderr. Each line is tagged with the
+# process it came from -- [php-fpm], [caddy], [queue], [scheduler] -- or
+# "soundchex-server:" for the supervisor itself. The admin Services page reads
+# /var/log/soundchex-server/current (SOUNDCHEX_RUNIT_LOG to change it), so the
+# service user needs read access there.
+exec svlogd -tt /var/log/soundchex-server

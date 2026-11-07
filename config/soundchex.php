@@ -21,6 +21,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | runit
+    |--------------------------------------------------------------------------
+    |
+    | Where a runit host (HatCOS) runs SoundChex Server headless. The service
+    | name is what `sv status|up|down` is asked about; the log is the file the
+    | service's `log/run` (svlogd) writes, read by the Services page. Both are
+    | the HatCOS package's choices, overridable where a host differs.
+    |
+    */
+    'runit' => [
+        'service' => env('SOUNDCHEX_RUNIT_SERVICE', 'soundchex-server'),
+        'log' => env('SOUNDCHEX_RUNIT_LOG', '/var/log/soundchex-server/current'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Plugin API version
     |--------------------------------------------------------------------------
     |

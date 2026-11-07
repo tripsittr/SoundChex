@@ -46,6 +46,9 @@ class Services extends Page
 
     public bool $supported = true;
 
+    /** `launchd` or `runit`, when this page manages the services itself. */
+    public ?string $manager = null;
+
     /**
      * How this platform keeps the background processes alive, when it is not
      * launchd.
@@ -97,7 +100,8 @@ class Services extends Page
     {
         $host = app(HostServices::class);
 
-        $this->supported = $host->supported();
+        $this->manager = $host->manager();
+        $this->supported = $this->manager !== null;
         $this->platform = $host->platformSupervision();
         $this->services = $this->supported ? $host->all() : [];
         $this->checkedAt = now()->format('H:i:s');
@@ -133,25 +137,31 @@ class Services extends Page
 
     public function startService(string $key): void
     {
-        $started = app(HostServices::class)->start($key);
+        $host = app(HostServices::class);
+        $started = $host->start($key);
 
         $this->refreshServices();
 
         Notification::make()
             ->title($started ? 'Service started' : 'Could not start it')
-            ->body($started ? null : 'Check the log for why.')
+            ->body($started ? null : ($host->lastError ?? 'Check the log for why.'))
             ->{$started ? 'success' : 'danger'}()
             ->send();
     }
 
     public function stopService(string $key): void
     {
-        $stopped = app(HostServices::class)->stop($key);
+        // One instance for the call and its error: HostServices is not a
+        // singleton, so asking the container again for `lastError` got a
+        // fresh object and always reported nothing.
+        $host = app(HostServices::class);
+        $stopped = $host->stop($key);
 
         $this->refreshServices();
 
         Notification::make()
             ->title($stopped ? 'Service stopped' : 'Could not stop it')
+            ->body($stopped ? null : $host->lastError)
             ->{$stopped ? 'success' : 'danger'}()
             ->send();
     }

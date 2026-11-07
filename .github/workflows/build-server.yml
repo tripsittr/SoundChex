@@ -6,12 +6,23 @@
 # cli+fpm -> package (adds Caddy + cacert.pem + templates + notices).
 #
 # Artifacts: soundchex-server-<os>-<arch>.(tar.gz|zip) + .sha256, uploaded per
-# job (and attached to a release when tagged server-v*).
+# job (and attached to a release when tagged server-v*). The Linux Server app is
+# attached too, as soundchex-server-app-linux-<arch>.(deb|AppImage) + .sha256.
 
 name: Build bundled server runtime
 
 on:
   workflow_dispatch:
+    inputs:
+      # The runtime (static PHP, Caddy, ffmpeg) is half of every run and
+      # changes rarely. Naming an earlier run here skips rebuilding it and
+      # builds only the apps against that run's runtime archives -- about ten
+      # minutes instead of twenty when the change is to the app. Leave empty
+      # for a full build; tagged releases always build everything.
+      reuse_runtime_from_run:
+        description: 'Reuse the runtime from this earlier run id (empty: build it)'
+        required: false
+        default: ''
   push:
     tags:
       - 'server-v*'
@@ -27,6 +38,7 @@ env:
 jobs:
   # POSIX targets: php-fpm behind Caddy, the proven flow.
   build:
+    if: ${{ !inputs.reuse_runtime_from_run }}
     strategy:
       fail-fast: false
       matrix:
@@ -129,6 +141,7 @@ jobs:
   # DLLs it is linked against. That bundle could not start. Downloading the
   # archive whole is both correct and minutes rather than tens of minutes.
   build-windows:
+    if: ${{ !inputs.reuse_runtime_from_run }}
     runs-on: windows-latest
     timeout-minutes: 60
     name: windows-x86_64
@@ -163,13 +176,24 @@ jobs:
   # build-client.yml.
   app:
     needs: [build, build-windows]
+    # Runs when the runtime jobs succeeded, or were skipped because an earlier
+    # run's runtime is being reused. A plain `needs` would skip this whenever
+    # they are skipped.
+    if: >-
+      !cancelled()
+      && (needs.build.result == 'success' || needs.build.result == 'skipped')
+      && (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
         include:
           - { os: macos-latest,   label: macOS,   runtime: soundchex-server-macos-aarch64 }
           - { os: windows-latest, label: Windows, runtime: soundchex-server-windows-x86_64 }
-          - { os: ubuntu-latest,  label: Linux,   runtime: soundchex-server-linux-x86_64 }
+          # Both architectures: HatCOS ships for x86_64 and is tested in the
+          # native ARM VM on the Mac. The labels differ because the label names
+          # the uploaded artifact, and two legs called "Linux" would collide.
+          - { os: ubuntu-latest,    label: Linux-x86_64,  runtime: soundchex-server-linux-x86_64,  arch: x86_64 }
+          - { os: ubuntu-24.04-arm, label: Linux-aarch64, runtime: soundchex-server-linux-aarch64, arch: aarch64 }
     runs-on: ${{ matrix.os }}
     # Every job gets one. A missing runner otherwise sits 24 hours and reports
     # itself "cancelled" — which is how no server release ever published
@@ -203,8 +227,15 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # xdg-utils because the AppImage bundles xdg-open and tauri refuses to
+      # package without it. The x86_64 image happens to ship it; the arm64
+      # image does not, and the first arm build failed there.
+      #
+      # By runner OS, not by image name: the Linux leg is ubuntu-24.04-arm now,
+      # and a check against 'ubuntu-latest' would silently skip this and fail
+      # the build on a missing webkit header.
       - name: Install Linux system dependencies
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -212,15 +243,20 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            libgtk-3-dev
+            libgtk-3-dev \
+            xdg-utils
 
       - name: Install npm dependencies
         run: npm ci
 
+      # From this run, or from the run named in reuse_runtime_from_run. An
+      # empty run-id means this run, so one step covers both.
       - uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.runtime }}
           path: runtime-archive
+          run-id: ${{ inputs.reuse_runtime_from_run || github.run_id }}
+          github-token: ${{ github.token }}
 
       # src-tauri/runtime is gitignored, so a fresh checkout has none and the
       # bundle would be built without the resources that are its whole point.
@@ -294,8 +330,115 @@ jobs:
       - name: Package the application
         run: php scripts/package-app-payload.php
 
+      # Linux adds an overlay: the binary is named `soundchex-server` rather
+      # than the crate's `soundchex`, which is also what the client package
+      # installs to /usr/bin -- the two would overwrite each other -- and is
+      # the name a runit `run` script calls (`soundchex-server --headless`).
+      # Only deb and AppImage, which is what is published.
+      #
+      # Not applied to macOS or Windows: renaming their executable would break
+      # the Windows Run-key autostart of every existing install, which points
+      # at the old file name.
       - name: Build the Server app
-        run: npm run build:server
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # NO_STRIP: linuxdeploy's bundled strip is older than Ubuntu
+            # 24.04's toolchain and fails on its libraries, which on the
+            # arm64 runner ended the AppImage with only "failed to run
+            # linuxdeploy". Nothing is lost: Cargo's release profile already
+            # strips our binary. --verbose, because without it tauri swallows
+            # linuxdeploy's output and a failure there says nothing about why.
+            #
+            # The .deb and the AppImage are built separately. linuxdeploy runs
+            # ldd on every ELF file in the AppImage, and on arm64 ldd exits 1 on
+            # the bundled tailwindcss (a Bun single-file executable); the gtk
+            # plugin then aborts rather than skipping it, as it does skip the
+            # static php. So the .deb -- what runs under runit -- is built
+            # complete, and only the arm64 AppImage leaves tailwindcss out.
+            # Without it, plugins keep the CSS they ship, which is the
+            # documented behaviour when the CLI is absent (S-350).
+            linux_build() {
+              NO_STRIP=true npm run build:server -- --verbose \
+                --config src-tauri/tauri.server.linux.conf.json --bundles "$1"
+            }
+
+            linux_build deb
+
+            if [ "${{ matrix.arch }}" = "aarch64" ]; then
+              mv src-tauri/runtime/bin/tailwindcss "$RUNNER_TEMP/tailwindcss"
+            fi
+
+            linux_build appimage
+
+            if [ -f "$RUNNER_TEMP/tailwindcss" ]; then
+              mv "$RUNNER_TEMP/tailwindcss" src-tauri/runtime/bin/tailwindcss
+            fi
+          else
+            npm run build:server
+          fi
+
+      # Fixed names, checksummed, for the release. HatCOS's package downloads
+      # a fixed URL and checks it against the .sha256 beside it; Tauri's own
+      # names carry the version and a space ("SoundChex Server_0.2.0_arm64.deb")
+      # which GitHub rewrites on upload, so neither is predictable.
+      - name: Collect Linux release assets
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          deb=$(find src-tauri/target/release/bundle/deb -maxdepth 1 -name '*.deb' | head -1 || true)
+          appimage=$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' | head -1 || true)
+          [ -n "$deb" ] || { echo "no .deb was built"; ls -R src-tauri/target/release/bundle; exit 1; }
+          [ -n "$appimage" ] || { echo "no .AppImage was built"; ls -R src-tauri/target/release/bundle; exit 1; }
+
+          base="soundchex-server-app-linux-${{ matrix.arch }}"
+          cp "$deb" "release-assets/${base}.deb"
+          cp "$appimage" "release-assets/${base}.AppImage"
+
+          cd release-assets
+          for f in "${base}.deb" "${base}.AppImage"; do
+            sha256sum "$f" > "$f.sha256"
+          done
+          cat ./*.sha256
+
+      # Uploaded before the checks below, so a failing check still leaves the
+      # packages to download and look at. The release job only publishes when
+      # this whole job succeeded, so nothing unchecked reaches a release.
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: release-app-linux-${{ matrix.arch }}
+          path: release-assets/*
+          if-no-files-found: error
+
+      # The binary the package installs must be the one a run script calls,
+      # and headless mode must work with no display: a runit service at boot
+      # has none, and anything that reached GTK first would abort there.
+      - name: Check the Linux package
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          deb="release-assets/soundchex-server-app-linux-${{ matrix.arch }}.deb"
+
+          # dpkg-deb lists paths with or without a leading "./" depending on
+          # how the archive was built; tauri's has none, and requiring one
+          # failed a correct package.
+          dpkg-deb -c "$deb" | grep -E ' (\./)?usr/bin/soundchex-server$' \
+            || { echo "the .deb does not install /usr/bin/soundchex-server"; dpkg-deb -c "$deb" | grep usr/bin; exit 1; }
+
+          dpkg-deb -x "$deb" deb-unpacked
+          bin=deb-unpacked/usr/bin/soundchex-server
+
+          env -u DISPLAY -u WAYLAND_DISPLAY "$bin" --help
+          env -u DISPLAY -u WAYLAND_DISPLAY "$bin" --headless --help
+
+          # A bad argument must be refused by the parser (exit 2) before
+          # anything starts -- not reach the window and abort on GTK.
+          set +e
+          env -u DISPLAY -u WAYLAND_DISPLAY "$bin" --headless --listen nowhere
+          code=$?
+          set -e
+          [ "$code" = 2 ] || { echo "expected exit 2 for a bad --listen, got $code"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         if: success()
@@ -312,13 +455,49 @@ jobs:
     # permission (S-421).
     permissions:
       contents: write
-    if: startsWith(github.ref, 'refs/tags/server-v')
-    needs: [build, build-windows]
+    #
+    # Waits for the app builds too, because the Linux app is published here.
+    # `!cancelled()` plus the runtime results rather than plain success: a
+    # macOS or Windows app failure must not hold back a release whose runtime
+    # built. The Linux app is still required -- its download below fails the
+    # job when it is missing -- because HatCOS fetches it from a fixed URL and
+    # a release without it would 404 there with nothing here saying why.
+    if: >-
+      !cancelled()
+      && startsWith(github.ref, 'refs/tags/server-v')
+      && needs.build.result == 'success'
+      && needs.build-windows.result == 'success'
+    needs: [build, build-windows, app]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      # Runtime archives only. Without a pattern this also pulled every app
+      # bundle -- the dmg, msi and exe -- just to throw them away.
       - uses: actions/download-artifact@v4
-        with: { path: dist, merge-multiple: true }
+        with:
+          path: dist
+          pattern: soundchex-server-[lmw]*
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: release-app-linux-*
+          merge-multiple: true
+
+      # Each architecture by name: a glob would pass with one of the two
+      # missing, and HatCOS would 404 on the other.
+      - name: Check the Linux app is present
+        run: |
+          ls -la dist
+          cd dist
+          for arch in x86_64 aarch64; do
+            for ext in deb AppImage; do
+              f="soundchex-server-app-linux-${arch}.${ext}"
+              [ -s "$f" ] || { echo "missing $f"; exit 1; }
+              sha256sum -c "$f.sha256"
+            done
+          done
       - uses: softprops/action-gh-release@v2
         with:
           # A tag carrying -beta/-alpha/-rc marks the release as a
@@ -330,4 +509,6 @@ jobs:
           files: |
             dist/soundchex-server-*.tar.gz
             dist/soundchex-server-*.zip
+            dist/soundchex-server-*.deb
+            dist/soundchex-server-*.AppImage
             dist/soundchex-server-*.sha256

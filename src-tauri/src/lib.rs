@@ -80,6 +80,93 @@ mod supervisor;
 #[cfg(desktop)]
 mod provision;
 
+/// `--headless` / `serve`: the same stack with no window, for a service
+/// manager to run.
+#[cfg(desktop)]
+mod headless;
+
+/// The app's context, built once.
+///
+/// `generate_context!` embeds the frontend assets, so expanding it in two
+/// places would put them in the binary twice. The window and headless mode
+/// both come through here.
+fn context() -> tauri::Context<tauri::Wry> {
+    tauri::generate_context!()
+}
+
+/// Run headless if the command line asks for it; otherwise `None`, and the
+/// caller opens the window as always.
+///
+/// Decided before Tauri starts on purpose: building the window initialises the
+/// GUI toolkit, which on Linux needs a display, and a service started by runit
+/// at boot has none.
+#[cfg(desktop)]
+pub fn headless_main() -> Option<i32> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    match headless::parse(&args) {
+        headless::Invocation::Window => None,
+        headless::Invocation::Help => {
+            print!("{}", headless::usage());
+            Some(0)
+        }
+        headless::Invocation::Invalid(message) => {
+            eprintln!("soundchex-server: {message}\n\n{}", headless::usage());
+            Some(2)
+        }
+        headless::Invocation::Headless(_) if cfg!(windows) => {
+            eprintln!("soundchex-server: headless mode needs a POSIX system; on Windows use Start with Windows in the app");
+            Some(2)
+        }
+        headless::Invocation::Headless(options) => Some(headless::run(options, &context())),
+    }
+}
+
+/// The runtime layout for a resource and data directory — shared by the window
+/// and headless mode, so the two cannot drift into serving different installs.
+#[cfg(desktop)]
+fn layout_from(
+    resource_dir: &std::path::Path,
+    data_dir: &std::path::Path,
+    listen: String,
+) -> supervisor::Layout {
+    // The bundled runtime lives under resources/runtime/bin; in dev, fall back to
+    // a RUNTIME_DIR env pointing at a locally-built bundle.
+    let bin_dir = std::env::var("SOUNDCHEX_RUNTIME_BIN")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| resource_dir.join("runtime").join("bin"));
+
+    // The app root, in order of preference: a checkout sitting in the resource
+    // dir; an explicit override; the copy unpacked from the bundled payload; and
+    // failing all of those, the resource dir, which is what a bundle with no
+    // payload has always used.
+    //
+    // The override still beats the payload on purpose. A machine already serving
+    // a library out of a checkout keeps doing so after an upgrade, rather than
+    // silently starting a second, empty one.
+    let app_dir = if resource_dir.join("artisan").exists() {
+        resource_dir.to_path_buf()
+    } else if let Ok(dir) = std::env::var("SOUNDCHEX_APP_DIR") {
+        std::path::PathBuf::from(dir)
+    } else if provision::payload(resource_dir).is_some() {
+        data_dir.join("app")
+    } else {
+        resource_dir.to_path_buf()
+    };
+
+    supervisor::Layout {
+        bin_dir,
+        app_dir,
+        run_dir: data_dir.join("server"),
+        listen,
+        headless: false,
+        fpm: std::env::var("SOUNDCHEX_FPM")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "127.0.0.1:9100".to_string()),
+    }
+}
+
 /// Resolve the bundled runtime layout from the app's resource dir.
 ///
 /// Tauri unpacks `bundle.resources` under the resource directory, so the runtime
@@ -99,43 +186,12 @@ fn resolve_layout(app: &tauri::AppHandle, listen: String) -> Result<supervisor::
             .map_err(|e| format!("no resource dir: {e}"))?,
     );
 
-    // The bundled runtime lives under resources/runtime/bin; in dev, fall back to
-    // a RUNTIME_DIR env pointing at a locally-built bundle.
-    let bin_dir = std::env::var("SOUNDCHEX_RUNTIME_BIN")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| resource_dir.join("runtime").join("bin"));
-
     let data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("no app data dir: {e}"))?;
 
-    // The app root, in order of preference: a checkout sitting in the resource
-    // dir; an explicit override; the copy unpacked from the bundled payload; and
-    // failing all of those, the resource dir, which is what a bundle with no
-    // payload has always used.
-    //
-    // The override still beats the payload on purpose. A machine already serving
-    // a library out of a checkout keeps doing so after an upgrade, rather than
-    // silently starting a second, empty one.
-    let app_dir = if resource_dir.join("artisan").exists() {
-        resource_dir.clone()
-    } else if let Ok(dir) = std::env::var("SOUNDCHEX_APP_DIR") {
-        std::path::PathBuf::from(dir)
-    } else if provision::payload(&resource_dir).is_some() {
-        data_dir.join("app")
-    } else {
-        resource_dir.clone()
-    };
-
-    let run_dir = data_dir.join("server");
-
-    Ok(supervisor::Layout {
-        bin_dir,
-        app_dir,
-        run_dir,
-        listen,
-    })
+    Ok(layout_from(&resource_dir, &data_dir, listen))
 }
 
 /// Start the bundled server stack (Server app).
@@ -160,6 +216,23 @@ async fn server_start(
     use tauri::{Emitter, Manager};
 
     let layout = resolve_layout(&app, listen.unwrap_or_else(|| ":8000".into()))?;
+
+    // Never a second stack beside a headless one. The window offers this only
+    // when nothing answers on the port, but a service can come up between the
+    // page checking and the button being pressed — and two stacks on one port
+    // means a Caddy that respawns every two seconds forever.
+    if let Some(pid) = headless::live_headless_pid(&layout.run_dir) {
+        return Err(format!(
+            "the server is already running headless (pid {pid}); control it from here instead"
+        ));
+    }
+
+    if runit::status().is_some() {
+        return Err(format!(
+            "this machine runs the server as the runit service {}; start it with that",
+            headless::RUNIT_SERVICE
+        ));
+    }
 
     let resource_dir = supervisor::plain(
         app.path()
@@ -199,6 +272,192 @@ async fn server_start(
     .map_err(|e| format!("provisioning thread failed: {e}"))??;
 
     sup.start(layout)
+}
+
+/// A stack this window did not start: a headless process (by its state file)
+/// and, where runit runs, the `soundchex-server` service.
+///
+/// The window asks this before starting anything, so that opening it on a
+/// machine already serving headless shows that server rather than racing it
+/// for the port.
+#[cfg(desktop)]
+#[tauri::command]
+fn server_external(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let layout = resolve_layout(&app, ":8000".into())?;
+    let pid = headless::live_headless_pid(&layout.run_dir);
+
+    let listen = pid.and_then(|_| {
+        std::fs::read_to_string(layout.run_dir.join(headless::STATE_FILE))
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            .and_then(|v| v.get("listen").and_then(|l| l.as_str()).map(String::from))
+    });
+
+    Ok(serde_json::json!({
+        "headless_pid": pid,
+        "listen": listen,
+        "runit": runit::status(),
+        "service": headless::RUNIT_SERVICE,
+    }))
+}
+
+/// Start, stop or restart a stack this window does not own.
+///
+/// Through `sv` where the runit service exists — HatCOS grants the user control
+/// of it through the service's `supervise/` permissions, so no root is needed.
+/// Otherwise a headless process started by hand can only be stopped, with the
+/// same SIGTERM a service manager would send.
+#[cfg(desktop)]
+#[tauri::command]
+fn server_control(app: tauri::AppHandle, action: String) -> Result<String, String> {
+    if !matches!(action.as_str(), "up" | "down" | "restart") {
+        return Err(format!("unknown action: {action}"));
+    }
+
+    if runit::status().is_some() {
+        return runit::control(&action);
+    }
+
+    let layout = resolve_layout(&app, ":8000".into())?;
+
+    match (headless::live_headless_pid(&layout.run_dir), action.as_str()) {
+        (Some(pid), "down") => terminate(pid).map(|_| format!("sent SIGTERM to pid {pid}")),
+        (Some(_), _) => Err(
+            "this headless server was not started by a service manager, so it can only be stopped from here"
+                .into(),
+        ),
+        (None, _) => Err("no headless server or runit service to control".into()),
+    }
+}
+
+#[cfg(all(desktop, unix))]
+fn terminate(pid: u32) -> Result<(), String> {
+    // SAFETY: plain integers; failure is reported, not assumed.
+    if unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) } == 0 {
+        Ok(())
+    } else {
+        Err(format!("could not signal pid {pid}: {}", std::io::Error::last_os_error()))
+    }
+}
+
+#[cfg(all(desktop, not(unix)))]
+fn terminate(_pid: u32) -> Result<(), String> {
+    Err("not supported on this platform".into())
+}
+
+/// The runit service, through `sv`.
+#[cfg(desktop)]
+mod runit {
+    use crate::headless::RUNIT_SERVICE;
+
+    /// What `sv status` said about the service.
+    #[derive(serde::Serialize, Debug, PartialEq)]
+    pub struct Status {
+        /// `run`, `down`, `finish`, or `unknown` when sv answered but could not
+        /// say (usually no permission on `supervise/`).
+        pub state: String,
+        pub pid: Option<u32>,
+        /// The line itself, for a person to read.
+        pub detail: String,
+        /// Whether this user may control it. False when sv could not open the
+        /// service's `supervise/` files.
+        pub controllable: bool,
+    }
+
+    /// Whether runit is the init here, or at least `sv` is installed.
+    fn present() -> bool {
+        if cfg!(windows) {
+            return false;
+        }
+
+        std::path::Path::new("/run/runit").exists()
+            || std::env::var_os("PATH").is_some_and(|path| {
+                std::env::split_paths(&path).any(|dir| dir.join("sv").is_file())
+            })
+    }
+
+    /// The service's status, or `None` when runit is absent or has no
+    /// `soundchex-server` service.
+    pub fn status() -> Option<Status> {
+        if !present() {
+            return None;
+        }
+
+        let output = std::process::Command::new("sv")
+            .args(["status", RUNIT_SERVICE])
+            .output()
+            .ok()?;
+
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        parse(&text)
+    }
+
+    pub fn control(action: &str) -> Result<String, String> {
+        let output = std::process::Command::new("sv")
+            .args([action, RUNIT_SERVICE])
+            .output()
+            .map_err(|e| format!("could not run sv: {e}"))?;
+
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .trim()
+        .to_string();
+
+        // sv prints `ok:`, `timeout:` or `fail:`/`warning:` per service. A
+        // timeout is not a failure — the stop is still under way — so only the
+        // last two are errors.
+        if output.status.success() && !text.starts_with("fail:") && !text.starts_with("warning:") {
+            Ok(text)
+        } else {
+            Err(if text.is_empty() { format!("sv {action} failed") } else { text })
+        }
+    }
+
+    /// Read one `sv status` reply.
+    ///
+    ///   run: soundchex-server: (pid 1234) 56s; run: log: (pid 1233) 56s
+    ///   down: soundchex-server: 12s, normally up
+    ///   fail: soundchex-server: unable to change to service directory: file does not exist
+    ///   warning: soundchex-server: unable to open supervise/ok: access denied
+    pub fn parse(text: &str) -> Option<Status> {
+        let line = text.lines().find(|l| !l.trim().is_empty())?.trim();
+
+        // No such service: runit is here but SoundChex is not one of its
+        // services, so there is nothing to show.
+        if line.starts_with("fail:") && line.contains("unable to change to service directory") {
+            return None;
+        }
+
+        // Only the service's own part; the log service follows a `;`.
+        let own = line.split(';').next().unwrap_or(line).trim();
+        let state = own.split(':').next().unwrap_or("").trim();
+
+        let pid = own
+            .split_once("(pid ")
+            .and_then(|(_, rest)| rest.split(')').next())
+            .and_then(|n| n.trim().parse().ok());
+
+        let (state, controllable) = match state {
+            "run" | "down" | "finish" => (state.to_string(), true),
+            "warning" | "fail" => ("unknown".to_string(), false),
+            _ => ("unknown".to_string(), true),
+        };
+
+        Some(Status {
+            state,
+            pid,
+            detail: line.to_string(),
+            controllable,
+        })
+    }
 }
 
 /// Stop the bundled server stack.
@@ -812,6 +1071,8 @@ pub fn run() {
             server_start,
             server_stop,
             server_status,
+            server_external,
+            server_control,
             // Windows only, but registered unconditionally: a second
             // `invoke_handler` call REPLACES the first rather than adding to
             // it, so branching here would have silently unregistered every
@@ -851,7 +1112,7 @@ pub fn run() {
         .on_menu_event(handle_menu_event);
 
     builder
-        .run(tauri::generate_context!())
+        .run(context())
         .expect("error while running SoundChex");
 }
 
@@ -1233,6 +1494,48 @@ mod tests {
             drift < 64 * 1024 * 1024,
             "free_space {ours} vs df {df_bytes} (drift {drift}) — layout likely wrong"
         );
+    }
+
+    use super::runit;
+
+    #[test]
+    fn sv_status_reads_a_running_service() {
+        let status = runit::parse("run: soundchex-server: (pid 1234) 56s; run: log: (pid 1233) 56s\n")
+            .expect("a status");
+
+        assert_eq!(status.state, "run");
+        // The service's pid, not the log service's that follows it.
+        assert_eq!(status.pid, Some(1234));
+        assert!(status.controllable);
+    }
+
+    #[test]
+    fn sv_status_reads_a_stopped_service() {
+        let status = runit::parse("down: soundchex-server: 12s, normally up\n").expect("a status");
+
+        assert_eq!(status.state, "down");
+        assert_eq!(status.pid, None);
+    }
+
+    /// Not installed is not a service in an unknown state: nothing to show.
+    #[test]
+    fn sv_status_without_the_service_is_none() {
+        assert_eq!(
+            runit::parse("fail: soundchex-server: unable to change to service directory: file does not exist\n"),
+            None
+        );
+        assert_eq!(runit::parse(""), None);
+    }
+
+    /// Present but not ours to control: shown, with the reason, and no buttons.
+    #[test]
+    fn sv_status_without_permission_is_shown_but_not_controllable() {
+        let status = runit::parse("warning: soundchex-server: unable to open supervise/ok: access denied\n")
+            .expect("a status");
+
+        assert_eq!(status.state, "unknown");
+        assert!(!status.controllable);
+        assert!(status.detail.contains("access denied"));
     }
 
     #[test]
