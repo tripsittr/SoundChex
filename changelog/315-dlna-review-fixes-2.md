@@ -51,12 +51,15 @@ The rules, in order:
    leaves by the VPN can still reach the LAN address.
 2. **A tunnel's far end is ignored.**
 3. **Otherwise the most specific subnet containing the source decides whose
-   network it is on.** Docker's 172.17/16 cannot hide a LAN on 172.17.5.x,
+   network it is on.** A tie goes to our own interface, so Wi-Fi and Ethernet
+   on one LAN cannot hide the LAN's TVs. Docker's 172.17/16 cannot hide a LAN on 172.17.5.x,
    and a LAN on a 10/8 cannot swallow a VPN or uplink peer inside it. The
    second review's fix (our own subnet first) got the first case right and
    the second wrong; the third review caught it.
 4. **A source on none of our networks is answered.** This covers routed and
-   relayed searches.
+   relayed searches. So is every source when our own interface, or its
+   netmask, is unknown: with nothing to compare against, answering is the
+   safe side.
 
 Subnets shorter than /8 are ignored. The first 256 ignored sources are each
 logged as a warning; after that, one line says logging has stopped.
@@ -100,8 +103,10 @@ and the HTTP port from the LAN.
 
 ## Tests
 
-A subagent reviewed this code three times: twice on the #314 branch, then a
-third time on the commits brought here. This PR answers all three reviews. `DlnaAddressingTest` (35) and `DlnaSettingsReadTest` (3) cover:
+A subagent reviewed this code four times: twice on the #314 branch, then twice
+on this branch. The fourth review found that the longest-prefix rule let a tie
+go to whichever interface was listed first. That is fixed and tested. This PR
+answers all four reviews. `DlnaAddressingTest` (37) and `DlnaSettingsReadTest` (3) cover:
 - the join fallback and the settings read;
 - the bridge and Windows-adapter exclusions;
 - the foreign-source rules: overlapping subnets either way round, a relayed
@@ -116,10 +121,10 @@ Each of these mutations turns them red:
 - ignoring the tunnel peer;
 - removing the re-announce;
 - removing the point-to-point check;
-- removing the own-subnet-first rule;
+- breaking a tie in favour of the first interface listed;
 - removing the /8 floor;
 - letting the last matching subnet win instead of the most specific.
 
-The full PHP suite in a clean worktree: 1,863 pass. One fails,
+The full PHP suite in a clean worktree: 1,865 pass. One fails,
 `ServerHealthCheckTest`, from this Mac's low disk space; it fails the same way
 without this change. Rust: 36 pass.

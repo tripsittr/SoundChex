@@ -451,7 +451,7 @@ class DlnaServe extends Command
         // switch shares the virtual adapter's description, so that host can
         // still miss the warning — it is advisory, and erring quiet there is
         // the lesser harm than warning every WSL machine.
-        return preg_match('/hyper-v|\bwsl\b|wireguard|\btap-windows\b|virtualbox|vmware|\bloopback\b|anyconnect|zerotier|openvpn|wintun|pangp|fortinet|tailscale/i', $description) === 1;
+        return preg_match('/hyper-v|\bwsl\b|wireguard|\btap-windows\b|virtualbox|vmware|\bloopback\b|anyconnect|zerotier|\bopenvpn\b|\bwintun\b|\bpangp\b|\bfortinet\b|\btailscale\b/i', $description) === 1;
     }
 
     /** RFC 1918 only: not loopback, link-local or CGNAT (100.64/10). */
@@ -529,6 +529,13 @@ class DlnaServe extends Command
         // let a wide LAN (a 10/8) swallow a VPN or uplink peer inside it, and
         // checking the others first let Docker's 172.17/16 swallow a LAN on
         // 172.17.5.x. Longest prefix handles both.
+        // Without our own interface, or without its netmask, there is no way
+        // to tell our network from another one; answering is the safe side,
+        // since dropping every TV is the failure that cannot be seen.
+        if ($ours === null || ! self::hasSubnet($interfaces[$ours] ?? [])) {
+            return false;
+        }
+
         $bestPrefix = -1;
         $bestOwner = null;
 
@@ -555,7 +562,17 @@ class DlnaServe extends Command
 
                 // Shorter than /8 is not a network anyone sits on; a /0 from
                 // a misreported netmask would otherwise claim every source.
-                if ($prefix < 8 || $prefix <= $bestPrefix || ! self::inRange($from, $subnet)) {
+                if ($prefix < 8 || ! self::inRange($from, $subnet)) {
+                    continue;
+                }
+
+                // A tie goes to our own interface. Two interfaces on one LAN
+                // (Wi-Fi and Ethernet both on 192.168.1.0/24) are normal, and
+                // first-listed-wins dropped every TV whenever we advertised on
+                // the second — a source on a subnet we share can reach us.
+                $tieForUs = $prefix === $bestPrefix && (string) $name === $ours;
+
+                if ($prefix < $bestPrefix || ($prefix === $bestPrefix && ! $tieForUs)) {
                     continue;
                 }
 
@@ -567,6 +584,24 @@ class DlnaServe extends Command
         // On none of our networks: routed or relayed (an IoT VLAN behind an
         // SSDP relay) — answered, as it always was.
         return $bestOwner !== null && $bestOwner !== $ours;
+    }
+
+    /**
+     * Whether any IPv4 address on an interface has a usable netmask.
+     *
+     * @param  array<string, mixed>  $details  one interface from `net_get_interfaces()`
+     */
+    private static function hasSubnet(array $details): bool
+    {
+        foreach ($details['unicast'] ?? [] as $entry) {
+            $address = $entry['address'] ?? null;
+
+            if (is_string($address) && self::subnetOf($address, $details) !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Whether an IPv4 address is inside "network/prefix". */

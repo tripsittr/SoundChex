@@ -413,4 +413,31 @@ class DlnaAddressingTest extends TestCase
         $this->assertTrue(DlnaServe::isVirtual('{E}', ['description' => 'Tailscale Tunnel']));
         $this->assertTrue(DlnaServe::isVirtual('{F}', ['description' => 'Wintun Userspace Tunnel']));
     }
+
+    /**
+     * Wi-Fi and Ethernet on one LAN, advertising on the one listed second:
+     * a tie went to the first, and every TV was ignored.
+     */
+    public function test_a_tie_on_a_shared_lan_goes_to_our_interface(): void
+    {
+        $interfaces = [
+            'en0' => ['unicast' => [['family' => 2, 'address' => '192.168.1.20', 'netmask' => '255.255.255.0']]],
+            'en7' => ['unicast' => [['family' => 2, 'address' => '192.168.1.21', 'netmask' => '255.255.255.0']]],
+        ];
+
+        $this->assertFalse(DlnaServe::foreignSource('192.168.1.50', 'en7', $interfaces));
+        $this->assertFalse(DlnaServe::foreignSource('192.168.1.50', 'en0', $interfaces));
+    }
+
+    /** No netmask on our interface, or no interface: answer rather than drop. */
+    public function test_without_our_own_subnet_nothing_is_foreign_by_subnet(): void
+    {
+        $interfaces = [
+            'en0' => ['unicast' => [['family' => 2, 'address' => '10.1.2.5']]],
+            'utun3' => ['unicast' => [['family' => 2, 'address' => '10.0.0.2', 'netmask' => '255.0.0.0']]],
+        ];
+
+        $this->assertFalse(DlnaServe::foreignSource('10.1.2.50', 'en0', $interfaces));
+        $this->assertFalse(DlnaServe::foreignSource('10.1.2.50', null, $interfaces));
+    }
 }
