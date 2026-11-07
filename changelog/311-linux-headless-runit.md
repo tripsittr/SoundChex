@@ -1,6 +1,6 @@
 # 311 — Run SoundChex Server headless under runit, and publish it for Linux arm64
 
-**Merged** — · **Issues** #521, #522, #523, #524
+**Merged** 2026-11-06 · **Issues** #521, #522, #523, #524
 
 SoundChex Server can now run with no window, `soundchex-server --headless`, so
 a service manager can keep the library up with nobody logged in. HatCOS (Void

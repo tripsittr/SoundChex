@@ -171,8 +171,9 @@ source — one relocatable PHP per platform, no system dependency.
 
    Not yet verified: any of it on Linux. Headless start, provisioning, the
    double-start refusal and the SIGTERM shutdown were exercised on macOS
-   against a scratch data directory; the Linux CI builds, the packages and
-   runit itself are first seen on HatCOS.
+   against a scratch data directory. The Linux packages build in CI and are
+   published in `server-v0.2.0-beta.2`; installing them and running them
+   under runit is first seen on HatCOS.
 
 ## Risks, in order
 

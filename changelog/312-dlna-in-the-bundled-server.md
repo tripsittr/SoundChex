@@ -1,6 +1,6 @@
 # 312 — Make DLNA discovery work in the bundled server
 
-**Merged** — · **Issues** #525, S-7
+**Merged** 2026-11-06 · **Issues** #525, S-7
 
 `artisan dlna:serve` could not run in the bundled server on any platform, and
 where it did run it advertised a port nothing listened on and, on a machine

@@ -31,11 +31,19 @@ server and prefer direct routes.
 `soundchex-server`. The Linux app is built for x86_64 and aarch64, and each
 `server-v*` release carries `soundchex-server-app-linux-<arch>.deb` and
 `.AppImage` with `.sha256` files. PR #311 (headless, runit, Linux packages) and
-#312 (DLNA in the bundled server, PHP ≥ 8.4.1) are open and green in CI, and
-not merged. Neither has a5's approval. The release `server-v0.2.0-beta.2` is
-not tagged yet, so HatCOS has no fixed URL until it is. Headless, runit
-control and DLNA discovery have not run on Linux: the HatCOS VM (aarch64) and
-a5 (x86_64) are where they are first seen. Details are in
+#312 (DLNA in the bundled server, PHP ≥ 8.4.1) were merged on 6 November at the
+owner's direction, without a5's approval. They are released as the
+pre-release
+[`server-v0.2.0-beta.2`](https://github.com/tripsittr/SoundChex/releases/tag/server-v0.2.0-beta.2).
+HatCOS's package is to download `…/releases/download/server-v0.2.0-beta.2/soundchex-server-app-linux-<arch>.deb`
+and check it against the `.sha256` beside it. That path was exercised once on
+the Mac on 6 November: the aarch64 .deb downloaded by its public URL, with no
+login, and matched its `.sha256` (`6eca32ae…`). — Mac
+
+Headless, runit control and DLNA discovery have not run on Linux. They are
+first seen on the HatCOS VM (aarch64, on this Mac) and on a5, which now runs
+HatCOS (x86_64) rather than the Windows install AGENTS.md §0 describes. a5
+should still review #311 and #312 after the fact. Details are in
 [BundledServer.md](BundledServer.md) and changelogs 311 and 312.
 
 ---
